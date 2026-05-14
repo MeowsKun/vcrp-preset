@@ -1,4 +1,6 @@
 # beta 30/04/26
+* added CYOA cleanup.
+# beta 30/04/26
 * Fixes for GLM and DS4.
 note: enable prefill only for Gemini.
 # beta 26/04/26

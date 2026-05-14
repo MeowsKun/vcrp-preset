@@ -401,60 +401,117 @@ function renderMode(c) {
         "dark": "Balance but harsher. The world is unforgiving and consequences hit harder.",
         "v6-anime-director": "Advanced cinematic framing and pacing. Designed to emulate high-budget anime direction.",
         "v6-dream-team": "The ultimate 6-specialist writer room. Unprecedented narrative consistency and realism.",
-        "v6-dream-team-lite": "A streamlined version of the Dream Team. Faster generation with lower token overhead."
+        "v6-dream-team-lite": "A streamlined version of the Dream Team. Faster generation with lower token overhead.",
+        "v7-reality": "The V7 Reality engine. Grounded, unrelenting simulation with zero narrative protection.",
+        "v7-gentle": "The V7 Gentle engine. A softer, atmospheric world where tension breathes and moments linger."
     };
 
-    c.append(`<div class="ps-rule-title" style="margin-bottom:10px;">Megumin Core Engines</div>`);
+    // Active engine name
+    const activeEng = hardcodedLogic.modes.find(m => m.id === localProfile.mode);
+    const activeLabel = activeEng ? activeEng.label : localProfile.mode;
 
-    const filterContainer = $(`
-        <div style="display: flex; gap: 8px; margin-bottom: 20px;">
-            <button class="ps-modern-tag filter-btn selected" data-filter="all" style="margin:0; border-radius: 20px; padding: 6px 16px;">All Engines</button>
-            <button class="ps-modern-tag filter-btn" data-filter="V4" style="margin:0; border-radius: 20px; padding: 6px 16px;">V4 Generation</button>
-            <button class="ps-modern-tag filter-btn" data-filter="V5" style="margin:0; border-radius: 20px; padding: 6px 16px;">V5 Generation</button>
-            <button class="ps-modern-tag filter-btn" data-filter="V6" style="margin:0; border-radius: 20px; padding: 6px 16px;">V6 <i class="fa-solid fa-lock" style="font-size:0.7em; margin-left:4px;"></i></button>
+    // Count by version
+    let v4Count = 0, v5Count = 0, v6Count = 0, v7Count = 0;
+    hardcodedLogic.modes.forEach(m => {
+        if (m.label.includes("V4")) v4Count++;
+        else if (m.label.includes("V5")) v5Count++;
+        else if (m.id.includes("v6")) v6Count++;
+        else if (m.id.includes("v7")) v7Count++;
+    });
+    const totalCount = hardcodedLogic.modes.length;
+
+    // ── HEADER ──
+    c.append(`
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                    <i class="fa-solid fa-microchip"></i>
+                </div>
+                <div>
+                    <h2>Core Engines</h2>
+                    <p>Choose the narrative engine that drives your AI's behavior.</p>
+                </div>
+            </div>
+            <div class="mtab-header-badge" style="background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25);">
+                <i class="fa-solid fa-circle-check" style="font-size:0.6rem;"></i> ${activeLabel}
+            </div>
         </div>
     `);
-    c.append(filterContainer);
 
-    const coreGrid = $(`<div class="ps-grid" style="margin-bottom: 30px;"></div>`);
-    const v6Empty = $(`<div id="v6-empty-msg" style="display:none; padding: 40px 20px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border-color); border-radius: 12px; margin-bottom: 30px;"><i class="fa-solid fa-hammer" style="font-size: 2rem; color: var(--border-color); margin-bottom: 12px;"></i><br><span style="font-weight: bold; color: var(--text-main);">V6 Engines are in the forge.</span><br>Stay tuned for the next update! Later this week.</div>`);
+    // ── FILTER PILLS ──
+    const filterBar = $(`
+        <div class="wstyle-filters" style="margin-bottom: 20px;">
+            <button class="wstyle-filter-pill" data-filter="all">All <span class="pill-count">${totalCount}</span></button>
+            <button class="wstyle-filter-pill" data-filter="V4">V4 <span class="pill-count">${v4Count}</span></button>
+            <button class="wstyle-filter-pill" data-filter="V5">V5 <span class="pill-count">${v5Count}</span></button>
+            <button class="wstyle-filter-pill" data-filter="V6"><i class="fa-solid fa-lock" style="font-size:0.6rem;"></i> V6 <span class="pill-count">${v6Count}</span></button>
+            <button class="wstyle-filter-pill active" data-filter="V7">V7 <span class="pill-count">${v7Count}</span></button>
+        </div>
+    `);
+    c.append(filterBar);
+
+    // ── ENGINE CARDS ──
+    const coreGrid = $(`<div class="mtab-card-grid" style="margin-bottom: 20px;"></div>`);
+    const v6Empty = $(`<div id="v6-empty-msg" style="display:none;"><div class="mtab-locked-state"><i class="fa-solid fa-hammer" style="color: var(--border-color);"></i><h3>V6 Engines are in the forge.</h3><p>Stay tuned for the next update! Later this week.</p></div></div>`);
 
     hardcodedLogic.modes.forEach(m => {
-        const recText = m.recommended ? `<span class="ps-rec-text"><i class="fa-solid fa-star"></i> Recommended</span>` : '';
-        const newBadge = m.isNew ? `<div style="position: absolute; bottom: 15px; right: 15px; background: #3b82f6; color: #fff; font-size: 0.65rem; font-weight: 800; padding: 3px 10px; border-radius: 8px; text-transform: uppercase;">New</div>` : '';
-
         let version = "all";
         if (m.label.includes("V4")) version = "V4";
         else if (m.label.includes("V5")) version = "V5";
-        else if (m.id.includes("v6")) version = "V6"; // Dynamically tags all v6 engines
+        else if (m.id.includes("v6")) version = "V6";
+        else if (m.id.includes("v7")) version = "V7";
 
-        let isLocked = m.locked === true;
-        let lockStyle = isLocked ? "opacity: 0.6; filter: grayscale(80%); pointer-events: none;" : "cursor: pointer;";
-        let lockIcon = isLocked ? `<i class="fa-solid fa-lock" style="margin-right: 4px; color: var(--text-muted);"></i>` : "";
-        let lockBadge = isLocked ? `<div style="position: absolute; bottom: 15px; right: 15px; background: #52525b; color: #fff; font-size: 0.65rem; font-weight: 800; padding: 3px 10px; border-radius: 8px; text-transform: uppercase;">Coming Soon</div>` : newBadge;
+        const isLocked = m.locked === true;
+        const isSel = localProfile.mode === m.id;
 
-        const card = $(`<div class="ps-card core-engine-card ${localProfile.mode === m.id ? 'selected' : ''}" data-version="${version}" style="position:relative; padding-bottom: ${m.isNew || isLocked ? '40px' : '20px'}; ${lockStyle}">
-            <div class="ps-card-title"><span>${lockIcon}${m.label}</span> ${recText}</div>
-            <div class="ps-card-desc">${descriptions[m.id] || ""}</div>${lockBadge}
-        </div>`);
+        let badges = '';
+        if (m.recommended) badges += `<span class="ecard-badge rec"><i class="fa-solid fa-star"></i> Recommended</span>`;
+        if (m.isNew && !isLocked) badges += `<span class="ecard-badge new">New</span>`;
+        if (isLocked) badges += `<span class="ecard-badge locked"><i class="fa-solid fa-lock"></i> Coming Soon</span>`;
+
+        const card = $(`
+            <div class="mtab-eng-card ${isSel ? 'active' : ''} ${isLocked ? 'locked-card' : ''}" data-version="${version}">
+                <div class="ecard-accent"></div>
+                <div class="ecard-body">
+                    <div class="ecard-title">
+                        <span>${m.label}</span>
+                        ${isSel ? `<span class="ecard-badge" style="background:rgba(16,185,129,0.15);color:#10b981;"><i class="fa-solid fa-check"></i> Active</span>` : ''}
+                    </div>
+                    <p class="ecard-desc">${descriptions[m.id] || ""}</p>
+                    ${badges ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">${badges}</div>` : ''}
+                </div>
+            </div>
+        `);
 
         if (!isLocked) {
-            card.on("click", () => { localProfile.mode = m.id; saveProfileToMemory(); switchTab(currentTab); });
+            card.on("click", () => {
+                const wasV7 = localProfile.mode.startsWith("v7");
+                localProfile.mode = m.id;
+                if (m.id.startsWith("v7") && !wasV7) {
+                    localProfile.activeStyleId = "dir_v7";
+                    const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7");
+                    if (ds) localProfile.aiRule = ds.rule;
+                }
+                saveProfileToMemory();
+                switchTab(currentTab);
+            });
         }
+        if (version !== "V7") card.hide();
         coreGrid.append(card);
     });
 
     c.append(coreGrid);
     c.append(v6Empty);
 
-    filterContainer.find('.filter-btn').on('click', function () {
-        filterContainer.find('.filter-btn').removeClass('selected');
-        $(this).addClass('selected');
+    // ── FILTER LOGIC ──
+    filterBar.find('.wstyle-filter-pill').on('click', function () {
+        filterBar.find('.wstyle-filter-pill').removeClass('active');
+        $(this).addClass('active');
         const filter = $(this).attr('data-filter');
         if (filter === "all") {
-            coreGrid.show(); coreGrid.find('.core-engine-card').show(); v6Empty.hide();
+            coreGrid.show(); coreGrid.find('.mtab-eng-card').show(); v6Empty.hide();
         } else {
-            coreGrid.find('.core-engine-card').each(function () {
+            coreGrid.find('.mtab-eng-card').each(function () {
                 if ($(this).attr('data-version') === filter) $(this).show(); else $(this).hide();
             });
             coreGrid.show();
@@ -462,19 +519,58 @@ function renderMode(c) {
         }
     });
 
+    // V7 Modules Toggles
+    if (localProfile.mode.startsWith("v7")) {
+        c.append(`<div class="wstyle-section-head blue" style="margin-top: 15px;"><i class="fa-solid fa-layer-group"></i> V7 Modules (Turn off to disable)</div>`);
+        const v7ToggleList = $(`<div class="mtab-card-list"></div>`);
+        const v7Toggles = [
+            { id: "v7_ooc", label: "OOC Protocol", desc: "Allows out-of-character directives." },
+            { id: "v7_pcsolo", label: "PC Solo Physicality", desc: "Narration of PC when unobserved." },
+            { id: "v7_intro", label: "Introduction Protocol", desc: "How new NPCs enter the story." },
+            { id: "v7_culture", label: "Cultural Anchoring", desc: "Real-world integration and references." },
+            { id: "v7_scene", label: "Scene Choreography", desc: "Focus shifting and crowd management." }
+        ];
+
+        v7Toggles.forEach(tog => {
+            if (localProfile.toggles[tog.id] === undefined) localProfile.toggles[tog.id] = true;
+            const isOn = localProfile.toggles[tog.id];
+
+            const tCard = $(`
+                <div class="mtab-toggle-row ${isOn ? 'active' : ''}">
+                    <div class="toggle-info">
+                        <div class="toggle-label">${tog.label}</div>
+                        <div class="toggle-desc">${tog.desc}</div>
+                    </div>
+                    <div class="ps-switch"></div>
+                </div>
+            `);
+            tCard.on("click", () => { localProfile.toggles[tog.id] = !localProfile.toggles[tog.id]; saveProfileToMemory(); switchTab(currentTab); });
+            v7ToggleList.append(tCard);
+        });
+        c.append(v7ToggleList);
+    }
+
+    // ── CUSTOM ENGINES ──
     const customModes = extension_settings[extensionName].customModes || [];
     if (customModes.length > 0) {
-        c.append(`<div class="ps-rule-title" style="margin-bottom:10px; color: #10b981;">Custom User Engines</div>`);
-        const customGrid = $(`<div class="ps-grid"></div>`);
+        c.append(`<div class="wstyle-section-head green" style="margin-top:12px;"><i class="fa-solid fa-puzzle-piece"></i> Custom User Engines</div>`);
+        const customGrid = $(`<div class="mtab-card-grid"></div>`);
         customModes.forEach(m => {
             const isSel = localProfile.mode === m.id;
-            const card = $(`<div class="ps-card ${isSel ? 'selected' : ''}" style="border-color: ${isSel ? '#10b981' : 'var(--border-color)'}; position: relative;">
-                <div class="ps-card-title" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                    <span style="color: ${isSel ? '#000' : '#10b981'};">${m.label}</span>
-                    <button class="ps-modern-btn secondary btn-quick-edit" style="padding: 4px 8px; font-size: 0.7rem; color: var(--gold); border-color: rgba(245,158,11,0.3); background: transparent;"><i class="fa-solid fa-pen"></i> Edit</button>
+            const card = $(`
+                <div class="mtab-eng-card ${isSel ? 'active' : ''}">
+                    <div class="ecard-accent"></div>
+                    <div class="ecard-body">
+                        <div class="ecard-title">
+                            <span>${m.label}</span>
+                            <button class="ps-modern-btn secondary btn-quick-edit" style="padding:4px 10px;font-size:0.7rem;color:var(--gold);border-color:rgba(245,158,11,0.3);background:transparent;">
+                                <i class="fa-solid fa-pen"></i> Edit
+                            </button>
+                        </div>
+                        <p class="ecard-desc">Custom Engine Flow</p>
+                    </div>
                 </div>
-                <div class="ps-card-desc">Custom Engine Flow</div>
-            </div>`);
+            `);
             card.on("click", (e) => {
                 if ($(e.target).closest('.btn-quick-edit').length) return;
                 localProfile.mode = m.id; saveProfileToMemory(); switchTab(currentTab);
@@ -488,34 +584,71 @@ function renderMode(c) {
 
 function renderPersonality(c) {
     const isV6DreamTeam = localProfile.mode.includes("v6-dream-team");
+    const isV7 = localProfile.mode.startsWith("v7");
+    const isLockedPersona = isV6DreamTeam || isV7;
+
+    // ── HEADER ──
+    c.append(`
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #ec4899, #be185d);">
+                    <i class="fa-solid fa-masks-theater"></i>
+                </div>
+                <div>
+                    <h2>Persona & Toggles</h2>
+                    <p>Set the narrator's voice and fine‑tune engine behavior.</p>
+                </div>
+            </div>
+            <div class="mtab-header-badge" style="background: rgba(236,72,153,0.12); color: #ec4899; border: 1px solid rgba(236,72,153,0.25);">
+                <i class="fa-solid fa-user" style="font-size:0.6rem;"></i> ${isLockedPersona ? 'Locked' : localProfile.personality}
+            </div>
+        </div>
+    `);
 
     if (isV6DreamTeam) {
-        // V6 LOCKED STATE
         c.append(`
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; background: rgba(168, 85, 247, 0.05); border: 1px dashed #a855f7; border-radius: 12px; margin-bottom: 30px;">
-                <i class="fa-solid fa-user-lock" style="font-size: 3rem; color: #a855f7; margin-bottom: 15px;"></i>
-                <h3 style="color: var(--text-main); margin: 0 0 10px 0;">Persona Selection Locked</h3>
-                <p style="color: var(--text-muted); max-width: 500px; font-size: 0.85rem; line-height: 1.5;">
-                    The V6 Dream Team engine utilizes an intrinsic 6-specialist framework. Standard persona injections (like Megumin or Director) are disabled to prevent logic conflicts.
-                </p>
+            <div class="mtab-locked-state">
+                <i class="fa-solid fa-user-lock" style="color: #a855f7;"></i>
+                <h3>Persona Selection Locked</h3>
+                <p>The V6 Dream Team engine utilizes an intrinsic 6-specialist framework. Standard persona injections are disabled to prevent logic conflicts.</p>
+            </div>
+        `);
+    } else if (isV7) {
+        c.append(`
+            <div class="mtab-locked-state">
+                <i class="fa-solid fa-user-lock" style="color: #3b82f6;"></i>
+                <h3>Persona Selection Locked</h3>
+                <p>The V7 engine utilizes a pure narrative framework. Standard persona injections are disabled to prevent logic conflicts.</p>
             </div>
         `);
     } else {
-        // NORMAL STATE
         const descriptions = {
             "megumin": "A rebellious, dominant voice. Adds an edge of arrogance and chaos to the narration. Best for energetic or confrontational stories.",
             "director": "Professional narrator. Clean, authoritative story direction with cinematic awareness.",
             "Nora": "Nora should i say more.",
             "engine": "No personality overlay at all. The engine speaks in its purest form — precise, neutral, and fully under your control. Recommended for most setups."
         };
-        c.append(`<div class="ps-rule-title" style="margin-bottom:10px;">Select Persona</div>`);
-        const grid = $(`<div class="ps-grid" style="margin-bottom: 25px;"></div>`);
+
+        c.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-masks-theater"></i> Select Persona</div>`);
+        const grid = $(`<div class="mtab-card-grid" style="margin-bottom: 24px;"></div>`);
         hardcodedLogic.personalities.forEach(p => {
-            const recText = p.recommended ? `<span class="ps-rec-text"><i class="fa-solid fa-star"></i> Recommended</span>` : '';
-            const card = $(`<div class="ps-card ${localProfile.personality === p.id ? 'selected' : ''}">
-                <div class="ps-card-title"><span>${p.label}</span> ${recText}</div>
-                <div class="ps-card-desc">${descriptions[p.id] || ""}</div>
-            </div>`);
+            const isSel = localProfile.personality === p.id;
+            let badges = '';
+            if (p.recommended) badges = `<span class="ecard-badge rec"><i class="fa-solid fa-star"></i> Recommended</span>`;
+
+            const card = $(`
+                <div class="mtab-eng-card ${isSel ? 'active' : ''}">
+                    <div class="ecard-accent"></div>
+                    <div class="ecard-body">
+                        <div class="ecard-title">
+                            <span>${p.label}</span>
+                            ${isSel ? `<span class="ecard-badge" style="background:rgba(16,185,129,0.15);color:#10b981;"><i class="fa-solid fa-check"></i> Active</span>` : ''}
+                        </div>
+                        <p class="ecard-desc">${descriptions[p.id] || ""}</p>
+                        ${badges ? `<div style="margin-top:4px;">${badges}</div>` : ''}
+                    </div>
+                </div>
+            `);
             card.on("click", () => { localProfile.personality = p.id; saveProfileToMemory(); switchTab(currentTab); });
             grid.append(card);
         });
@@ -523,148 +656,215 @@ function renderPersonality(c) {
     }
 
     // EXTRA TOGGLES (Always available)
-    c.append(`<div class="ps-rule-title" style="margin-bottom:10px;">Extra Toggles</div>`);
+    c.append(`<div class="wstyle-section-head gold"><i class="fa-solid fa-sliders"></i> Extra Toggles</div>`);
+    const toggleList = $(`<div class="mtab-card-list"></div>`);
     Object.entries(hardcodedLogic.toggles).forEach(([key, tog]) => {
-        const recText = tog.recommendedOff ? `<span class="ps-rec-text"><i class="fa-solid fa-star"></i> Off by default — most engines handle this natively</span>` : '';
-        const tCard = $(`<div class="ps-toggle-card ${localProfile.toggles[key] ? 'active' : ''}">
-            <div style="display:flex; flex-direction:column;"><span style="font-weight:600;">${tog.label}</span><div style="margin-top:4px;">${recText}</div></div>
-            <div class="ps-switch"></div></div>`);
+        const isOn = localProfile.toggles[key];
+        const tCard = $(`
+            <div class="mtab-toggle-row ${isOn ? 'active' : ''}">
+                <div class="toggle-info">
+                    <div class="toggle-label">${tog.label}</div>
+                    ${tog.recommendedOff ? `<div class="toggle-desc"><i class="fa-solid fa-star" style="color:var(--gold);font-size:0.6rem;margin-right:4px;"></i> Off by default — most engines handle this natively</div>` : ''}
+                </div>
+                <div class="ps-switch"></div>
+            </div>
+        `);
         tCard.on("click", () => { localProfile.toggles[key] = !localProfile.toggles[key]; saveProfileToMemory(); switchTab(currentTab); });
-        c.append(tCard);
+        toggleList.append(tCard);
     });
+    c.append(toggleList);
 }
 
 function renderStyleLibrary(c) {
+    c.empty();
+    const root = $(`<div style="display: flex; flex-direction: column;"></div>`);
 
-    const listContainer = $(`<div style="display: flex; flex-direction: column; gap: 12px;"></div>`);
+    const isV7 = localProfile.mode.startsWith("v7");
+    if (isV7 && !localProfile.activeStyleId) {
+        localProfile.activeStyleId = "dir_v7";
+        const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7");
+        if (ds) localProfile.aiRule = ds.rule;
+        saveProfileToMemory();
+    }
+
     const isOff = !localProfile.activeStyleId;
+    const customCount = (localProfile.customStyles || []).length;
+    const existingNames = localProfile.customStyles ? localProfile.customStyles.map(s => s.name) : [];
+    const genCount = hardcodedLogic.styleTemplates.filter(t => !existingNames.includes(t.name)).length;
+    const precookedCount = hardcodedLogic.directStyles.length;
 
-    // --- 1. THE OFF CARD ---
-    const offCard = $(`
-        <div class="ps-card ${isOff ? 'selected' : ''}" style="width: 100%; padding: 16px; flex-direction: row; align-items: center; justify-content: space-between; border-color: ${isOff ? 'var(--text-main)' : 'var(--border-color)'};">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <i class="fa-solid fa-power-off" style="font-size: 1.2rem; color: ${isOff ? '#000' : 'var(--text-muted)'};"></i>
+    // Find active style name
+    let activeStyleName = "Off";
+    if (!isOff) {
+        const ds = hardcodedLogic.directStyles.find(d => d.id === localProfile.activeStyleId);
+        if (ds) activeStyleName = ds.name;
+        else {
+            const cs = (localProfile.customStyles || []).find(s => s.id === localProfile.activeStyleId);
+            if (cs) activeStyleName = cs.name;
+        }
+    }
+
+    // ── HEADER ──
+    root.append(`
+        <div class="wstyle-header">
+            <div class="wstyle-header-left">
+                <div class="wstyle-header-icon"><i class="fa-solid fa-pen-nib"></i></div>
                 <div>
-                    <div style="font-weight: 700; font-size: 1rem; color: ${isOff ? '#000' : 'var(--text-main)'};">No Style (Off)</div>
-                    <div style="font-size: 0.75rem; color: ${isOff ? '#444' : 'var(--text-muted)'};">Disable extra style directives.</div>
+                    <h2>Writing Style</h2>
+                    <p>Apply a prebuilt style, generate one with AI, or craft your own.</p>
                 </div>
             </div>
-            ${isOff ? `<span style="font-weight: 800; font-size: 0.7rem; color: #000; text-transform: uppercase;"><i class="fa-solid fa-check"></i> Active</span>` : ''}
+            <div class="wstyle-active-badge ${isOff ? 'off' : ''}">
+                <i class="fa-solid ${isOff ? 'fa-power-off' : 'fa-circle-check'}"></i>
+                ${isOff ? 'No Style Active' : activeStyleName}
+            </div>
+        </div>
+    `);
+
+    // ── OFF CARD ──
+    const offCard = $(`
+        <div class="wstyle-off-card ${isOff ? 'active' : ''}">
+            <div class="off-left">
+                <div class="off-icon"><i class="fa-solid fa-power-off"></i></div>
+                <div>
+                    <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">No Style (Off)</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Let the engine decide — no extra style directives injected.</div>
+                </div>
+            </div>
+            ${isOff ? `<span class="card-status active-status"><i class="fa-solid fa-check"></i> Active</span>` : ''}
         </div>
     `);
     offCard.on("click", () => { localProfile.activeStyleId = null; localProfile.aiRule = ""; saveProfileToMemory(); renderStyleLibrary(c); });
-    listContainer.append(offCard);
 
-    // --- 2. DIALOGUE / NARRATION RATIO UI ---
+    if (!isV7) {
+        root.append(offCard);
+    } else {
+        const v7LockCard = $(`
+            <div class="wstyle-off-card locked-card" style="opacity: 0.7; cursor: not-allowed; border: 1px solid rgba(59,130,246,0.3);">
+                <div class="off-left">
+                    <div class="off-icon" style="background: rgba(59,130,246,0.2); color: #3b82f6;"><i class="fa-solid fa-lock"></i></div>
+                    <div>
+                        <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">No Style (Off) - Locked</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">V7 Engines require a narrative style directive. Defaulting to V7 Recommended.</div>
+                    </div>
+                </div>
+            </div>
+        `);
+        root.append(v7LockCard);
+    }
+
+    // ── DIALOGUE / NARRATION RATIO ──
     if (!localProfile.dnRatio) localProfile.dnRatio = { enabled: false, dialogue: 50 };
     const isDNR = localProfile.dnRatio.enabled;
     const dVal = localProfile.dnRatio.dialogue;
 
-    const dnrBlock = $(`
-        <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 15px; margin-top: 5px; margin-bottom: 10px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <i class="fa-solid fa-scale-balanced" style="font-size: 1.2rem; color: var(--gold);"></i>
+    const dnrPanel = $(`
+        <div class="wstyle-dnr-panel">
+            <div class="wstyle-dnr-header" id="dnr_header_toggle">
+                <div class="dnr-info">
+                    <div class="dnr-icon"><i class="fa-solid fa-scale-balanced"></i></div>
                     <div>
-                        <div style="font-weight: 700; font-size: 1rem; color: var(--text-main);">Dialogue / Narration Ratio</div>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">Force the AI to favor spoken dialogue or descriptive narration via [[DNRATIO]].</div>
+                        <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">Dialogue / Narration Ratio</div>
+                        <div style="font-size: 0.73rem; color: var(--text-muted);">Fine‑tune the balance between spoken dialogue and descriptive prose.</div>
                     </div>
                 </div>
-                <div class="ps-toggle-card ${isDNR ? 'active' : ''}" id="dnr_toggle" style="padding: 10px; min-width: 64px; justify-content: center; cursor: pointer;">
+                <div class="ps-toggle-card ${isDNR ? 'active' : ''}" id="dnr_toggle" style="padding: 8px; min-width: 56px; justify-content: center; cursor: pointer;">
                     <div class="ps-switch"></div>
                 </div>
             </div>
-            <div id="dnr_slider_container" style="display: ${isDNR ? 'block' : 'none'}; margin-top: 15px;">
-                <div style="display: flex; align-items: center; gap: 15px; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color);">
-                    <span style="font-size: 0.8rem; font-weight: bold; color: #a855f7; width: 110px; text-align: right;"><span id="lbl_narr">${100 - dVal}</span>% Narration</span>
-                    <input type="range" id="dnr_slider" min="0" max="100" step="10" value="${dVal}" style="flex: 1; cursor: pointer; accent-color: var(--gold);">
-                    <span style="font-size: 0.8rem; font-weight: bold; color: #10b981; width: 110px;"><span id="lbl_dial">${dVal}</span>% Dialogue</span>
+            <div class="wstyle-dnr-body ${isDNR ? 'open' : ''}" id="dnr_body">
+                <div class="wstyle-dnr-slider-track">
+                    <span class="wstyle-dnr-label narr"><span id="lbl_narr">${100 - dVal}</span>% Narration</span>
+                    <input type="range" id="dnr_slider" min="0" max="100" step="10" value="${dVal}">
+                    <span class="wstyle-dnr-label dial"><span id="lbl_dial">${dVal}</span>% Dialogue</span>
                 </div>
-                <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 8px; font-family: monospace;">
-                    Injection Preview: "- Ratio: Maintain a balance of <span id="lbl_prev_d">${dVal}</span>% Dialogue and <span id="lbl_prev_n">${100 - dVal}</span>% Narration."
+                <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 10px; font-family: monospace; opacity: 0.7;">
+                    Preview → "Maintain a balance of <span id="lbl_prev_d">${dVal}</span>% Dialogue and <span id="lbl_prev_n">${100 - dVal}</span>% Narration."
                 </div>
             </div>
         </div>
     `);
-
-    dnrBlock.find("#dnr_toggle").on("click", function () {
+    dnrPanel.find("#dnr_toggle").on("click", function (e) {
+        e.stopPropagation();
         localProfile.dnRatio.enabled = !localProfile.dnRatio.enabled; saveProfileToMemory(); renderStyleLibrary(c);
     });
-    dnrBlock.find("#dnr_slider").on("input", function () {
+    dnrPanel.find("#dnr_slider").on("input", function () {
         let d = parseInt($(this).val()); let n = 100 - d;
         $("#lbl_dial, #lbl_prev_d").text(d); $("#lbl_narr, #lbl_prev_n").text(n);
     });
-    dnrBlock.find("#dnr_slider").on("change", function () {
+    dnrPanel.find("#dnr_slider").on("change", function () {
         localProfile.dnRatio.dialogue = parseInt($(this).val()); saveProfileToMemory();
     });
-    listContainer.append(dnrBlock);
+    root.append(dnrPanel);
 
-    // --- 3. FILTER BUTTONS ---
-    const filterContainer = $(`
-        <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
-            <button class="ps-modern-tag style-filter-btn selected" data-filter="all" style="margin:0; border-radius: 20px; padding: 6px 16px;">All Styles</button>
-            <button class="ps-modern-tag style-filter-btn" data-filter="precooked" style="margin:0; border-radius: 20px; padding: 6px 16px;">Precooked</button>
-            <button class="ps-modern-tag style-filter-btn" data-filter="generators" style="margin:0; border-radius: 20px; padding: 6px 16px;">AI Generators</button>
-            <button class="ps-modern-tag style-filter-btn" data-filter="custom" style="margin:0; border-radius: 20px; padding: 6px 16px;">My Library</button>
+    // ── FILTER PILLS ──
+    const filterBar = $(`
+        <div class="wstyle-filters">
+            <button class="wstyle-filter-pill active" data-filter="all">All <span class="pill-count">${precookedCount + customCount + genCount}</span></button>
+            <button class="wstyle-filter-pill" data-filter="precooked"><i class="fa-solid fa-fire-burner" style="font-size:0.7rem;"></i> Precooked <span class="pill-count">${precookedCount}</span></button>
+            <button class="wstyle-filter-pill" data-filter="custom"><i class="fa-solid fa-book" style="font-size:0.7rem;"></i> My Library <span class="pill-count">${customCount}</span></button>
+            <button class="wstyle-filter-pill" data-filter="generators"><i class="fa-solid fa-wand-magic-sparkles" style="font-size:0.7rem;"></i> AI Generators <span class="pill-count">${genCount}</span></button>
         </div>
     `);
-    listContainer.append(filterContainer);
+    root.append(filterBar);
 
-    // --- SECTIONS ---
-    const secPrecooked = $(`<div class="style-section" data-section="precooked" style="display: flex; flex-direction: column; gap: 12px;"></div>`);
-    const secGenerators = $(`<div class="style-section" data-section="generators" style="display: flex; flex-direction: column; gap: 12px;"></div>`);
-    const secCustom = $(`<div class="style-section" data-section="custom" style="display: flex; flex-direction: column; gap: 12px;"></div>`);
+    // ── SECTIONS ──
+    const secPrecooked = $(`<div class="style-section" data-section="precooked"></div>`);
+    const secCustom = $(`<div class="style-section" data-section="custom"></div>`);
+    const secGenerators = $(`<div class="style-section" data-section="generators"></div>`);
 
-    // A. Precooked Styles (Hardcoded, no AI generation needed)
-    secPrecooked.append(`<div class="ps-stages-label" style="margin-top: 5px; color: var(--gold);"><i class="fa-solid fa-fire-burner"></i> Precooked Styles (Instant)</div>`);
+    // —— A. PRECOOKED STYLES ——
+    secPrecooked.append(`<div class="wstyle-section-head gold"><i class="fa-solid fa-fire-burner"></i> Precooked Styles</div>`);
+    const precookedGrid = $(`<div style="display: flex; flex-direction: column; gap: 10px;"></div>`);
     hardcodedLogic.directStyles.forEach(ds => {
         const isSel = localProfile.activeStyleId === ds.id;
         const card = $(`
-            <div class="ps-card ${isSel ? 'selected' : ''}" style="width: 100%; padding: 16px; flex-direction: column; gap: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <div style="display: flex; flex-direction: column;">
-                        <span style="font-weight: 700; font-size: 1rem; color: ${isSel ? '#000' : 'var(--text-main)'};">${ds.name}</span>
-                        <span style="font-size: 0.75rem; color: ${isSel ? '#333' : 'var(--text-muted)'}; margin-top: 2px;">${ds.desc}</span>
+            <div class="wstyle-card ${isSel ? 'active' : ''}">
+                <div class="card-accent"></div>
+                <div class="card-body">
+                    <div class="card-top">
+                        <div style="flex:1;">
+                            <div class="card-title"><i class="fa-solid fa-bolt" style="font-size:0.7rem; color: var(--gold);"></i> ${ds.name}</div>
+                            <p class="card-desc">${ds.desc}</p>
+                        </div>
+                        ${isSel ? `<span class="card-status active-status"><i class="fa-solid fa-check"></i> Active</span>` : ''}
                     </div>
-                    ${isSel ? `<span style="font-weight: 800; font-size: 0.7rem; color: #000; text-transform: uppercase;"><i class="fa-solid fa-check"></i> ACTIVE</span>` : ''}
-                </div>
-                <div style="font-size: 0.75rem; font-family: monospace; background: ${isSel ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'}; padding: 8px; border-radius: 4px; border: 1px solid ${isSel ? 'rgba(0,0,0,0.2)' : 'var(--border-color)'}; color: ${isSel ? '#333' : 'var(--text-muted)'};">
-                    ${ds.rule}
+                    <div class="card-rule">${ds.rule}</div>
                 </div>
             </div>
         `);
         card.on("click", () => {
             localProfile.activeStyleId = ds.id; localProfile.aiRule = ds.rule; saveProfileToMemory(); renderStyleLibrary(c);
         });
-        secPrecooked.append(card);
+        precookedGrid.append(card);
     });
+    secPrecooked.append(precookedGrid);
 
-    // B. Custom Styles (My Library)
-    secCustom.append(`<div class="ps-stages-label" style="margin-top: 5px; color: #10b981;"><i class="fa-solid fa-book"></i> My Library</div>`);
-    const existingNames = localProfile.customStyles ? localProfile.customStyles.map(s => s.name) : [];
+    // —— B. CUSTOM STYLES (My Library) ——
+    secCustom.append(`<div class="wstyle-section-head green"><i class="fa-solid fa-book"></i> My Library</div>`);
+    const customGrid = $(`<div style="display: flex; flex-direction: column; gap: 10px;"></div>`);
     if (localProfile.customStyles && localProfile.customStyles.length > 0) {
         localProfile.customStyles.forEach(style => {
             const isSel = localProfile.activeStyleId === style.id;
             const card = $(`
-                <div class="ps-card ${isSel ? 'selected' : ''}" style="width: 100%; padding: 16px; flex-direction: column; gap: 10px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                        <span style="font-weight: 700; font-size: 1rem; color: ${isSel ? '#000' : 'var(--text-main)'};">${style.name}</span>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                             <span class="ps-btn-regen" title="Regenerate" style="font-size: 0.7rem; cursor: pointer; color: ${isSel ? '#d97706' : 'var(--gold)'}; font-weight: bold; text-transform: uppercase;"><i class="fa-solid fa-rotate-right"></i> Redo</span>
-                             ${isSel ? `<span style="font-weight: 800; font-size: 0.7rem; color: #000;"><i class="fa-solid fa-check"></i> ACTIVE</span>` : ''}
+                <div class="wstyle-card ${isSel ? 'active' : ''}">
+                    <div class="card-accent"></div>
+                    <div class="card-body">
+                        <div class="card-top">
+                            <div class="card-title">${style.name}</div>
+                            ${isSel ? `<span class="card-status active-status"><i class="fa-solid fa-check"></i> Active</span>` : ''}
                         </div>
-                    </div>
-                    <div style="font-size: 0.75rem; font-family: monospace; background: ${isSel ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'}; padding: 8px; border-radius: 4px; border: 1px solid ${isSel ? 'rgba(0,0,0,0.2)' : 'var(--border-color)'}; max-height: 50px; overflow: hidden; color: ${isSel ? '#333' : 'var(--text-muted)'};">
-                        ${style.rule || "No rule generated."}
-                    </div>
-                    <div style="display: flex; gap: 8px;">
-                        <button class="ps-btn-edit ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.7rem; color: ${isSel ? '#000' : 'var(--text-main)'}; border-color: ${isSel ? '#000' : 'var(--border-color)'};">Edit</button>
-                        <button class="ps-btn-delete ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.7rem; color: #ef4444; border-color: rgba(239,68,68,0.2);">Delete</button>
+                        <div class="card-rule">${style.rule || "No rule generated yet."}</div>
+                        <div class="card-actions">
+                            <button class="ps-btn-edit"><i class="fa-solid fa-pen"></i> Edit</button>
+                            <button class="act-regen ps-btn-regen"><i class="fa-solid fa-rotate-right"></i> Redo</button>
+                            <button class="act-delete ps-btn-delete"><i class="fa-solid fa-trash-can"></i> Delete</button>
+                        </div>
                     </div>
                 </div>
             `);
             card.on("click", (e) => {
-                if ($(e.target).closest("button, .ps-btn-regen").length) return;
+                if ($(e.target).closest("button").length) return;
                 localProfile.activeStyleId = style.id; localProfile.aiRule = style.rule; saveProfileToMemory(); renderStyleLibrary(c);
             });
             card.find(".ps-btn-edit").on("click", () => renderStyleEditor(c, style.id));
@@ -685,29 +885,32 @@ function renderStyleLibrary(c) {
                     saveProfileToMemory(); renderStyleLibrary(c); toastr.success("Rule Regenerated!");
                 });
             });
-            secCustom.append(card);
+            customGrid.append(card);
         });
     }
-    const addBtn = $(`
-        <div class="ps-card" style="width: 100%; padding: 16px; border-style: dashed; border-color: #52525b; justify-content: center; background: transparent; cursor: pointer;">
-            <div style="font-weight: 700; color: var(--text-muted);"><i class="fa-solid fa-plus"></i> Create Custom AI Style</div>
+    // Create new style card
+    const createCard = $(`
+        <div class="wstyle-create-card">
+            <i class="fa-solid fa-plus"></i> Create Custom AI Style
         </div>
     `);
-    addBtn.on("click", () => renderStyleEditor(c, null));
-    secCustom.append(addBtn);
+    createCard.on("click", () => renderStyleEditor(c, null));
+    customGrid.append(createCard);
+    secCustom.append(customGrid);
 
-    // C. AI Generators (Templates)
-    secGenerators.append(`<div class="ps-stages-label" style="margin-top: 5px; color: #a855f7;"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Style Generators</div>`);
+    // —— C. AI GENERATORS ——
+    secGenerators.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Style Generators</div>`);
+    const genGrid = $(`<div style="display: flex; flex-direction: column; gap: 10px;"></div>`);
     hardcodedLogic.styleTemplates.forEach(tpl => {
         if (existingNames.includes(tpl.name)) return;
         const card = $(`
-            <div class="ps-card" style="width: 100%; padding: 16px; border-style: dashed; flex-direction: row; justify-content: space-between; align-items: center;">
-                <div style="flex: 1; padding-right: 20px;">
-                    <div style="font-weight: 700; color: var(--text-main); font-size: 1rem; margin-bottom: 4px;">${tpl.name}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.4;">${tpl.notes}</div>
+            <div class="wstyle-gen-card">
+                <div class="gen-info">
+                    <div class="gen-title">${tpl.name}</div>
+                    <div class="gen-desc">${tpl.notes}</div>
                 </div>
-                <button class="ps-btn-tpl-gen ps-modern-btn primary" style="background: var(--gold); color: #000; padding: 8px 16px; font-weight: 800;">
-                    <i class="fa-solid fa-bolt"></i> GENERATE
+                <button class="wstyle-gen-btn ps-btn-tpl-gen">
+                    <i class="fa-solid fa-bolt"></i> Generate
                 </button>
             </div>
         `);
@@ -722,19 +925,19 @@ function renderStyleLibrary(c) {
                 saveProfileToMemory(); renderStyleLibrary(c); toastr.success(`${tpl.name} Added!`);
             });
         });
-        secGenerators.append(card);
+        genGrid.append(card);
     });
+    secGenerators.append(genGrid);
 
-    listContainer.append(secPrecooked);
-    listContainer.append(secCustom);
-    listContainer.append(secGenerators);
-    c.empty().append(listContainer);
+    root.append(secPrecooked);
+    root.append(secCustom);
+    root.append(secGenerators);
+    c.append(root);
 
-    // --- FILTER LOGIC ---
-    filterContainer.find('.style-filter-btn').on('click', function () {
-        filterContainer.find('.style-filter-btn').removeClass('selected');
-        $(this).addClass('selected');
-
+    // ── FILTER LOGIC ──
+    filterBar.find('.wstyle-filter-pill').on('click', function () {
+        filterBar.find('.wstyle-filter-pill').removeClass('active');
+        $(this).addClass('active');
         const filter = $(this).attr('data-filter');
         if (filter === "all") {
             secPrecooked.show(); secGenerators.show(); secCustom.show();
@@ -758,17 +961,28 @@ function renderStyleEditor(c, editId, presetData = null) {
         hardcodedLogic.styleTemplates.forEach((tpl, index) => { templateOptions += `<option value="${index}">${tpl.name}</option>`; });
     }
 
+    // ── TEMPLATE DROPDOWN ──
     c.append(`
-        <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-            <select id="ps_style_template_dropdown" class="ps-modern-input" style="flex: 1; font-weight: 600; color: var(--gold); border-color: var(--gold); cursor: pointer;">${templateOptions}</select>
-        </div>
-        <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center;">
-            <input type="text" id="ps_style_name" class="ps-modern-input" value="${currentStyle.name}" placeholder="Name your style (e.g. Fast RP + Edo)" style="flex: 1; font-size: 1.1rem; font-weight: bold;" />
-            <button id="ps_btn_save_style" class="ps-modern-btn primary" style="background: #10b981; color: #fff;"><i class="fa-solid fa-floppy-disk"></i> Save & Return</button>
-            <button id="ps_btn_cancel_style" class="ps-modern-btn secondary" style="color: #ef4444; border-color: rgba(239,68,68,0.3);">Cancel</button>
+        <div style="margin-bottom: 16px;">
+            <select id="ps_style_template_dropdown" class="ps-modern-input" style="font-weight: 600; color: var(--gold); border-color: rgba(245,158,11,0.3); cursor: pointer;">${templateOptions}</select>
         </div>
     `);
 
+    // ── EDITOR TOP BAR ──
+    c.append(`
+        <div class="wstyle-editor-bar">
+            <i class="fa-solid fa-pen-nib" style="color: #a855f7; font-size: 1.1rem;"></i>
+            <input type="text" id="ps_style_name" value="${currentStyle.name}" placeholder="Name your style…" />
+            <button id="ps_btn_save_style" class="ps-modern-btn primary" style="background: #10b981; color: #fff; padding: 8px 18px; white-space: nowrap;">
+                <i class="fa-solid fa-floppy-disk"></i> Save
+            </button>
+            <button id="ps_btn_cancel_style" class="ps-modern-btn secondary" style="color: var(--text-muted); padding: 8px 18px; white-space: nowrap;">
+                <i class="fa-solid fa-arrow-left"></i> Back
+            </button>
+        </div>
+    `);
+
+    // ── TEMPLATE CHANGE ──
     $("#ps_style_template_dropdown").on("change", function () {
         const tplIndex = $(this).val(); if (tplIndex === null) return;
         const chosenTpl = hardcodedLogic.styleTemplates[tplIndex];
@@ -776,50 +990,67 @@ function renderStyleEditor(c, editId, presetData = null) {
         renderStyleEditor(c, editId, currentStyle); toastr.info(`${chosenTpl.name} loaded!`);
     });
 
-    const tagContainer = $(`<div></div>`);
+    // ── TAG CATEGORIES ──
+    const tagContainer = $(`<div class="wstyle-tag-section"></div>`);
     hardcodedLogic.styles.forEach(cat => {
-        const wrap = $(`<div class="ps-tag-category"><div class="ps-rule-title" style="margin-bottom: 8px; color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">${cat.category}</div><div style="display: flex; flex-wrap: wrap; gap: 6px;"></div></div>`);
-        const tagBox = wrap.find("div").eq(1);
+        const catWrap = $(`<div style="margin-bottom: 18px;"></div>`);
+        catWrap.append(`<div class="wstyle-tag-cat-title">${cat.category}</div>`);
+        const grid = $(`<div class="wstyle-tag-grid"></div>`);
         cat.tags.forEach(tagObj => {
             const tagName = tagObj.id; const isSel = currentStyle.tags.includes(tagName);
-            const tEl = $(`<span class="ps-modern-tag ${isSel ? 'selected' : ''}" data-hint="${tagObj.hint}">${tagName}</span>`);
+            const tEl = $(`<span class="wstyle-tag ${isSel ? 'selected' : ''}" data-hint="${tagObj.hint}">${tagName}</span>`);
             tEl.on("click", () => {
                 if (currentStyle.tags.includes(tagName)) currentStyle.tags = currentStyle.tags.filter(t => t !== tagName); else currentStyle.tags.push(tagName);
                 tEl.toggleClass("selected");
-            }); tagBox.append(tEl);
-        }); tagContainer.append(wrap);
+            }); grid.append(tEl);
+        }); catWrap.append(grid); tagContainer.append(catWrap);
     }); c.append(tagContainer);
 
+    // ── AI INSIGHTS PANEL ──
     c.append(`
-        <div style="margin-top: 32px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <div class="ps-rule-title" style="color: var(--text-main); font-size: 0.9rem; font-weight: 700;">
-                    <i class="fa-solid fa-sparkles" style="color: var(--gold); margin-right: 6px;"></i> AI Author Matches
+        <div class="wstyle-insights-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-sparkles" style="color: var(--gold); font-size: 0.9rem;"></i>
+                    <span style="font-weight: 700; font-size: 0.88rem; color: var(--text-main);">AI Author Matches</span>
                 </div>
-                <button id="ps_btn_get_authors_style" class="ps-modern-btn secondary" style="padding: 6px 14px; font-size: 0.75rem;"><i class="fa-solid fa-lightbulb"></i> Generate Insights</button>
+                <button id="ps_btn_get_authors_style" class="ps-modern-btn secondary" style="padding: 6px 14px; font-size: 0.73rem;">
+                    <i class="fa-solid fa-lightbulb"></i> Generate Insights
+                </button>
             </div>
-            <div id="ps_ai_author_box_style" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; min-height: 20px;"></div>
-            <hr style="border: 0; border-top: 1px dashed var(--border-color); margin: 0 0 16px 0;" />
-            <input type="text" id="ps_style_notes" class="ps-modern-input" placeholder="Custom Directives..." value="${currentStyle.notes || ''}" />
-        </div>
-        <div style="margin-top: 24px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <span style="font-weight: 600; color: var(--text-main); font-size: 0.95rem;">Final Rule</span>
-                <button id="ps_btn_generate_style" class="ps-modern-btn primary" style="padding: 8px 16px; font-size: 0.8rem; background: var(--text-main); color: #000;"><i class="fa-solid fa-bolt"></i> Generate Writing Rule</button>
-            </div>
-            <textarea id="ps_style_rule_text" class="ps-modern-input" style="height: 100px; resize: vertical; font-family: monospace; font-size: 0.85rem;" placeholder="Select tags above and click Generate...">${currentStyle.rule || ''}</textarea>
-            <div style="margin-top: 16px; background: rgba(59, 130, 246, 0.08); border-left: 4px solid #3b82f6; border-radius: 4px; padding: 12px 16px;">
-                <div style="display: flex; align-items: center; gap: 8px; color: #3b82f6; font-weight: 600; font-size: 0.85rem; margin-bottom: 4px;"><i class="fa-solid fa-circle-info"></i> Note</div>
-                <div style="color: var(--text-main); font-size: 0.8rem; line-height: 1.5;">Dont forget to hit save at the top dummy</div>
+            <div id="ps_ai_author_box_style" class="wstyle-tag-grid" style="min-height: 20px; margin-bottom: 14px;"></div>
+            <div style="border-top: 1px dashed var(--border-color); padding-top: 14px;">
+                <input type="text" id="ps_style_notes" class="ps-modern-input" placeholder="Custom directives or inspiration notes…" value="${currentStyle.notes || ''}" />
             </div>
         </div>
     `);
 
+    // ── FINAL RULE PANEL ──
+    c.append(`
+        <div class="wstyle-rule-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-scroll" style="color: #a855f7; font-size: 0.85rem;"></i>
+                    <span style="font-weight: 700; font-size: 0.88rem; color: var(--text-main);">Generated Rule</span>
+                </div>
+                <button id="ps_btn_generate_style" class="wstyle-gen-btn" style="padding: 8px 18px; font-size: 0.78rem;">
+                    <i class="fa-solid fa-bolt"></i> Generate Writing Rule
+                </button>
+            </div>
+            <textarea id="ps_style_rule_text" placeholder="Select tags above and click Generate…">${currentStyle.rule || ''}</textarea>
+            <div class="wstyle-info-callout">
+                <i class="fa-solid fa-circle-info"></i>
+                <span>After generating or editing your rule, hit <strong>Save</strong> in the toolbar above to apply it to your library.</span>
+            </div>
+        </div>
+    `);
+
+    // ── INSIGHTS RENDERING ──
     const renderInsights = () => {
         const box = $("#ps_ai_author_box_style"); box.empty();
         (currentStyle.generatedOptions || []).forEach(tag => {
             const isSel = currentStyle.tags.includes(tag);
-            const tEl = $(`<span class="ps-modern-tag ${isSel ? 'selected' : ''}">${tag.replace(" ✨", "")} <i class="fa-solid fa-sparkles" style="font-size:0.6rem; margin-left:4px; color:var(--gold);"></i></span>`);
+            const tEl = $(`<span class="wstyle-tag ${isSel ? 'selected' : ''}">${tag.replace(" ✨", "")} <i class="fa-solid fa-sparkles" style="font-size:0.55rem; margin-left:3px; color:var(--gold);"></i></span>`);
             tEl.on("click", () => {
                 if (isSel) currentStyle.tags = currentStyle.tags.filter(t => t !== tag); else currentStyle.tags.push(tag);
                 tEl.toggleClass("selected");
@@ -828,6 +1059,7 @@ function renderStyleEditor(c, editId, presetData = null) {
     };
     renderInsights();
 
+    // ── EVENT BINDINGS ──
     $("#ps_style_notes").on("input", function () { currentStyle.notes = $(this).val(); });
     $("#ps_style_rule_text").on("input", function () { currentStyle.rule = $(this).val(); });
     $("#ps_style_name").on("input", function () { currentStyle.name = $(this).val(); });
@@ -847,7 +1079,7 @@ function renderStyleEditor(c, editId, presetData = null) {
         await useMeguminEngine(async () => {
             const orderText = `Based on the active characters and scenario, give me EXACTLY 2 famous author names or literary writing styles (e.g. Edgar Allan Poe, Jane Austen style, Dark Fantasy Author) and 5 tags that fit the rp (e.g. internet culture, femboy, virtual game) whose writing style perfectly fits the tone and world. Return ONLY the 7 items separated by a comma. Do not explain them.`;
             let aiRawOutput = await runMeguminTask(orderText);
-            const aiTagsTemp = cleanAIOutput(aiRawOutput).split(",").map(t => t.trim().replace(/['"\[\]\.]/g, '')).filter(t => t.length > 0);
+            const aiTagsTemp = cleanAIOutput(aiRawOutput).split(",").map(t => t.trim().replace(/['"[\].]/g, '')).filter(t => t.length > 0);
             if (aiTagsTemp.length > 0) {
                 currentStyle.tags = currentStyle.tags.filter(tag => !tag.endsWith("✨"));
                 currentStyle.generatedOptions = aiTagsTemp.map(tag => `${tag} ✨`);
@@ -877,34 +1109,61 @@ function renderAddons(c) {
         "npc_events": "Requires all new story events to grow naturally from prior context or environmental cues — no random drama out of nowhere. V6 only.",
         "dn": "Forces dialogue and narration to be wrapped in their respective XML tags. Useful for specific Models for better narration style adherence."
     };
-    const grid = $(`<div class="ps-grid"></div>`);
 
-    // Only declared ONCE here.
     const activeMode = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
     const isV6 = activeMode && (activeMode.id.includes("v6") || activeMode.label.includes("V6"));
 
-    // Add standard hardcoded addons
+    // ── HEADER ──
+    c.append(`
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);">
+                    <i class="fa-solid fa-puzzle-piece"></i>
+                </div>
+                <div>
+                    <h2>Global Settings</h2>
+                    <p>Toggle add-ons, set output preferences, and configure extras.</p>
+                </div>
+            </div>
+            <div class="mtab-header-badge" style="background: rgba(59,130,246,0.12); color: #3b82f6; border: 1px solid rgba(59,130,246,0.25);">
+                <i class="fa-solid fa-toggle-on" style="font-size:0.6rem;"></i> ${localProfile.addons.length} Active
+            </div>
+        </div>
+    `);
+
+    // ── ADDON CARDS ──
+    c.append(`<div class="wstyle-section-head blue"><i class="fa-solid fa-puzzle-piece"></i> Gameplay Add-ons</div>`);
+    const grid = $(`<div class="mtab-card-grid"></div>`);
+
     hardcodedLogic.addons.forEach(a => {
         const isSel = localProfile.addons.includes(a.id);
-        const recText = a.recommended ? `<span class="ps-rec-text"><i class="fa-solid fa-star"></i> Recommended</span>` : '';
+        let badges = '';
+        if (a.recommended) badges += `<span class="ecard-badge rec"><i class="fa-solid fa-star"></i> Recommended</span>`;
 
-        let disabledStyle = "";
-        let v6Badge = "";
-
+        let extraClass = '';
+        let v6BadgeHtml = '';
         if (a.id === "npc_events") {
             if (!isV6) {
-                disabledStyle = "opacity: 0.4; filter: grayscale(100%); pointer-events: none;";
-                v6Badge = `<div style="color: #ef4444; font-size: 0.65rem; font-weight: 800; margin-top: 10px;"><i class="fa-solid fa-lock"></i> REQUIRES V6 ENGINE</div>`;
+                extraClass = 'locked-card';
+                v6BadgeHtml = `<span class="ecard-badge" style="background:rgba(239,68,68,0.12);color:#ef4444;"><i class="fa-solid fa-lock"></i> Requires V6</span>`;
             } else {
-                v6Badge = `<div style="color: #10b981; font-size: 0.65rem; font-weight: 800; margin-top: 10px;"><i class="fa-solid fa-unlock"></i> V6 ACTIVE</div>`;
+                v6BadgeHtml = `<span class="ecard-badge v6-active"><i class="fa-solid fa-unlock"></i> V6 Active</span>`;
             }
         }
 
-        const card = $(`<div class="ps-card ${isSel ? 'selected' : ''}" style="${disabledStyle}">
-            <div class="ps-card-title"><span>${a.label}</span> ${recText}</div>
-            <div class="ps-card-desc">${descriptions[a.id] || ""}</div>
-            ${v6Badge}
-        </div>`);
+        const card = $(`
+            <div class="mtab-eng-card ${isSel ? 'active' : ''} ${extraClass}">
+                <div class="ecard-accent"></div>
+                <div class="ecard-body">
+                    <div class="ecard-title">
+                        <span>${a.label}</span>
+                        ${isSel ? `<span class="ecard-badge" style="background:rgba(16,185,129,0.15);color:#10b981;"><i class="fa-solid fa-check"></i> On</span>` : ''}
+                    </div>
+                    <p class="ecard-desc">${descriptions[a.id] || ""}</p>
+                    ${badges || v6BadgeHtml ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">${badges}${v6BadgeHtml}</div>` : ''}
+                </div>
+            </div>
+        `);
 
         card.on("click", () => {
             if (isSel) localProfile.addons = localProfile.addons.filter(i => i !== a.id); else localProfile.addons.push(a.id);
@@ -912,89 +1171,89 @@ function renderAddons(c) {
         }); grid.append(card);
     });
 
+    // Onomatopoeia card
     if (!localProfile.onomatopoeia) localProfile.onomatopoeia = { enabled: false, useStyling: false };
     const isOno = localProfile.onomatopoeia.enabled;
     const isOnoStyle = localProfile.onomatopoeia.useStyling;
 
     const onoCard = $(`
-        <div class="ps-card ${isOno ? 'selected' : ''}" style="display: flex; flex-direction: column; justify-content: flex-start;">
-            <div class="ps-card-title"><span>Cinematic Sounds (onomatopoeia)</span></div>
-            <div class="ps-card-desc">Force the AI to use precise phonetic sound words (e.g., click, thud) instead of abstract descriptions.</div>
-            
-            <div style="display: ${isOno ? 'flex' : 'none'}; width: 100%; margin-top: 15px; padding-top: 12px; border-top: 1px dashed rgba(0,0,0,0.2); justify-content: space-between; align-items: center;">
-                <div style="display:flex; flex-direction:column; flex: 1; padding-right: 10px;">
-                    <span style="font-weight:700; font-size: 0.75rem; color: #000;">Animate Sounds</span>
-                    <span style="font-size: 0.65rem; color: #444; line-height: 1.2;">Wrap in HTML tags. For capable AI only.</span>
+        <div class="mtab-eng-card ${isOno ? 'active' : ''}">
+            <div class="ecard-accent"></div>
+            <div class="ecard-body">
+                <div class="ecard-title">
+                    <span>Cinematic Sounds</span>
+                    ${isOno ? `<span class="ecard-badge" style="background:rgba(16,185,129,0.15);color:#10b981;"><i class="fa-solid fa-check"></i> On</span>` : ''}
                 </div>
-                <div class="ps-toggle-card ${isOnoStyle ? 'active' : ''}" id="ono_inner_toggle" style="padding: 4px; min-width: 44px; justify-content: center; background: transparent; border-color: ${isOnoStyle ? '#10b981' : 'rgba(0,0,0,0.3)'};">
-                    <div class="ps-switch" style="transform: scale(0.75); ${isOnoStyle ? 'background: #10b981;' : 'background: rgba(0,0,0,0.4);'}"></div>
+                <p class="ecard-desc">Force the AI to use precise phonetic sound words (e.g., click, thud) instead of abstract descriptions.</p>
+                <div style="display: ${isOno ? 'flex' : 'none'}; margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--border-color); justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight:700; font-size: 0.75rem; color: var(--text-main);">Animate Sounds</div>
+                        <div style="font-size: 0.65rem; color: var(--text-muted);">Wrap in HTML tags. For capable AI only.</div>
+                    </div>
+                    <div class="ps-toggle-card ${isOnoStyle ? 'active' : ''}" id="ono_inner_toggle" style="padding: 4px; min-width: 44px; justify-content: center; background: transparent; border-color: ${isOnoStyle ? '#10b981' : 'var(--border-color)'};">
+                        <div class="ps-switch" style="transform: scale(0.75); ${isOnoStyle ? 'background: #10b981;' : ''}"></div>
+                    </div>
                 </div>
             </div>
         </div>
     `);
-
     onoCard.on("click", (e) => {
         if ($(e.target).closest("#ono_inner_toggle").length) {
             localProfile.onomatopoeia.useStyling = !localProfile.onomatopoeia.useStyling;
-            saveProfileToMemory(); switchTab(currentTab);
-            return;
+            saveProfileToMemory(); switchTab(currentTab); return;
         }
         localProfile.onomatopoeia.enabled = !localProfile.onomatopoeia.enabled;
         saveProfileToMemory(); switchTab(currentTab);
     });
-
     grid.append(onoCard);
     c.append(grid);
 
+    // ── CUSTOM ENGINE SETTINGS ──
     if (activeMode && activeMode.customToggles) {
         const customSettings = activeMode.customToggles.filter(t => t.location === "settings");
         if (customSettings.length > 0) {
-            c.append(`<div class="ps-rule-title" style="margin-top: 10px; margin-bottom:10px; color: #10b981;">Custom Engine Settings</div>`);
+            c.append(`<div class="wstyle-section-head green" style="margin-top:16px;"><i class="fa-solid fa-gear"></i> Custom Engine Settings</div>`);
+            const toggleList = $(`<div class="mtab-card-list"></div>`);
             customSettings.forEach(cs => {
                 const isSel = !!localProfile.toggles[cs.id];
-                const tCard = $(`<div class="ps-toggle-card ${isSel ? 'active' : ''}" style="border-color: ${isSel ? '#10b981' : 'var(--border-color)'};">
-                    <div style="display:flex; flex-direction:column;">
-                        <span style="font-weight:600; color: ${isSel ? '#10b981' : 'var(--text-main)'};">${cs.name}</span>
-                        <div style="margin-top:4px; font-size:0.7rem; color:var(--text-muted);">Custom Module Attached to [[${cs.attachPoint}]]</div>
+                const tCard = $(`
+                    <div class="mtab-toggle-row ${isSel ? 'active' : ''}" style="${isSel ? 'border-color:#10b981;' : ''}">
+                        <div class="toggle-info">
+                            <div class="toggle-label" style="${isSel ? 'color:#10b981;' : ''}">${cs.name}</div>
+                            <div class="toggle-desc">Custom Module → [[${cs.attachPoint}]]</div>
+                        </div>
+                        <div class="ps-switch" style="${isSel ? 'background:#10b981;' : ''}"></div>
                     </div>
-                    <div class="ps-switch" style="${isSel ? 'background:#10b981;' : ''}"></div>
-                </div>`);
+                `);
                 tCard.on("click", () => { localProfile.toggles[cs.id] = !localProfile.toggles[cs.id]; saveProfileToMemory(); switchTab(currentTab); });
-                c.append(tCard);
+                toggleList.append(tCard);
             });
+            c.append(toggleList);
         }
     }
 
-    c.append(`
-        <div style="margin-top: 32px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 20px;">
-            <div class="ps-rule-title" style="color: var(--text-main); font-size: 0.9rem; font-weight: 700;">
-                <i class="fa-solid fa-earth-americas" style="margin-right: 8px; color: #4a90e2;"></i> Extra
-            </div>
-            
-            <div class="ps-toggle-card ${localProfile.disableUtilityPrefill ? 'active' : ''}" id="ps_toggle_utility_prefill" style="padding: 12px 18px;">
-                <div style="display:flex; flex-direction:column;">
-                    <span style="font-weight:600; font-size: 0.85rem;">Disable Utility Prefills</span>
-                    <div style="margin-top:2px; font-size: 0.75rem; color: var(--text-muted);">Turn this ON if your API (like Claude) errors out during Image Gen, Banlist, or Story Planner generation. Stops the engine from forcing an 'assistant' message.</div>
+    // ── EXTRA SETTINGS PANEL ──
+    c.append(`<div class="wstyle-section-head blue" style="margin-top:16px;"><i class="fa-solid fa-earth-americas"></i> Extra</div>`);
+    const extraPanel = $(`
+        <div class="mtab-panel">
+            <div class="mtab-toggle-row ${localProfile.disableUtilityPrefill ? 'active' : ''}" id="ps_toggle_utility_prefill" style="margin-bottom: 16px;">
+                <div class="toggle-info">
+                    <div class="toggle-label">Disable Utility Prefills</div>
+                    <div class="toggle-desc">Turn this ON if your API (like Claude) errors out during Image Gen, Banlist, or Story Planner generation.</div>
                 </div>
                 <div class="ps-switch"></div>
             </div>
-            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 0;" />
-
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <div style="flex: 1;"><div style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">Target Word Count</div><div style="font-size: 0.75rem; color: var(--text-muted);">Leave empty for no limit</div></div>
-                <input type="number" id="ps_input_wordcount" class="ps-modern-input" style="width: 200px;" placeholder="e.g. 400" value="${localProfile.userWordCount || ''}" min="1" />
+            <div class="mtab-setting-row">
+                <div class="set-info"><div class="set-label">Target Word Count</div><div class="set-desc">Leave empty for no limit</div></div>
+                <input type="number" id="ps_input_wordcount" class="ps-modern-input" style="width: 180px;" placeholder="e.g. 400" value="${localProfile.userWordCount || ''}" min="1" />
             </div>
-            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 0;" />
-            
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <div style="flex: 1;"><div style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">Language Output</div><div style="font-size: 0.75rem; color: var(--text-muted);">Leave empty for default (English)</div></div>
-                <input type="text" id="ps_input_language" class="ps-modern-input" style="width: 200px;" placeholder="e.g. Arabic, French..." value="${localProfile.userLanguage || ''}" />
+            <div class="mtab-setting-row">
+                <div class="set-info"><div class="set-label">Language Output</div><div class="set-desc">Leave empty for default (English)</div></div>
+                <input type="text" id="ps_input_language" class="ps-modern-input" style="width: 180px;" placeholder="e.g. Arabic, French…" value="${localProfile.userLanguage || ''}" />
             </div>
-            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 0;" />
-            
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <div style="flex: 1;"><div style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">User Gender</div><div style="font-size: 0.75rem; color: var(--text-muted);">Ensure the AI addresses you correctly</div></div>
-                <select id="ps_select_pronouns" class="ps-modern-input" style="width: 200px; cursor: pointer;">
+            <div class="mtab-setting-row">
+                <div class="set-info"><div class="set-label">User Gender</div><div class="set-desc">Ensure the AI addresses you correctly</div></div>
+                <select id="ps_select_pronouns" class="ps-modern-input" style="width: 180px; cursor: pointer;">
                     <option value="off" ${localProfile.userPronouns === 'off' ? 'selected' : ''}>Off</option>
                     <option value="male" ${localProfile.userPronouns === 'male' ? 'selected' : ''}>Male (Him/He)</option>
                     <option value="female" ${localProfile.userPronouns === 'female' ? 'selected' : ''}>Female (Her/She)</option>
@@ -1002,6 +1261,7 @@ function renderAddons(c) {
             </div>
         </div>
     `);
+    c.append(extraPanel);
 
     $("#ps_toggle_utility_prefill").on("click", function () {
         localProfile.disableUtilityPrefill = !localProfile.disableUtilityPrefill;
@@ -1015,29 +1275,68 @@ function renderAddons(c) {
 }
 
 function renderBlocks(c) {
-    // RE-DECLARED HERE SAFELY
     const activeEngine = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
     const descriptions = {
         "info": "Appends a tidy status panel after each response showing time, weather, location, and what characters are wearing.",
         "summary": "Keeps a running story digest that the AI updates each turn — helps it remember names, events, and details over long sessions.",
         "cyoa": "Choose-Your-Own-Adventure panel with 4 suggested actions for you to pick from each turn.",
-        "mvu": "Add MVU Compatibility still in test read more here: <a href='https://github.com/KritBlade/MVU_Game_Maker' target='_blank' style='color: var(--gold); text-decoration: underline;'>https://github.com/KritBlade/MVU_Game_Maker</a>"
+        "mvu": "Add MVU Compatibility still in test read more here: <a href='https://github.com/KritBlade/MVU_Game_Maker' target='_blank' style='color: var(--gold); text-decoration: underline;'>https://github.com/KritBlade/MVU_Game_Maker</a>",
+        "npc_inner_chatter": "Reveal NPC private thoughts the PC never hears — crushes, resentment, scheming, anxiety. This feeds future NPC behavior.",
+        "npc_inner_chatter_v2": "A simpler version of NPC Inner Chatter. use less input token."
     };
-    const grid = $(`<div class="ps-grid"></div>`);
+
+    // ── HEADER ──
+    c.append(`
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
+                    <i class="fa-solid fa-cubes"></i>
+                </div>
+                <div>
+                    <h2>Response Blocks</h2>
+                    <p>Attach extra UI panels to every AI response.</p>
+                </div>
+            </div>
+            <div class="mtab-header-badge" style="background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25);">
+                <i class="fa-solid fa-cubes" style="font-size:0.6rem;"></i> ${localProfile.blocks.length} Active
+            </div>
+        </div>
+    `);
+
+    const grid = $(`<div class="mtab-card-grid"></div>`);
     hardcodedLogic.blocks.forEach(b => {
         const isSel = localProfile.blocks.includes(b.id);
-
         const isOverridden = activeEngine && activeEngine[b.id] && activeEngine[b.id].trim() !== "";
-        const overrideText = isOverridden ? `<div style="color: #10b981; font-weight: 800; font-size: 0.65rem; margin-top: 4px; text-transform: uppercase;">Using Engine Version</div>` : "";
 
-        const card = $(`<div class="ps-card ${isSel ? 'selected' : ''}" style="${isOverridden ? 'border-color: #10b981; border-width: 2px;' : ''}">
-            <div class="ps-card-title"><span style="${isOverridden && !isSel ? 'color: #10b981;' : ''}">${b.label}</span></div>
-            <div class="ps-card-desc">${descriptions[b.id] || ""}</div>
-            ${overrideText}
-        </div>`);
+        let badges = '';
+        if (isOverridden) badges += `<span class="ecard-badge override"><i class="fa-solid fa-code-branch"></i> Engine Override</span>`;
+
+        const card = $(`
+            <div class="mtab-eng-card ${isSel ? 'active' : ''}" style="${isOverridden && !isSel ? 'border-color: rgba(16,185,129,0.4);' : ''}">
+                <div class="ecard-accent"></div>
+                <div class="ecard-body">
+                    <div class="ecard-title">
+                        <span>${b.label}</span>
+                        ${isSel ? `<span class="ecard-badge" style="background:rgba(16,185,129,0.15);color:#10b981;"><i class="fa-solid fa-check"></i> On</span>` : ''}
+                    </div>
+                    <p class="ecard-desc">${descriptions[b.id] || ""}</p>
+                    ${badges ? `<div style="margin-top:4px;">${badges}</div>` : ''}
+                </div>
+            </div>
+        `);
         card.on("click", (e) => {
             if ($(e.target).closest("a").length) return;
-            if (isSel) localProfile.blocks = localProfile.blocks.filter(i => i !== b.id); else localProfile.blocks.push(b.id);
+            if (isSel) {
+                localProfile.blocks = localProfile.blocks.filter(i => i !== b.id);
+            } else {
+                localProfile.blocks.push(b.id);
+                // Make the two Inner Chatter versions mutually exclusive
+                if (b.id === "npc_inner_chatter") {
+                    localProfile.blocks = localProfile.blocks.filter(i => i !== "npc_inner_chatter_v2");
+                } else if (b.id === "npc_inner_chatter_v2") {
+                    localProfile.blocks = localProfile.blocks.filter(i => i !== "npc_inner_chatter");
+                }
+            }
             saveProfileToMemory(); switchTab(currentTab);
         }); grid.append(card);
     });
@@ -1045,13 +1344,18 @@ function renderBlocks(c) {
     if (activeEngine && activeEngine.customToggles) {
         const customAddons = activeEngine.customToggles.filter(t => t.location === "addons");
         if (customAddons.length > 0) {
-            grid.append(`<div style="grid-column: 1 / -1; margin-top: 10px;"><div class="ps-rule-title" style="color: #10b981; margin-bottom: 0;">Custom Engine Add-ons</div></div>`);
+            grid.append(`<div style="grid-column: 1 / -1;"><div class="wstyle-section-head green" style="margin:8px 0;"><i class="fa-solid fa-puzzle-piece"></i> Custom Engine Add-ons</div></div>`);
             customAddons.forEach(ca => {
                 const isSel = !!localProfile.toggles[ca.id];
-                const card = $(`<div class="ps-card ${isSel ? 'selected' : ''}" style="border-color: ${isSel ? '#10b981' : 'var(--border-color)'}; background: ${isSel ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-panel)'};">
-                    <div class="ps-card-title"><span style="color: ${isSel ? '#10b981' : 'var(--text-main)'};">${ca.name}</span></div>
-                    <div class="ps-card-desc">Custom Module Attached to [[${ca.attachPoint}]]</div>
-                </div>`);
+                const card = $(`
+                    <div class="mtab-eng-card ${isSel ? 'active' : ''}">
+                        <div class="ecard-accent"></div>
+                        <div class="ecard-body">
+                            <div class="ecard-title"><span>${ca.name}</span></div>
+                            <p class="ecard-desc">Custom Module → [[${ca.attachPoint}]]</p>
+                        </div>
+                    </div>
+                `);
                 card.on("click", () => { localProfile.toggles[ca.id] = !localProfile.toggles[ca.id]; saveProfileToMemory(); switchTab(currentTab); });
                 grid.append(card);
             });
@@ -1059,22 +1363,36 @@ function renderBlocks(c) {
     } c.append(grid);
 }
 
+
 function renderModels(c) {
     c.empty();
     const activeEngine = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
 
-    // IF CUSTOM COT EXISTS, SHOW GREEN INDICATOR
+    // ── HEADER ──
+    c.append(`
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #a855f7, #7c3aed);">
+                    <i class="fa-solid fa-brain"></i>
+                </div>
+                <div>
+                    <h2>Chain of Thought</h2>
+                    <p>Configure the AI's thinking framework and reasoning depth.</p>
+                </div>
+            </div>
+        </div>
+    `);
+
+    // Custom Engine override notice
     if (activeEngine && activeEngine.cot && activeEngine.cot.trim() !== "") {
         c.append(`
-            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; border-radius: 12px; padding: 15px; margin-bottom: 20px; display: flex; align-items: center; gap: 15px;">
-                <i class="fa-solid fa-shield-halved" style="font-size: 1.5rem; color: #10b981;"></i>
-                <div>
-                    <div style="font-weight: bold; color: #10b981; font-size: 0.9rem;">Custom Engine Logic Active</div>
-                    <div style="font-size: 0.8rem; color: var(--text-muted);">This Engine provides its own [[COT]] and [[prefill]]. Selections below will be overridden by the Engine's code.</div>
-                </div>
+            <div class="mtab-callout green" style="margin-bottom:20px;">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span><strong>Custom Engine Logic Active</strong> — This Engine provides its own [[COT]] and [[prefill]]. Selections below will be overridden by the Engine's code.</span>
             </div>
         `);
     }
+
     const migrationMap = {
         "cot-english": "cot-v1-english", "cot-arabic": "cot-v1-arabic", "cot-spanish": "cot-v1-spanish", "cot-french": "cot-v1-french",
         "cot-zh": "cot-v1-zh", "cot-ru": "cot-v1-ru", "cot-jp": "cot-v1-jp", "cot-pt": "cot-v1-pt", "cot-english-test": "cot-v2-english"
@@ -1086,12 +1404,19 @@ function renderModels(c) {
     else if (localProfile.model && localProfile.model.startsWith("cot-v2-")) { currentType = "v2"; currentLang = localProfile.model.replace("cot-v2-", ""); }
     else if (localProfile.model && localProfile.model.startsWith("cot-v6-lite-")) { currentType = "v6-lite"; currentLang = localProfile.model.replace("cot-v6-lite-", ""); }
     else if (localProfile.model && localProfile.model.startsWith("cot-v6-")) { currentType = "v6"; currentLang = localProfile.model.replace("cot-v6-", ""); }
+    else if (localProfile.model && localProfile.model.startsWith("cot-v7-lite-")) { currentType = "v7-lite"; currentLang = localProfile.model.replace("cot-v7-lite-", ""); }
+    else if (localProfile.model && localProfile.model.startsWith("cot-v7-")) { currentType = "v7"; currentLang = localProfile.model.replace("cot-v7-", ""); }
 
     if (!localProfile.thinkEffort) localProfile.thinkEffort = "unspecified";
     if (!localProfile.customThinkEffort) localProfile.customThinkEffort = "100";
 
-    c.append(`<div class="ps-rule-title" style="margin-bottom:10px;">Select Thinking Effort</div>`);
-    const effortGrid = $(`<div class="ps-grid" style="margin-bottom: 25px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));"></div>`);
+    // ── THINKING EFFORT ──
+    c.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-gauge-high"></i> Thinking Effort</div>`);
+    c.append(`<div class="mtab-callout" style="margin-bottom:12px; background: rgba(168,85,247,0.1); border-left: 3px solid #a855f7; padding: 8px 12px; font-size: 0.8rem; color: var(--text-main);">
+        <i class="fa-solid fa-circle-info" style="color: #a855f7; margin-right: 6px;"></i>
+        <strong>Hint:</strong> When using V7 CoT, it is highly recommended to <strong>not</strong> use low Thinking Effort.
+    </div>`);
+    const effortGrid = $(`<div class="mtab-card-grid" style="margin-bottom: 20px; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));"></div>`);
     const efforts = [
         { id: "100", label: "100 Words" },
         { id: "250", label: "250 Words" },
@@ -1101,90 +1426,119 @@ function renderModels(c) {
     ];
     efforts.forEach(e => {
         const isSel = localProfile.thinkEffort === e.id;
-        const card = $(`<div class="ps-card ${isSel ? 'selected' : ''}" style="padding: 12px 10px; min-height: unset; text-align: center;">
-            <div class="ps-card-title" style="margin-bottom: 0; font-size: 0.9rem; display: flex; justify-content: center;"><span>${e.label}</span></div>
-        </div>`);
-        card.on("click", () => {
-            localProfile.thinkEffort = e.id;
-            saveProfileToMemory();
-            renderModels(c);
-        });
+        const card = $(`
+            <div class="mtab-eng-card ${isSel ? 'active' : ''}" style="text-align:center;">
+                <div class="ecard-accent"></div>
+                <div class="ecard-body" style="padding:12px 10px; align-items:center;">
+                    <span style="font-weight:700; font-size:0.85rem; color:${isSel ? '#10b981' : 'var(--text-main)'};">${e.label}</span>
+                </div>
+            </div>
+        `);
+        card.on("click", () => { localProfile.thinkEffort = e.id; saveProfileToMemory(); renderModels(c); });
         effortGrid.append(card);
     });
     c.append(effortGrid);
 
     if (localProfile.thinkEffort === "custom") {
         const customBlock = $(`
-            <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 15px; margin-top: -15px; margin-bottom: 20px; display: flex; align-items: center; gap: 15px;">
-                <div style="flex: 1;"><div style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">Custom Word Count</div></div>
-                <input type="number" id="ps_input_custom_effort" class="ps-modern-input" style="width: 150px;" value="${localProfile.customThinkEffort}" min="1" />
+            <div class="mtab-panel" style="margin-top:-10px; margin-bottom:20px;">
+                <div class="mtab-setting-row">
+                    <div class="set-info"><div class="set-label">Custom Word Count</div></div>
+                    <input type="number" id="ps_input_custom_effort" class="ps-modern-input" style="width: 150px;" value="${localProfile.customThinkEffort}" min="1" />
+                </div>
             </div>
         `);
         customBlock.find("#ps_input_custom_effort").on("change input", function () {
-            localProfile.customThinkEffort = $(this).val();
-            saveProfileToMemory();
+            localProfile.customThinkEffort = $(this).val(); saveProfileToMemory();
         });
         c.append(customBlock);
     }
 
+    // ── GEMINI THINKING ──
     if (localProfile.thinkingV2 === undefined) localProfile.thinkingV2 = false;
     const v2Card = $(`
-        <div class="ps-toggle-card ${localProfile.thinkingV2 ? 'active' : ''}" style="margin-bottom: 20px; border-color: ${localProfile.thinkingV2 ? 'var(--gold)' : 'var(--border-color)'};">
-            <div style="display:flex; flex-direction:column;">
-                <span style="font-weight:700; font-size: 1.05rem; color: ${localProfile.thinkingV2 ? 'var(--gold)' : 'var(--text-main)'};"><i class="fa-solid fa-brain"></i> Gemini Thinking</span>
-                <div style="margin-top:4px; font-size: 0.8rem; color: var(--text-muted);">This toggle is only for Gemini 3.1 Pro and 3 Flash.</div>
+        <div class="mtab-toggle-row ${localProfile.thinkingV2 ? 'active' : ''}" style="margin-bottom: 20px;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-brain" style="color:#a855f7;"></i> Gemini Thinking</div>
+                <div class="toggle-desc">
+                    Enable only for Gemini. When enabled, you MUST add <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> to the Reasoning Formatting prefix/suffix.<br>
+                    <strong>Note:</strong> Enable Prefill ONLY if using Gemini models.
+                </div>
             </div>
             <div class="ps-switch"></div>
         </div>
     `);
-    v2Card.on("click", function() {
-        localProfile.thinkingV2 = !localProfile.thinkingV2;
-        saveProfileToMemory();
-        renderModels(c);
-    });
+    v2Card.on("click", function () { localProfile.thinkingV2 = !localProfile.thinkingV2; saveProfileToMemory(); renderModels(c); });
     c.append(v2Card);
 
-    c.append(`<hr style="border: 0; border-top: 1px dashed var(--border-color); margin: 0 0 20px 0;" />`);
-
-    c.append(`<div class="ps-rule-title" style="margin-bottom:10px;">Select Thinking Framework</div>`);
-    const typeGrid = $(`<div class="ps-grid" style="margin-bottom: 25px;"></div>`);
+    // ── THINKING FRAMEWORK ──
+    c.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-diagram-project"></i> Thinking Framework</div>`);
+    c.append(`<div class="mtab-callout" style="margin-bottom:12px; background: rgba(245,158,11,0.1); border-left: 3px solid #f59e0b; padding: 8px 12px; font-size: 0.8rem; color: var(--text-main);">
+        <i class="fa-solid fa-triangle-exclamation" style="color: #f59e0b; margin-right: 6px;"></i>
+        <strong>Important:</strong> When using GLM or DS4 models, you must disable "Main 3" and enable "Main 3 DS4 + GLM" in the Megumin Suite preset.
+    </div>`);
+    const typeGrid = $(`<div class="mtab-card-grid" style="margin-bottom: 20px;"></div>`);
     const types = [
         { id: "off", label: "CoT Off", desc: "No Chain of Thought or prefill. The AI will respond normally." },
         { id: "v1", label: "CoT V1 (Classic)", desc: "The original 8-step framework. Focuses heavily on the NPC's internal emotional landscape vs their observable actions." },
         { id: "v2", label: "CoT V2 (New)", desc: "The new experimental framework. Stricter reality checks, info audits, better NPCs, and hook generation." },
         { id: "v6", label: "CoT V6 (Dream Team)", desc: "The full 4-phase sequence designed specifically for V6 engines. Specialized validation and modeling.", isNew: true },
-        { id: "v6-lite", label: "CoT V6 (Lite)", desc: "A streamlined 3-phase sequence. Less token overhead while maintaining narrative rules.", isNew: true }
+        { id: "v6-lite", label: "CoT V6 (Lite)", desc: "A streamlined 3-phase sequence. Less token overhead while maintaining narrative rules.", isNew: true },
+        { id: "v7", label: "CoT V7", desc: "The new V7 sequence with 5-phase strict ground truth rebuilding.", isNew: true },
+        { id: "v7-lite", label: "CoT V7 (Lite)", desc: "A streamlined 5-phase sequence for V7.", isNew: true }
     ];
     types.forEach(t => {
         const isSel = currentType === t.id;
-        const newBadgeHtml = t.isNew ? `<div style="position: absolute; bottom: 15px; right: 15px; background: #3b82f6; color: #fff; font-size: 0.65rem; font-weight: 800; padding: 3px 10px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);">New</div>` : '';
+        let badges = '';
+        if (t.isNew) badges = `<span class="ecard-badge new">New</span>`;
+
         const card = $(`
-            <div class="ps-card ${isSel ? 'selected' : ''}" style="position: relative; padding-bottom: ${t.isNew ? '40px' : '20px'};">
-                <div class="ps-card-title"><span>${t.label}</span></div>
-                <div class="ps-card-desc">${t.desc}</div>${newBadgeHtml}
+            <div class="mtab-eng-card ${isSel ? 'active' : ''}">
+                <div class="ecard-accent"></div>
+                <div class="ecard-body">
+                    <div class="ecard-title">
+                        <span>${t.label}</span>
+                        ${isSel ? `<span class="ecard-badge" style="background:rgba(16,185,129,0.15);color:#10b981;"><i class="fa-solid fa-check"></i> Active</span>` : ''}
+                    </div>
+                    <p class="ecard-desc">${t.desc}</p>
+                    ${badges ? `<div style="margin-top:4px;">${badges}</div>` : ''}
+                </div>
             </div>
         `);
         card.on("click", () => {
-            if (t.id === "off") localProfile.model = "cot-off"; else localProfile.model = `cot-${t.id}-${currentLang}`;
+            if (t.id === "off") localProfile.model = "cot-off";
+            else if (t.id === "v7") localProfile.model = `cot-v7-english`;
+            else if (t.id === "v7-lite") localProfile.model = `cot-v7-lite-english`;
+            else localProfile.model = `cot-${t.id}-${currentLang}`;
             saveProfileToMemory(); renderModels(c);
         }); typeGrid.append(card);
     }); c.append(typeGrid);
 
+    // ── LANGUAGE ──
     if (currentType !== "off") {
-        c.append(`<hr style="border: 0; border-top: 1px dashed var(--border-color); margin: 0 0 20px 0;" />`);
-        c.append(`<div class="ps-rule-title" style="margin-bottom:10px;">Select Language</div>`);
-        const langGrid = $(`<div class="ps-grid"></div>`);
-        const langs = [
+        c.append(`<div class="wstyle-section-head gold"><i class="fa-solid fa-language"></i> Language</div>`);
+        const langGrid = $(`<div class="mtab-card-grid" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));"></div>`);
+        let langs = [
             { id: "english", label: "English" }, { id: "arabic", label: "Arabic (العربية)", rec: true }, { id: "spanish", label: "Spanish (Español)" },
             { id: "french", label: "French (Français)" }, { id: "zh", label: "Mandarin (中文)" }, { id: "ru", label: "Russian (Русский)" },
             { id: "jp", label: "Japanese (日本語)" }, { id: "pt", label: "Portuguese (Português)" }
         ];
+        if (currentType === "v7" || currentType === "v7-lite") langs = [{ id: "english", label: "English" }];
         langs.forEach(l => {
             const isSel = currentLang === l.id;
-            const recText = l.rec ? `<span class="ps-rec-text"><i class="fa-solid fa-star"></i> Pro Tip</span>` : '';
+            let badges = '';
+            if (l.rec) badges = `<span class="ecard-badge rec"><i class="fa-solid fa-star"></i> Pro Tip</span>`;
+
             const card = $(`
-                <div class="ps-card ${isSel ? 'selected' : ''}" style="padding: 12px 18px; min-height: unset;">
-                    <div class="ps-card-title" style="margin-bottom: 0; font-size: 0.9rem;"><span>${l.label}</span> ${recText}</div>
+                <div class="mtab-eng-card ${isSel ? 'active' : ''}">
+                    <div class="ecard-accent"></div>
+                    <div class="ecard-body" style="padding:12px 16px;">
+                        <div class="ecard-title" style="font-size:0.88rem;">
+                            <span>${l.label}</span>
+                            ${isSel ? `<span class="ecard-badge" style="background:rgba(16,185,129,0.15);color:#10b981;"><i class="fa-solid fa-check"></i></span>` : ''}
+                        </div>
+                        ${badges ? `<div style="margin-top:2px;">${badges}</div>` : ''}
+                    </div>
                 </div>
             `);
             card.on("click", () => { localProfile.model = `cot-${currentType}-${l.id}`; saveProfileToMemory(); renderModels(c); });
@@ -1201,58 +1555,70 @@ function renderStoryPlanner(c) {
     const sp = localProfile.storyPlan;
 
     c.append(`
+        <!-- HEADER -->
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                    <i class="fa-solid fa-map-location-dot"></i>
+                </div>
+                <div>
+                    <h2>Story Planner</h2>
+                    <p>Brainstorm and track plot milestones automatically.</p>
+                </div>
+            </div>
+            <div class="mtab-header-badge" style="background: ${sp.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${sp.enabled ? '#10b981' : 'var(--text-muted)'}; border: 1px solid ${sp.enabled ? 'rgba(16,185,129,0.25)' : 'var(--border-color)'};">
+                <i class="fa-solid fa-${sp.enabled ? 'circle-check' : 'circle-xmark'}" style="font-size:0.6rem;"></i> ${sp.enabled ? 'Enabled' : 'Disabled'}
+            </div>
+        </div>
+
         <!-- MASTER TOGGLE -->
-        <div class="ps-toggle-card ${sp.enabled ? 'active' : ''}" id="sp_enable_card" style="border-color: ${sp.enabled ? 'var(--gold)' : 'var(--border-color)'}; margin-bottom: 20px;">
-            <div style="display:flex; flex-direction:column;">
-                <span style="font-weight:700; font-size: 1.1rem; color: ${sp.enabled ? 'var(--gold)' : 'var(--text-main)'};"><i class="fa-solid fa-map-location-dot"></i> Enable Story Planner</span>
-                <div style="margin-top:4px; font-size: 0.8rem; color: var(--text-muted);">Automatically brainstorms and tracks plot milestones. Injects via [[storyplan]] and [[storytracker]].</div>
+        <div class="mtab-toggle-row ${sp.enabled ? 'active' : ''}" id="sp_enable_card" style="margin-bottom: 20px;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-map-location-dot" style="color:var(--gold);"></i> Enable Story Planner</div>
+                <div class="toggle-desc">Injects via [[storyplan]] and [[storytracker]].</div>
             </div>
             <div class="ps-switch"></div>
         </div>
 
         <div id="sp_main_content" style="display: ${sp.enabled ? 'block' : 'none'};">
-            
-            <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                <div class="ps-rule-title" style="margin-bottom: 12px;"><i class="fa-solid fa-gears"></i> Engine Settings</div>
-                
-                <div style="display: flex; gap: 15px; margin-bottom: 15px; align-items: center;">
-                    <div style="flex: 1;">
-                        <div style="font-size: 0.85rem; font-weight: 600;">Generation Backend</div>
-                    </div>
-                    <select id="sp_backend" class="ps-modern-input" style="width: 250px; cursor: pointer;">
+            <div class="mtab-panel">
+                <div class="mtab-panel-title gold"><i class="fa-solid fa-gears"></i> Engine Settings</div>
+                <div class="mtab-setting-row">
+                    <div class="set-info"><div class="set-label">Generation Backend</div></div>
+                    <select id="sp_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
                         <option value="direct" ${sp.backend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
                         <option value="preset" ${sp.backend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
                     </select>
                 </div>
-
-                <div style="display: flex; gap: 15px; align-items: center;">
-                    <div style="flex: 1;">
-                        <div style="font-size: 0.85rem; font-weight: 600;">Auto-Trigger Mode</div>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">Generate new plans automatically.</div>
+                <div class="mtab-setting-row">
+                    <div class="set-info">
+                        <div class="set-label">Auto-Trigger Mode</div>
+                        <div class="set-desc">Generate new plans automatically.</div>
                     </div>
-                    <select id="sp_trigger" class="ps-modern-input" style="width: 150px; cursor: pointer;">
-                        <option value="manual" ${sp.triggerMode === 'manual' ? 'selected' : ''}>Manual Only</option>
-                        <option value="frequency" ${sp.triggerMode === 'frequency' ? 'selected' : ''}>Every X Replies</option>
-                    </select>
-                    <input type="number" id="sp_freq" class="ps-modern-input" value="${sp.autoFreq}" min="1" style="width: 80px; text-align: center; display: ${sp.triggerMode === 'frequency' ? 'block' : 'none'};" title="Number of AI replies" />
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <select id="sp_trigger" class="ps-modern-input" style="width: 150px; cursor: pointer;">
+                            <option value="manual" ${sp.triggerMode === 'manual' ? 'selected' : ''}>Manual Only</option>
+                            <option value="frequency" ${sp.triggerMode === 'frequency' ? 'selected' : ''}>Every X Replies</option>
+                        </select>
+                        <input type="number" id="sp_freq" class="ps-modern-input" value="${sp.autoFreq}" min="1" style="width: 70px; text-align: center; display: ${sp.triggerMode === 'frequency' ? 'block' : 'none'};" />
+                    </div>
                 </div>
             </div>
 
-            <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <div class="ps-rule-title" style="margin-bottom: 0;"><i class="fa-solid fa-book-open"></i> Current Story Plan</div>
-                    <button id="sp_btn_generate" class="ps-modern-btn primary" style="background: var(--gold); color: #000; padding: 8px 16px; font-weight: bold;"><i class="fa-solid fa-bolt"></i> Generate Plan Now</button>
+            <div class="mtab-panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                    <div class="mtab-panel-title gold" style="margin-bottom:0;"><i class="fa-solid fa-book-open"></i> Current Story Plan</div>
+                    <button id="sp_btn_generate" class="wstyle-gen-btn" style="padding: 8px 18px; font-size: 0.78rem;"><i class="fa-solid fa-bolt"></i> Generate Plan Now</button>
                 </div>
-                
-                <textarea id="sp_current_plan" class="ps-modern-input" style="height: 250px; resize: vertical; font-size: 0.85rem; line-height: 1.5; margin-bottom: 10px;" placeholder="Generated plot milestones will appear here. You can manually edit them.">${sp.currentPlan || ""}</textarea>
-                
-                <div style="background: rgba(59, 130, 246, 0.08); border-left: 4px solid #3b82f6; border-radius: 4px; padding: 12px 16px;">
-                    <div style="display: flex; align-items: center; gap: 8px; color: #3b82f6; font-weight: 600; font-size: 0.85rem; margin-bottom: 4px;"><i class="fa-solid fa-circle-info"></i> How to Use</div>
-                    <div style="color: var(--text-main); font-size: 0.8rem; line-height: 1.5;">A tracker will be added automaticly at the end of each response.</div>
+                <textarea id="sp_current_plan" class="ps-modern-input" style="height: 250px; resize: vertical; font-size: 0.85rem; line-height: 1.5; margin-bottom: 12px;" placeholder="Generated plot milestones will appear here.">${sp.currentPlan || ""}</textarea>
+                <div class="mtab-callout">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>A tracker will be added automatically at the end of each response.</span>
                 </div>
             </div>
         </div>
     `);
+
 
     // Listeners
     $("#sp_enable_card").on("click", function () {
@@ -1317,42 +1683,65 @@ async function generateStoryPlanLogic(chatText) {
 function renderBanList(c) {
     c.empty();
     if (!localProfile.banList) localProfile.banList = [];
+
+    // ── HEADER ──
     c.append(`
-        <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <div><span style="font-weight: 600; color: var(--text-main); font-size: 0.95rem;">AI Slop Detector</span><div style="font-size: 0.75rem; color: var(--text-muted);">Scans the last 15 AI messages to catch overused clichés.</div></div>
-                <button id="ps_btn_scan_slop" class="ps-modern-btn primary" style="padding: 8px 16px; font-size: 0.8rem; background: #a855f7; color: #fff;"><i class="fa-solid fa-radar"></i> Analyze Chat History</button>
-            </div>
-                <hr style="border: 0; border-top: 1px dashed var(--border-color); margin: 15px 0;" />
-                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
-                    <div style="flex: 1;">
-                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">Generator Backend</div>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">Choose how to generate the analysis.</div>
-                    </div>
-                    <select id="ban_list_backend" class="ps-modern-input" style="width: 200px; cursor: pointer;">
-                        <option value="direct" ${localProfile.banListBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                        <option value="preset" ${localProfile.banListBackend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
-                    </select>
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #ef4444, #b91c1c);">
+                    <i class="fa-solid fa-ban"></i>
                 </div>
-            <hr style="border: 0; border-top: 1px dashed var(--border-color); margin: 15px 0;" />
+                <div>
+                    <h2>Dynamic Ban List</h2>
+                    <p>Detect and ban overused phrases from AI responses.</p>
+                </div>
+            </div>
+            <div class="mtab-header-badge" style="background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25);">
+                <i class="fa-solid fa-ban" style="font-size:0.6rem;"></i> ${localProfile.banList.length} Banned
+            </div>
+        </div>
+    `);
+
+    // ── AI SLOP DETECTOR ──
+    c.append(`
+        <div class="mtab-panel" style="margin-bottom:16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <div class="mtab-panel-title purple" style="margin-bottom:0;"><i class="fa-solid fa-radar"></i> AI Slop Detector</div>
+                <button id="ps_btn_scan_slop" class="wstyle-gen-btn" style="padding: 8px 18px; font-size: 0.78rem; background: linear-gradient(135deg, #a855f7, #7c3aed);"><i class="fa-solid fa-radar"></i> Analyze Chat</button>
+            </div>
+            <div class="mtab-setting-row">
+                <div class="set-info">
+                    <div class="set-label">Generator Backend</div>
+                    <div class="set-desc">Choose how to generate the analysis.</div>
+                </div>
+                <select id="ban_list_backend" class="ps-modern-input" style="width: 200px; cursor: pointer;">
+                    <option value="direct" ${localProfile.banListBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
+                    <option value="preset" ${localProfile.banListBackend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="mtab-panel" style="margin-bottom:16px;">
+            <div class="mtab-panel-title red"><i class="fa-solid fa-plus-circle"></i> Add Phrase</div>
             <div style="display: flex; gap: 10px;">
-                <input type="text" id="ps_manual_ban_input" class="ps-modern-input" placeholder="Manually add a phrase to ban..." style="flex: 1;" />
+                <input type="text" id="ps_manual_ban_input" class="ps-modern-input" placeholder="Manually add a phrase to ban…" style="flex: 1;" />
                 <button id="ps_btn_add_ban" class="ps-modern-btn secondary" style="padding: 0 15px;">Add</button>
             </div>
         </div>
+
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <div class="ps-rule-title" style="margin-bottom: 0;">Active Banned Phrases</div>
-            <div style="display: flex; gap: 8px; align-items: center;">
+            <div class="wstyle-section-head red" style="margin-bottom:0;"><i class="fa-solid fa-list"></i> Active Banned Phrases</div>
+            <div class="mtab-btn-row">
                 <input type="file" id="ps_import_bans_file" accept=".json" style="display: none;">
-                <button id="ps_btn_import_bans" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.75rem; color: #3b82f6; border-color: rgba(59, 130, 246, 0.3);"><i class="fa-solid fa-file-import"></i> Import</button>
-                <button id="ps_btn_export_bans" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.75rem; color: #10b981; border-color: rgba(16, 185, 129, 0.3);"><i class="fa-solid fa-file-export"></i> Export</button>
-                <button id="ps_btn_clear_bans" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.75rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
+                <button id="ps_btn_import_bans" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #3b82f6; border-color: rgba(59, 130, 246, 0.3);"><i class="fa-solid fa-file-import"></i> Import</button>
+                <button id="ps_btn_export_bans" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #10b981; border-color: rgba(16, 185, 129, 0.3);"><i class="fa-solid fa-file-export"></i> Export</button>
+                <button id="ps_btn_clear_bans" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
             </div>
         </div>
-        <div id="ps_banlist_container" style="display: flex; flex-direction: column; gap: 8px; min-height: 50px; padding: 10px; border: 1px dashed var(--border-color); border-radius: 8px;"></div>
-        <div style="margin-top: 20px; background: rgba(59, 130, 246, 0.08); border-left: 4px solid #3b82f6; border-radius: 4px; padding: 12px 16px;">
-            <div style="display: flex; align-items: center; gap: 8px; color: #3b82f6; font-weight: 600; font-size: 0.85rem; margin-bottom: 4px;"><i class="fa-solid fa-circle-info"></i> Note</div>
-            <div style="color: var(--text-main); font-size: 0.8rem; line-height: 1.5;">This is a beta feature. Don't complain if you have to generate more than once.</div>
+        <div id="ps_banlist_container" class="mtab-card-list" style="min-height: 50px; padding: 10px; border: 1px dashed var(--border-color); border-radius: 10px;"></div>
+        <div class="mtab-callout purple" style="margin-top: 16px;">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>This is a beta feature. Don't complain if you have to generate more than once.</span>
         </div>
     `);
 
@@ -1360,12 +1749,10 @@ function renderBanList(c) {
         const box = $("#ps_banlist_container"); box.empty();
         if (localProfile.banList.length === 0) { box.append(`<span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">No phrases banned yet.</span>`); return; }
         localProfile.banList.forEach(phrase => {
-            const tEl = $(`<div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.4); color: #ef4444; padding: 10px 14px; border-radius: 6px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background-color 0.2s; word-break: break-word; line-height: 1.4;">
+            const tEl = $(`<div class="mtab-ban-item">
                 <span style="padding-right: 15px;">${phrase}</span>
-                <i class="fa-solid fa-xmark" style="opacity: 0.7;"></i>
+                <i class="fa-solid fa-xmark"></i>
             </div>`);
-            tEl.on("mouseenter", function() { $(this).css("background", "rgba(239, 68, 68, 0.15)"); });
-            tEl.on("mouseleave", function() { $(this).css("background", "rgba(239, 68, 68, 0.08)"); });
             tEl.on("click", () => { localProfile.banList = localProfile.banList.filter(p => p !== phrase); saveProfileToMemory(); renderTags(); }); box.append(tEl);
         });
     }; renderTags();
@@ -1391,11 +1778,11 @@ function renderBanList(c) {
     $("#ps_btn_import_bans").on("click", () => {
         $("#ps_import_bans_file").trigger("click");
     });
-    $("#ps_import_bans_file").on("change", function(e) {
+    $("#ps_import_bans_file").on("change", function (e) {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = function(evt) {
+        reader.onload = function (evt) {
             try {
                 const imported = JSON.parse(evt.target.result);
                 if (Array.isArray(imported)) {
@@ -1452,40 +1839,55 @@ function renderImageGen(c) {
     const s = localProfile.imageGen;
 
     c.append(`
+        <!-- HEADER -->
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #06b6d4, #0891b2);">
+                    <i class="fa-solid fa-image"></i>
+                </div>
+                <div>
+                    <h2>Image Generation</h2>
+                    <p>ComfyUI integration for automatic scene rendering.</p>
+                </div>
+            </div>
+            <div class="mtab-header-badge" style="background: ${s.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${s.enabled ? '#10b981' : 'var(--text-muted)'}; border: 1px solid ${s.enabled ? 'rgba(16,185,129,0.25)' : 'var(--border-color)'};">
+                <i class="fa-solid fa-${s.enabled ? 'circle-check' : 'circle-xmark'}" style="font-size:0.6rem;"></i> ${s.enabled ? 'Enabled' : 'Disabled'}
+            </div>
+        </div>
+
         <!-- MASTER TOGGLE -->
-        <div class="ps-toggle-card ${s.enabled ? 'active' : ''}" id="ig_enable_card" style="border-color: ${s.enabled ? 'var(--gold)' : 'var(--border-color)'};">
-            <div style="display:flex; flex-direction:column;">
-                <span style="font-weight:700; font-size: 1.1rem; color: ${s.enabled ? 'var(--gold)' : 'var(--text-main)'};"><i class="fa-solid fa-image"></i> Enable Image Generation</span>
-                <div style="margin-top:4px; font-size: 0.8rem; color: var(--text-muted);">Activate ComfyUI integration for this specific character/group.</div>
+        <div class="mtab-toggle-row ${s.enabled ? 'active' : ''}" id="ig_enable_card" style="margin-bottom: 20px;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-image" style="color:#06b6d4;"></i> Enable Image Generation</div>
+                <div class="toggle-desc">Activate ComfyUI integration for this specific character/group.</div>
             </div>
             <div class="ps-switch"></div>
         </div>
+
         <!-- Generator Backend -->
-            <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                <div class="ps-rule-title" style="margin-bottom: 12px;"><i class="fa-solid fa-gears"></i> Prompt Generator Backend</div>
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <div style="flex: 1;">
-                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">Generation Method</div>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">"Direct" is faster. "Megumin Image" is more creative and follows your preset instructions.</div>
-                    </div>
-                    <select id="img_gen_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
-                        <option value="direct" ${s.generatorBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                        <option value="preset" ${s.generatorBackend === 'preset' ? 'selected' : ''}>Megumin Image Preset</option>
-                    </select>
+        <div class="mtab-panel" style="margin-bottom:16px;">
+            <div class="mtab-panel-title blue"><i class="fa-solid fa-gears"></i> Prompt Generator Backend</div>
+            <div class="mtab-setting-row">
+                <div class="set-info">
+                    <div class="set-label">Generation Method</div>
+                    <div class="set-desc">"Direct" is faster. "Megumin Image" is more creative.</div>
                 </div>
+                <select id="img_gen_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
+                    <option value="direct" ${s.generatorBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
+                    <option value="preset" ${s.generatorBackend === 'preset' ? 'selected' : ''}>Megumin Image Preset</option>
+                </select>
             </div>
+        </div>
 
         <div id="ig_main_content" style="display: ${s.enabled ? 'block' : 'none'};">
             
             <!-- Connection & Workflow -->
-            <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                <div class="ps-rule-title" style="margin-bottom: 12px;"><i class="fa-solid fa-link"></i> ComfyUI Server & Workflow</div>
-                
+            <div class="mtab-panel" style="margin-bottom:16px;">
+                <div class="mtab-panel-title blue"><i class="fa-solid fa-link"></i> ComfyUI Server & Workflow</div>
                 <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                     <input type="text" id="ig_url" class="ps-modern-input" value="${s.comfyUrl}" placeholder="http://127.0.0.1:8188" style="flex: 1;" />
                     <button id="ig_test_btn" class="ps-modern-btn secondary" style="padding: 0 15px;"><i class="fa-solid fa-wifi"></i> Test</button>
                 </div>
-
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <select id="ig_workflow_list" class="ps-modern-input" style="flex: 1; cursor: pointer;"></select>
                     <button id="ig_new_wf" class="ps-modern-btn secondary" title="New Workflow"><i class="fa-solid fa-plus"></i></button>
@@ -1494,9 +1896,9 @@ function renderImageGen(c) {
                 </div>
             </div>
 
-            <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                <div class="ps-rule-title" style="margin-bottom: 12px;"><i class="fa-solid fa-pen-nib"></i> Generation Triggers & Formatting</div>
-                
+            <!-- Triggers & Formatting -->
+            <div class="mtab-panel" style="margin-bottom:16px;">
+                <div class="mtab-panel-title gold"><i class="fa-solid fa-pen-nib"></i> Triggers & Formatting</div>
                 <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                     <div style="flex: 2;">
                         <div style="font-size: 0.7rem; font-weight: bold; color: var(--text-muted); margin-bottom: 4px;">Trigger Mode</div>
@@ -1513,15 +1915,15 @@ function renderImageGen(c) {
                     </div>
                 </div>
 
-                <div class="ps-toggle-card ${s.previewPrompt ? 'active' : ''}" id="ig_preview_card" style="padding: 12px 18px; margin-bottom: 15px;">
-                    <div style="display:flex; flex-direction:column;">
-                        <span style="font-weight:600; font-size:0.85rem;">Preview Prompt Before Sending</span>
-                        <div style="margin-top:2px; font-size: 0.7rem; color: var(--text-muted);">Show a popup to view or edit the AI's prompt before rendering.</div>
+                <div class="mtab-toggle-row ${s.previewPrompt ? 'active' : ''}" id="ig_preview_card" style="padding: 12px 18px; margin-bottom: 15px;">
+                    <div class="toggle-info">
+                        <div class="toggle-label" style="font-size:0.85rem;">Preview Prompt Before Sending</div>
+                        <div class="toggle-desc">Show a popup to view or edit the AI's prompt before rendering.</div>
                     </div>
                     <div class="ps-switch"></div>
                 </div>
 
-                <div id="ig_prompt_builder" style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; border-left: 3px solid var(--gold);">
+                <div id="ig_prompt_builder" style="background: rgba(0,0,0,0.15); padding: 15px; border-radius: 10px; border-left: 3px solid var(--gold);">
                     <div style="display: flex; gap: 15px; margin-bottom: 10px;">
                         <div style="flex: 1;">
                             <div style="font-size: 0.7rem; font-weight: bold; color: var(--text-muted); margin-bottom: 4px;">Model Style Format</div>
@@ -1544,40 +1946,19 @@ function renderImageGen(c) {
                 </div>
             </div>
 
-            <!-- Parameters Grid -->
-            <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                <div class="ps-rule-title" style="margin-bottom: 12px;"><i class="fa-solid fa-sliders"></i> Image Parameters</div>
-                
+            <!-- Parameters -->
+            <div class="mtab-panel" style="margin-bottom:16px;">
+                <div class="mtab-panel-title gold"><i class="fa-solid fa-sliders"></i> Image Parameters</div>
                 <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                     <select id="ig_model" class="ps-modern-input" style="flex: 2;"><option value="">Loading Models...</option></select>
                     <select id="ig_sampler" class="ps-modern-input" style="flex: 1;"><option value="">Loading Samplers...</option></select>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px; background: rgba(0,0,0,0.1); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color);">
-                    <!-- Steps -->
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="width: 50px; font-size: 0.8rem; font-weight: bold; color: var(--text-muted);">Steps</span>
-                        <input type="range" id="ig_steps" min="1" max="100" value="${s.steps}" style="flex: 1; cursor: pointer;">
-                        <input type="number" id="ig_steps_val" class="ps-modern-input" style="width: 50px; padding: 4px; text-align: center; font-size: 0.75rem;" value="${s.steps}">
-                    </div>
-                    <!-- CFG -->
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="width: 50px; font-size: 0.8rem; font-weight: bold; color: var(--text-muted);">CFG</span>
-                        <input type="range" id="ig_cfg" min="1" max="30" step="0.5" value="${s.cfg}" style="flex: 1; cursor: pointer;">
-                        <input type="number" id="ig_cfg_val" class="ps-modern-input" style="width: 50px; padding: 4px; text-align: center; font-size: 0.75rem;" value="${s.cfg}">
-                    </div>
-                    <!-- Denoise -->
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="width: 50px; font-size: 0.8rem; font-weight: bold; color: var(--text-muted);">Denoise</span>
-                        <input type="range" id="ig_denoise" min="0" max="1" step="0.05" value="${s.denoise}" style="flex: 1; cursor: pointer;">
-                        <input type="number" id="ig_denoise_val" class="ps-modern-input" style="width: 50px; padding: 4px; text-align: center; font-size: 0.75rem;" value="${s.denoise}">
-                    </div>
-                    <!-- Clip Skip -->
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="width: 50px; font-size: 0.8rem; font-weight: bold; color: var(--text-muted);">CLIP</span>
-                        <input type="range" id="ig_clip" min="1" max="12" step="1" value="${s.clipSkip}" style="flex: 1; cursor: pointer;">
-                        <input type="number" id="ig_clip_val" class="ps-modern-input" style="width: 50px; padding: 4px; text-align: center; font-size: 0.75rem;" value="${s.clipSkip}">
-                    </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px; background: rgba(0,0,0,0.1); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color);">
+                    <div class="mtab-param-row"><span class="param-label">Steps</span><input type="range" id="ig_steps" min="1" max="100" value="${s.steps}"><input type="number" id="ig_steps_val" value="${s.steps}"></div>
+                    <div class="mtab-param-row"><span class="param-label">CFG</span><input type="range" id="ig_cfg" min="1" max="30" step="0.5" value="${s.cfg}"><input type="number" id="ig_cfg_val" value="${s.cfg}"></div>
+                    <div class="mtab-param-row"><span class="param-label">Denoise</span><input type="range" id="ig_denoise" min="0" max="1" step="0.05" value="${s.denoise}"><input type="number" id="ig_denoise_val" value="${s.denoise}"></div>
+                    <div class="mtab-param-row"><span class="param-label">CLIP</span><input type="range" id="ig_clip" min="1" max="12" step="1" value="${s.clipSkip}"><input type="number" id="ig_clip_val" value="${s.clipSkip}"></div>
                 </div>
 
                 <div style="display: flex; gap: 10px; margin-bottom: 15px;">
@@ -1605,16 +1986,17 @@ function renderImageGen(c) {
             </div>
 
             <!-- LoRA Lab -->
-            <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                <div class="ps-rule-title" style="margin-bottom: 12px;"><i class="fa-solid fa-flask"></i> LoRA Lab</div>
+            <div class="mtab-panel">
+                <div class="mtab-panel-title purple"><i class="fa-solid fa-flask"></i> LoRA Lab</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                     ${[1, 2, 3, 4].map(i => `
-                        <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; border-left: 3px solid #a855f7;">
-                            <div style="font-size: 0.75rem; font-weight: bold; color: var(--text-muted); margin-bottom: 5px;">Slot ${i}</div>
+                        <div style="background: rgba(0,0,0,0.1); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px; border-left: 3px solid #a855f7;">
+                            <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Slot ${i}</div>
                             <select id="ig_lora_${i}" class="ps-modern-input" style="padding: 6px; font-size: 0.75rem; margin-bottom: 8px;"><option value="">Loading...</option></select>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">Wt: <span id="ig_lorawt_lbl_${i}" style="color: var(--text-main);">${i === 1 ? s.selectedLoraWt : i === 2 ? s.selectedLoraWt2 : i === 3 ? s.selectedLoraWt3 : s.selectedLoraWt4}</span></span>
-                                <input type="range" id="ig_lorawt_${i}" min="-2" max="2" step="0.1" value="${i === 1 ? s.selectedLoraWt : i === 2 ? s.selectedLoraWt2 : i === 3 ? s.selectedLoraWt3 : s.selectedLoraWt4}" style="flex: 1; cursor: pointer;">
+                            <div class="mtab-param-row" style="padding:0;">
+                                <span class="param-label" style="min-width:30px;">Wt</span>
+                                <input type="range" id="ig_lorawt_${i}" min="-2" max="2" step="0.1" value="${i === 1 ? s.selectedLoraWt : i === 2 ? s.selectedLoraWt2 : i === 3 ? s.selectedLoraWt3 : s.selectedLoraWt4}">
+                                <span id="ig_lorawt_lbl_${i}" style="font-size:0.78rem; font-weight:600; color:var(--text-main); min-width:30px; text-align:center;">${i === 1 ? s.selectedLoraWt : i === 2 ? s.selectedLoraWt2 : i === 3 ? s.selectedLoraWt3 : s.selectedLoraWt4}</span>
                             </div>
                         </div>
                     `).join('')}
@@ -2210,7 +2592,13 @@ function buildBaseDict() {
     // Standard Toggles & Addons
     if (localProfile.toggles.ooc) dict["[[OOC]]"] = hardcodedLogic.toggles.ooc.content;
     if (localProfile.toggles.control) dict["[[control]]"] = hardcodedLogic.toggles.control.content;
-    if (localProfile.aiRule) dict["[[aiprompt]]"] = localProfile.aiRule;
+    if (localProfile.aiRule) {
+        if (localProfile.mode.startsWith("v7") && localProfile.activeStyleId !== "dir_v7") {
+            dict["[[aiprompt]]"] = `<narrative_style>\n  voice: "Grounded, cinematic, patient. Describe what the camera would see and what the mic would catch. Let the reader feel the room."\n  pacing: "Unhurried where it should be. A quiet moment can take a paragraph. A violent one can take a sentence. Match the rhythm to the content."\n style: ${localProfile.aiRule}\n  length_directive: "Typical outputs should run 3–6 substantial paragraphs, scaling with scene density. Lean toward the higher end during rich, atmospheric, or multi-character scenes. Go shorter — even a single paragraph — only when the moment genuinely demands economy: a held breath, a door closing, a line that hits harder alone. Never pad, never rush."\n</narrative_style>`;
+        } else {
+            dict["[[aiprompt]]"] = localProfile.aiRule;
+        }
+    }
     localProfile.addons.forEach(aId => {
         const item = hardcodedLogic.addons.find(a => a.id === aId);
         if (item) dict[item.trigger] = item.content;
@@ -2302,6 +2690,7 @@ function buildBaseDict() {
             { key: "direct", trigger: "[[Direct]]", condition: localProfile.addons.includes("direct") },
             { key: "dn", trigger: "[[DN]]", condition: localProfile.addons.includes("dn") },
             { key: "dialogueColor", trigger: "[[COLOR]]", condition: localProfile.addons.includes("color") }, // FIXED NAME COLLISION
+            { key: "npc_inner_chatter", trigger: "[[npc_inner_chatter]]", condition: localProfile.blocks.includes("npc_inner_chatter") || localProfile.blocks.includes("npc_inner_chatter_v2") },
             { key: "storytracker", trigger: "[[storytracker]]", condition: localProfile.storyPlan && localProfile.storyPlan.enabled },
             { key: "language", trigger: "[[Language]]", condition: true },
             { key: "pronouns", trigger: "[[pronouns]]", condition: true },
@@ -2328,6 +2717,27 @@ function buildBaseDict() {
                     }
                 }
             });
+        }
+
+        // V7 Dynamic Stripping
+        if (activeEngine.id.startsWith("v7")) {
+            if (!localProfile.toggles.v7_ooc && dict["[[prompt1]]"]) {
+                dict["[[prompt1]]"] = dict["[[prompt1]]"].replace(/<ooc_protocol>[\s\S]*?<\/ooc_protocol>/g, "");
+            }
+            if (dict["[[prompt4]]"]) {
+                if (!localProfile.toggles.v7_pcsolo) {
+                    dict["[[prompt4]]"] = dict["[[prompt4]]"].replace(/<pc_solo_physicality[\s\S]*?<\/pc_solo_physicality>/g, "");
+                }
+                if (!localProfile.toggles.v7_culture) {
+                    dict["[[prompt4]]"] = dict["[[prompt4]]"].replace(/<cultural_anchoring>[\s\S]*?<\/cultural_anchoring>/g, "");
+                }
+                if (!localProfile.toggles.v7_scene) {
+                    dict["[[prompt4]]"] = dict["[[prompt4]]"].replace(/<scene_choreography>[\s\S]*?<\/scene_choreography>/g, "");
+                }
+                if (!localProfile.toggles.v7_intro) {
+                    dict["[[prompt4]]"] = dict["[[prompt4]]"].replace(/\s*introduction_protocol:\s*"[^"]*"/g, "");
+                }
+            }
         }
     }
 
@@ -2398,6 +2808,12 @@ function buildBaseDict() {
     if (localProfile.thinkingV2 && dict["[[prefill]]"]) {
         dict["[[prefill]]"] = dict["[[prefill]]"].replace(/\n<think>[\s\S]*/, "\n<think>\n<think>");
     }
+
+    if (dict["[[cyoa]]"]) dict["[[cyoa2]]"] = "[CYOA block here]"; else dict["[[cyoa2]]"] = "";
+    if (dict["[[infoblock]]"]) dict["[[infoblock2]]"] = "[Info block here]"; else dict["[[infoblock2]]"] = "";
+    if (dict["[[summary]]"]) dict["[[summary2]]"] = "[Summary block here]"; else dict["[[summary2]]"] = "";
+    if (dict["[[storytracker]]"]) dict["[[storytracker2]]"] = "[Story tracker here]"; else dict["[[storytracker2]]"] = "";
+    if (dict["[[npc_inner_chatter]]"]) dict["[[npc_inner_chatter2]]"] = "[Npc inner chatter here]"; else dict["[[npc_inner_chatter2]]"] = "";
 
     // Resolve early-evaluated tokens inside all other strings to prevent them from being missed and then cleaned up
     const earlyTokens = ["[[count]]", "[[Language]]", "[[pronouns]]", "[[DNRATIO]]"];
@@ -2512,14 +2928,28 @@ function handlePromptInjection(data) {
             Object.entries(dict).forEach(([trigger, replacement]) => {
                 if (msg.content.includes(trigger)) {
                     const processed = typeof substituteParams === 'function' ? substituteParams(replacement) : replacement;
+
+                    // If the replacement is empty, remove the tag AND the empty line it sits on
+                    if (processed.trim() === "") {
+                        msg.content = msg.content.replace(new RegExp(`^[ \\t]*${escapeRegex(trigger)}[ \\t]*\\r?\\n?`, 'gm'), "");
+                    }
+
+                    // Standard replacement for everything else
                     msg.content = msg.content.replace(new RegExp(escapeRegex(trigger), 'g'), processed);
                     replacementsMade++;
                 }
             });
-            // Cleanup tags
-            ["[[prompt1]]", "[[prompt2]]", "[[prompt3]]", "[[prompt4]]", "[[prompt5]]", "[[prompt6]]", "[prompt1]", "[prompt2]", "[prompt3]", "[prompt4]", "[prompt5]", "[prompt6]", "[[AI1]]", "[[AI2]]", "[[main]]", "[[OOC]]", "[[control]]", "[[aiprompt]]", "[[death]]", "[[combat]]", "[[Direct]]", "[[DN]]", "[[COLOR]]", "[[infoblock]]", "[[summary]]", "[[cyoa]]", "[[COT]]", "[[prefill]]", "[[order]]", "[[Language]]", "[[pronouns]]", "[[banlist]]", "[[count]]", "[[MVU]]", "[[img1]]", "[[img2]]", "[[storyplan]]", "[[storytracker]]", "[[DNRATIO]]", "[[THINK]]", "[[onomato]]", "[[npc_events]]"].forEach(tr => {
-                if (msg.content.includes(tr)) msg.content = msg.content.replace(new RegExp(escapeRegex(tr), 'g'), "");
+
+            // Cleanup unused tags (Removes the tag AND the line break)
+            ["[[prompt1]]", "[[prompt2]]", "[[prompt3]]", "[[prompt4]]", "[[prompt5]]", "[[prompt6]]", "[prompt1]", "[prompt2]", "[prompt3]", "[prompt4]", "[prompt5]", "[prompt6]", "[[AI1]]", "[[AI2]]", "[[main]]", "[[OOC]]", "[[control]]", "[[aiprompt]]", "[[death]]", "[[combat]]", "[[Direct]]", "[[DN]]", "[[COLOR]]", "[[infoblock]]", "[[summary]]", "[[cyoa]]", "[[COT]]", "[[prefill]]", "[[order]]", "[[Language]]", "[[pronouns]]", "[[banlist]]", "[[count]]", "[[MVU]]", "[[img1]]", "[[img2]]", "[[storyplan]]", "[[storytracker]]", "[[DNRATIO]]", "[[THINK]]", "[[onomato]]", "[[npc_events]]", "[[cyoa2]]", "[[infoblock2]]", "[[summary2]]", "[[storytracker2]]", "[[npc_inner_chatter]]", "[[npc_inner_chatter2]]"].forEach(tr => {
+                if (msg.content.includes(tr)) {
+                    msg.content = msg.content.replace(new RegExp(`^[ \\t]*${escapeRegex(tr)}[ \\t]*\\r?\\n?`, 'gm'), "");
+                    msg.content = msg.content.replace(new RegExp(escapeRegex(tr), 'g'), ""); // Catch-all for inline tags
+                }
             });
+
+            // Final Sweep: Collapse 3 or more blank lines into a standard double line break
+            msg.content = msg.content.replace(/(?:\r?\n[ \t]*){3,}/g, '\n\n');
         }
     }
 
