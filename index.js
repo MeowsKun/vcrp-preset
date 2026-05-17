@@ -17,9 +17,12 @@ const TARGET_PRESET_NAME = "Megumin Engine";
 let currentTab = 0;
 let localProfile = {};
 let activeGenerationOrder = null;
+let currentQueryVector = null;
+let activeMemorySummarizationRequest = null;
 let activeBanListChat = null;
 let activeImageGenRequest = null;
 let activeStoryPlanRequest = null;
+let activeNpcImages = [];
 let isDevEngineDirty = false;
 
 function getCharacterKey() {
@@ -126,6 +129,22 @@ function initProfile() {
             autoGenFreq: 1,
             previewPrompt: false,
             savedWorkflowStates: {}
+        },
+        memoryCore: {
+            enabled: false,
+            architecture: "raw_short_long", // "raw_short_long" or "raw_long"
+            workingLimit: 30,
+            shortTermLimit: 70,
+            backend: "direct",
+            scannerEngine: "tfidf",
+            triggerMode: "frequency",
+            autoFreq: 10,
+            shortTermChunks: [],
+            longTermVault: []
+        },
+        npcBank: {
+            enabled: false,
+            npcs: []
         }
     };
 
@@ -157,6 +176,7 @@ function initProfile() {
     if (!localProfile.toggles) localProfile.toggles = defaults.toggles;
     if (!localProfile.imageGen) localProfile.imageGen = defaults.imageGen;
     if (!localProfile.storyPlan) localProfile.storyPlan = defaults.storyPlan;
+    if (!localProfile.memoryCore) localProfile.memoryCore = defaults.memoryCore;
     if (!localProfile.dnRatio) localProfile.dnRatio = defaults.dnRatio;
     if (!localProfile.onomatopoeia) localProfile.onomatopoeia = defaults.onomatopoeia;
     if (localProfile.disableUtilityPrefill === undefined) localProfile.disableUtilityPrefill = false;
@@ -215,6 +235,9 @@ function updateLiveTokenCount() {
         if (!value) return;
         // Skip the single-bracket aliases to prevent double counting
         if (key.match(/^\[prompt[1-6]\]$/)) return;
+
+        // SKIP MEMORY CORE BLOCKS from the Token Counter
+        if (key === "[[long-Memory]]" || key === "[[Short-memory]]") return;
 
         // Categorize the text
         if (key.includes("prompt") || key.includes("main") || key.includes("AI")) {
@@ -303,6 +326,28 @@ function cleanAIOutput(text) {
     return text.replace(re, "").trim();
 }
 
+// MASTER CHAT CLEANER: Removes Megumin UI blocks, thoughts, and raw HTML from chat text.
+function meguminCleanChatHistoryText(text) {
+    if (!text) return "";
+    let cleaned = text;
+
+    // 1. Remove Specific Megumin Suite Blocks (Inner Chatter, World State, CYOA)
+    cleaned = cleaned.replace(/<details>\s*<summary>.*?💭.*?<b>NPC Inner Chatter<\/b><\/summary>\s*([\s\S]*?)\s*<\/details>/gi, "");
+    cleaned = cleaned.replace(/<details>\s*<summary>.*?📌.*?<b>World State<\/b><\/summary>\s*([\s\S]*?)\s*<\/details>/gi, "");
+    cleaned = cleaned.replace(/<div style="border: 1px solid #444;[\s\S]*?<\/div>/gi, "");
+
+    // 2. Remove AI reasoning and artifacts (think, disclaimer, options, start/end)
+    const badStuffRegex = /(<disclaimer>.*?<\/disclaimer>)|(<guifan>.*?<\/guifan>)|(<danmu>.*?<\/danmu>)|(<options>.*?<\/options>)|```start|```end|<done>|`<done>`|(.*?<\/(?:ksc??|think(?:ing)?)>(\n)?)|(<(?:ksc??|think(?:ing)?)>[\s\S]*?<\/(?:ksc??|think(?:ing)?)>(\n)?)/gs;
+    cleaned = cleaned.replace(badStuffRegex, "");
+
+    // 3. Remove leftover standard details/summary tags & HTML
+    cleaned = cleaned.replace(/<details>[\s\S]*?<\/details>/gi, "");
+    cleaned = cleaned.replace(/<summary>[\s\S]*?<\/summary>/gi, "");
+    cleaned = cleaned.replace(/<[^>]*>?/gm, "");
+
+    return cleaned.trim();
+}
+
 // -------------------------------------------------------------
 // UI TAB RENDERER (Toolbox System)
 // -------------------------------------------------------------
@@ -315,7 +360,9 @@ const tabsUI = [
     { title: "Chain of Thought", sub: "Control the AI's internal reasoning process before it writes.", icon: "fa-brain", render: renderModels },
     { title: "Story Planner", sub: "Generate and track future plot developments.", icon: "fa-map", render: renderStoryPlanner },
     { title: "Dynamic Ban List", sub: "Scan and ban repetitive AI phrases.", icon: "fa-ban", render: renderBanList },
-    { title: "Image Generation", sub: "Wire up ComfyUI to auto-generate scene images during roleplay.", icon: "fa-image", render: renderImageGen }
+    { title: "Image Generation", sub: "Wire up ComfyUI to auto-generate scene images during roleplay.", icon: "fa-image", render: renderImageGen },
+    { title: "NPCs Bank", sub: "Automatically extract and track significant NPCs in the story.", icon: "fa-address-book", render: renderNpcBank },
+    { title: "Memory Core", sub: "Advanced 3-Tier Context & History Management.", icon: "fa-memory", render: renderMemoryCore }
 ];
 
 function switchTab(index) {
@@ -376,7 +423,8 @@ function applyTabToAll() {
         5: ["model"],
         6: ["storyPlan"],
         7: ["banList"],
-        8: ["imageGen"]
+        8: ["imageGen"],
+        9: ["memoryCore"]
     };
 
     const keysToSync = tabKeys[currentTab];
@@ -402,8 +450,9 @@ function renderMode(c) {
         "v6-anime-director": "Advanced cinematic framing and pacing. Designed to emulate high-budget anime direction.",
         "v6-dream-team": "The ultimate 6-specialist writer room. Unprecedented narrative consistency and realism.",
         "v6-dream-team-lite": "A streamlined version of the Dream Team. Faster generation with lower token overhead.",
+        "v7-core": "The V7 Core engine. The perfect middle ground: cinematic pacing, realistic friction, and relentless world progression.",
         "v7-reality": "The V7 Reality engine. Grounded, unrelenting simulation with zero narrative protection.",
-        "v7-gentle": "The V7 Gentle engine. A softer, atmospheric world where tension breathes and moments linger."
+        "v7-gentle": "The V7 Gentle engine. A softer, For pussies."
     };
 
     // Active engine name
@@ -487,11 +536,18 @@ function renderMode(c) {
             card.on("click", () => {
                 const wasV7 = localProfile.mode.startsWith("v7");
                 localProfile.mode = m.id;
-                if (m.id.startsWith("v7") && !wasV7) {
+
+                // Specific style mapping for V7 Core vs other V7s
+                if (m.id === "v7-core") {
+                    localProfile.activeStyleId = "dir_v7_core";
+                    const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7_core");
+                    if (ds) localProfile.aiRule = ds.rule;
+                } else if (m.id.startsWith("v7") && (!wasV7 || localProfile.activeStyleId === "dir_v7_core")) {
                     localProfile.activeStyleId = "dir_v7";
                     const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7");
                     if (ds) localProfile.aiRule = ds.rule;
                 }
+
                 saveProfileToMemory();
                 switchTab(currentTab);
             });
@@ -681,8 +737,9 @@ function renderStyleLibrary(c) {
 
     const isV7 = localProfile.mode.startsWith("v7");
     if (isV7 && !localProfile.activeStyleId) {
-        localProfile.activeStyleId = "dir_v7";
-        const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7");
+        const targetStyle = localProfile.mode === "v7-core" ? "dir_v7_core" : "dir_v7";
+        localProfile.activeStyleId = targetStyle;
+        const ds = hardcodedLogic.directStyles.find(x => x.id === targetStyle);
         if (ds) localProfile.aiRule = ds.rule;
         saveProfileToMemory();
     }
@@ -1104,7 +1161,7 @@ function renderAddons(c) {
     const descriptions = {
         "death": "Enables permanent consequences. Characters — including yours — can die for real. No safety net, no plot armor.",
         "combat": "Activates a grounded, tactical combat layer. Actions have real weight, positioning matters, and you can lose badly.",
-        "direct": "Forces AI ti say words like D and P. No dancing around the subject, no polite deflection. you know what i mean.",
+        "direct": "Forces AI to say words like D and P. No dancing around the subject, no polite deflection. you know what i mean.",
         "color": "Each character's dialogue is color-coded for easy visual parsing.",
         "npc_events": "Requires all new story events to grow naturally from prior context or environmental cues — no random drama out of nowhere. V6 only.",
         "dn": "Forces dialogue and narration to be wrapped in their respective XML tags. Useful for specific Models for better narration style adherence."
@@ -1566,7 +1623,7 @@ function renderStoryPlanner(c) {
                     <p>Brainstorm and track plot milestones automatically.</p>
                 </div>
             </div>
-            <div class="mtab-header-badge" style="background: ${sp.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${sp.enabled ? '#10b981' : 'var(--text-muted)'}; border: 1px solid ${sp.enabled ? 'rgba(16,185,129,0.25)' : 'var(--border-color)'};">
+            <div id="sp_header_badge" class="mtab-header-badge" style="background: ${sp.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${sp.enabled ? '#10b981' : 'var(--text-muted)'}; border: 1px solid ${sp.enabled ? 'rgba(16,185,129,0.25)' : 'var(--border-color)'};">
                 <i class="fa-solid fa-${sp.enabled ? 'circle-check' : 'circle-xmark'}" style="font-size:0.6rem;"></i> ${sp.enabled ? 'Enabled' : 'Disabled'}
             </div>
         </div>
@@ -1623,8 +1680,15 @@ function renderStoryPlanner(c) {
     // Listeners
     $("#sp_enable_card").on("click", function () {
         sp.enabled = !sp.enabled; saveProfileToMemory();
-        if (sp.enabled) { $(this).addClass("active").css("border-color", "var(--gold)").find("span").css("color", "var(--gold)"); $("#sp_main_content").slideDown(200); }
-        else { $(this).removeClass("active").css("border-color", "var(--border-color)").find("span").css("color", "var(--text-main)"); $("#sp_main_content").slideUp(200); }
+        if (sp.enabled) {
+            $(this).addClass("active").css("border-color", "var(--gold)").find("span").css("color", "var(--gold)");
+            $("#sp_main_content").slideDown(200);
+            $("#sp_header_badge").css({ background: 'rgba(16,185,129,0.12)', color: '#10b981', 'border-color': 'rgba(16,185,129,0.25)' }).html(`<i class="fa-solid fa-circle-check" style="font-size:0.6rem;"></i> Enabled`);
+        } else {
+            $(this).removeClass("active").css("border-color", "var(--border-color)").find("span").css("color", "var(--text-main)");
+            $("#sp_main_content").slideUp(200);
+            $("#sp_header_badge").css({ background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', 'border-color': 'var(--border-color)' }).html(`<i class="fa-solid fa-circle-xmark" style="font-size:0.6rem;"></i> Disabled`);
+        }
     });
 
     $("#sp_backend").on("change", e => { sp.backend = $(e.target).val(); saveProfileToMemory(); });
@@ -1644,7 +1708,7 @@ function renderStoryPlanner(c) {
 
         try {
             let output;
-            if (sp.backend === "direct") {
+            if (!sp.backend || sp.backend === "direct") {
                 output = await generateStoryPlanLogic(chatText);
             } else {
                 await useMeguminEngine(async () => { output = await generateStoryPlanLogic(chatText); });
@@ -1696,7 +1760,7 @@ function renderBanList(c) {
                     <p>Detect and ban overused phrases from AI responses.</p>
                 </div>
             </div>
-            <div class="mtab-header-badge" style="background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25);">
+            <div id="ban_header_badge" class="mtab-header-badge" style="background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25);">
                 <i class="fa-solid fa-ban" style="font-size:0.6rem;"></i> ${localProfile.banList.length} Banned
             </div>
         </div>
@@ -1747,7 +1811,7 @@ function renderBanList(c) {
 
     const renderTags = () => {
         const box = $("#ps_banlist_container"); box.empty();
-        if (localProfile.banList.length === 0) { box.append(`<span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">No phrases banned yet.</span>`); return; }
+        if (localProfile.banList.length === 0) { box.append(`<span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">No phrases banned yet.</span>`); $("#ban_header_badge").html(`<i class="fa-solid fa-ban" style="font-size:0.6rem;"></i> 0 Banned`); return; }
         localProfile.banList.forEach(phrase => {
             const tEl = $(`<div class="mtab-ban-item">
                 <span style="padding-right: 15px;">${phrase}</span>
@@ -1755,6 +1819,8 @@ function renderBanList(c) {
             </div>`);
             tEl.on("click", () => { localProfile.banList = localProfile.banList.filter(p => p !== phrase); saveProfileToMemory(); renderTags(); }); box.append(tEl);
         });
+        // Update header badge dynamically
+        $("#ban_header_badge").html(`<i class="fa-solid fa-ban" style="font-size:0.6rem;"></i> ${localProfile.banList.length} Banned`);
     }; renderTags();
 
     $("#ps_btn_add_ban").on("click", () => {
@@ -1816,7 +1882,7 @@ function renderBanList(c) {
         if (chatText.length < 50) return toastr.warning("Not enough chat history to analyze!");
         $(this).prop("disabled", true).html(`<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...`);
         let rawResponse;
-        if (localProfile.banListBackend === "direct") {
+        if (!localProfile.banListBackend || localProfile.banListBackend === "direct") {
             rawResponse = await analyzeSlopDirectly(chatText);
         } else {
             rawResponse = await analyzeSlopWithPreset(chatText);
@@ -1850,7 +1916,7 @@ function renderImageGen(c) {
                     <p>ComfyUI integration for automatic scene rendering.</p>
                 </div>
             </div>
-            <div class="mtab-header-badge" style="background: ${s.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${s.enabled ? '#10b981' : 'var(--text-muted)'}; border: 1px solid ${s.enabled ? 'rgba(16,185,129,0.25)' : 'var(--border-color)'};">
+            <div id="ig_header_badge" class="mtab-header-badge" style="background: ${s.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${s.enabled ? '#10b981' : 'var(--text-muted)'}; border: 1px solid ${s.enabled ? 'rgba(16,185,129,0.25)' : 'var(--border-color)'};">
                 <i class="fa-solid fa-${s.enabled ? 'circle-check' : 'circle-xmark'}" style="font-size:0.6rem;"></i> ${s.enabled ? 'Enabled' : 'Disabled'}
             </div>
         </div>
@@ -2009,9 +2075,16 @@ function renderImageGen(c) {
     $("#ig_enable_card").on("click", function () {
         s.enabled = !s.enabled;
         saveProfileToMemory();
-        toggleQuickGenButton(); // <-- ADDED
-        if (s.enabled) { $(this).addClass("active"); $(this).css("border-color", "var(--gold)"); $(this).find("span").css("color", "var(--gold)"); $("#ig_main_content").slideDown(200); igFetchComfyLists(); }
-        else { $(this).removeClass("active"); $(this).css("border-color", "var(--border-color)"); $(this).find("span").css("color", "var(--text-main)"); $("#ig_main_content").slideUp(200); }
+        toggleQuickGenButton();
+        if (s.enabled) {
+            $(this).addClass("active"); $(this).css("border-color", "var(--gold)"); $(this).find("span").css("color", "var(--gold)");
+            $("#ig_main_content").slideDown(200); igFetchComfyLists();
+            $("#ig_header_badge").css({ background: 'rgba(16,185,129,0.12)', color: '#10b981', 'border-color': 'rgba(16,185,129,0.25)' }).html(`<i class="fa-solid fa-circle-check" style="font-size:0.6rem;"></i> Enabled`);
+        } else {
+            $(this).removeClass("active"); $(this).css("border-color", "var(--border-color)"); $(this).find("span").css("color", "var(--text-main)");
+            $("#ig_main_content").slideUp(200);
+            $("#ig_header_badge").css({ background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', 'border-color': 'var(--border-color)' }).html(`<i class="fa-solid fa-circle-xmark" style="font-size:0.6rem;"></i> Disabled`);
+        }
     });
     $("#img_gen_backend").on("change", function () {
         s.generatorBackend = $(this).val();
@@ -2140,6 +2213,1523 @@ async function igFetchComfyLists() {
         }
     } catch (e) { console.warn(`[Megumin-Suite] ComfyLists failed`, e); }
 }
+
+// -------------------------------------------------------------
+// STAGE 8.5: NPC BANK
+// -------------------------------------------------------------
+
+// Reconstruct a plain-text dossier from structured NPC data for injection into [[npc list]]
+function npcBuildTextFromData(n) {
+    let lines = [];
+    lines.push(`**Name:** ${n.name || "Unknown"} | **Age:** ${n.age || "?"} | **Sex:** ${n.sex || "?"}`);
+    if (n.appearance) lines.push(`**Appearance:** ${n.appearance}`);
+    if (n.occupation) lines.push(`**Occupation:** ${n.occupation}`);
+    if (n.background) lines.push(`**Background:** ${n.background}`);
+    if (n.innerCircle) lines.push(`**Inner Circle:**\n${n.innerCircle}`);
+    if (n.personality) lines.push(`**Personality Snapshot:** ${n.personality}`);
+    if (n.agenda) lines.push(`**Current Agenda:** ${n.agenda}`);
+    if (n.hiddenLayer) lines.push(`**Hidden Layer:** ${n.hiddenLayer}`);
+    return lines.join("\n");
+}
+
+// Parse raw NPC dossier HTML block into structured fields
+function npcParseBlock(rawBlock) {
+    const strip = (s) => (s || "").replace(/\*\*/g, "").replace(/<\/?[^>]+>/g, "").trim();
+    const data = {};
+
+    // Name / Age / Sex line
+    const nameLine = rawBlock.match(/\*\*Name:\*\*\s*(.*?)(?:\||$)/im);
+    if (nameLine) data.name = strip(nameLine[1]);
+    const ageLine = rawBlock.match(/\*\*Age:\*\*\s*(.*?)(?:\||$)/im);
+    if (ageLine) data.age = strip(ageLine[1]);
+    const sexLine = rawBlock.match(/\*\*Sex:\*\*\s*(.*?)(?:\||$|\n)/im);
+    if (sexLine) data.sex = strip(sexLine[1]);
+
+    // Simple single-value fields — NOTE: no 'm' flag so $ means end-of-string, not end-of-line
+    const fields = [
+        { key: "appearance", regex: /\*\*Appearance:\*\*\s*([\s\S]*?)(?=\n\s*\*\*[A-Z])/i },
+        { key: "occupation", regex: /\*\*Occupation:\*\*\s*([\s\S]*?)(?=\n\s*\*\*[A-Z])/i },
+        { key: "background", regex: /\*\*Background:\*\*\s*([\s\S]*?)(?=\n\s*\*\*[A-Z])/i },
+        { key: "innerCircle", regex: /\*\*Inner Circle:\*\*\s*([\s\S]*?)(?=\n\s*\*\*[A-Z])/i },
+        { key: "personality", regex: /\*\*Personality Snapshot:\*\*\s*([\s\S]*?)(?=\n\s*\*\*[A-Z])/i },
+        { key: "agenda", regex: /\*\*Current Agenda:\*\*\s*([\s\S]*?)(?=\n\s*\*\*[A-Z])/i },
+        { key: "hiddenLayer", regex: /\*\*Hidden Layer:\*\*\s*([\s\S]*?)(?=\n\s*<\/details>|<\/details>)/i }
+    ];
+    fields.forEach(f => {
+        const m = rawBlock.match(f.regex);
+        if (m) data[f.key] = m[1].trim();
+    });
+
+    return data;
+}
+
+// Generate NPC portrait via ComfyUI — uses AI to generate the prompt from full NPC info
+let activeNpcPfpRequest = null;
+
+async function npcGeneratePfp(npcName) {
+    const s = localProfile.imageGen;
+    if (!s || !s.enabled || !s.currentWorkflowName) {
+        toastr.warning("Image Generation must be enabled and configured first.");
+        return null;
+    }
+
+    const npc = localProfile.npcBank.npcs.find(n => n.name === npcName);
+    if (!npc) return null;
+
+    // Build full NPC dossier text for the AI
+    const npcText = npcBuildTextFromData(npc);
+
+    let styleStr = s.promptStyle === "illustrious" ? "Use Danbooru-style tags separated by commas. Focus on anime art style." : (s.promptStyle === "sdxl" ? "Use natural, descriptive prose and full sentences. Focus on photorealism." : "Use a comma-separated list of detailed keywords and visual descriptors.");
+    let perspStr = "This is a CHARACTER PORTRAIT. Frame it as an upper-body/bust shot focused on the character's face and shoulders. Soft, flattering lighting. Clean or simple background. Capture their personality through expression and posture.";
+
+    toastr.info(`Generating portrait prompt for ${npcName}...`, "NPC Bank");
+    showKazumaProgress("AI is writing portrait prompt...");
+
+    // Step 1: Ask the AI to generate an image prompt from the NPC dossier
+    activeNpcPfpRequest = { npcText, styleStr, perspStr, extraStr: s.promptExtra || "None" };
+
+    let promptText;
+    try {
+        let rawOutput = await generateQuietPrompt({ prompt: "___PS_NPC_PFP___" });
+        promptText = rawOutput.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+
+        // Try to extract <img prompt="..."> if the AI wrapped it
+        const imgRegex = /<img\s+prompt=["'](.*?)["']\s*\/?>/i;
+        const match = promptText.match(imgRegex);
+        if (match) promptText = match[1];
+    } catch (e) {
+        console.error("NPC PFP prompt generation failed:", e);
+        $("#kazuma_progress_overlay").hide();
+        toastr.error("Failed to generate portrait prompt.");
+        activeNpcPfpRequest = null;
+        return null;
+    } finally {
+        activeNpcPfpRequest = null;
+    }
+
+    if (!promptText || promptText.length < 5) {
+        $("#kazuma_progress_overlay").hide();
+        toastr.error("AI returned an empty prompt.");
+        return null;
+    }
+
+    console.log(`[Megumin-Suite] NPC PFP prompt for ${npcName}: ${promptText}`);
+    toastr.info("Sending portrait prompt to ComfyUI...", "NPC Bank");
+    showKazumaProgress("Rendering NPC Portrait...");
+
+    // Step 2: Send the AI-generated prompt to ComfyUI
+    let workflowRaw;
+    try {
+        const res = await fetch('/api/sd/comfy/workflow', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ file_name: s.currentWorkflowName }) });
+        if (!res.ok) throw new Error("Load failed"); workflowRaw = await res.json();
+    } catch (e) { $("#kazuma_progress_overlay").hide(); toastr.error("Could not load workflow."); return null; }
+
+    let workflow = (typeof workflowRaw === 'string') ? JSON.parse(workflowRaw) : workflowRaw;
+    let finalSeed = Math.floor(Math.random() * 1000000000);
+
+    for (const nodeId in workflow) {
+        const node = workflow[nodeId];
+        if (node.inputs) {
+            for (const key in node.inputs) {
+                const val = node.inputs[key];
+                if (val === "%prompt%") node.inputs[key] = promptText;
+                if (val === "%negative_prompt%") node.inputs[key] = s.customNegative || "";
+                if (val === "%seed%") node.inputs[key] = finalSeed;
+                if (val === "%sampler%") node.inputs[key] = s.selectedSampler || "euler";
+                if (val === "%model%") node.inputs[key] = s.selectedModel || "v1-5-pruned.ckpt";
+                if (val === "%steps%") node.inputs[key] = parseInt(s.steps) || 20;
+                if (val === "%scale%") node.inputs[key] = parseFloat(s.cfg) || 7.0;
+                if (val === "%denoise%") node.inputs[key] = parseFloat(s.denoise) || 1.0;
+                if (val === "%clip_skip%") node.inputs[key] = -Math.abs(parseInt(s.clipSkip)) || -1;
+                if (val === "%lora1%") node.inputs[key] = s.selectedLora || "None";
+                if (val === "%lora2%") node.inputs[key] = s.selectedLora2 || "None";
+                if (val === "%lora3%") node.inputs[key] = s.selectedLora3 || "None";
+                if (val === "%lora4%") node.inputs[key] = s.selectedLora4 || "None";
+                if (val === "%lorawt1%") node.inputs[key] = parseFloat(s.selectedLoraWt) || 1.0;
+                if (val === "%lorawt2%") node.inputs[key] = parseFloat(s.selectedLoraWt2) || 1.0;
+                if (val === "%lorawt3%") node.inputs[key] = parseFloat(s.selectedLoraWt3) || 1.0;
+                if (val === "%lorawt4%") node.inputs[key] = parseFloat(s.selectedLoraWt4) || 1.0;
+                if (val === "%width%") node.inputs[key] = 512;
+                if (val === "%height%") node.inputs[key] = 512;
+            }
+            if (node.class_type === "KSampler" && 'seed' in node.inputs && typeof node.inputs['seed'] === 'number') { node.inputs.seed = finalSeed; }
+        }
+    }
+
+    try {
+        const res = await fetch(`${s.comfyUrl}/prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow }) });
+        if (!res.ok) throw new Error("Failed");
+        const data = await res.json();
+
+        showKazumaProgress("Rendering Portrait...");
+        return new Promise((resolve) => {
+            const checkInterval = setInterval(async () => {
+                try {
+                    const h = await (await fetch(`${s.comfyUrl}/history/${data.prompt_id}`)).json();
+                    if (h[data.prompt_id]) {
+                        clearInterval(checkInterval);
+                        let finalImage = null;
+                        for (const nodeId in h[data.prompt_id].outputs) {
+                            const nodeOut = h[data.prompt_id].outputs[nodeId];
+                            if (nodeOut.images && nodeOut.images.length > 0) { finalImage = nodeOut.images[0]; break; }
+                        }
+                        if (finalImage) {
+                            const imgUrl = `${s.comfyUrl}/view?filename=${finalImage.filename}&subfolder=${finalImage.subfolder}&type=${finalImage.type}`;
+                            const response = await fetch(imgUrl); const blob = await response.blob();
+                            const base64 = await new Promise((r) => { const reader = new FileReader(); reader.onloadend = () => r(reader.result); reader.readAsDataURL(blob); });
+
+                            // Compress to JPEG
+                            const compressed = await new Promise((r) => {
+                                const img = new Image(); img.src = base64;
+                                img.onload = () => { const cvs = document.createElement('canvas'); cvs.width = img.width; cvs.height = img.height; cvs.getContext('2d').drawImage(img, 0, 0); r(cvs.toDataURL("image/jpeg", 0.85)); };
+                                img.onerror = () => r(base64);
+                            });
+
+                            npc.pfp = compressed;
+                            saveProfileToMemory();
+                            $("#kazuma_progress_overlay").hide();
+                            toastr.success(`Portrait generated for ${npcName}!`);
+                            renderNpcList();
+                            resolve(compressed);
+                        } else {
+                            $("#kazuma_progress_overlay").hide();
+                            resolve(null);
+                        }
+                    }
+                } catch (e) { }
+            }, 1000);
+        });
+    } catch (e) { $("#kazuma_progress_overlay").hide(); toastr.error("ComfyUI Error: " + e.message); return null; }
+}
+
+function renderNpcBank(c) {
+    c.empty();
+    const nb = localProfile.npcBank;
+
+    c.append(`
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #f43f5e, #e11d48);">
+                    <i class="fa-solid fa-address-book"></i>
+                </div>
+                <div>
+                    <h2>NPCs Bank</h2>
+                    <p>Automatically extract and track significant NPCs in the story.</p>
+                </div>
+            </div>
+            <div id="npc_header_badge" class="mtab-header-badge" style="background: ${nb.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${nb.enabled ? '#10b981' : 'var(--text-muted)'}; border: 1px solid ${nb.enabled ? 'rgba(16,185,129,0.25)' : 'var(--border-color)'};">
+                <i class="fa-solid fa-${nb.enabled ? 'circle-check' : 'circle-xmark'}" style="font-size:0.6rem;"></i> ${nb.enabled ? 'Enabled' : 'Disabled'}
+            </div>
+        </div>
+
+        <div class="mtab-toggle-row ${nb.enabled ? 'active' : ''}" id="npc_enable_card" style="margin-bottom: 10px;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-users" style="color:#f43f5e;"></i> Enable NPC Bank</div>
+                <div class="toggle-desc">When enabled, the AI generates detailed dossiers for new NPCs, which are saved here and injected when relevant.</div>
+            </div>
+            <div class="ps-switch"></div>
+        </div>
+
+        <div class="mtab-toggle-row ${nb.sendPortraitsToAi ? 'active' : ''}" id="npc_send_portraits" style="margin-bottom: 20px;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-image" style="color:#a855f7;"></i> Send Portraits to AI</div>
+                <div class="toggle-desc">If an injected NPC has a portrait, send the image to the AI to help it visualize the character.</div>
+            </div>
+            <div class="ps-switch"></div>
+        </div>
+
+        <div id="npc_main_content" style="display: ${nb.enabled ? 'block' : 'none'};">
+            <div style="margin-top: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <div style="color: #f43f5e; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;"><i class="fa-solid fa-address-card"></i> Saved NPCs <span id="npc_count" style="color: var(--text-muted); font-size: 0.75rem; margin-left: 8px;">(${(nb.npcs || []).length})</span></div>
+                    <button id="npc_btn_clear_all" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
+                </div>
+                <div id="npc_bank_list" style="display: flex; flex-direction: column; gap: 14px; padding: 4px;">
+                </div>
+            </div>
+        </div>
+    `);
+
+    $("#npc_enable_card").on("click", function () {
+        nb.enabled = !nb.enabled; saveProfileToMemory();
+        if (nb.enabled) {
+            $(this).addClass("active").css("border-color", "var(--gold)");
+            $("#npc_main_content").slideDown(200);
+            $("#npc_header_badge").css({ background: 'rgba(16,185,129,0.12)', color: '#10b981', 'border-color': 'rgba(16,185,129,0.25)' }).html(`<i class="fa-solid fa-circle-check" style="font-size:0.6rem;"></i> Enabled`);
+            renderNpcList();
+        } else {
+            $(this).removeClass("active").css("border-color", "var(--border-color)");
+            $("#npc_main_content").slideUp(200);
+            $("#npc_header_badge").css({ background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', 'border-color': 'var(--border-color)' }).html(`<i class="fa-solid fa-circle-xmark" style="font-size:0.6rem;"></i> Disabled`);
+        }
+    });
+
+    $("#npc_btn_clear_all").on("click", function () {
+        if (!localProfile.npcBank.npcs || localProfile.npcBank.npcs.length === 0) return;
+        if (confirm("Are you sure you want to delete all saved NPCs? This cannot be undone.")) {
+            localProfile.npcBank.npcs = [];
+            saveProfileToMemory();
+            renderNpcList();
+        }
+    });
+
+    $("#npc_send_portraits").on("click", function () {
+        nb.sendPortraitsToAi = !nb.sendPortraitsToAi; saveProfileToMemory();
+        if (nb.sendPortraitsToAi) {
+            $(this).addClass("active").css("border-color", "var(--gold)");
+        } else {
+            $(this).removeClass("active").css("border-color", "var(--border-color)");
+        }
+    });
+
+    if (nb.enabled) renderNpcList();
+}
+
+function renderNpcList() {
+    const list = $("#npc_bank_list");
+    list.empty();
+    if (!localProfile.npcBank.npcs) localProfile.npcBank.npcs = [];
+    const npcs = localProfile.npcBank.npcs;
+    $("#npc_count").text(`(${npcs.length})`);
+
+    if (npcs.length === 0) {
+        list.append('<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 20px;">No NPCs saved yet. The AI will add them automatically when significant NPCs are introduced.</div>');
+        return;
+    }
+
+    const npcFieldMeta = [
+        { key: "appearance", label: "Appearance", icon: "fa-eye", color: "#a78bfa" },
+        { key: "occupation", label: "Occupation", icon: "fa-briefcase", color: "#60a5fa" },
+        { key: "background", label: "Background", icon: "fa-book", color: "#34d399" },
+        { key: "innerCircle", label: "Inner Circle", icon: "fa-people-group", color: "#fbbf24" },
+        { key: "personality", label: "Personality", icon: "fa-masks-theater", color: "#f472b6" },
+        { key: "agenda", label: "Current Agenda", icon: "fa-bullseye", color: "#fb923c" },
+        { key: "hiddenLayer", label: "Hidden Layer", icon: "fa-eye-slash", color: "#ef4444" }
+    ];
+
+    [...npcs].reverse().forEach((n, revIdx) => {
+        const idx = npcs.length - 1 - revIdx;
+        const dateStr = new Date(n.timestamp).toLocaleDateString();
+        const pfpSrc = n.pfp || "";
+
+        // Dynamic color based on sex: Blue for male, Red/pink for female/other
+        const isMale = (n.sex || "").trim().toLowerCase().startsWith("m");
+        const accentColor = isMale ? "#3b82f6" : "#f43f5e";
+        const accentRgba = isMale ? "59,130,246" : "244,63,94";
+        const gradientFrom = isMale ? "rgba(59,130,246,0.15)" : "rgba(244,63,94,0.15)";
+        const gradientTo = isMale ? "rgba(29,78,216,0.08)" : "rgba(225,29,72,0.08)";
+
+        const pfpDisplay = pfpSrc ? `<img src="${pfpSrc}" style="width:100%;height:100%;object-fit:cover;border-radius:10px;" />` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:${accentColor};"><i class="fa-solid fa-user-secret"></i></div>`;
+
+        let fieldsHTML = "";
+        npcFieldMeta.forEach(fm => {
+            const val = n[fm.key] || "";
+            fieldsHTML += `
+                <div class="npc-field-section" style="margin-bottom: 6px;">
+                    <div style="font-size: 0.65rem; color: ${fm.color}; font-weight: 600; margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
+                        <i class="fa-solid ${fm.icon}" style="font-size: 0.6rem;"></i> ${fm.label}
+                    </div>
+                    <textarea class="ps-modern-input npc_field_edit" data-idx="${idx}" data-field="${fm.key}" 
+                        style="height: ${fm.key === 'background' || fm.key === 'innerCircle' ? '60' : '32'}px; resize: vertical; font-size: 0.7rem; padding: 4px 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; line-height: 1.3;"
+                    >${val}</textarea>
+                </div>`;
+        });
+
+        const miniPfp = pfpSrc ? `<img src="${pfpSrc}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;border:1px solid rgba(${accentRgba},0.3);" />` : "";
+
+        const card = $(`
+            <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(${accentRgba},0.2); border-radius: 12px; overflow: hidden; transition: border-color 0.2s;" class="npc-card" data-accent-rgba="${accentRgba}">
+                <!-- Header (clickable to toggle) -->
+                <div class="npc-card-header" style="background: linear-gradient(135deg, ${gradientFrom}, ${gradientTo}); padding: 8px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i class="fa-solid fa-chevron-right npc-chevron" style="font-size: 0.6rem; color: ${accentColor}; transition: transform 0.2s;"></i>
+                        ${miniPfp}
+                        <span style="font-size: 0.85rem; font-weight: 700; color: ${accentColor};">${n.name}</span>
+                        <span style="font-size: 0.6rem; color: var(--text-muted); background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">${n.age || "?"} · ${n.sex || "?"}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--text-muted); font-size: 0.6rem;">${dateStr}</span>
+                        <button class="npc_del_btn" data-idx="${idx}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Delete NPC"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+                <!-- Body (collapsed by default) -->
+                <div class="npc-card-body" style="display: none; border-top: 1px solid rgba(${accentRgba},0.15);">
+                    <div style="display: flex; gap: 12px; padding: 12px;">
+                        <!-- PFP Column -->
+                        <div style="flex-shrink: 0; width: 160px; display: flex; flex-direction: column; gap: 8px;">
+                            <div class="npc-pfp-container" style="width: 160px; height: 240px; border-radius: 10px; overflow: hidden; border: 2px solid rgba(${accentRgba},0.3); background: rgba(0,0,0,0.4);">
+                                ${pfpDisplay}
+                            </div>
+                            <div style="text-align: center; font-size: 0.95rem; font-weight: 800; color: ${accentColor}; margin-top: 2px; margin-bottom: 2px; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">${n.name}</div>
+                            <button class="npc_upload_pfp" data-idx="${idx}" style="width: 100%; font-size: 0.65rem; padding: 4px 0; border-radius: 6px; border: 1px solid rgba(${accentRgba},0.3); background: rgba(${accentRgba},0.1); color: ${accentColor}; cursor: pointer; transition: background 0.2s;" title="Upload Image">
+                                <i class="fa-solid fa-upload"></i> Upload
+                            </button>
+                            <button class="npc_gen_pfp" data-idx="${idx}" data-name="${n.name}" style="width: 100%; font-size: 0.65rem; padding: 4px 0; border-radius: 6px; border: 1px solid rgba(168,85,247,0.3); background: rgba(168,85,247,0.1); color: #a855f7; cursor: pointer; transition: background 0.2s;" title="Generate with ComfyUI">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Generate
+                            </button>
+                        </div>
+                        <!-- Fields Column -->
+                        <div style="flex: 1; min-width: 0;">
+                            ${fieldsHTML}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+
+        // Hover effect — dynamic color
+        card.on("mouseenter", function () { $(this).css("border-color", `rgba(${$(this).attr('data-accent-rgba')},0.5)`); });
+        card.on("mouseleave", function () { $(this).css("border-color", `rgba(${$(this).attr('data-accent-rgba')},0.2)`); });
+
+        // Collapse / Expand toggle
+        card.find(".npc-card-header").on("click", function (e) {
+            if ($(e.target).closest(".npc_del_btn").length) return; // Don't toggle when clicking delete
+            const body = $(this).siblings(".npc-card-body");
+            const chevron = $(this).find(".npc-chevron");
+            body.slideToggle(200);
+            chevron.css("transform", body.is(":visible") ? "rotate(0deg)" : "rotate(90deg)");
+        });
+
+        // Field editing
+        card.find(".npc_field_edit").on("change", function () {
+            const i = parseInt($(this).attr("data-idx"));
+            const field = $(this).attr("data-field");
+            if (localProfile.npcBank.npcs[i]) {
+                localProfile.npcBank.npcs[i][field] = $(this).val();
+                saveProfileToMemory();
+            }
+        });
+
+        // Delete
+        card.find(".npc_del_btn").on("click", function () {
+            const i = parseInt($(this).attr("data-idx"));
+            if (confirm(`Delete ${localProfile.npcBank.npcs[i]?.name || "this NPC"}?`)) {
+                localProfile.npcBank.npcs.splice(i, 1);
+                saveProfileToMemory();
+                renderNpcList();
+            }
+        });
+
+        // Upload PFP
+        card.find(".npc_upload_pfp").on("click", function () {
+            const i = parseInt($(this).attr("data-idx"));
+            const input = document.createElement("input");
+            input.type = "file"; input.accept = "image/*";
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    // Compress to reasonable size
+                    const img = new Image();
+                    img.onload = () => {
+                        const cvs = document.createElement("canvas");
+                        const maxSize = 256;
+                        let w = img.width, h = img.height;
+                        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+                        else { w = Math.round(w * maxSize / h); h = maxSize; }
+                        cvs.width = w; cvs.height = h;
+                        cvs.getContext("2d").drawImage(img, 0, 0, w, h);
+                        const compressed = cvs.toDataURL("image/jpeg", 0.85);
+                        localProfile.npcBank.npcs[i].pfp = compressed;
+                        saveProfileToMemory();
+                        renderNpcList();
+                        toastr.success("Portrait uploaded!");
+                    };
+                    img.src = ev.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+            input.click();
+        });
+
+        // Generate PFP via ComfyUI
+        card.find(".npc_gen_pfp").on("click", async function () {
+            const name = $(this).attr("data-name");
+            await npcGeneratePfp(name);
+        });
+
+        list.append(card);
+    });
+}
+
+// -------------------------------------------------------------
+// STAGE 9: MEMORY CORE (3-Tier Context)
+// -------------------------------------------------------------
+function renderMemoryCore(c) {
+    c.empty();
+    const mem = localProfile.memoryCore;
+
+    c.append(`
+        <!-- HEADER -->
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
+                    <i class="fa-solid fa-memory"></i>
+                </div>
+                <div>
+                    <h2>Memory Core</h2>
+                    <p>3-Tier Context Management: Working, Short-Term, and Long-Term Vector DB.</p>
+                </div>
+            </div>
+            <div id="mem_header_badge" class="mtab-header-badge" style="background: ${mem.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${mem.enabled ? '#10b981' : 'var(--text-muted)'}; border: 1px solid ${mem.enabled ? 'rgba(16,185,129,0.25)' : 'var(--border-color)'};">
+                <i class="fa-solid fa-${mem.enabled ? 'circle-check' : 'circle-xmark'}" style="font-size:0.6rem;"></i> ${mem.enabled ? 'Enabled' : 'Disabled'}
+            </div>
+        </div>
+
+        <!-- MASTER TOGGLE -->
+        <div class="mtab-toggle-row ${mem.enabled ? 'active' : ''}" id="mem_enable_card" style="margin-bottom: 20px;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-microchip" style="color:#10b981;"></i> Enable Memory Core</div>
+                <div class="toggle-desc">Archiving happens silently in the background. Old messages fade in the UI and are replaced in the prompt with injected summaries.</div>
+            </div>
+            <div class="ps-switch"></div>
+        </div>
+
+        <div id="mem_main_content" style="display: ${mem.enabled ? 'block' : 'none'};">
+            
+            <!-- Dashboard Progress Bar -->
+            <div class="mtab-panel" style="margin-bottom:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+                    <div class="mtab-panel-title green" style="margin:0;"><i class="fa-solid fa-chart-gantt"></i> Context Allocation Dashboard</div>
+                    <div style="font-size: 0.75rem; font-weight: 800; color: #10b981; background: rgba(16,185,129,0.1); padding: 4px 12px; border-radius: 12px; border: 1px solid rgba(16,185,129,0.3); box-shadow: 0 0 10px rgba(16,185,129,0.2);">
+                        <i class="fa-solid fa-floppy-disk"></i> <span id="mem_live_tokens_saved">~0</span> Tokens Saved
+                    </div>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <span><i class="fa-solid fa-circle" style="color: #10b981; font-size: 0.5rem;"></i> Working</span>
+                    <span id="mem_dash_short_lbl" style="display:${mem.architecture === 'raw_long' ? 'none' : 'inline'};">
+                        <i class="fa-solid fa-circle-half-stroke" style="color: rgba(245,158,11,0.5); font-size: 0.5rem;"></i> Pend Short 
+                        <i class="fa-solid fa-circle" style="color: #f59e0b; font-size: 0.5rem; margin-left:4px;"></i> Short
+                    </span>
+                    <span>
+                        <i class="fa-solid fa-circle-half-stroke" style="color: rgba(59,130,246,0.5); font-size: 0.5rem;"></i> Pend Vault 
+                        <i class="fa-solid fa-circle" style="color: #3b82f6; font-size: 0.5rem; margin-left:4px;"></i> Vault
+                    </span>
+                </div>
+                <div class="mem-progress-container" style="background: rgba(0,0,0,0.6);">
+                    <div id="mem_bar_work" style="background: #10b981; transition: width 0.2s ease;"></div>
+                    <div id="mem_bar_short_pend" style="background: repeating-linear-gradient(45deg, #9a3412, #9a3412 10px, #d97706 10px, #d97706 20px); transition: width 0.2s ease;"></div>
+                    <div id="mem_bar_short" style="background: #f59e0b; transition: width 0.2s ease;"></div>
+                    <div id="mem_bar_long_pend" style="background: repeating-linear-gradient(45deg, #1e3a8a, #1e3a8a 10px, #2563eb 10px, #2563eb 20px); transition: width 0.2s ease;"></div>
+                    <div id="mem_bar_long" style="background: #3b82f6; transition: width 0.2s ease;"></div>
+                </div>
+                <div style="margin-top: 10px; font-size: 0.7rem; color: var(--text-muted); text-align: center;" id="mem_status_text">
+                    Monitoring Chat History...
+                </div>
+            </div>
+
+            <!-- Engine Settings -->
+            <div class="mtab-panel" style="margin-bottom:16px;">
+                <div class="mtab-panel-title gold"><i class="fa-solid fa-gears"></i> Extraction Engine Settings</div>
+                
+                <!-- Quick Help / Hint -->
+                <div style="background: rgba(245,158,11,0.1); border-left: 3px solid #f59e0b; padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 0.8rem; color: var(--text-main);">
+                    <div style="color: #f59e0b; font-weight: bold; margin-bottom: 6px;"><i class="fa-solid fa-circle-info"></i> How to Use</div>
+                    <div style="color: var(--text-muted); line-height: 1.4;">
+                        1- Choose your Memory Architecture and how much of each type you want (default is 30 raw, 70 summary).<br>
+                        2- Hit <b>Apply & Extract Pending</b> to save and start it.<br>
+                        3- You can choose between manual and auto. For manual, you have to hit <b>Apply & Extract Pending</b> to trigger it.
+                    </div>
+                </div>
+
+                <!-- Architecture Preset Dropdown -->
+                <div class="mtab-setting-row" style="padding-top: 0;">
+                    <div class="set-info">
+                        <div class="set-label">Memory Architecture</div>
+                        <div class="set-desc">Choose how the tiers are structured.</div>
+                    </div>
+                    <select id="mem_architecture" class="ps-modern-input" style="width: 280px; cursor: pointer; color: var(--gold); border-color: rgba(245,158,11,0.3);">
+                        <option value="raw_short_long" ${mem.architecture === 'raw_short_long' ? 'selected' : ''}>Raw Text + Short-Term Summaries + Vault</option>
+                        <option value="raw_long" ${mem.architecture === 'raw_long' ? 'selected' : ''}>Raw Text + Vault Directly (Skip Summaries)</option>
+                    </select>
+                </div>
+
+                <!-- Sliders Container -->
+                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 15px;">
+                    <div class="mtab-param-row">
+                        <span class="param-label" style="width:120px;">Working Limit</span>
+                        <input type="range" id="mem_work_slider" min="30" max="300" step="10" value="${mem.workingLimit}">
+                        <span id="mem_work_val" style="font-size:0.8rem; font-weight:bold; min-width:30px; text-align:right;">${mem.workingLimit}</span>
+                    </div>
+                    <div class="mtab-param-row" id="mem_short_slider_row" style="display:${mem.architecture === 'raw_long' ? 'none' : 'flex'};">
+                        <span class="param-label" style="width:120px;">Short-Term Limit</span>
+                        <input type="range" id="mem_short_slider" min="10" max="1000" step="10" value="${mem.shortTermLimit}">
+                        <span id="mem_short_val" style="font-size:0.8rem; font-weight:bold; min-width:30px; text-align:right;">${mem.shortTermLimit}</span>
+                    </div>
+                    
+                    <!-- NEW APPLY BUTTON -->
+                    <div style="margin-top: 15px; display: flex; justify-content: flex-end; border-top: 1px dashed var(--border-color); padding-top: 15px;">
+                        <button id="mem_btn_apply_limits" class="ps-modern-btn secondary" style="color: #10b981; border-color: rgba(16,185,129,0.3); font-size: 0.75rem; padding: 6px 14px;">
+                            <i class="fa-solid fa-arrows-rotate"></i> Apply & Extract Pending
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mtab-setting-row" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 14px;">
+                    <div class="set-info">
+                        <div class="set-label">Generator Backend</div>
+                    </div>
+                    <select id="mem_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
+                        <option value="direct" ${mem.backend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
+                        <option value="preset" ${mem.backend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
+                    </select>
+                </div>
+                <div class="mtab-setting-row" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 14px;">
+                    <div class="set-info">
+                        <div class="set-label">Vault Scanner Engine</div>
+                        <div class="set-desc">TF-IDF (Fast/Local) or Semantic Embeddings (Requires ST Vector Storage enabled).</div>
+                    </div>
+                    <select id="mem_scanner_engine" class="ps-modern-input" style="width: 280px; cursor: pointer;">
+                        <option value="tfidf" ${mem.scannerEngine === 'tfidf' ? 'selected' : ''}>TF-IDF Keyword Matcher</option>
+                        <option value="semantic" ${mem.scannerEngine === 'semantic' ? 'selected' : ''}>Semantic Embeddings (ST Native API)</option>
+                    </select>
+                </div>
+                <div class="mtab-setting-row">
+                    <div class="set-info">
+                        <div class="set-label">Auto-Trigger Mode</div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <select id="mem_trigger" class="ps-modern-input" style="width: 150px; cursor: pointer;">
+                            <option value="manual" ${mem.triggerMode === 'manual' ? 'selected' : ''}>Manual Only</option>
+                            <option value="frequency" ${mem.triggerMode === 'frequency' ? 'selected' : ''}>Every 10 Replies</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Short-Term Editor -->
+            <div class="mtab-panel" style="margin-bottom:16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                    <div class="mtab-panel-title gold" style="margin-bottom:0;">
+                        <i class="fa-solid fa-box-archive"></i> Short-Term Memory
+                        <span id="mem_processing_spinner" style="display:none; margin-left: 10px;" class="mem-spinner"><i class="fa-solid fa-circle-notch"></i></span>
+                    </div>
+                </div>
+                
+                <div id="mem_short_term_list">
+                    <!-- Accordions Injected Here -->
+                </div>
+            </div>
+
+            <!-- Long-Term Vault -->
+            <div class="mtab-panel">
+                <div class="mtab-panel-title blue" style="display:flex; justify-content:space-between;">
+                    <span><i class="fa-solid fa-database"></i> Long-Term Vault (Vector Storage)</span>
+                    <span id="mem_vault_count" style="font-size:0.7rem; color:var(--text-muted);">0 Entries</span>
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="text" id="mem_vault_search" class="ps-modern-input" placeholder="Search archived memories..." style="flex: 1; border-color: rgba(59,130,246,0.3);">
+                    <button id="mem_btn_test_vector" class="ps-modern-btn secondary" style="color: #3b82f6; border-color: rgba(59,130,246,0.3);" title="See what memories the AI is retrieving right now"><i class="fa-solid fa-radar"></i> Test Scanner</button>
+                </div>
+                <div id="mem_vault_list" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+                    <!-- Vault items injected here -->
+                </div>
+            </div>
+        </div>
+    `);
+
+    // Toggle Listener
+    $("#mem_enable_card").on("click", function () {
+        mem.enabled = !mem.enabled; saveProfileToMemory();
+        if (mem.enabled) {
+            $(this).addClass("active").css("border-color", "var(--gold)");
+            $("#mem_main_content").slideDown(200);
+            $("#mem_header_badge").css({ background: 'rgba(16,185,129,0.12)', color: '#10b981', 'border-color': 'rgba(16,185,129,0.25)' }).html(`<i class="fa-solid fa-circle-check" style="font-size:0.6rem;"></i> Enabled`);
+            memRenderDashboard();
+        } else {
+            $(this).removeClass("active").css("border-color", "var(--border-color)");
+            $("#mem_main_content").slideUp(200);
+            $("#mem_header_badge").css({ background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', 'border-color': 'var(--border-color)' }).html(`<i class="fa-solid fa-circle-xmark" style="font-size:0.6rem;"></i> Disabled`);
+        }
+        updateMemoryVisuals();
+    });
+
+    // Slider & Architecture Listeners
+    $("#mem_architecture").on("change", function () {
+        mem.architecture = $(this).val();
+        if (mem.architecture === "raw_long") {
+            $("#mem_short_slider_row").hide();
+            $("#mem_dash_short_lbl").hide();
+            $("#mem_bar_short, #mem_bar_short_pend").hide();
+        } else {
+            $("#mem_short_slider_row").css("display", "flex");
+            $("#mem_dash_short_lbl").show();
+            $("#mem_bar_short, #mem_bar_short_pend").css("display", "block");
+        }
+        saveProfileToMemory();
+        memRunVaultMigration();
+        memRenderDashboard();
+    });
+
+    $("#mem_work_slider").on("input", function () {
+        let val = parseInt($(this).val());
+        mem.workingLimit = val;
+        $("#mem_work_val").text(val);
+
+        // Short-term is now independent, no forced minimums based on working limit
+        saveProfileToMemory();
+        memRenderDashboard();
+    });
+
+    $("#mem_scanner_engine").on("change", async function () {
+        mem.scannerEngine = $(this).val();
+        saveProfileToMemory();
+        if (mem.scannerEngine === 'semantic') {
+            toastr.info("Semantic Mode active. Syncing vault to Vector Database...");
+            await memInsertToVectorDB(mem.longTermVault);
+            await memUpdateSemanticQuery();
+            toastr.success("Vector Database Synced!");
+        }
+    });
+
+    // Trigger migration ONLY on 'change' (when they let go of the mouse click) to avoid spamming calculations
+    $("#mem_work_slider").on("change", function () { memRunVaultMigration(); });
+
+    $("#mem_short_slider").on("input", function () {
+        let val = parseInt($(this).val());
+        mem.shortTermLimit = val;
+        $("#mem_short_val").text(val);
+        saveProfileToMemory();
+        memRenderDashboard();
+    });
+    $("#mem_short_slider").on("change", function () { memRunVaultMigration(); });
+
+    $("#mem_trigger").on("change", function () {
+        mem.triggerMode = $(this).val();
+        saveProfileToMemory();
+    });
+
+    // Apply Limits & Auto-Extract Button
+    $("#mem_btn_apply_limits").off("click").on("click", async function () {
+        memSyncLimits(); // Scrub overlaps first
+
+        // Check if there is actually anything pending to extract
+        const context = typeof getContext === "function" ? getContext() : null;
+        if (!context || !context.chat) return;
+        let totalRealMessages = 0;
+        for (let m of context.chat) { if (!m.is_system) totalRealMessages++; }
+
+        const workingLimit = mem.workingLimit || 30;
+        if (totalRealMessages > workingLimit) {
+            toastr.info("Starting automatic extraction to fill new limits...");
+            await memProcessPendingChunks(); // Start extraction!
+        }
+    });
+
+    // Test Vector Scanner Button (Dual Engine UI)
+    $("body").off("click", "#mem_btn_test_vector").on("click", "#mem_btn_test_vector", async function () {
+        const context = typeof getContext === "function" ? getContext() : null;
+        const mem = localProfile?.memoryCore;
+        const engine = mem?.scannerEngine || 'tfidf';
+
+        let html = `<div style="font-family: 'Inter', sans-serif; font-size: 0.85rem; color: var(--text-main); text-align: left; display: flex; flex-direction: column; gap: 10px;">`;
+
+        if (engine === 'semantic') {
+            toastr.info("Querying SillyTavern Vector Database...");
+            $("#mem_btn_test_vector").prop("disabled", true);
+            await memUpdateSemanticQuery(); // Force a fresh query right now
+            $("#mem_btn_test_vector").prop("disabled", false);
+
+            if (currentSemanticMatches.length === 0) {
+                toastr.error("Semantic API Failed. Is ST Vector Storage enabled?");
+            } else {
+                html += `<div style="background: rgba(168,85,247,0.1); border-left: 3px solid #a855f7; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
+                <div style="color: #a855f7; font-weight: bold; margin-bottom: 4px;">Semantic Embeddings Engine Active</div>
+                <div style="color: var(--text-muted); font-size: 0.75rem;">Using SillyTavern's Vector Storage API (LanceDB) to find the deep contextual meaning of the last 2 messages.</div>
+            </div>`;
+            }
+        }
+
+        // Only show TF-IDF block if Semantic failed OR TF-IDF is manually selected
+        if (engine === 'tfidf' || currentSemanticMatches.length === 0) {
+            const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-2).map(m => meguminCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
+            const uniqueKeywords = memExtractKeywords(recentCleanedText);
+            html += `<div style="background: rgba(16,185,129,0.1); border-left: 3px solid #10b981; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
+            <div style="color: #10b981; font-weight: bold; margin-bottom: 4px;">TF-IDF Smart Keywords (Last 2 Messages):</div>
+            <div style="color: var(--text-muted); font-size: 0.75rem;">${uniqueKeywords.join(", ") || "None"}</div>
+        </div>`;
+        }
+
+        const matches = memGetRelevantVaultEntries();
+
+        if (matches.length === 0) {
+            html += `<div style="padding: 10px;">No highly relevant memories found for the current context.</div>`;
+        } else {
+            html += `<div style="color: var(--text-muted); margin-bottom: 5px;">The following archives will be injected into the prompt:</div>`;
+            matches.forEach(m => {
+                const content = m.text || m.summary;
+                const scoreColor = engine === 'semantic' ? '#a855f7' : '#3b82f6';
+                html += `<div style="background: rgba(0,0,0,0.3); border-left: 3px solid ${scoreColor}; padding: 10px; border-radius: 4px;">
+                <div style="color: ${scoreColor}; font-weight: bold; font-size: 0.75rem; margin-bottom: 2px;">[Match Score: ${m.score}] | Msg ${m.id}</div>
+                <div style="color: #f59e0b; font-weight: bold; font-size: 0.7rem; margin-bottom: 6px;">Matched Triggers: ${m.matchedWords.join(", ")}</div>
+                <div style="max-height: 150px; overflow-y: auto; white-space: pre-wrap; font-size: 0.8rem; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">${content}</div>
+            </div>`;
+            });
+        }
+        html += `</div>`;
+
+        const { Popup, POPUP_TYPE } = typeof getContext === "function" ? getContext() : window;
+        if (Popup) {
+            const popup = new Popup(html, POPUP_TYPE.TEXT, "Vault Scanner Results", { wide: true });
+            await popup.show();
+        }
+    });
+
+    if (mem.enabled) {
+        memRenderDashboard();
+        memRenderAccordion();
+        memRenderVault();
+    }
+}
+
+function memRenderDashboard() {
+    const context = typeof getContext === "function" ? getContext() : null;
+    const chat = context?.chat || [];
+    const mem = localProfile.memoryCore;
+
+    let totalRealMessages = 0;
+    for (let m of chat) { if (!m.is_system) totalRealMessages++; }
+
+    $("#mem_live_tokens_saved").text(`~${memCalculateTokensSaved()}`);
+
+    const isRawLong = (mem.architecture === "raw_long");
+
+    // 1. Determine the projected TARGET sizes based purely on sliders
+    const targetWork = Math.min(totalRealMessages, mem.workingLimit || 30);
+    const targetShort = isRawLong ? 0 : Math.min(Math.max(0, totalRealMessages - targetWork), mem.shortTermLimit || 70);
+    const targetLong = isRawLong ? Math.max(0, totalRealMessages - targetWork) : Math.max(0, totalRealMessages - (targetWork + (mem.shortTermLimit || 70)));
+
+    // 2. Determine ACTUAL summarized chunks currently in memory
+    let actualShort = 0;
+    if (mem.shortTermChunks && !isRawLong) {
+        mem.shortTermChunks.forEach(c => {
+            const parts = c.id.split("-");
+            actualShort += (parseInt(parts[1]) - parseInt(parts[0]) + 1);
+        });
+    }
+
+    let actualLong = 0;
+    if (mem.longTermVault) {
+        mem.longTermVault.forEach(c => {
+            const parts = c.id.split("-");
+            actualLong += (parseInt(parts[1]) - parseInt(parts[0]) + 1);
+        });
+    }
+
+    // 3. Calculate Pending (Stripes) vs Displayed Actuals (Solid)
+    const pendShort = Math.max(0, targetShort - actualShort);
+    const displayShort = Math.min(targetShort, actualShort);
+
+    const pendLong = Math.max(0, targetLong - actualLong);
+    const displayLong = Math.min(targetLong, actualLong);
+
+    if (isRawLong) {
+        $("#mem_bar_short_pend, #mem_bar_short").hide();
+    } else {
+        $("#mem_bar_short_pend, #mem_bar_short").css("display", "block"); // Force it to show!
+    }
+
+    // 4. Convert to Percentages for the CSS Bar
+    const maxBarScale = Math.max(totalRealMessages, 1);
+    const pWork = (targetWork / maxBarScale) * 100;
+    const pPendShort = (pendShort / maxBarScale) * 100;
+    const pDispShort = (displayShort / maxBarScale) * 100;
+    const pPendLong = (pendLong / maxBarScale) * 100;
+    const pDispLong = (displayLong / maxBarScale) * 100;
+
+    $("#mem_bar_work").css("width", `${pWork}%`);
+    $("#mem_bar_short_pend").css("width", `${pPendShort}%`);
+    $("#mem_bar_short").css("width", `${pDispShort}%`);
+    $("#mem_bar_long_pend").css("width", `${pPendLong}%`);
+    $("#mem_bar_long").css("width", `${pDispLong}%`);
+
+    const shortText = isRawLong ? "" : `Pend Short: ${pendShort} | Short: ${displayShort} | `;
+    $("#mem_status_text").text(`Total: ${totalRealMessages} | Working: ${targetWork} | ${shortText}Pend Vault: ${pendLong} | Vault: ${displayLong}`);
+}
+
+// Renders the editable text areas for chunks already processed
+function memRenderAccordion() {
+    const mem = localProfile.memoryCore;
+    const list = $("#mem_short_term_list");
+    list.empty();
+
+    if (!mem.shortTermChunks || mem.shortTermChunks.length === 0) {
+        list.append(`<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 10px;">No chunks generated yet. Generate chat messages to trigger background summarization.</div>`);
+        return;
+    }
+
+    // Reverse array to show newest chunks at the top
+    const chunks = [...mem.shortTermChunks].reverse();
+
+    chunks.forEach(chunk => {
+        const dateStr = new Date(chunk.timestamp).toLocaleString();
+        const acc = $(`
+            <div class="mem-accordion">
+                <div class="mem-accordion-header">
+                    <span><i class="fa-solid fa-layer-group" style="color:var(--gold); margin-right:6px;"></i> Messages: ${chunk.id}</span>
+                    <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 400;"><i class="fa-regular fa-clock"></i> ${dateStr}</span>
+                </div>
+                <div class="mem-accordion-body">
+                    <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:6px;">You can manually edit this state extraction before it gets pushed to the Vector DB.</div>
+                    <textarea class="mem_chunk_edit" data-id="${chunk.id}">${chunk.summary}</textarea>
+                </div>
+            </div>
+        `);
+
+        // Accordion Toggle
+        acc.find(".mem-accordion-header").on("click", function () {
+            $(this).next(".mem-accordion-body").slideToggle(150);
+        });
+
+        // Auto-save edits
+        acc.find("textarea").on("input", function () {
+            const id = $(this).attr("data-id");
+            const newText = $(this).val();
+            const target = localProfile.memoryCore.shortTermChunks.find(c => c.id === id);
+            if (target) {
+                target.summary = newText;
+                saveProfileToMemory();
+            }
+        });
+
+        list.append(acc);
+    });
+}
+
+// Renders the Long-Term Vault UI with Search Filtering
+function memRenderVault(searchFilter = "") {
+    const mem = localProfile.memoryCore;
+    const list = $("#mem_vault_list");
+    list.empty();
+
+    if (!mem.longTermVault) mem.longTermVault = [];
+    $("#mem_vault_count").text(`${mem.longTermVault.length} Entries`);
+
+    if (mem.longTermVault.length === 0) {
+        const passMsg = (mem.workingLimit || 30) + (mem.shortTermLimit || 70);
+        list.append(`<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 10px;">Vault is empty. Chunks automatically migrate here once they pass message ${passMsg}.</div>`);
+        return;
+    }
+
+    // Filter using .text (fallback to .summary just in case you have old saves)
+    const filtered = mem.longTermVault.filter(c => {
+        const content = c.text || c.summary || "";
+        return content.toLowerCase().includes(searchFilter.toLowerCase());
+    }).reverse();
+
+    filtered.forEach(chunk => {
+        const dateStr = new Date(chunk.timestamp).toLocaleDateString();
+        const content = chunk.text || chunk.summary || "";
+
+        const row = $(`
+            <div style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; position: relative;">
+                <div style="font-size: 0.65rem; color: #3b82f6; font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                    <span>ARCHIVE #${chunk.id}</span>
+                    <span>${dateStr}</span>
+                </div>
+                <textarea class="ps-modern-input mem_vault_edit" data-id="${chunk.id}" style="height: 120px; resize: vertical; font-size: 0.75rem; border: none; background: transparent; padding: 0;">${content}</textarea>
+                <button class="mem_vault_del" data-id="${chunk.id}" style="position: absolute; bottom: 8px; right: 10px; background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem;" title="Delete Archive"><i class="fa-solid fa-trash"></i></button>
+            </div>
+        `);
+
+        // Auto-save edits to .text
+        row.find(".mem_vault_edit").on("change", function () {
+            const id = $(this).attr("data-id");
+            const target = localProfile.memoryCore.longTermVault.find(c => c.id === id);
+            if (target) {
+                target.text = $(this).val();
+                saveProfileToMemory();
+                if (localProfile.memoryCore.scannerEngine === 'semantic') memInsertToVectorDB([target]);
+            }
+        });
+
+        // Delete button
+        row.find(".mem_vault_del").on("click", function () {
+            if (confirm("Permanently delete this archived memory?")) {
+                const id = $(this).attr("data-id");
+                localProfile.memoryCore.longTermVault = localProfile.memoryCore.longTermVault.filter(c => c.id !== id);
+                if (localProfile.memoryCore.scannerEngine === 'semantic') memDeleteFromVectorDB([id]);
+                saveProfileToMemory();
+                memRenderVault($("#mem_vault_search").val());
+                memRenderDashboard();
+            }
+        });
+
+        list.append(row);
+    });
+}
+
+// Live Search Listener
+$("body").off("input", "#mem_vault_search").on("input", "#mem_vault_search", function () {
+    memRenderVault($(this).val());
+});
+
+// --- MEMORY GENERATION LOGIC ---
+
+async function memProcessPendingChunks() {
+    const context = typeof getContext === "function" ? getContext() : null;
+    if (!context || !context.chat || !localProfile.memoryCore.enabled) return;
+
+    const chat = context.chat;
+    const mem = localProfile.memoryCore;
+    const workingLimit = mem.workingLimit || 30;
+    const shortTermLimit = mem.shortTermLimit || 70;
+
+    // 1. Get a clean array of [Index, Message Object]
+    const realMessages = [];
+    for (let i = 0; i < chat.length; i++) {
+        if (!chat[i].is_system) realMessages.push({ originalIndex: i, msg: chat[i] });
+    }
+
+    if (realMessages.length <= workingLimit) {
+        toastr.info("Not enough messages past the working limit to archive.");
+        return;
+    }
+
+    // 2. Grab EVERYTHING outside of the Working Memory
+    const archivableMessages = realMessages.slice(0, realMessages.length - workingLimit);
+
+    // Identify the cutoff point where messages go straight to the Vault
+    const effectiveShortTermLimit = mem.architecture === "raw_long" ? workingLimit : (workingLimit + shortTermLimit);
+    const vaultCutoffLimit = Math.max(0, realMessages.length - effectiveShortTermLimit);
+    let vaultCutoffMessageIndex = -1;
+    if (vaultCutoffLimit > 0 && realMessages[vaultCutoffLimit]) {
+        vaultCutoffMessageIndex = realMessages[vaultCutoffLimit].originalIndex;
+    }
+
+    // 3. Group into chunks of 10 and find what is missing
+    const chunksToProcess = [];
+    for (let i = 0; i < archivableMessages.length; i += 10) {
+        const chunk = archivableMessages.slice(i, i + 10);
+        if (chunk.length === 0) continue;
+
+        const startId = chunk[0].originalIndex;
+        const endId = chunk[chunk.length - 1].originalIndex;
+        const chunkId = `${startId}-${endId}`;
+
+        if (!isMessageArchived(startId, mem)) {
+            let rawText = "";
+            chunk.forEach(item => {
+                rawText += `${item.msg.name}: ${meguminCleanChatHistoryText(item.msg.mes)}\n\n`;
+            });
+            chunksToProcess.push({ id: chunkId, text: rawText.trim(), endId: endId });
+        }
+    }
+
+    if (chunksToProcess.length === 0) {
+        memRunVaultMigration();
+        toastr.info("All archives are up to date.");
+        return;
+    }
+
+    // 4. Process the missing chunks
+    $("#mem_processing_spinner").show();
+    $("#mem_btn_generate").prop("disabled", true).css("opacity", "0.5");
+
+    try {
+        for (let chunkData of chunksToProcess) {
+
+            // --- DIRECT-TO-VAULT BYPASS ---
+            // If this chunk is older than the Short-Term limit, skip the AI entirely!
+            if (vaultCutoffMessageIndex !== -1 && chunkData.endId < vaultCutoffMessageIndex) {
+                toastr.info(`Bypassing AI: Archiving Messages ${chunkData.id} directly to Vault...`);
+
+                if (!mem.longTermVault) mem.longTermVault = [];
+                mem.longTermVault.push({
+                    id: chunkData.id,
+                    text: chunkData.text, // Store the raw text directly!
+                    timestamp: Date.now()
+                });
+
+                saveProfileToMemory();
+                memRenderVault($("#mem_vault_search").val() || "");
+                memRenderDashboard();
+                updateMemoryVisuals();
+                continue; // Skip the rest of the loop
+            }
+
+            // --- NORMAL SHORT-TERM AI SUMMARIZATION ---
+            toastr.info(`Extracting State: Messages ${chunkData.id}...`);
+
+            let summaryResult = "";
+            activeMemorySummarizationRequest = chunkData.text;
+
+            if (!mem.backend || mem.backend === "direct") {
+                summaryResult = await generateQuietPrompt({ prompt: "___PS_MEMORY_SUMMARIZE___" });
+            } else {
+                await useMeguminEngine(async () => {
+                    summaryResult = await generateQuietPrompt({ prompt: "___PS_MEMORY_SUMMARIZE___" });
+                }, "Megumin Engine");
+            }
+
+            summaryResult = summaryResult.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+
+            if (summaryResult) {
+                if (!mem.shortTermChunks) mem.shortTermChunks = [];
+                mem.shortTermChunks.push({
+                    id: chunkData.id,
+                    summary: summaryResult,
+                    timestamp: Date.now()
+                });
+
+                saveProfileToMemory();
+                memRunVaultMigration(); // Check if anything aged out
+                memRenderAccordion();
+                memRenderDashboard();
+                updateMemoryVisuals();
+            }
+        }
+
+        memRunVaultMigration();
+        toastr.success("Archive Extraction Complete!");
+
+    } catch (err) {
+        console.error("Memory Extraction Error:", err);
+        toastr.error("Failed to generate memory summaries.");
+    } finally {
+        activeMemorySummarizationRequest = null;
+        $("#mem_processing_spinner").hide();
+        $("#mem_btn_generate").prop("disabled", false).css("opacity", "1");
+    }
+}
+
+// Standalone helper to push old chunks into the Vault (AS RAW TEXT)
+function memRunVaultMigration() {
+    const context = typeof getContext === "function" ? getContext() : null;
+    if (!context || !context.chat || !localProfile.memoryCore.enabled) return;
+
+    const chat = context.chat;
+    const mem = localProfile.memoryCore;
+    const effectiveShortTermLimit = mem.architecture === "raw_long" ? (mem.workingLimit || 30) : ((mem.workingLimit || 30) + (mem.shortTermLimit || 70));
+
+    const realMessages = [];
+    for (let i = 0; i < chat.length; i++) {
+        if (!chat[i].is_system) realMessages.push({ originalIndex: i, msg: chat[i] });
+    }
+
+    const cutoffLimit = Math.max(0, realMessages.length - effectiveShortTermLimit);
+    let cutoffMessageIndex = -1;
+
+    if (cutoffLimit > 0 && realMessages[cutoffLimit]) {
+        cutoffMessageIndex = realMessages[cutoffLimit].originalIndex;
+    }
+
+    if (cutoffMessageIndex !== -1 && mem.shortTermChunks && mem.shortTermChunks.length > 0) {
+        let migrated = false;
+        for (let i = mem.shortTermChunks.length - 1; i >= 0; i--) {
+            const chunk = mem.shortTermChunks[i];
+            const endMsgId = parseInt(chunk.id.split("-")[1]);
+
+            // If the chunk is older than the Short-Term cutoff, migrate it as RAW TEXT!
+            if (endMsgId < cutoffMessageIndex) {
+                if (!mem.longTermVault) mem.longTermVault = [];
+
+                // --- RECONSTRUCT RAW TEXT ---
+                const parts = chunk.id.split("-");
+                const startId = parseInt(parts[0]);
+                const stopId = parseInt(parts[1]);
+                let rawText = "";
+
+                for (let j = startId; j <= stopId; j++) {
+                    if (chat[j] && !chat[j].is_system) {
+                        rawText += `${chat[j].name}: ${meguminCleanChatHistoryText(chat[j].mes)}\n\n`;
+                    }
+                }
+
+                // Push raw text instead of summary
+                mem.longTermVault.push({
+                    id: chunk.id,
+                    text: rawText.trim(), // Use 'text' key for raw data
+                    timestamp: Date.now()
+                });
+
+                const newVaultChunk = mem.longTermVault[mem.longTermVault.length - 1];
+                if (mem.scannerEngine === 'semantic') memInsertToVectorDB([newVaultChunk]);
+
+                mem.shortTermChunks.splice(i, 1);
+                migrated = true;
+            }
+        }
+        if (migrated) {
+            saveProfileToMemory();
+            memRenderAccordion();
+            memRenderVault($("#mem_vault_search").val() || "");
+            memRenderDashboard();
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// STAGE 9 HELPER FUNCTIONS: MEMORY INTERCEPT & VISUALS
+// -------------------------------------------------------------
+
+// Checks if a message index is safely stored in either Short-Term or Long-Term memory
+function isMessageArchived(mesId, mem) {
+    if (!mem) return false;
+
+    const checkChunk = (c) => {
+        const parts = c.id.split("-");
+        return mesId >= parseInt(parts[0]) && mesId <= parseInt(parts[1]);
+    };
+
+    const inShort = mem.shortTermChunks && mem.shortTermChunks.some(checkChunk);
+    const inLong = mem.longTermVault && mem.longTermVault.some(checkChunk);
+
+    return inShort || inLong;
+}
+
+// Scrubs the memory arrays and pulls overlapping chunks back into active chat
+function memSyncLimits() {
+    const context = typeof getContext === "function" ? getContext() : null;
+    if (!context || !context.chat || !localProfile.memoryCore) return;
+
+    const chat = context.chat;
+    const mem = localProfile.memoryCore;
+
+    let realMessages = [];
+    for (let i = 0; i < chat.length; i++) {
+        if (!chat[i].is_system) realMessages.push(i);
+    }
+
+    // Find the cutoff index for Working Memory
+    const workingCutoffIndex = realMessages.length <= mem.workingLimit
+        ? 0
+        : realMessages[realMessages.length - mem.workingLimit];
+
+    // Find the cutoff index for Short-Term Memory
+    const effectiveShortLimit = (mem.workingLimit || 30) + (mem.shortTermLimit || 70);
+    const shortCutoffIndex = realMessages.length <= effectiveShortLimit
+        ? 0
+        : realMessages[realMessages.length - effectiveShortLimit];
+
+    let changesMade = false;
+
+    // 1. Scrub Short-Term Chunks
+    if (mem.shortTermChunks) {
+        for (let i = mem.shortTermChunks.length - 1; i >= 0; i--) {
+            const chunk = mem.shortTermChunks[i];
+            const endId = parseInt(chunk.id.split("-")[1]);
+            // If the chunk overlaps the Working Limit, delete the archive!
+            if (endId >= workingCutoffIndex) {
+                mem.shortTermChunks.splice(i, 1);
+                changesMade = true;
+            }
+        }
+    }
+
+    // 2. Scrub Long-Term Vault
+    if (mem.longTermVault) {
+        for (let i = mem.longTermVault.length - 1; i >= 0; i--) {
+            const chunk = mem.longTermVault[i];
+            const endId = parseInt(chunk.id.split("-")[1]);
+
+            // If it overlaps Working Memory, delete it!
+            if (endId >= workingCutoffIndex) {
+                mem.longTermVault.splice(i, 1);
+                changesMade = true;
+            }
+            // If it overlaps Short-Term Memory (and we are using summaries), delete it to force a re-summary!
+            else if (mem.architecture === "raw_short_long" && endId >= shortCutoffIndex) {
+                mem.longTermVault.splice(i, 1);
+                changesMade = true;
+            }
+        }
+    }
+
+    if (changesMade) {
+        saveProfileToMemory();
+        toastr.success("Limits Applied! Overlapping archives returned to chat.");
+    } else {
+        toastr.info("Limits Applied. No overlaps found.");
+    }
+
+    memRunVaultMigration(); // Push any remaining items down
+    memRenderAccordion();
+    memRenderVault($("#mem_vault_search").val() || "");
+    memRenderDashboard();
+    updateMemoryVisuals(); // Remove the gray styling from the restored messages
+}
+
+// Universal Language Tokenizer: Automatically handles English, Arabic, Russian, and CJK (Chinese/Japanese/Korean)
+function memExtractKeywords(text) {
+    let rawWords = [];
+
+    // 1. Use modern native JS segmenter which understands Japanese/Chinese word boundaries!
+    if (window.Intl && Intl.Segmenter) {
+        const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+        for (const { segment, isWordLike } of segmenter.segment(text)) {
+            if (isWordLike) rawWords.push(segment.toLowerCase());
+        }
+    } else {
+        // Fallback for extremely old browsers
+        rawWords = text.match(/\p{L}+/gu) || [];
+    }
+
+    // 2. Filter the words smartly based on their language
+    return [...new Set(rawWords)].filter(kw => {
+        // Drop English stop words
+        if (MEMORY_STOP_WORDS.has(kw)) return false;
+
+        // If it contains CJK characters (Chinese, Japanese, Korean)
+        if (/[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(kw)) {
+            return kw.length >= 1; // CJK nouns can be 1 character (e.g. 剣 "sword", 猫 "cat")
+        }
+
+        // Alphabetic languages (English, Arabic, Russian) need 3+ letters to filter out small junk
+        return kw.length >= 3;
+    });
+}
+
+// Calculates estimated tokens saved by the memory system
+function memCalculateTokensSaved() {
+    const context = typeof getContext === "function" ? getContext() : null;
+    const mem = localProfile?.memoryCore;
+    if (!context || !context.chat || !mem || !mem.enabled) return 0;
+
+    let strippedChars = 0;
+    for (let i = 0; i < context.chat.length; i++) {
+        if (!context.chat[i].is_system && isMessageArchived(i, mem)) {
+            strippedChars += context.chat[i].mes.length;
+        }
+    }
+
+    let injectedChars = 0;
+    if (mem.architecture === "raw_short_long" && mem.shortTermChunks) {
+        mem.shortTermChunks.forEach(c => injectedChars += (c.summary || "").length);
+    }
+
+    // Assume top 3 vault entries injected
+    const retrieved = memGetRelevantVaultEntries();
+    retrieved.forEach(m => injectedChars += (m.text || m.summary || "").length);
+
+    // Standard approximation: 4 characters = 1 token
+    const savedTokens = Math.max(0, Math.ceil((strippedChars - injectedChars) / 4));
+    return savedTokens;
+}
+
+// Expanded stop words including common RP verbs and adjectives
+const MEMORY_STOP_WORDS = new Set(["about", "above", "across", "after", "again", "against", "almost", "alone", "along", "already", "always", "among", "another", "anybody", "anyone", "anything", "anywhere", "around", "asked", "became", "because", "become", "been", "before", "began", "behind", "being", "below", "beside", "besides", "between", "beyond", "both", "came", "cannot", "come", "could", "didn't", "does", "doesn't", "doing", "don't", "during", "each", "either", "enough", "even", "ever", "every", "everyone", "everything", "everywhere", "except", "feel", "find", "first", "from", "front", "gave", "getting", "give", "given", "going", "good", "great", "happened", "have", "having", "heard", "hello", "help", "here", "herself", "himself", "however", "inside", "itself", "just", "knew", "know", "known", "left", "less", "like", "little", "look", "looked", "looking", "made", "make", "many", "matter", "mean", "might", "more", "most", "much", "must", "myself", "never", "next", "nobody", "none", "nothing", "nowhere", "often", "only", "other", "others", "ought", "ourselves", "outside", "over", "perhaps", "please", "probably", "quite", "rather", "really", "right", "said", "same", "saying", "seem", "seemed", "seems", "several", "shall", "should", "since", "small", "some", "somebody", "someone", "something", "sometimes", "somewhere", "soon", "still", "such", "sure", "take", "tell", "than", "that", "their", "theirs", "them", "themselves", "then", "there", "these", "they", "thing", "things", "think", "this", "those", "though", "thought", "three", "through", "together", "told", "took", "toward", "towards", "tried", "under", "unless", "until", "upon", "very", "want", "wanted", "well", "went", "were", "what", "when", "where", "which", "while", "whom", "whose", "will", "with", "within", "without", "would", "wrong", "yeah", "your", "yours", "yourself", "yourselves", "details", "summary", "infoblock", "chatter", "dialogue", "narration", "narrative", "status", "tracker", "world", "state", "action", "words", "smiled", "nodded", "sighed", "walked", "eyes", "face", "turned", "replied", "whispered", "gazed", "stared", "glanced", "stepped", "shifted", "voice", "hands", "head", "fingers", "hair", "door", "room", "time", "back", "away", "down", "suddenly", "slowly", "softly", "quietly", "gently", "slightly", "single", "simply", "short", "sharp", "began"]);
+
+// --- SEMANTIC EMBEDDING HELPERS ---
+
+// Converts a string ID to a numeric hash (required by ST's Vectra backend)
+function memStringHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+}
+
+// Math: Calculates how similar two semantic vectors are (0.0 to 1.0)
+function cosineSimilarity(vecA, vecB) {
+    let dotProduct = 0; let normA = 0; let normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+        dotProduct += vecA[i] * vecB[i];
+        normA += vecA[i] * vecA[i];
+        normB += vecB[i] * vecB[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// NOTE: memGetEmbedding / memUpdateCurrentQueryVector / memUpdateVaultEmbeddings removed.
+// ST's native /api/vector/* API does NOT expose raw embeddings. Embedding is done server-side
+// during insert and query. We use the proper insert+query flow instead of client-side cosine math.
+
+// --- SEMANTIC EMBEDDING HELPERS (NATIVE ST VECTRA) ---
+
+let currentSemanticMatches = [];
+
+// Creates a unique database collection name for this specific character/group
+function memGetCollectionId() {
+    const context = typeof getContext === "function" ? getContext() : null;
+    if (!context) return "megumin_default";
+    const charId = context.characterId !== undefined ? String(context.characterId) : "group_" + context.groupId;
+    return ("megumin_" + charId).replace(/[^a-zA-Z0-9_]/g, "_");
+}
+
+// Inserts vault chunks into ST's native vector database
+async function memInsertToVectorDB(chunks) {
+    if (!chunks || chunks.length === 0) return;
+    const collectionId = memGetCollectionId();
+    // ST's /api/vector/insert requires items with { hash: Number, text: String, index: Number }
+    const items = chunks.map((c, i) => ({
+        hash: memStringHash(c.id),
+        text: c.text || c.summary || "",
+        index: i
+    }));
+    try {
+        await fetch('/api/vector/insert', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ collectionId, items, source: 'transformers' })
+        });
+    } catch (e) { console.warn("Megumin Suite: Vector Insert failed.", e); }
+}
+
+// Deletes vault chunks from ST's native vector database
+async function memDeleteFromVectorDB(ids) {
+    if (!ids || ids.length === 0) return;
+    const collectionId = memGetCollectionId();
+    // ST's /api/vector/delete requires { hashes: Number[] }, not string ids
+    const hashes = ids.map(id => memStringHash(id));
+    try {
+        await fetch('/api/vector/delete', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ collectionId, hashes, source: 'transformers' })
+        });
+    } catch (e) { console.warn("Megumin Suite: Vector Delete failed.", e); }
+}
+
+// Background task: Queries the DB silently while you chat so the AI's prompt is always ready
+async function memUpdateSemanticQuery() {
+    const mem = localProfile?.memoryCore;
+    if (!mem || mem.scannerEngine !== 'semantic' || !mem.longTermVault || mem.longTermVault.length === 0) {
+        currentSemanticMatches = [];
+        return;
+    }
+    const context = typeof getContext === "function" ? getContext() : null;
+    if (!context || !context.chat) return;
+
+    const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-2).map(m => meguminCleanChatHistoryText(m.mes)).join(" ");
+    if (!recentCleanedText.trim()) return;
+
+    const collectionId = memGetCollectionId();
+    try {
+        const res = await fetch('/api/vector/query', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({
+                collectionId,
+                searchText: recentCleanedText,
+                topK: 3,
+                source: 'transformers',
+                threshold: 0.2
+            })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            // ST returns { hashes: number[], metadata: object[] }
+            if (data && Array.isArray(data.metadata)) {
+                currentSemanticMatches = data.metadata.map(meta => {
+                    // Match back to vault using the numeric hash
+                    const vaultEntry = mem.longTermVault.find(v => memStringHash(v.id) === meta.hash);
+                    if (vaultEntry) {
+                        return { ...vaultEntry, score: 99, matchedWords: ["Semantic Embedding Match (Vectra)"] };
+                    }
+                    // Fallback: try text match if hash doesn't match
+                    const textMatch = mem.longTermVault.find(v => (v.text || v.summary || "").substring(0, 100) === (meta.text || "").substring(0, 100));
+                    if (textMatch) {
+                        return { ...textMatch, score: 99, matchedWords: ["Semantic Embedding Match (Vectra)"] };
+                    }
+                    return null;
+                }).filter(Boolean);
+            }
+        }
+    } catch (e) {
+        console.warn("Megumin Suite: Semantic query failed, falling back to TF-IDF.", e);
+        currentSemanticMatches = [];
+    }
+}
+
+// Dual-Engine Scorer: TF-IDF or Semantic Embeddings
+function memGetRelevantVaultEntries() {
+    const context = typeof getContext === "function" ? getContext() : null;
+    const mem = localProfile?.memoryCore;
+
+    if (!context || !context.chat || !mem || !mem.longTermVault || mem.longTermVault.length === 0) return [];
+
+    const vault = mem.longTermVault;
+    const engine = mem.scannerEngine || 'tfidf';
+
+    // --- ENGINE 1: SEMANTIC EMBEDDINGS (ST API) ---
+    if (engine === 'semantic') {
+        if (currentSemanticMatches.length > 0) return currentSemanticMatches;
+        // If ST's vector database fails to respond in time, it gracefully falls back to TF-IDF!
+    }
+
+    // --- ENGINE 2: TF-IDF MULTILINGUAL (Keywords / Fallback) ---
+    const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-2).map(m => meguminCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
+    const uniqueKeywords = memExtractKeywords(recentCleanedText);
+    const totalDocs = vault.length;
+
+    let scoredVault = vault.map(v => {
+        let score = 0;
+        let matchedWords = [];
+        const vText = (v.text || v.summary || "").toLowerCase();
+
+        uniqueKeywords.forEach(kw => {
+            if (vText.includes(kw)) {
+                let docCount = 0;
+                vault.forEach(doc => { if ((doc.text || doc.summary || "").toLowerCase().includes(kw)) docCount++; });
+                if (docCount < totalDocs * 0.5) {
+                    let wordWeight = Math.round(50 / docCount);
+                    score += wordWeight;
+                    matchedWords.push(`${kw} (+${wordWeight})`);
+                }
+            }
+        });
+        return { ...v, score, matchedWords };
+    });
+
+    return scoredVault.filter(s => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
+// Rule B: Visual Fading Update (STRICT)
+function updateMemoryVisuals() {
+    const context = typeof getContext === "function" ? getContext() : null;
+    if (!context || !context.chat || !context.chat.length) return;
+
+    const mem = localProfile?.memoryCore;
+    if (!mem?.enabled) {
+        $(".mes .mes_text").removeClass("megumin_archived_text");
+        return;
+    }
+
+    $(".mes").each(function () {
+        const mesId = parseInt($(this).attr("mesid"));
+        if (isNaN(mesId)) return;
+
+        const msg = context.chat[mesId];
+        if (!msg || msg.is_system) return;
+
+        // ONLY dim the message if it actually exists inside a saved chunk
+        if (isMessageArchived(mesId, mem)) {
+            $(this).find(".mes_text").addClass("megumin_archived_text");
+        } else {
+            $(this).find(".mes_text").removeClass("megumin_archived_text");
+        }
+    });
+    $("#mem_live_tokens_saved").text(`~${memCalculateTokensSaved()}`);
+}
+
+// Rule A: The Prompt Interceptor (STRICT)
+window.megumin_memory_intercept = function (chat, _contextSize, _abort, type) {
+    const mem = localProfile?.memoryCore;
+    if (!mem?.enabled) return;
+
+    const context = typeof getContext === "function" ? getContext() : null;
+    if (!context || !context.symbols || !context.symbols.ignore) return;
+
+    const IGNORE_SYMBOL = context.symbols.ignore;
+
+    for (let i = 0; i < chat.length; i++) {
+        if (chat[i].is_system) continue;
+
+        // ONLY wipe the message from the prompt if it has been successfully summarized
+        if (isMessageArchived(i, mem)) {
+            chat[i] = structuredClone(chat[i]);
+            if (!chat[i].extra) chat[i].extra = {};
+            chat[i].extra[IGNORE_SYMBOL] = true;
+            chat[i].mes = ""; // Bulletproof wipe
+        }
+    }
+};
 
 function toggleQuickGenButton() {
     const s = localProfile?.imageGen;
@@ -2287,7 +3877,7 @@ async function igManualGenerate() {
 
     try {
         let promptText;
-        if (s.generatorBackend === "direct") {
+        if (!s.generatorBackend || s.generatorBackend === "direct") {
             promptText = await generateImagePromptText();
         } else {
             // Use the "Megumin Image" preset, but still run the exact same prompt logic
@@ -2319,9 +3909,7 @@ async function generateImagePromptText() {
     const badStuffRegex = /(<disclaimer>.*?<\/disclaimer>)|(<guifan>.*?<\/guifan>)|(<danmu>.*?<\/danmu>)|(<options>.*?<\/options>)|```start|```end|<done>|`<done>`|(.*?<\/(?:ksc??|think(?:ing)?)>(\n)?)|(<(?:ksc??|think(?:ing)?)>[\s\S]*?<\/(?:ksc??|think(?:ing)?)>(\n)?)/gs;
 
     const lastMessages = chat.filter(m => !m.is_system).slice(-5).map(m => {
-        let text = m.mes;
-        text = text.replace(badStuffRegex, "").replace(/<details>[\s\S]*?<\/details>/gs, "").replace(/<summary>[\s\S]*?<\/summary>/gs, "").replace(/<[^>]*>?/gm, "");
-        return `${m.name}: ${text.trim()}`;
+        return `${m.name}: ${meguminCleanChatHistoryText(m.mes)}`;
     }).join("\n\n");
 
     let styleStr = s.promptStyle === "illustrious" ? "Use Danbooru-style tags separated by commas." : (s.promptStyle === "sdxl" ? "Use natural, descriptive prose and full sentences." : "Use a comma-separated list of detailed keywords and visual descriptors.");
@@ -2477,14 +4065,7 @@ function getCleanedChatHistory() {
     const aiMessages = context.chat.filter(m => !m.is_user && !m.is_system).slice(-50);
     const badStuffRegex = /(<disclaimer>.*?<\/disclaimer>)|(<guifan>.*?<\/guifan>)|(<danmu>.*?<\/danmu>)|(<options>.*?<\/options>)|```start|```end|<done>|`<done>`|(.*?<\/(?:ksc??|think(?:ing)?)>(\n)?)|(<(?:ksc??|think(?:ing)?)>[\s\S]*?<\/(?:ksc??|think(?:ing)?)>(\n)?)/gs;
 
-    let cleanedMessages = aiMessages.map(m => {
-        let text = m.mes;
-        text = text.replace(badStuffRegex, "");
-        text = text.replace(/<details>[\s\S]*?<\/details>/gs, "");
-        text = text.replace(/<summary>[\s\S]*?<\/summary>/gs, "");
-        text = text.replace(/<[^>]*>?/gm, "");
-        return text.trim();
-    });
+    let cleanedMessages = aiMessages.map(m => meguminCleanChatHistoryText(m.mes));
 
     cleanedMessages = cleanedMessages.filter(t => t.length > 0);
     return cleanedMessages.join("\n\n");
@@ -2828,6 +4409,121 @@ function buildBaseDict() {
         }
     });
 
+    // --- 5. MEMORY CORE INJECTION ---
+    // Initialize them as empty strings by default so the tags cleanly vanish if there are no memories
+    dict["[[long-Memory]]"] = "";
+    dict["[[Short-memory]]"] = "";
+
+    if (localProfile.memoryCore && localProfile.memoryCore.enabled) {
+        const mem = localProfile.memoryCore;
+
+        // A. Retrieve Long-Term Memories (Local TF-IDF Keyword Scoring)
+        if (mem.longTermVault && mem.longTermVault.length > 0) {
+            const retrieved = memGetRelevantVaultEntries();
+            if (retrieved.length > 0) {
+                let longXML = "<retrieved_archives>\n";
+                retrieved.forEach(m => {
+                    const dateStr = new Date(m.timestamp).toLocaleString();
+                    const content = m.text || m.summary || "";
+                    longXML += `<archive_memory time="${dateStr}">\n[Msg ${m.id}]:\n${content}\n</archive_memory>\n`;
+                });
+                longXML += "</retrieved_archives>";
+
+                dict["[[long-Memory]]"] = `[LONG-TERM MEMORY VAULT]\nThe following are raw archives of highly relevant past events. Use timestamps to prevent context collapse. Do not hallucinate them as currently happening.\n${longXML}`;
+            }
+        }
+
+        // B. Inject Short-Term Memories (Chronological)
+        if (mem.shortTermChunks && mem.shortTermChunks.length > 0) {
+            let shortXML = "<recent_state_extracts>\n";
+            mem.shortTermChunks.forEach(m => {
+                const dateStr = new Date(m.timestamp).toLocaleString();
+                shortXML += `<archive_memory time="${dateStr}">[Msg ${m.id}]: ${m.summary}</archive_memory>\n`;
+            });
+            shortXML += "</recent_state_extracts>";
+
+            dict["[[Short-memory]]"] = `[SHORT-TERM MEMORY]\nRecent state extractions:\n${shortXML}`;
+        }
+    }
+
+    // --- 5.5 NPC BANK INJECTION ---
+    dict["[[npc_dossier]]"] = "";
+    dict["[[npc_dossier2]]"] = "";
+    dict["[[npc list]]"] = "";
+
+    if (localProfile.npcBank && localProfile.npcBank.enabled) {
+        dict["[[npc_dossier]]"] = `<npc_dossier>
+  trigger: "Generates ONLY when a new significant NPC is introduced not cashiers, bartenders, random passersby, or one-line background faces. A 'significant NPC' is one with a name, meaningful dialogue, and likely recurrence."
+format: "Collapsible HTML details block. Dense, dashboard-style no prose."
+
+  template: |
+    <details>
+    <summary>🆕 <b>New NPC: [Full Name]</b></summary>
+
+    **Name:** [Full name, nickname if used] | **Age:** [Age] | **Sex:** [M/F/Other]
+    **Appearance:**  [Hair, body, skin....etc]
+    **Occupation:** [Specific current job/role]
+
+    **Background:** [3–5 sentences. Where they grew up, how they got here, what shaped them. A life sketch not a résumé. Include details the PC may never learn.]
+
+    **Inner Circle:**
+    * [Name] — [Relationship] | [One-line: age, status, dynamic e.g., "Younger sister, 19, uni student in another city they text daily"]
+    * [Name] — [Relationship] | [Same format]
+    * [Name] — [Relationship] | [Include people the PC hasn't met and may never meet]
+
+    **Personality Snapshot:** [2–3 contradictions or defining traits as behavior, not labels.]
+    **Current Agenda:** [What they want RIGHT NOW in the story's context]
+    **Hidden Layer:** [Something the PC doesn't know a secret, a motive.]
+
+    </details>
+
+  guidelines:
+    inner_circle_rule: "Include 2–5 people. At least one must be unknown to the story a mother, an ex, a childhood friend. These are future plot seeds."
+    hidden_layer: "For YOUR use as narrative engine. Drives NPC behavior the PC can't predict. Never reveal in narration unless the NPC actually discloses it."
+</npc_dossier>`;
+        dict["[[npc_dossier2]]"] = "[NPC Dossier block here]";
+
+        if (localProfile.npcBank.npcs && localProfile.npcBank.npcs.length > 0) {
+            const context = typeof getContext === 'function' ? getContext() : null;
+            if (context && context.chat) {
+                const recentText = context.chat.filter(m => !m.is_system).slice(-4).map(m => meguminCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
+                const keywords = typeof memExtractKeywords === 'function' ? memExtractKeywords(recentText) : [];
+                if (keywords.length > 0) {
+                    let scoredNpcs = [];
+                    localProfile.npcBank.npcs.forEach(n => {
+                        let score = 0;
+                        let matchedWords = [];
+                        const contentLower = npcBuildTextFromData(n).toLowerCase();
+                        keywords.forEach(kw => {
+                            if (contentLower.includes(kw)) { score++; matchedWords.push(kw); }
+                        });
+                        if (score >= 1) {
+                            scoredNpcs.push({ ...n, score, matchedWords });
+                        }
+                    });
+                    scoredNpcs.sort((a, b) => b.score - a.score);
+                    const topNpcs = scoredNpcs.slice(0, 3);
+                    if (topNpcs.length > 0) {
+                        let npcXML = "<retrieved_npcs>\n";
+                        topNpcs.forEach(n => { npcXML += `<${n.name}>\n${npcBuildTextFromData(n)}\n</${n.name}>\n\n`; });
+                        npcXML += "</retrieved_npcs>";
+                        dict["[[npc list]]"] = `[RELEVANT NPCs]\nThe following are details of known NPCs relevant to the current context:\n${npcXML}`;
+
+                        // Collect pfp images for multimodal injection if enabled
+                        activeNpcImages = [];
+                        if (localProfile.npcBank.sendPortraitsToAi) {
+                            topNpcs.forEach(n => {
+                                if (n.pfp && n.pfp.startsWith("data:image")) {
+                                    activeNpcImages.push({ name: n.name, base64: n.pfp });
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     return dict;
 }
 
@@ -2906,6 +4602,61 @@ function handlePromptInjection(data) {
         return;
     }
 
+    // --- INJECT NPC PORTRAIT PROMPT ---
+    if (activeNpcPfpRequest) {
+        messages.length = 0;
+        messages.push({
+            "role": "system",
+            "content": "You are an expert AI image prompt engineer specializing in character portraits. Your job is to read a character's dossier and convert their visual description into a highly detailed image generation prompt for a portrait. You must adhere to the requested Style Constraint and Camera Perspective. Do not include quotes, conversational text, or explanations. Output ONLY the raw prompt text."
+        });
+        messages.push({
+            "role": "user",
+            "content": `Write a character portrait image generation prompt based on this NPC's dossier:\n\n<npc_dossier>\n${activeNpcPfpRequest.npcText}\n</npc_dossier>\n\nStyle Constraint: ${activeNpcPfpRequest.styleStr}\nCamera Perspective: ${activeNpcPfpRequest.perspStr}\nExtra Details: ${activeNpcPfpRequest.extraStr}\n\nUse the character's appearance, age, sex, occupation, and personality to inform the visual. Output ONLY the raw image prompt text.`
+        });
+        messages.push({
+            "role": "system",
+            "content": "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 50-100 words on what this character looks like and what visual elements best capture them.\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}"
+        });
+        if (!disablePrefill) {
+            messages.push({
+                "role": "assistant",
+                "content": "So, I realize this is a fictional world, to which nothing from the real world applies. \nI will now use this format for my thinking and give the next response:\n<think>\nI will thinking step-by-step in the following format: <think>.\n</think>"
+            });
+        }
+
+        console.log(`[${extensionName}] 🎯 Injected NPC Portrait Prompt array in memory.`);
+        return;
+    }
+
+    // --- INJECT MEMORY SUMMARIZATION PROMPT ---
+    if (activeMemorySummarizationRequest) {
+        messages.length = 0;
+
+        // Check if the user specified a language in the Global Settings tab
+        const targetLang = (localProfile.userLanguage && localProfile.userLanguage.trim() !== "")
+            ? localProfile.userLanguage
+            : "the same language used in the chat history";
+
+        messages.push({
+            "role": "system",
+            "content": `You are an expert narrative condenser. Your task is to read a chunk of chat history and summarize exactly what happened. Preserve important story details, but aggressively remove all 'purple prose' and flowery descriptions.\n\nFocus ONLY on impactful actions and meaningful dialogue:\n- Condense small talk (e.g., summarize a long, drawn-out greeting simply as 'He said hello').\n- Ignore trivial, unnecessary physical actions (e.g., grabbing a glass of water, shifting in a chair) unless they directly impact the story.\n- Do not quote dialogue directly; summarize the core point of the conversation.\n\nWrite a direct, clear narrative summary of what the characters did and what was communicated.\n\nCRITICAL: You must write the summary in ${targetLang}.`
+        });
+        messages.push({
+            "role": "user",
+            "content": `Summarize the impactful events and meaningful conversations from the following chat chunk. Strip out the purple prose and trivial actions.\n\n<chat>\n${activeMemorySummarizationRequest}\n</chat>\n\nOutput the summary in ${targetLang}:`
+        });
+
+        if (!disablePrefill) {
+            messages.push({
+                "role": "assistant",
+                "content": `<think>\nI need to summarize the core events and meaningful dialogue from this chunk, removing all flowery prose and trivial actions. I will output the final result in ${targetLang}.\n</think>\nSummary:\n`
+            });
+        }
+
+        console.log(`[${extensionName}] 🎯 Injected Memory Summarization array in memory.`);
+        return;
+    }
+
     if (activeGenerationOrder) {
         for (let i = messages.length - 1; i >= 0; i--) {
             if (messages[i].content && typeof messages[i].content === 'string') {
@@ -2941,7 +4692,7 @@ function handlePromptInjection(data) {
             });
 
             // Cleanup unused tags (Removes the tag AND the line break)
-            ["[[prompt1]]", "[[prompt2]]", "[[prompt3]]", "[[prompt4]]", "[[prompt5]]", "[[prompt6]]", "[prompt1]", "[prompt2]", "[prompt3]", "[prompt4]", "[prompt5]", "[prompt6]", "[[AI1]]", "[[AI2]]", "[[main]]", "[[OOC]]", "[[control]]", "[[aiprompt]]", "[[death]]", "[[combat]]", "[[Direct]]", "[[DN]]", "[[COLOR]]", "[[infoblock]]", "[[summary]]", "[[cyoa]]", "[[COT]]", "[[prefill]]", "[[order]]", "[[Language]]", "[[pronouns]]", "[[banlist]]", "[[count]]", "[[MVU]]", "[[img1]]", "[[img2]]", "[[storyplan]]", "[[storytracker]]", "[[DNRATIO]]", "[[THINK]]", "[[onomato]]", "[[npc_events]]", "[[cyoa2]]", "[[infoblock2]]", "[[summary2]]", "[[storytracker2]]", "[[npc_inner_chatter]]", "[[npc_inner_chatter2]]"].forEach(tr => {
+            ["[[long-Memory]]", "[[Short-memory]]", "[[prompt1]]", "[[prompt2]]", "[[prompt3]]", "[[prompt4]]", "[[prompt5]]", "[[prompt6]]", "[prompt1]", "[prompt2]", "[prompt3]", "[prompt4]", "[prompt5]", "[prompt6]", "[[AI1]]", "[[AI2]]", "[[main]]", "[[OOC]]", "[[control]]", "[[aiprompt]]", "[[death]]", "[[combat]]", "[[Direct]]", "[[DN]]", "[[COLOR]]", "[[infoblock]]", "[[summary]]", "[[cyoa]]", "[[COT]]", "[[prefill]]", "[[order]]", "[[Language]]", "[[pronouns]]", "[[banlist]]", "[[count]]", "[[MVU]]", "[[img1]]", "[[img2]]", "[[storyplan]]", "[[storytracker]]", "[[DNRATIO]]", "[[THINK]]", "[[onomato]]", "[[npc_events]]", "[[cyoa2]]", "[[infoblock2]]", "[[summary2]]", "[[storytracker2]]", "[[npc_inner_chatter]]", "[[npc_inner_chatter2]]", "[[npc_dossier]]", "[[npc_dossier2]]", "[[npc list]]"].forEach(tr => {
                 if (msg.content.includes(tr)) {
                     msg.content = msg.content.replace(new RegExp(`^[ \\t]*${escapeRegex(tr)}[ \\t]*\\r?\\n?`, 'gm'), "");
                     msg.content = msg.content.replace(new RegExp(escapeRegex(tr), 'g'), ""); // Catch-all for inline tags
@@ -2951,6 +4702,23 @@ function handlePromptInjection(data) {
             // Final Sweep: Collapse 3 or more blank lines into a standard double line break
             msg.content = msg.content.replace(/(?:\r?\n[ \t]*){3,}/g, '\n\n');
         }
+    }
+
+    // --- INJECT NPC PORTRAITS AS MULTIMODAL IMAGES ---
+    if (activeNpcImages && activeNpcImages.length > 0) {
+        // Find the message that contains the NPC list text and convert to multimodal
+        for (const msg of messages) {
+            if (msg.content && typeof msg.content === 'string' && msg.content.includes('[RELEVANT NPCs]')) {
+                const parts = [{ type: "text", text: msg.content }];
+                activeNpcImages.forEach(img => {
+                    parts.push({ type: "text", text: `[Portrait of ${img.name}]` });
+                    parts.push({ type: "image_url", image_url: { url: img.base64, detail: "low" } });
+                });
+                msg.content = parts;
+                break;
+            }
+        }
+        activeNpcImages = [];
     }
 
     if (replacementsMade > 0 && !activeGenerationOrder) {
@@ -3381,9 +5149,18 @@ jQuery(async () => {
             eventSource.on(event_types.CHAT_CHANGED, () => {
                 initProfile(); updateCharacterDisplay();
                 if ($("#prompt-slot-modal-overlay").is(":visible")) switchTab(currentTab);
+                updateMemoryVisuals();
             });
+            // Background Vectorization triggers for Semantic Mode
+            eventSource.on(event_types.USER_MESSAGE_RENDERED, memUpdateSemanticQuery);
+            eventSource.on(event_types.MESSAGE_EDITED, memUpdateSemanticQuery);
+            eventSource.on(event_types.CHAT_CHANGED, memUpdateSemanticQuery);
+            // Trigger visual update when user clicks "Show more messages"
+            eventSource.on(event_types.MORE_MESSAGES_LOADED, updateMemoryVisuals);
             // IMAGE GEN AUTO-GEN & SWIPE TRIGGERS
             eventSource.on(event_types.MESSAGE_RECEIVED, async () => {
+                updateMemoryVisuals();
+
                 // AUTO-TRIGGER STORY PLANNER
                 const sp = localProfile?.storyPlan;
                 if (sp && sp.enabled && sp.triggerMode === 'frequency') {
@@ -3407,7 +5184,65 @@ jQuery(async () => {
                         }, 2000); // Small delay to let chat save first
                     }
                 }
+
+                // AUTO-TRIGGER MEMORY CORE
+                const mem = localProfile?.memoryCore;
+                if (mem && mem.enabled && mem.triggerMode === 'frequency') {
+                    const chat = getContext().chat;
+                    const aiMsgCount = chat.filter(m => !m.is_user && !m.is_system).length;
+
+                    if (aiMsgCount > 0 && aiMsgCount % 10 === 0) {
+                        toastr.info("Background Memory Scan Triggered...", "Megumin Suite");
+                        // We run it after a small delay so ST finishes saving the chat first
+                        setTimeout(async () => {
+                            await memProcessPendingChunks();
+                        }, 3000);
+                    }
+                }
+
                 const s = localProfile?.imageGen;
+
+                // AUTO-EXTRACT NPCs
+                const npcBank = localProfile?.npcBank;
+                if (npcBank && npcBank.enabled) {
+                    const chat = getContext().chat;
+                    if (chat && chat.length) {
+                        const lastMsg = chat[chat.length - 1];
+                        if (!lastMsg.is_user && !lastMsg.is_system) {
+                            const npcRegex = /<details>[\s\S]*?<summary>.*?New NPC:\s*(.*?)<\/summary>([\s\S]*?)<\/details>/ig;
+                            let match;
+                            let added = false;
+                            while ((match = npcRegex.exec(lastMsg.mes)) !== null) {
+                                const npcName = match[1].trim().replace(/<\/?b>/ig, "");
+                                const npcContent = match[0].trim();
+                                if (!npcBank.npcs) npcBank.npcs = [];
+                                if (!npcBank.npcs.find(n => (n.name || "").trim().toLowerCase() === npcName.toLowerCase())) {
+                                    // Parse structured fields from the raw block
+                                    const parsed = npcParseBlock(npcContent);
+                                    npcBank.npcs.push({
+                                        name: parsed.name || npcName,
+                                        age: parsed.age || "",
+                                        sex: parsed.sex || "",
+                                        appearance: parsed.appearance || "",
+                                        occupation: parsed.occupation || "",
+                                        background: parsed.background || "",
+                                        innerCircle: parsed.innerCircle || "",
+                                        personality: parsed.personality || "",
+                                        agenda: parsed.agenda || "",
+                                        hiddenLayer: parsed.hiddenLayer || "",
+                                        pfp: "",
+                                        timestamp: Date.now()
+                                    });
+                                    added = true;
+                                    toastr.success(`NPC added to Bank: ${npcName}`, "Megumin Suite");
+                                    if ($("#npc_bank_list").length) renderNpcList();
+                                }
+                            }
+                            if (added) saveProfileToMemory();
+                        }
+                    }
+                }
+
                 if (!s || !s.enabled) return;
 
                 const chat = getContext().chat;

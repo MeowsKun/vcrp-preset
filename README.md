@@ -1,4 +1,9 @@
-# beta 30/04/26
+# beta 17/05/26
+* added full mamory manager change from Cohee/jina-embeddings-v2-base-en to Xenova/all-MiniLM-L6-v2 if you going to use Semantic Embeddings. i recommend only using the keywords its faster and do 90% like Semantic Embeddings.
+* added NPC bank.
+* added v7 core more balaned less edgy.
+* some bug fixes.
+# beta 11/05/26
 * added CYOA cleanup.
 # beta 30/04/26
 * Fixes for GLM and DS4.
