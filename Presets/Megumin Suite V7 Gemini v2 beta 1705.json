@@ -668,12 +668,8 @@
                     "enabled": true
                 },
                 {
-                    "identifier": "8fe3941c-a18d-4000-b6f1-695e6fe1136f",
-                    "enabled": true
-                },
-                {
                     "identifier": "753facc3-4171-4bc5-a005-ab9d1111e469",
-                    "enabled": true
+                    "enabled": false
                 },
                 {
                     "identifier": "c77668b9-29be-456c-a9d3-c0a1e0c9d55f",
@@ -729,6 +725,10 @@
                 },
                 {
                     "identifier": "nsfw",
+                    "enabled": true
+                },
+                {
+                    "identifier": "8fe3941c-a18d-4000-b6f1-695e6fe1136f",
                     "enabled": true
                 },
                 {
