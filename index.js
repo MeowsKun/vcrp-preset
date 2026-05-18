@@ -7,7 +7,7 @@ import { Popup, POPUP_TYPE } from "../../../popup.js";
 import { hardcodedLogic } from "./data/database.js";
 import { KAZUMA_PLACEHOLDERS, RESOLUTIONS } from "./data/image_data.js";
 
-const extensionName = "Megumin-Suite-beta";
+const extensionName = "Megumin-Suite-Beta";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 const TARGET_PRESET_NAME = "Megumin Engine";
 
