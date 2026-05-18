@@ -18,6 +18,7 @@ let currentTab = 0;
 let localProfile = {};
 let activeGenerationOrder = null;
 let currentQueryVector = null;
+let lastPromptPreviewTime = 0;
 let activeMemorySummarizationRequest = null;
 let activeBanListChat = null;
 let activeImageGenRequest = null;
@@ -331,9 +332,10 @@ function meguminCleanChatHistoryText(text) {
     if (!text) return "";
     let cleaned = text;
 
-    // 1. Remove Specific Megumin Suite Blocks (Inner Chatter, World State, CYOA)
+    // 1. Remove Specific Megumin Suite Blocks (Inner Chatter, World State, CYOA, NPC Dossiers)
     cleaned = cleaned.replace(/<details>\s*<summary>.*?💭.*?<b>NPC Inner Chatter<\/b><\/summary>\s*([\s\S]*?)\s*<\/details>/gi, "");
     cleaned = cleaned.replace(/<details>\s*<summary>.*?📌.*?<b>World State<\/b><\/summary>\s*([\s\S]*?)\s*<\/details>/gi, "");
+    cleaned = cleaned.replace(/<details>\s*<summary>.*?🆕.*?<b>New NPC:.*?<\/b><\/summary>\s*([\s\S]*?)\s*<\/details>/gi, ""); // <-- NEW
     cleaned = cleaned.replace(/<div style="border: 1px solid #444;[\s\S]*?<\/div>/gi, "");
 
     // 2. Remove AI reasoning and artifacts (think, disclaimer, options, start/end)
@@ -490,11 +492,11 @@ function renderMode(c) {
     // ── FILTER PILLS ──
     const filterBar = $(`
         <div class="wstyle-filters" style="margin-bottom: 20px;">
-            <button class="wstyle-filter-pill" data-filter="all">All <span class="pill-count">${totalCount}</span></button>
+            <button class="wstyle-filter-pill active" data-filter="all">All <span class="pill-count">${totalCount}</span></button>
             <button class="wstyle-filter-pill" data-filter="V4">V4 <span class="pill-count">${v4Count}</span></button>
             <button class="wstyle-filter-pill" data-filter="V5">V5 <span class="pill-count">${v5Count}</span></button>
             <button class="wstyle-filter-pill" data-filter="V6"><i class="fa-solid fa-lock" style="font-size:0.6rem;"></i> V6 <span class="pill-count">${v6Count}</span></button>
-            <button class="wstyle-filter-pill active" data-filter="V7">V7 <span class="pill-count">${v7Count}</span></button>
+            <button class="wstyle-filter-pill" data-filter="V7">V7 <span class="pill-count">${v7Count}</span></button>
         </div>
     `);
     c.append(filterBar);
@@ -534,15 +536,18 @@ function renderMode(c) {
 
         if (!isLocked) {
             card.on("click", () => {
-                const wasV7 = localProfile.mode.startsWith("v7");
                 localProfile.mode = m.id;
 
-                // Specific style mapping for V7 Core vs other V7s
+                // Specific style mapping for V7 Core, V7 Gentle vs other V7s
                 if (m.id === "v7-core") {
                     localProfile.activeStyleId = "dir_v7_core";
                     const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7_core");
                     if (ds) localProfile.aiRule = ds.rule;
-                } else if (m.id.startsWith("v7") && (!wasV7 || localProfile.activeStyleId === "dir_v7_core")) {
+                } else if (m.id === "v7-gentle") {
+                    localProfile.activeStyleId = "dir_v7_gentle";
+                    const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7_gentle");
+                    if (ds) localProfile.aiRule = ds.rule;
+                } else if (m.id.startsWith("v7")) { // Catch-all for Reality and others
                     localProfile.activeStyleId = "dir_v7";
                     const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7");
                     if (ds) localProfile.aiRule = ds.rule;
@@ -552,7 +557,6 @@ function renderMode(c) {
                 switchTab(currentTab);
             });
         }
-        if (version !== "V7") card.hide();
         coreGrid.append(card);
     });
 
@@ -737,7 +741,10 @@ function renderStyleLibrary(c) {
 
     const isV7 = localProfile.mode.startsWith("v7");
     if (isV7 && !localProfile.activeStyleId) {
-        const targetStyle = localProfile.mode === "v7-core" ? "dir_v7_core" : "dir_v7";
+        let targetStyle = "dir_v7";
+        if (localProfile.mode === "v7-core") targetStyle = "dir_v7_core";
+        else if (localProfile.mode === "v7-gentle") targetStyle = "dir_v7_gentle";
+
         localProfile.activeStyleId = targetStyle;
         const ds = hardcodedLogic.directStyles.find(x => x.id === targetStyle);
         if (ds) localProfile.aiRule = ds.rule;
@@ -1293,6 +1300,13 @@ function renderAddons(c) {
     c.append(`<div class="wstyle-section-head blue" style="margin-top:16px;"><i class="fa-solid fa-earth-americas"></i> Extra</div>`);
     const extraPanel = $(`
         <div class="mtab-panel">
+            <div class="mtab-toggle-row ${localProfile.toggles.promptPreview ? 'active' : ''}" id="ps_toggle_prompt_preview" style="margin-bottom: 16px;">
+                <div class="toggle-info">
+                    <div class="toggle-label"><i class="fa-solid fa-magnifying-glass"></i> Prompt Payload Preview</div>
+                    <div class="toggle-desc">Show a popup of the final constructed prompt right before it is sent to the AI. only enable if you know what you doing it maybe buggy.</div>
+                </div>
+                <div class="ps-switch"></div>
+            </div>
             <div class="mtab-toggle-row ${localProfile.disableUtilityPrefill ? 'active' : ''}" id="ps_toggle_utility_prefill" style="margin-bottom: 16px;">
                 <div class="toggle-info">
                     <div class="toggle-label">Disable Utility Prefills</div>
@@ -1319,6 +1333,15 @@ function renderAddons(c) {
         </div>
     `);
     c.append(extraPanel);
+
+    // Bind the new toggle
+    $("#ps_toggle_prompt_preview").on("click", function () {
+        if (!localProfile.toggles) localProfile.toggles = {};
+        localProfile.toggles.promptPreview = !localProfile.toggles.promptPreview;
+        saveProfileToMemory();
+        if (localProfile.toggles.promptPreview) $(this).addClass("active");
+        else $(this).removeClass("active");
+    });
 
     $("#ps_toggle_utility_prefill").on("click", function () {
         localProfile.disableUtilityPrefill = !localProfile.disableUtilityPrefill;
@@ -2943,7 +2966,7 @@ function renderMemoryCore(c) {
 
         // Only show TF-IDF block if Semantic failed OR TF-IDF is manually selected
         if (engine === 'tfidf' || currentSemanticMatches.length === 0) {
-            const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-2).map(m => meguminCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
+            const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-4).map(m => meguminCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
             const uniqueKeywords = memExtractKeywords(recentCleanedText);
             html += `<div style="background: rgba(16,185,129,0.1); border-left: 3px solid #10b981; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
             <div style="color: #10b981; font-weight: bold; margin-bottom: 4px;">TF-IDF Smart Keywords (Last 2 Messages):</div>
@@ -4175,7 +4198,7 @@ function buildBaseDict() {
     if (localProfile.toggles.control) dict["[[control]]"] = hardcodedLogic.toggles.control.content;
     if (localProfile.aiRule) {
         if (localProfile.mode.startsWith("v7") && localProfile.activeStyleId !== "dir_v7") {
-            dict["[[aiprompt]]"] = `<narrative_style>\n  voice: "Grounded, cinematic, patient. Describe what the camera would see and what the mic would catch. Let the reader feel the room."\n  pacing: "Unhurried where it should be. A quiet moment can take a paragraph. A violent one can take a sentence. Match the rhythm to the content."\n style: ${localProfile.aiRule}\n  length_directive: "Typical outputs should run 3–6 substantial paragraphs, scaling with scene density. Lean toward the higher end during rich, atmospheric, or multi-character scenes. Go shorter — even a single paragraph — only when the moment genuinely demands economy: a held breath, a door closing, a line that hits harder alone. Never pad, never rush."\n</narrative_style>`;
+            dict["[[aiprompt]]"] = `<narrative_style>\n voice: ${localProfile.aiRule}\n  pacing: "Unhurried where it should be. A quiet moment can take a paragraph. A violent one can take a sentence. Match the rhythm to the content."\n  length_directive: "Typical outputs should run 3–6 substantial paragraphs, scaling with scene density. Lean toward the higher end during rich, atmospheric, or multi-character scenes. Go shorter — even a single paragraph — only when the moment genuinely demands economy: a held breath, a door closing, a line that hits harder alone. Never pad, never rush."\n</narrative_style>`;
         } else {
             dict["[[aiprompt]]"] = localProfile.aiRule;
         }
@@ -4322,7 +4345,7 @@ function buildBaseDict() {
         }
     }
 
-    if (localProfile.mode.includes("v6-dream-team")) {
+    if (localProfile.mode.includes("v6-dream-team") || localProfile.mode.startsWith("v7")) {
         dict["[[main]]"] = "";
     }
 
@@ -4529,7 +4552,7 @@ format: "Collapsible HTML details block. Dense, dashboard-style no prose."
 
 function escapeRegex(string) { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-function handlePromptInjection(data) {
+async function handlePromptInjection(data, type) {
     const messages = data?.messages || data?.chat || (Array.isArray(data) ? data : null);
     if (!messages || !Array.isArray(messages)) return;
     const disablePrefill = localProfile && localProfile.disableUtilityPrefill === true;
@@ -4723,6 +4746,47 @@ function handlePromptInjection(data) {
 
     if (replacementsMade > 0 && !activeGenerationOrder) {
         console.log(`[${extensionName}] ✅ Executed ${replacementsMade} block replacements.`);
+    }
+
+    // --- PROMPT PREVIEW ---
+    const isBackgroundGen = activeStoryPlanRequest || activeBanListChat || activeImageGenRequest || activeNpcPfpRequest || activeMemorySummarizationRequest || activeGenerationOrder;
+
+    // Prevent double-popups from Token Counting or rapid ST background triggers
+    const now = Date.now();
+    const isSpam = (now - lastPromptPreviewTime) < 2000;
+    const isTokenCount = type === "count" || type === "quiet";
+
+    if (localProfile.toggles && localProfile.toggles.promptPreview && !isBackgroundGen && !isTokenCount && !isSpam) {
+        lastPromptPreviewTime = now; // Lock it immediately
+
+        let promptString = "";
+        messages.forEach(m => {
+            let contentStr = "";
+            if (typeof m.content === "string") contentStr = m.content;
+            else if (Array.isArray(m.content)) {
+                // Handle multimodal image data safely
+                contentStr = m.content.map(c => c.type === "text" ? c.text : "[BASE64 IMAGE DATA]").join("\n");
+            }
+            promptString += `========== [ ${m.role.toUpperCase()} ] ==========\n${contentStr}\n\n`;
+        });
+
+        const $content = $(`
+            <div style="display:flex; flex-direction:column; gap:10px; font-family: 'Inter', sans-serif;">
+                <div style="font-size: 0.85rem; color: var(--text-muted);">This is the exact payload being sent to the AI API.</div>
+                <textarea class="ps-modern-input" readonly style="height: 450px; resize: vertical; font-family: monospace; font-size: 0.75rem; padding: 10px; white-space: pre-wrap; background: rgba(0,0,0,0.5);"></textarea>
+            </div>
+        `);
+        $content.find("textarea").val(promptString);
+
+        const { Popup, POPUP_TYPE } = typeof getContext === "function" ? getContext() : window;
+        const popup = new Popup($content, POPUP_TYPE.CONFIRM, "Prompt Payload Preview", { okButton: "Send to AI", cancelButton: "Cancel", wide: true, large: true });
+
+        const confirmed = await popup.show();
+
+        if (!confirmed) {
+            messages.length = 0; // Safely aborts ST generation
+            toastr.info("Generation cancelled by user.");
+        }
     }
 }
 
