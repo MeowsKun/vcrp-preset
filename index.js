@@ -7,7 +7,7 @@ import { Popup, POPUP_TYPE } from "../../../popup.js";
 import { hardcodedLogic } from "./data/database.js";
 import { KAZUMA_PLACEHOLDERS, RESOLUTIONS } from "./data/image_data.js";
 
-const extensionName = "Megumin-Suite-Beta";
+const extensionName = "Megumin-Suite-beta";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 const TARGET_PRESET_NAME = "Megumin Engine";
 
@@ -1655,7 +1655,7 @@ function renderStoryPlanner(c) {
         <div class="mtab-toggle-row ${sp.enabled ? 'active' : ''}" id="sp_enable_card" style="margin-bottom: 20px;">
             <div class="toggle-info">
                 <div class="toggle-label"><i class="fa-solid fa-map-location-dot" style="color:var(--gold);"></i> Enable Story Planner</div>
-                <div class="toggle-desc">Injects via [[storyplan]] and [[storytracker]].</div>
+                <div class="toggle-desc">Just enable and hit generate plan now and let the ai do the rest.</div>
             </div>
             <div class="ps-switch"></div>
         </div>
@@ -2828,6 +2828,7 @@ function renderMemoryCore(c) {
                         <i class="fa-solid fa-box-archive"></i> Short-Term Memory
                         <span id="mem_processing_spinner" style="display:none; margin-left: 10px;" class="mem-spinner"><i class="fa-solid fa-circle-notch"></i></span>
                     </div>
+                    <button id="mem_btn_clear_short" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
                 </div>
                 
                 <div id="mem_short_term_list">
@@ -2844,6 +2845,7 @@ function renderMemoryCore(c) {
                 <div style="display: flex; gap: 10px; margin-bottom: 10px;">
                     <input type="text" id="mem_vault_search" class="ps-modern-input" placeholder="Search archived memories..." style="flex: 1; border-color: rgba(59,130,246,0.3);">
                     <button id="mem_btn_test_vector" class="ps-modern-btn secondary" style="color: #3b82f6; border-color: rgba(59,130,246,0.3);" title="See what memories the AI is retrieving right now"><i class="fa-solid fa-radar"></i> Test Scanner</button>
+                    <button id="mem_btn_clear_vault" class="ps-modern-btn secondary" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Delete all Vault Archives"><i class="fa-solid fa-trash-can"></i> Clear All</button>
                 </div>
                 <div id="mem_vault_list" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
                     <!-- Vault items injected here -->
@@ -2851,6 +2853,43 @@ function renderMemoryCore(c) {
             </div>
         </div>
     `);
+
+    // Clear All Short-Term Memory
+    $("#mem_btn_clear_short").off("click").on("click", function () {
+        const mem = localProfile.memoryCore;
+        if (!mem.shortTermChunks || mem.shortTermChunks.length === 0) return toastr.info("Short-Term memory is already empty.");
+        
+        if (confirm("Are you sure you want to delete ALL Short-Term Memory chunks? They will revert to 'Pending' status.")) {
+            mem.shortTermChunks = [];
+            saveProfileToMemory();
+            memRenderAccordion();
+            memRenderDashboard();
+            updateMemoryVisuals();
+            toastr.success("Short-Term Memory cleared.");
+        }
+    });
+
+    // Clear All Long-Term Vault
+    $("#mem_btn_clear_vault").off("click").on("click", async function () {
+        const mem = localProfile.memoryCore;
+        if (!mem.longTermVault || mem.longTermVault.length === 0) return toastr.info("Vault is already empty.");
+        
+        if (confirm("WARNING: Are you sure you want to permanently delete ALL Long-Term Vault archives? This cannot be undone.")) {
+            
+            // If Semantic Mode is active, wipe them from the actual SillyTavern Vector DB
+            if (mem.scannerEngine === 'semantic') {
+                const allIds = mem.longTermVault.map(v => v.id);
+                await memDeleteFromVectorDB(allIds);
+            }
+            
+            mem.longTermVault = [];
+            saveProfileToMemory();
+            memRenderVault($("#mem_vault_search").val() || "");
+            memRenderDashboard();
+            updateMemoryVisuals();
+            toastr.success("Long-Term Vault cleared.");
+        }
+    });
 
     // Toggle Listener
     $("#mem_enable_card").on("click", function () {
@@ -3094,7 +3133,10 @@ function memRenderAccordion() {
                     <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 400;"><i class="fa-regular fa-clock"></i> ${dateStr}</span>
                 </div>
                 <div class="mem-accordion-body">
-                    <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:6px;">You can manually edit this state extraction before it gets pushed to the Vector DB.</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <div style="font-size:0.7rem; color:var(--text-muted);">You can manually edit this state extraction before it gets pushed to the Vector DB.</div>
+                        <button class="mem_short_del" data-id="${chunk.id}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem; padding: 2px 6px;" title="Delete Chunk"><i class="fa-solid fa-trash"></i></button>
+                    </div>
                     <textarea class="mem_chunk_edit" data-id="${chunk.id}">${chunk.summary}</textarea>
                 </div>
             </div>
@@ -3113,6 +3155,22 @@ function memRenderAccordion() {
             if (target) {
                 target.summary = newText;
                 saveProfileToMemory();
+            }
+        });
+
+        // Delete button logic
+        acc.find(".mem_short_del").on("click", function () {
+            if (confirm(`Delete short-term memory chunk [Messages: ${chunk.id}]? It will be permanently removed.`)) {
+                const id = $(this).attr("data-id");
+                
+                // Remove from array
+                localProfile.memoryCore.shortTermChunks = localProfile.memoryCore.shortTermChunks.filter(c => c.id !== id);
+                saveProfileToMemory();
+                
+                // Refresh UI components
+                memRenderAccordion();
+                memRenderDashboard();
+                updateMemoryVisuals();
             }
         });
 
