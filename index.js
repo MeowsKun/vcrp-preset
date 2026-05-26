@@ -11,6 +11,46 @@ const extensionName = "Megumin-Suite-Beta";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 const TARGET_PRESET_NAME = "Megumin Engine";
 
+const DEFAULT_PROMPTS = {
+    storyPlan: {
+        systemPrompt: "Role: You are an expert Story Architect and Plot Planner.\n\n<lore>\n{{charLore}}\n</lore>\n\nUser Persona ({{user}}):\n<user_persona>\n{{userPersona}}\n</user_persona>\n\n<Story>\n{{chatHistory}}\n</Story>",
+        userPrompt: "Task: Brainstorm a minimum of 10 theoretical, medium-to-long-term plot developments based on the story so far.\n\nStrict Rules & Constraints:\n1. DO NOT write the immediate next scene. Skip past the current moment and look ahead to future structural milestones.\n2. Use Narrative Structure, NOT Timeframes: Do not use phrases like \"three days later\" or \"next month.\" Instead, frame every idea as a theoretical future Arc, Chapter, or Episode.\n3. Create a Menu of Possibilities: Treat this list as a theoretical menu of branching paths. Focus on major plot shifts, new character introductions, or escalating conflicts that could anchor a future chapter.\n4. Zero Agency Theft: You are STRICTLY FORBIDDEN from writing dialogue, actions, thoughts, or emotional reactions for {{user}}. You must never describe what {{user}} does, feels, or says under any circumstances.\n5. No Assumptions or Suggestions: Do not predict, suggest, or assume what {{user}} will do next. Never end a response by telling or hinting at what {{user}} should do.\n\nFormat & Style: Keep the ideas punchy, plot-focused, and clearly labeled by narrative structure.",
+        thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main text must immediately follow </think>.\n<think>\nReflect in approximately 100–150 words as a seamless paragraph.\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\nEvery response must follow this exact structure in this exact order:\n<think>\n{Thinking}\n</think>\n<plot>\n{main response}\n</plot>",
+        injectionTemplate: "<Story_Plan>\nThis is a possible event for the story, take from it:\n{{planText}}\n</Story_Plan>",
+        trackerTemplate: "<Story_Tracker>\narc: The Arc that is now active.\nchapter: The chapter that is now active.\nEpisode: The episode that is now active.\nSecrets: Any secret that the user/{{user}} doesn't know.\n</Story_Tracker>"
+    },
+    banList: {
+        systemPrompt: "You are an expert literary critique. Analyze the provided chat history and identify the 5 most repetitive, cliché, or overused stylistic patterns or crutch phrases the writer relies on. Instead of quoting the exact phrase, write a short, generalized rule forbidding the underlying trope. Return ONLY the 5 rules separated by commas. Do not explain them. Do not use quotes or numbers.",
+        userPrompt: "Extract the top 5 most overused clichés or repetitive narrative patterns from this text. Return ONLY the 5 generalized rules forbidding them, separated by commas.\n<chat>\n{{chatHistory}}\n</chat>",
+        thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 100–150 words as a seamless paragraph.\n\n– your thinking steps\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}",
+        injectionTemplate: "[BAN LIST]\nNever rely on these clichés, tropes, or repetitive patterns. They are dead language:\n{{banItems}}"
+    },
+    imageGen: {
+        systemPrompt: "You are an expert AI image prompt engineer. Your job is to read a scene and convert it into a highly detailed visual prompt for an image generation model. You must adhere to the requested Style Constraint and Camera Perspective. Do not include quotes, conversational text, or explanations. Output ONLY the raw prompt text.",
+        userPrompt: "Write an image generation prompt for the latest scene in this chat history.\n\n<chat>\n{{chatHistory}}\n</chat>\n\nStyle Constraint: {{styleStr}}\nCamera Perspective: {{perspStr}}\nExtra Details: {{extraStr}}\n\nOutput ONLY the raw image prompt text.",
+        thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 50-100 words as a seamless paragraph on what visual elements are present.\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}",
+        injectionTemplate: "[IMAGE GENERATION]\n{{conditionalText}}Style: {{styleStr}}\nPerspective: {{perspStr}}{{promptExtra}}",
+        styleIllustrious: "Use Danbooru-style tags. Focus on anime.",
+        styleSdxl: "Use natural descriptive sentences. Focus on photorealism.",
+        styleDefault: "Use keywords.",
+        perspPov: "First-Person (POV).",
+        perspCharacter: "Focus on character appearance.",
+        perspDefault: "Describe environment."
+    },
+    memoryCore: {
+        systemPrompt: "You are an expert narrative condenser. Your task is to read a chunk of chat history and summarize exactly what happened. Preserve important story details, but aggressively remove all 'purple prose' and flowery descriptions.\n\nFocus ONLY on impactful actions and meaningful dialogue:\n- Condense small talk (e.g., summarize a long, drawn-out greeting simply as 'He said hello').\n- Ignore trivial, unnecessary physical actions (e.g., grabbing a glass of water, shifting in a chair) unless they directly impact the story.\n- Do not quote dialogue directly; summarize the core point of the conversation.\n\nWrite a direct, clear narrative summary of what the characters did and what was communicated.\n\nCRITICAL: You must write the summary in {{targetLang}}.",
+        userPrompt: "Summarize the impactful events and meaningful conversations from the following chat chunk. Strip out the purple prose and trivial actions.\n\n<chat>\n{{chatHistory}}\n</chat>\n\nOutput the summary in {{targetLang}}:",
+        longTermTemplate: "[LONG-TERM MEMORY VAULT]\nThe following are raw archives of highly relevant past events. Use timestamps to prevent context collapse. Do not hallucinate them as currently happening.\n{{archiveXML}}",
+        shortTermTemplate: "[SHORT-TERM MEMORY]\nRecent state extractions:\n{{shortXML}}"
+    },
+    npcBank: {
+        systemPrompt: "You are an expert AI image prompt engineer specializing in character portraits. Your job is to read a character's dossier and convert their visual description into a highly detailed image generation prompt for a portrait. You must adhere to the requested Style Constraint and Camera Perspective. Do not include quotes, conversational text, or explanations. Output ONLY the raw prompt text.",
+        userPrompt: "Write a character portrait image generation prompt based on this NPC's dossier:\n\n<npc_dossier>\n{{npcText}}\n</npc_dossier>\n\nStyle Constraint: {{styleStr}}\nCamera Perspective: {{perspStr}}\nExtra Details: {{extraStr}}\n\nUse the character's appearance, age, sex, occupation, and personality to inform the visual. Output ONLY the raw image prompt text.",
+        thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 50-100 words on what this character looks like and what visual elements best capture them.\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}",
+        dossierTemplate: `<npc_dossier>\n  trigger: "Generates ONLY when a new significant NPC is introduced not cashiers, bartenders, random passersby, or one-line background faces. A 'significant NPC' is one with a name, meaningful dialogue, and likely recurrence."\nformat: "Collapsible HTML details block. Dense, dashboard-style no prose."\n\n  template: |\n    <details>\n    <summary>🆕 <b>New NPC: [Full Name]</b></summary>\n\n    **Name:** [Full name, nickname if used] | **Age:** [Age] | **Sex:** [M/F/Other]\n    **Appearance:**  [Hair, body, skin....etc]\n    **Occupation:** [Specific current job/role]\n\n    **Background:** [3–5 sentences. Where they grew up, how they got here, what shaped them. A life sketch not a résumé. Include details the PC may never learn.]\n\n    **Inner Circle:**\n    * [Name] — [Relationship] | [One-line: age, status, dynamic e.g., "Younger sister, 19, uni student in another city they text daily"]\n    * [Name] — [Relationship] | [Same format]\n    * [Name] — [Relationship] | [Include people the PC hasn't met and may never meet]\n\n    **Personality Snapshot:** [2–3 contradictions or defining traits as behavior, not labels.]\n    **Current Agenda:** [What they want RIGHT NOW in the story's context]\n    **Hidden Layer:** [Something the PC doesn't know a secret, a motive.]\n\n    </details>\n\n  guidelines:\n    inner_circle_rule: "Include 2–5 people. At least one must be unknown to the story a mother, an ex, a childhood friend. These are future plot seeds."\n    hidden_layer: "For YOUR use as narrative engine. Drives NPC behavior the PC can't predict. Never reveal in narration unless the NPC actually discloses it."\n</npc_dossier>`
+    }
+};
+
 // -------------------------------------------------------------
 // STATE MANAGEMENT
 // -------------------------------------------------------------
@@ -25,6 +65,7 @@ let activeImageGenRequest = null;
 let activeStoryPlanRequest = null;
 let activeNpcImages = [];
 let isDevEngineDirty = false;
+let activeNpcScanRequest = null;
 
 function getCharacterKey() {
     const context = getContext();
@@ -94,11 +135,13 @@ function initProfile() {
         model: "cot-v1-english",
         userNotes: "",
         userWordCount: "",
+        userWordCountType: "max",
         userLanguage: "",
         userPronouns: "off",
         devOverrides: {},
         banList: [],
         banListBackend: "direct",
+        banListCustomPrompts: null,
         customModes: [],
         thinkEffort: "unspecified",
         customThinkEffort: "100",
@@ -107,7 +150,8 @@ function initProfile() {
             backend: "direct",
             triggerMode: "manual",
             autoFreq: 10,
-            currentPlan: ""
+            currentPlan: "",
+            customPrompts: null
         },
         imageGen: {
             enabled: false,
@@ -129,23 +173,28 @@ function initProfile() {
             triggerMode: "always",
             autoGenFreq: 1,
             previewPrompt: false,
-            savedWorkflowStates: {}
+            savedWorkflowStates: {},
+            customPrompts: null
         },
         memoryCore: {
             enabled: false,
             architecture: "raw_short_long", // "raw_short_long" or "raw_long"
             workingLimit: 30,
             shortTermLimit: 70,
+            chunkSize: 10,
             backend: "direct",
             scannerEngine: "tfidf",
             triggerMode: "frequency",
             autoFreq: 10,
             shortTermChunks: [],
-            longTermVault: []
+            longTermVault: [],
+            customPrompts: null
         },
         npcBank: {
             enabled: false,
-            npcs: []
+            npcs: [],
+            customPrompts: null,
+            scanDepth: 60
         }
     };
 
@@ -177,10 +226,16 @@ function initProfile() {
     if (!localProfile.toggles) localProfile.toggles = defaults.toggles;
     if (!localProfile.imageGen) localProfile.imageGen = defaults.imageGen;
     if (!localProfile.storyPlan) localProfile.storyPlan = defaults.storyPlan;
-    if (!localProfile.memoryCore) localProfile.memoryCore = defaults.memoryCore;
+    if (localProfile.npcBank && localProfile.npcBank.scanDepth === undefined) localProfile.npcBank.scanDepth = 60;
+    if (!localProfile.memoryCore) {
+        localProfile.memoryCore = defaults.memoryCore;
+    } else {
+        if (localProfile.memoryCore.chunkSize === undefined) localProfile.memoryCore.chunkSize = 10;
+    }
     if (!localProfile.dnRatio) localProfile.dnRatio = defaults.dnRatio;
     if (!localProfile.onomatopoeia) localProfile.onomatopoeia = defaults.onomatopoeia;
     if (localProfile.disableUtilityPrefill === undefined) localProfile.disableUtilityPrefill = false;
+    if (!localProfile.userWordCountType) localProfile.userWordCountType = "max"; 
 
     if (localProfile.devOverrides && Object.keys(localProfile.devOverrides).length > 0) {
         localProfile.devOverrides = {};
@@ -207,6 +262,12 @@ function saveProfileToMemory() {
     const key = getCharacterKey() || "default";
     const ruleBox = $("#ps_main_current_rule");
     if (ruleBox.length > 0) { localProfile.aiRule = ruleBox.val(); }
+
+    // Invalidate the optimized archived-set cache when profile changes
+    if (localProfile?.memoryCore) {
+        localProfile.memoryCore._archivedSet = null;
+    }
+
     extension_settings[extensionName].profiles[key] = localProfile;
     saveSettingsDebounced();
 
@@ -232,21 +293,30 @@ function updateLiveTokenCount() {
     let styleStr = "";
     let addonsStr = "";
 
+    // Array of dynamic systems we do NOT want to count
+    const excludeKeys = [
+        "[[long-Memory]]", "[[Short-memory]]", 
+        "[[npc list]]", "[[npc_dossier]]", "[[npc_dossier2]]",
+        "[[img1]]", "[[img2]]",
+        "[[storyplan]]", "[[storytracker]]", "[[storytracker2]]",
+        "[[banlist]]"
+    ];
+
     Object.entries(dict).forEach(([key, value]) => {
         if (!value) return;
         // Skip the single-bracket aliases to prevent double counting
         if (key.match(/^\[prompt[1-6]\]$/)) return;
 
-        // SKIP MEMORY CORE BLOCKS from the Token Counter
-        if (key === "[[long-Memory]]" || key === "[[Short-memory]]") return;
+        // Skip highly variable dynamic blocks
+        if (excludeKeys.includes(key)) return;
 
-        // Categorize the text
-        if (key.includes("prompt") || key.includes("main") || key.includes("AI")) {
-            engineStr += value + " ";
-        } else if (key.includes("COT") || key.includes("prefill") || key.includes("THINK")) {
-            cotStr += value + " ";
-        } else if (key.includes("aiprompt") || key.includes("Language") || key.includes("pronouns") || key.includes("count") || key.includes("DNRATIO")) {
+        // Categorize the text using exact matches to prevent overlap
+        if (key === "[[aiprompt]]" || key === "[[Language]]" || key === "[[pronouns]]" || key === "[[count]]" || key === "[[DNRATIO]]" || key === "[[onomato]]") {
             styleStr += value + " ";
+        } else if (key === "[[COT]]" || key === "[[prefill]]" || key === "[[THINK]]") {
+            cotStr += value + " ";
+        } else if (key.match(/^\[\[prompt[1-6]\]\]$/) || key === "[[main]]" || key === "[[AI1]]" || key === "[[AI2]]") {
+            engineStr += value + " ";
         } else {
             addonsStr += value + " ";
         }
@@ -420,7 +490,7 @@ function applyTabToAll() {
         0: ["mode"],
         1: ["personality", "toggles"],
         2: ["activeStyleId", "aiRule", "customStyles", "dnRatio"],
-        3: ["userWordCount", "userLanguage", "userPronouns", "disableUtilityPrefill", "onomatopoeia"],
+        3: ["userWordCount", "userWordCountType", "userLanguage", "userPronouns", "disableUtilityPrefill", "onomatopoeia"],
         4: ["addons", "blocks"],
         5: ["model"],
         6: ["storyPlan"],
@@ -547,6 +617,10 @@ function renderMode(c) {
                     localProfile.activeStyleId = "dir_v7_gentle";
                     const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7_gentle");
                     if (ds) localProfile.aiRule = ds.rule;
+                } else if (m.id === "v7.5") {
+                    localProfile.activeStyleId = "dir_v7.5";
+                    const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7.5");
+                    if (ds) localProfile.aiRule = ds.rule;
                 } else if (m.id.startsWith("v7")) { // Catch-all for Reality and others
                     localProfile.activeStyleId = "dir_v7";
                     const ds = hardcodedLogic.directStyles.find(x => x.id === "dir_v7");
@@ -580,7 +654,9 @@ function renderMode(c) {
     });
 
     // V7 Modules Toggles
-    if (localProfile.mode.startsWith("v7")) {
+    const activeEngineForToggles = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
+    const isV7ForToggles = activeEngineForToggles ? (activeEngineForToggles.id.startsWith("v7") || activeEngineForToggles.isV7 === true) : false;
+    if (isV7ForToggles) {
         c.append(`<div class="wstyle-section-head blue" style="margin-top: 15px;"><i class="fa-solid fa-layer-group"></i> V7 Modules (Turn off to disable)</div>`);
         const v7ToggleList = $(`<div class="mtab-card-list"></div>`);
         const v7Toggles = [
@@ -644,7 +720,8 @@ function renderMode(c) {
 
 function renderPersonality(c) {
     const isV6DreamTeam = localProfile.mode.includes("v6-dream-team");
-    const isV7 = localProfile.mode.startsWith("v7");
+    const activeEngineForPersona = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
+    const isV7 = activeEngineForPersona ? (activeEngineForPersona.id.startsWith("v7") || activeEngineForPersona.isV7 === true) : false;
     const isLockedPersona = isV6DreamTeam || isV7;
 
     // ── HEADER ──
@@ -739,11 +816,13 @@ function renderStyleLibrary(c) {
     c.empty();
     const root = $(`<div style="display: flex; flex-direction: column;"></div>`);
 
-    const isV7 = localProfile.mode.startsWith("v7");
-    if (isV7 && !localProfile.activeStyleId) {
+    const activeEngineForStyle = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
+    const isV7ForStyle = activeEngineForStyle ? (activeEngineForStyle.id.startsWith("v7") || activeEngineForStyle.isV7 === true) : false;
+    if (isV7ForStyle && !localProfile.activeStyleId) {
         let targetStyle = "dir_v7";
         if (localProfile.mode === "v7-core") targetStyle = "dir_v7_core";
         else if (localProfile.mode === "v7-gentle") targetStyle = "dir_v7_gentle";
+        else if (localProfile.mode === "v7.5") targetStyle = "dir_v7.5";
 
         localProfile.activeStyleId = targetStyle;
         const ds = hardcodedLogic.directStyles.find(x => x.id === targetStyle);
@@ -800,7 +879,7 @@ function renderStyleLibrary(c) {
     `);
     offCard.on("click", () => { localProfile.activeStyleId = null; localProfile.aiRule = ""; saveProfileToMemory(); renderStyleLibrary(c); });
 
-    if (!isV7) {
+    if (!isV7ForStyle) {
         root.append(offCard);
     } else {
         const v7LockCard = $(`
@@ -1316,7 +1395,13 @@ function renderAddons(c) {
             </div>
             <div class="mtab-setting-row">
                 <div class="set-info"><div class="set-label">Target Word Count</div><div class="set-desc">Leave empty for no limit</div></div>
-                <input type="number" id="ps_input_wordcount" class="ps-modern-input" style="width: 180px;" placeholder="e.g. 400" value="${localProfile.userWordCount || ''}" min="1" />
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <select id="ps_select_wordcount_type" class="ps-modern-input" style="width: 110px; cursor: pointer;">
+                        <option value="max" ${localProfile.userWordCountType !== 'min' ? 'selected' : ''}>Maximum</option>
+                        <option value="min" ${localProfile.userWordCountType === 'min' ? 'selected' : ''}>Minimum</option>
+                    </select>
+                    <input type="number" id="ps_input_wordcount" class="ps-modern-input" style="width: 120px;" placeholder="e.g. 400" value="${localProfile.userWordCount || ''}" min="1" />
+                </div>
             </div>
             <div class="mtab-setting-row">
                 <div class="set-info"><div class="set-label">Language Output</div><div class="set-desc">Leave empty for default (English)</div></div>
@@ -1349,6 +1434,7 @@ function renderAddons(c) {
         if (localProfile.disableUtilityPrefill) $(this).addClass("active");
         else $(this).removeClass("active");
     });
+    $("#ps_select_wordcount_type").on("change", function () { localProfile.userWordCountType = $(this).val(); saveProfileToMemory(); });
     $("#ps_input_wordcount").on("input", function () { localProfile.userWordCount = $(this).val(); saveProfileToMemory(); });
     $("#ps_input_language").on("input", function () { localProfile.userLanguage = $(this).val(); saveProfileToMemory(); });
     $("#ps_select_pronouns").on("change", function () { localProfile.userPronouns = $(this).val(); saveProfileToMemory(); });
@@ -1484,6 +1570,7 @@ function renderModels(c) {
     else if (localProfile.model && localProfile.model.startsWith("cot-v2-")) { currentType = "v2"; currentLang = localProfile.model.replace("cot-v2-", ""); }
     else if (localProfile.model && localProfile.model.startsWith("cot-v6-lite-")) { currentType = "v6-lite"; currentLang = localProfile.model.replace("cot-v6-lite-", ""); }
     else if (localProfile.model && localProfile.model.startsWith("cot-v6-")) { currentType = "v6"; currentLang = localProfile.model.replace("cot-v6-", ""); }
+    else if (localProfile.model && localProfile.model.startsWith("cot-v7.5-")) { currentType = "v7.5"; currentLang = localProfile.model.replace("cot-v7.5-", ""); }
     else if (localProfile.model && localProfile.model.startsWith("cot-v7-lite-")) { currentType = "v7-lite"; currentLang = localProfile.model.replace("cot-v7-lite-", ""); }
     else if (localProfile.model && localProfile.model.startsWith("cot-v7-")) { currentType = "v7"; currentLang = localProfile.model.replace("cot-v7-", ""); }
 
@@ -1565,7 +1652,8 @@ function renderModels(c) {
         { id: "v6", label: "CoT V6 (Dream Team)", desc: "The full 4-phase sequence designed specifically for V6 engines. Specialized validation and modeling.", isNew: true },
         { id: "v6-lite", label: "CoT V6 (Lite)", desc: "A streamlined 3-phase sequence. Less token overhead while maintaining narrative rules.", isNew: true },
         { id: "v7", label: "CoT V7", desc: "The new V7 sequence with 5-phase strict ground truth rebuilding.", isNew: true },
-        { id: "v7-lite", label: "CoT V7 (Lite)", desc: "A streamlined 5-phase sequence for V7.", isNew: true }
+        { id: "v7-lite", label: "CoT V7 (Lite)", desc: "A streamlined 5-phase sequence for V7.", isNew: true },
+        { id: "v7.5", label: "CoT V7.5 Kismet", desc: "The new V7.5 sequence focused on story engine mechanics.", isNew: true }
     ];
     types.forEach(t => {
         const isSel = currentType === t.id;
@@ -1588,6 +1676,7 @@ function renderModels(c) {
         card.on("click", () => {
             if (t.id === "off") localProfile.model = "cot-off";
             else if (t.id === "v7") localProfile.model = `cot-v7-english`;
+            else if (t.id === "v7.5") localProfile.model = `cot-v7.5-english`;
             else if (t.id === "v7-lite") localProfile.model = `cot-v7-lite-english`;
             else localProfile.model = `cot-${t.id}-${currentLang}`;
             saveProfileToMemory(); renderModels(c);
@@ -1603,7 +1692,7 @@ function renderModels(c) {
             { id: "french", label: "French (Français)" }, { id: "zh", label: "Mandarin (中文)" }, { id: "ru", label: "Russian (Русский)" },
             { id: "jp", label: "Japanese (日本語)" }, { id: "pt", label: "Portuguese (Português)" }
         ];
-        if (currentType === "v7" || currentType === "v7-lite") langs = [{ id: "english", label: "English" }];
+        if (currentType === "v7" || currentType === "v7-lite" || currentType === "v7.5") langs = [{ id: "english", label: "English" }];
         langs.forEach(l => {
             const isSel = currentLang === l.id;
             let badges = '';
@@ -1625,6 +1714,85 @@ function renderModels(c) {
             langGrid.append(card);
         }); c.append(langGrid);
     }
+}
+
+// -------------------------------------------------------------
+function renderPromptEditor(config) {
+    const { id, title, defaultData, currentData, fields, onSave, onReset } = config;
+    let prompts = currentData || defaultData;
+    if (typeof prompts !== 'object' || prompts === null) prompts = defaultData;
+    
+    let fieldsHtml = '';
+    fields.forEach(f => {
+        // STRONG FALLBACK: If the saved data is empty/corrupt, force the default.
+        let val = prompts[f.key];
+        if (val === undefined || val === null || String(val).trim() === '') {
+            val = defaultData[f.key] || '';
+        }
+        
+        // Safely escape HTML entities to inject safely into the textarea
+        let escapedVal = String(val)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+
+        fieldsHtml += `
+            <div class="ps-prompt-field">
+                <div class="ps-prompt-field-label">
+                    <span class="pf-name"><i class="fa-solid fa-code"></i> ${f.label}</span>
+                    <button class="pf-reset" data-key="${f.key}" title="Reset to default"><i class="fa-solid fa-rotate-left"></i> Reset</button>
+                </div>
+                <textarea class="ps-prompt-textarea" data-key="${f.key}">${escapedVal}</textarea>
+                <div class="pf-hint">${f.hint}</div>
+            </div>
+        `;
+    });
+
+    const html = `
+        <div class="ps-prompt-editor" id="${id}">
+            <div class="ps-prompt-editor-toggle">
+                <span class="pe-title"><i class="fa-solid fa-pen-to-square"></i> ${title}</span>
+                <i class="fa-solid fa-chevron-down pe-chevron"></i>
+            </div>
+            <div class="ps-prompt-editor-body">
+                ${fieldsHtml}
+                <div class="ps-prompt-editor-actions">
+                    <button class="ps-modern-btn secondary btn-reset-all" style="padding: 6px 12px; font-size: 0.75rem;"><i class="fa-solid fa-rotate-left"></i> Reset All Defaults</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const $el = $(html);
+
+    $el.find('.ps-prompt-editor-toggle').on('click', function() {
+        $el.toggleClass('open');
+    });
+
+    $el.find('.ps-prompt-textarea').on('input', function() {
+        const key = $(this).data('key');
+        let cData = onSave($(this).val(), key);
+        if (cData) prompts = cData;
+    });
+
+    $el.find('.pf-reset').on('click', function() {
+        const key = $(this).data('key');
+        $el.find(`textarea[data-key="${key}"]`).val(defaultData[key]);
+        let cData = onSave(defaultData[key], key);
+        if (cData) prompts = cData;
+    });
+
+    $el.find('.btn-reset-all').on('click', function() {
+        onReset();
+        $el.find('.ps-prompt-textarea').each(function() {
+            const key = $(this).data('key');
+            $(this).val(defaultData[key]);
+        });
+        prompts = defaultData;
+    });
+
+    return $el;
 }
 
 // -------------------------------------------------------------
@@ -1699,6 +1867,31 @@ function renderStoryPlanner(c) {
         </div>
     `);
 
+    // --- PROMPT EDITOR UI ---
+    const spEditor = renderPromptEditor({
+        id: "sp_prompt_editor",
+        title: "Advanced: Edit Prompts",
+        defaultData: DEFAULT_PROMPTS.storyPlan,
+        currentData: sp.customPrompts,
+        fields: [
+            { key: "systemPrompt", label: "System Prompt", hint: "Tokens: <code>{{charLore}}</code>, <code>{{userPersona}}</code>, <code>{{chatHistory}}</code>" },
+            { key: "userPrompt", label: "User Task Prompt", hint: "Tokens: <code>{{user}}</code>" },
+            { key: "thinkingPrompt", label: "Thinking Instructions", hint: "Must include output ordering instructions." },
+            { key: "injectionTemplate", label: "Story Plan Injection Template", hint: "Tokens: <code>{{planText}}</code>" },
+            { key: "trackerTemplate", label: "Story Tracker Template", hint: "Tokens: <code>{{user}}</code>" }
+        ],
+        onSave: (val, key) => {
+            if (!sp.customPrompts) sp.customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS.storyPlan));
+            sp.customPrompts[key] = val;
+            saveProfileToMemory();
+            return sp.customPrompts;
+        },
+        onReset: () => {
+            sp.customPrompts = null;
+            saveProfileToMemory();
+        }
+    });
+    c.find('#sp_main_content').append(spEditor);
 
     // Listeners
     $("#sp_enable_card").on("click", function () {
@@ -1771,24 +1964,6 @@ function renderBanList(c) {
     c.empty();
     if (!localProfile.banList) localProfile.banList = [];
 
-    // ── HEADER ──
-    c.append(`
-        <div class="mtab-header">
-            <div class="mtab-header-left">
-                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #ef4444, #b91c1c);">
-                    <i class="fa-solid fa-ban"></i>
-                </div>
-                <div>
-                    <h2>Dynamic Ban List</h2>
-                    <p>Detect and ban overused phrases from AI responses.</p>
-                </div>
-            </div>
-            <div id="ban_header_badge" class="mtab-header-badge" style="background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25);">
-                <i class="fa-solid fa-ban" style="font-size:0.6rem;"></i> ${localProfile.banList.length} Banned
-            </div>
-        </div>
-    `);
-
     // ── AI SLOP DETECTOR ──
     c.append(`
         <div class="mtab-panel" style="margin-bottom:16px;">
@@ -1802,10 +1977,9 @@ function renderBanList(c) {
                     <div class="set-desc">Choose how to generate the analysis.</div>
                 </div>
                 <select id="ban_list_backend" class="ps-modern-input" style="width: 200px; cursor: pointer;">
-                    <option value="direct" ${localProfile.banListBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                    <option value="preset" ${localProfile.banListBackend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
-                </select>
-            </div>
+                <option value="direct" ${localProfile.banListBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
+                <option value="preset" ${localProfile.banListBackend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
+            </select>
         </div>
 
         <div class="mtab-panel" style="margin-bottom:16px;">
@@ -1825,12 +1999,43 @@ function renderBanList(c) {
                 <button id="ps_btn_clear_bans" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
             </div>
         </div>
-        <div id="ps_banlist_container" class="mtab-card-list" style="min-height: 50px; padding: 10px; border: 1px dashed var(--border-color); border-radius: 10px;"></div>
+        <div id="ps_banlist_container" class="mtab-card-list" style="min-height: 50px; padding: 10px; border: 1px dashed var(--border-color); border-radius: 10px; margin-bottom: 16px;"></div>
+        
+        <!-- NEW DEDICATED CONTAINER FOR THE EDITOR -->
+        <div id="ban_editor_container" style="margin-bottom: 16px;"></div>
+
         <div class="mtab-callout purple" style="margin-top: 16px;">
             <i class="fa-solid fa-circle-info"></i>
             <span>This is a beta feature. Don't complain if you have to generate more than once.</span>
         </div>
     `);
+
+    // --- PROMPT EDITOR UI ---
+    const banEditor = renderPromptEditor({
+        id: "ban_prompt_editor",
+        title: "Advanced: Edit Prompts",
+        defaultData: DEFAULT_PROMPTS.banList,
+        currentData: localProfile.banListCustomPrompts,
+        fields: [
+            { key: "systemPrompt", label: "System Prompt", hint: "AI role definition." },
+            { key: "userPrompt", label: "User Task Prompt", hint: "Tokens: <code>{{chatHistory}}</code>" },
+            { key: "thinkingPrompt", label: "Thinking Instructions", hint: "Must include output ordering instructions." },
+            { key: "injectionTemplate", label: "Ban List Injection Template", hint: "Tokens: <code>{{banItems}}</code>" }
+        ],
+        onSave: (val, key) => {
+            if (!localProfile.banListCustomPrompts) localProfile.banListCustomPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS.banList));
+            localProfile.banListCustomPrompts[key] = val;
+            saveProfileToMemory();
+            return localProfile.banListCustomPrompts;
+        },
+        onReset: () => {
+            localProfile.banListCustomPrompts = null;
+            saveProfileToMemory();
+        }
+    });
+    
+    // RELIABLY INJECT THE EDITOR INTO THE CONTAINER WE JUST MADE
+    c.find('#ban_editor_container').append(banEditor);
 
     const renderTags = () => {
         const box = $("#ps_banlist_container"); box.empty();
@@ -2093,6 +2298,37 @@ function renderImageGen(c) {
             </div>
         </div>
     `);
+
+    // --- PROMPT EDITOR UI ---
+    const igEditor = renderPromptEditor({
+        id: "ig_prompt_editor",
+        title: "Advanced: Edit Prompts",
+        defaultData: DEFAULT_PROMPTS.imageGen,
+        currentData: s.customPrompts,
+        fields: [
+            { key: "systemPrompt", label: "System Prompt", hint: "AI role definition." },
+            { key: "userPrompt", label: "User Task Prompt", hint: "Tokens: <code>{{chatHistory}}</code>, <code>{{styleStr}}</code>, <code>{{perspStr}}</code>, <code>{{extraStr}}</code>" },
+            { key: "thinkingPrompt", label: "Thinking Instructions", hint: "Must include output ordering instructions." },
+            { key: "injectionTemplate", label: "Image Injection Template", hint: "Tokens: <code>{{conditionalText}}</code>, <code>{{styleStr}}</code>, <code>{{perspStr}}</code>, <code>{{promptExtra}}</code>" },
+            { key: "styleIllustrious", label: "Style: Illustrious", hint: "Danbooru style rules." },
+            { key: "styleSdxl", label: "Style: SDXL", hint: "SDXL style rules." },
+            { key: "styleDefault", label: "Style: Default", hint: "Default style rules." },
+            { key: "perspPov", label: "Perspective: POV", hint: "First-Person rules." },
+            { key: "perspCharacter", label: "Perspective: Character", hint: "Character focus rules." },
+            { key: "perspDefault", label: "Perspective: Default", hint: "Environment focus rules." }
+        ],
+        onSave: (val, key) => {
+            if (!s.customPrompts) s.customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS.imageGen));
+            s.customPrompts[key] = val;
+            saveProfileToMemory();
+            return s.customPrompts;
+        },
+        onReset: () => {
+            s.customPrompts = null;
+            saveProfileToMemory();
+        }
+    });
+    c.find('#ig_main_content').append(igEditor);
 
     // --- EVENTS & BINDINGS ---
     $("#ig_enable_card").on("click", function () {
@@ -2462,16 +2698,57 @@ function renderNpcBank(c) {
         </div>
 
         <div id="npc_main_content" style="display: ${nb.enabled ? 'block' : 'none'};">
-            <div style="margin-top: 15px;">
+            
+            <!-- Scanner Settings -->
+            <div class="mtab-panel" style="margin-top: 15px; margin-bottom: 16px;">
+                <div class="mtab-panel-title gold" style="margin-bottom: 10px;"><i class="fa-solid fa-gears"></i> Scanner Settings</div>
+                <div class="mtab-setting-row" style="padding-bottom: 0; border: none;">
+                    <div class="set-info">
+                        <div class="set-label">Scan Depth (Messages)</div>
+                        <div class="set-desc">How many recent messages to read when clicking "Scan Story".<br><span style="color:var(--gold); font-weight: 600;">⚠️ Note: High numbers consume massive context limits and API tokens!</span></div>
+                    </div>
+                    <input type="number" id="npc_scan_depth" class="ps-modern-input" value="${nb.scanDepth || 60}" min="10" style="width: 90px; text-align: center;" />
+                </div>
+            </div>
+
+            <div>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <div style="color: #f43f5e; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;"><i class="fa-solid fa-address-card"></i> Saved NPCs <span id="npc_count" style="color: var(--text-muted); font-size: 0.75rem; margin-left: 8px;">(${(nb.npcs || []).length})</span></div>
-                    <button id="npc_btn_clear_all" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="npc_btn_scan_story" class="ps-modern-btn primary" style="padding: 4px 10px; font-size: 0.72rem; background: linear-gradient(135deg, #f43f5e, #e11d48); color: #fff; border: none;"><i class="fa-solid fa-radar"></i> Scan Story</button>
+                        <button id="npc_btn_clear_all" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
+                    </div>
                 </div>
                 <div id="npc_bank_list" style="display: flex; flex-direction: column; gap: 14px; padding: 4px;">
                 </div>
             </div>
         </div>
     `);
+    // --- PROMPT EDITOR UI ---
+        const npcEditor = renderPromptEditor({
+            id: "npc_prompt_editor",
+            title: "Advanced: Edit NPC Prompts",
+            defaultData: DEFAULT_PROMPTS.npcBank,
+            currentData: nb.customPrompts,
+            fields: [
+                { key: "systemPrompt", label: "Portrait AI: System Prompt", hint: "AI role definition for image generation." },
+                { key: "userPrompt", label: "Portrait AI: User Task Prompt", hint: "Tokens: <code>{{npcText}}</code>, <code>{{styleStr}}</code>, <code>{{perspStr}}</code>, <code>{{extraStr}}</code>" },
+                { key: "thinkingPrompt", label: "Portrait AI: Thinking Instructions", hint: "Must include output ordering instructions." },
+                { key: "dossierTemplate", label: "Chat AI: Dossier Injection Template", hint: "The strict format template the main AI uses to extract and format new NPCs into the chat." }
+            ],
+            onSave: (val, key) => {
+                if (!nb.customPrompts) nb.customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS.npcBank));
+                nb.customPrompts[key] = val;
+                saveProfileToMemory();
+                return nb.customPrompts;
+            },
+            onReset: () => {
+            nb.customPrompts = null;
+            saveProfileToMemory();
+        }
+    });
+
+    c.find('#npc_main_content').append(npcEditor);
 
     $("#npc_enable_card").on("click", function () {
         nb.enabled = !nb.enabled; saveProfileToMemory();
@@ -2496,6 +2773,62 @@ function renderNpcBank(c) {
         }
     });
 
+    $("#npc_btn_scan_story").on("click", async function () {
+        const chatText = getChatForNpcScan();
+        if (chatText.length < 100) return toastr.warning("Not enough chat history to scan.");
+        
+        const btn = $(this);
+        btn.prop("disabled", true).html(`<i class="fa-solid fa-spinner fa-spin"></i> Scanning...`);
+        
+        try {
+            const existingNames = (localProfile.npcBank.npcs || []).map(n => n.name).join(", ");
+            activeNpcScanRequest = { chatText, existingNames };
+            
+            let rawOutput = await generateQuietPrompt({ prompt: "___PS_NPC_SCAN___" });
+            
+            const npcRegex = /<details>[\s\S]*?<summary>.*?New NPC:\s*(.*?)<\/summary>([\s\S]*?)<\/details>/ig;
+            let match;
+            let addedCount = 0;
+            while ((match = npcRegex.exec(rawOutput)) !== null) {
+                const npcName = match[1].trim().replace(/<\/?b>/ig, "");
+                const npcContent = match[0].trim();
+                if (!localProfile.npcBank.npcs) localProfile.npcBank.npcs = [];
+                if (!localProfile.npcBank.npcs.find(n => (n.name || "").trim().toLowerCase() === npcName.toLowerCase())) {
+                    const parsed = npcParseBlock(npcContent);
+                    localProfile.npcBank.npcs.push({
+                        name: parsed.name || npcName,
+                        age: parsed.age || "",
+                        sex: parsed.sex || "",
+                        appearance: parsed.appearance || "",
+                        occupation: parsed.occupation || "",
+                        background: parsed.background || "",
+                        innerCircle: parsed.innerCircle || "",
+                        personality: parsed.personality || "",
+                        agenda: parsed.agenda || "",
+                        hiddenLayer: parsed.hiddenLayer || "",
+                        pfp: "",
+                        timestamp: Date.now()
+                    });
+                    addedCount++;
+                }
+            }
+            
+            if (addedCount > 0) {
+                saveProfileToMemory();
+                renderNpcList();
+                toastr.success(`Found and added ${addedCount} new NPC(s)!`);
+            } else {
+                toastr.info("No new significant NPCs found in the story.");
+            }
+        } catch (e) {
+            console.error("NPC Scan Error:", e);
+            toastr.error("Failed to scan story for NPCs.");
+        } finally {
+            activeNpcScanRequest = null;
+            btn.prop("disabled", false).html(`<i class="fa-solid fa-radar"></i> Scan Story`);
+        }
+    });
+
     $("#npc_send_portraits").on("click", function () {
         nb.sendPortraitsToAi = !nb.sendPortraitsToAi; saveProfileToMemory();
         if (nb.sendPortraitsToAi) {
@@ -2503,6 +2836,13 @@ function renderNpcBank(c) {
         } else {
             $(this).removeClass("active").css("border-color", "var(--border-color)");
         }
+    });
+
+    $("#npc_scan_depth").on("input change", function() {
+        let val = parseInt($(this).val());
+        if (isNaN(val) || val < 1) val = 60;
+        localProfile.npcBank.scanDepth = val;
+        saveProfileToMemory();
     });
 
     if (nb.enabled) renderNpcList();
@@ -2568,6 +2908,7 @@ function renderNpcList() {
                         <i class="fa-solid fa-chevron-right npc-chevron" style="font-size: 0.6rem; color: ${accentColor}; transition: transform 0.2s;"></i>
                         ${miniPfp}
                         <span style="font-size: 0.85rem; font-weight: 700; color: ${accentColor};">${n.name}</span>
+                        <button class="npc_edit_name_btn" data-idx="${idx}" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.7rem; padding: 2px 4px; margin-left: -4px;" title="Edit Name"><i class="fa-solid fa-pen"></i></button>
                         <span style="font-size: 0.6rem; color: var(--text-muted); background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">${n.age || "?"} · ${n.sex || "?"}</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -2620,6 +2961,19 @@ function renderNpcList() {
             if (localProfile.npcBank.npcs[i]) {
                 localProfile.npcBank.npcs[i][field] = $(this).val();
                 saveProfileToMemory();
+            }
+        });
+
+        // Edit Name
+        card.find(".npc_edit_name_btn").on("click", function (e) {
+            e.stopPropagation();
+            const i = parseInt($(this).attr("data-idx"));
+            const currentName = localProfile.npcBank.npcs[i].name;
+            const newName = prompt("Enter new name for this NPC:", currentName);
+            if (newName && newName.trim() !== "" && newName !== currentName) {
+                localProfile.npcBank.npcs[i].name = newName.trim();
+                saveProfileToMemory();
+                renderNpcList();
             }
         });
 
@@ -2720,22 +3074,24 @@ function renderMemoryCore(c) {
                     </div>
                 </div>
                 <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: 5px;">
-                    <span><i class="fa-solid fa-circle" style="color: #10b981; font-size: 0.5rem;"></i> Working</span>
+                    <span><i class="fa-solid fa-circle" style="color: #3b82f6; font-size: 0.5rem;"></i> Vault</span>
                     <span id="mem_dash_short_lbl" style="display:${mem.architecture === 'raw_long' ? 'none' : 'inline'};">
-                        <i class="fa-solid fa-circle-half-stroke" style="color: rgba(245,158,11,0.5); font-size: 0.5rem;"></i> Pend Short 
-                        <i class="fa-solid fa-circle" style="color: #f59e0b; font-size: 0.5rem; margin-left:4px;"></i> Short
+                        <i class="fa-solid fa-circle" style="color: #f59e0b; font-size: 0.5rem;"></i> Short-Term
                     </span>
-                    <span>
-                        <i class="fa-solid fa-circle-half-stroke" style="color: rgba(59,130,246,0.5); font-size: 0.5rem;"></i> Pend Vault 
-                        <i class="fa-solid fa-circle" style="color: #3b82f6; font-size: 0.5rem; margin-left:4px;"></i> Vault
-                    </span>
+                    <span><i class="fa-solid fa-circle-half-stroke" style="color: #047857; font-size: 0.5rem;"></i> Pending</span>
+                    <span><i class="fa-solid fa-circle" style="color: #10b981; font-size: 0.5rem;"></i> Working</span>
                 </div>
-                <div class="mem-progress-container" style="background: rgba(0,0,0,0.6);">
-                    <div id="mem_bar_work" style="background: #10b981; transition: width 0.2s ease;"></div>
-                    <div id="mem_bar_short_pend" style="background: repeating-linear-gradient(45deg, #9a3412, #9a3412 10px, #d97706 10px, #d97706 20px); transition: width 0.2s ease;"></div>
-                    <div id="mem_bar_short" style="background: #f59e0b; transition: width 0.2s ease;"></div>
-                    <div id="mem_bar_long_pend" style="background: repeating-linear-gradient(45deg, #1e3a8a, #1e3a8a 10px, #2563eb 10px, #2563eb 20px); transition: width 0.2s ease;"></div>
-                    <div id="mem_bar_long" style="background: #3b82f6; transition: width 0.2s ease;"></div>
+                <div class="mem-progress-container" style="background: rgba(0,0,0,0.6); display: flex;">
+                    <!-- Oldest on Left -->
+                    <div id="mem_bar_long" style="background: #3b82f6; transition: width 0.2s ease;" title="Vaulted (Archived)"></div>
+                    <div id="mem_bar_short" style="background: #f59e0b; transition: width 0.2s ease;" title="Short-Term (Summaries)"></div>
+                    <div id="mem_bar_pend" style="background: repeating-linear-gradient(45deg, #047857, #047857 10px, #10b981 10px, #10b981 20px); transition: width 0.2s ease;" title="Pending (Active Raw)"></div>
+                    <div id="mem_bar_work" style="background: #10b981; transition: width 0.2s ease;" title="Working (Active Raw)"></div>
+                    <!-- Newest on Right -->
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text-muted); margin-top: 4px; opacity: 0.7; font-weight: bold;">
+                    <span>&larr; Oldest (First Message)</span>
+                    <span>Newest (Last Message) &rarr;</span>
                 </div>
                 <div style="margin-top: 10px; font-size: 0.7rem; color: var(--text-muted); text-align: center;" id="mem_status_text">
                     Monitoring Chat History...
@@ -2760,7 +3116,7 @@ function renderMemoryCore(c) {
                 <div class="mtab-setting-row" style="padding-top: 0;">
                     <div class="set-info">
                         <div class="set-label">Memory Architecture</div>
-                        <div class="set-desc">Choose how the tiers are structured.</div>
+                        <div class="set-desc">Configure how memory tiers are structured: Raw text, short-term summaries, and long-term vector database, or bypass summaries to save API usage.</div>
                     </div>
                     <select id="mem_architecture" class="ps-modern-input" style="width: 280px; cursor: pointer; color: var(--gold); border-color: rgba(245,158,11,0.3);">
                         <option value="raw_short_long" ${mem.architecture === 'raw_short_long' ? 'selected' : ''}>Raw Text + Short-Term Summaries + Vault</option>
@@ -2772,13 +3128,30 @@ function renderMemoryCore(c) {
                 <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 15px;">
                     <div class="mtab-param-row">
                         <span class="param-label" style="width:120px;">Working Limit</span>
-                        <input type="range" id="mem_work_slider" min="30" max="300" step="10" value="${mem.workingLimit}">
+                        <input type="range" id="mem_work_slider" min="${mem.chunkSize || 10}" max="300" step="${mem.chunkSize || 10}" value="${mem.workingLimit}">
                         <span id="mem_work_val" style="font-size:0.8rem; font-weight:bold; min-width:30px; text-align:right;">${mem.workingLimit}</span>
                     </div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-left: 130px; margin-top: -4px; margin-bottom: 12px; line-height: 1.3;">
+                        Number of recent messages kept in raw, unmodified text format in the prompt. High limits consume more active context space.
+                    </div>
+
                     <div class="mtab-param-row" id="mem_short_slider_row" style="display:${mem.architecture === 'raw_long' ? 'none' : 'flex'};">
                         <span class="param-label" style="width:120px;">Short-Term Limit</span>
-                        <input type="range" id="mem_short_slider" min="10" max="1000" step="10" value="${mem.shortTermLimit}">
+                        <input type="range" id="mem_short_slider" min="${mem.chunkSize || 10}" max="1000" step="${mem.chunkSize || 10}" value="${mem.shortTermLimit}">
                         <span id="mem_short_val" style="font-size:0.8rem; font-weight:bold; min-width:30px; text-align:right;">${mem.shortTermLimit}</span>
+                    </div>
+                    <div id="mem_short_desc_row" style="font-size: 0.72rem; color: var(--text-muted); margin-left: 130px; margin-top: -4px; margin-bottom: 12px; line-height: 1.3; display:${mem.architecture === 'raw_long' ? 'none' : 'block'};">
+                        Range of past messages to keep summarized. Summaries are automatically created in blocks and injected chronologically.
+                    </div>
+
+                    <!-- CHUNK SIZE SLIDER -->
+                    <div class="mtab-param-row">
+                        <span class="param-label" style="width:120px;">Chunk Size</span>
+                        <input type="range" id="mem_chunk_slider" min="10" max="40" step="10" value="${mem.chunkSize || 10}">
+                        <span id="mem_chunk_val" style="font-size:0.8rem; font-weight:bold; min-width:30px; text-align:right;">${mem.chunkSize || 10}</span>
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-left: 130px; margin-top: -4px; margin-bottom: 8px; line-height: 1.3;">
+                        Smaller chunks = more granular summaries but more API calls. Larger chunks = fewer calls but coarser memory.
                     </div>
                     
                     <!-- NEW APPLY BUTTON -->
@@ -2792,6 +3165,7 @@ function renderMemoryCore(c) {
                 <div class="mtab-setting-row" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 14px;">
                     <div class="set-info">
                         <div class="set-label">Generator Backend</div>
+                        <div class="set-desc">Bypass standard preset configs for fast direct API calls, or use defined Megumin engine settings for character-style summaries.</div>
                     </div>
                     <select id="mem_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
                         <option value="direct" ${mem.backend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
@@ -2801,7 +3175,7 @@ function renderMemoryCore(c) {
                 <div class="mtab-setting-row" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 14px;">
                     <div class="set-info">
                         <div class="set-label">Vault Scanner Engine</div>
-                        <div class="set-desc">TF-IDF (Fast/Local) or Semantic Embeddings (Requires ST Vector Storage enabled).</div>
+                        <div class="set-desc">Select the retrieval engine for matching long-term memories. TF-IDF runs locally, while Semantic Embeddings use Vector Storage.</div>
                     </div>
                     <select id="mem_scanner_engine" class="ps-modern-input" style="width: 280px; cursor: pointer;">
                         <option value="tfidf" ${mem.scannerEngine === 'tfidf' ? 'selected' : ''}>TF-IDF Keyword Matcher</option>
@@ -2811,11 +3185,20 @@ function renderMemoryCore(c) {
                 <div class="mtab-setting-row">
                     <div class="set-info">
                         <div class="set-label">Auto-Trigger Mode</div>
+                        <div class="set-desc">Trigger background memory sweeps. 'Every Reply' checks after every message, wait-pooling messages until a full chunk accumulates.</div>
                     </div>
                     <div style="display:flex; gap:8px; align-items:center;">
                         <select id="mem_trigger" class="ps-modern-input" style="width: 150px; cursor: pointer;">
                             <option value="manual" ${mem.triggerMode === 'manual' ? 'selected' : ''}>Manual Only</option>
-                            <option value="frequency" ${mem.triggerMode === 'frequency' ? 'selected' : ''}>Every 10 Replies</option>
+                            <option value="every" ${mem.triggerMode === 'every' ? 'selected' : ''}>Every Reply</option>
+                            <option value="frequency" ${mem.triggerMode === 'frequency' ? 'selected' : ''}>Every N Replies</option>
+                        </select>
+                        <select id="mem_freq_val" class="ps-modern-input" style="width: 80px; cursor: pointer; display: ${mem.triggerMode === 'frequency' ? 'block' : 'none'};">
+                            <option value="5" ${mem.autoFreq === 5 ? 'selected' : ''}>5</option>
+                            <option value="10" ${mem.autoFreq === 10 || !mem.autoFreq ? 'selected' : ''}>10</option>
+                            <option value="15" ${mem.autoFreq === 15 ? 'selected' : ''}>15</option>
+                            <option value="20" ${mem.autoFreq === 20 ? 'selected' : ''}>20</option>
+                            <option value="30" ${mem.autoFreq === 30 ? 'selected' : ''}>30</option>
                         </select>
                     </div>
                 </div>
@@ -2827,6 +3210,7 @@ function renderMemoryCore(c) {
                     <div class="mtab-panel-title gold" style="margin-bottom:0;">
                         <i class="fa-solid fa-box-archive"></i> Short-Term Memory
                         <span id="mem_processing_spinner" style="display:none; margin-left: 10px;" class="mem-spinner"><i class="fa-solid fa-circle-notch"></i></span>
+                        <span id="mem_processing_progress" style="display:none; margin-left: 8px; font-size: 0.72rem; color: var(--text-muted); font-weight: normal; vertical-align: middle;"></span>
                     </div>
                     <button id="mem_btn_clear_short" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
                 </div>
@@ -2861,6 +3245,7 @@ function renderMemoryCore(c) {
         
         if (confirm("Are you sure you want to delete ALL Short-Term Memory chunks? They will revert to 'Pending' status.")) {
             mem.shortTermChunks = [];
+            delete mem._archivedSet; mem._tokensDirty = true;
             saveProfileToMemory();
             memRenderAccordion();
             memRenderDashboard();
@@ -2883,6 +3268,7 @@ function renderMemoryCore(c) {
             }
             
             mem.longTermVault = [];
+            delete mem._archivedSet; mem._tokensDirty = true;
             saveProfileToMemory();
             memRenderVault($("#mem_vault_search").val() || "");
             memRenderDashboard();
@@ -2891,14 +3277,60 @@ function renderMemoryCore(c) {
         }
     });
 
+    // --- PROMPT EDITOR UI ---
+    const memEditor = renderPromptEditor({
+        id: "mem_prompt_editor",
+        title: "Advanced: Edit Prompts",
+        defaultData: DEFAULT_PROMPTS.memoryCore,
+        currentData: mem.customPrompts,
+        fields: [
+            { key: "systemPrompt", label: "System Prompt", hint: "Summarizer system prompt." },
+            { key: "userPrompt", label: "User Task Prompt", hint: "Tokens: <code>{{chatHistory}}</code>, <code>{{targetLang}}</code>" },
+            { key: "longTermTemplate", label: "Long-Term Memory Template", hint: "Tokens: <code>{{archiveXML}}</code>" },
+            { key: "shortTermTemplate", label: "Short-Term Memory Template", hint: "Tokens: <code>{{shortXML}}</code>" }
+        ],
+        onSave: (val, key) => {
+            if (!mem.customPrompts) mem.customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS.memoryCore));
+            mem.customPrompts[key] = val;
+            saveProfileToMemory();
+            return mem.customPrompts;
+        },
+        onReset: () => {
+            mem.customPrompts = null;
+            saveProfileToMemory();
+        }
+    });
+    c.find('#mem_main_content').append(memEditor);
+
     // Toggle Listener
     $("#mem_enable_card").on("click", function () {
-        mem.enabled = !mem.enabled; saveProfileToMemory();
+        mem.enabled = !mem.enabled;
+        
+        // Auto-set trigger mode to "every" on first enable
+        let isFirstEnable = false;
+        if (mem.enabled) {
+            if ((!mem.shortTermChunks || mem.shortTermChunks.length === 0) && 
+                (!mem.longTermVault || mem.longTermVault.length === 0) && 
+                mem.triggerMode === "frequency") {
+                mem.triggerMode = "every";
+                isFirstEnable = true;
+            }
+        }
+        
+        saveProfileToMemory();
+        
         if (mem.enabled) {
             $(this).addClass("active").css("border-color", "var(--gold)");
             $("#mem_main_content").slideDown(200);
             $("#mem_header_badge").css({ background: 'rgba(16,185,129,0.12)', color: '#10b981', 'border-color': 'rgba(16,185,129,0.25)' }).html(`<i class="fa-solid fa-circle-check" style="font-size:0.6rem;"></i> Enabled`);
-            memRenderDashboard();
+            
+            if (isFirstEnable) {
+                toastr.success("Memory Core activated! Auto-archiving on every reply.", "Megumin Suite");
+                // Re-render to update the dropdowns and settings values in the UI
+                setTimeout(() => renderMemoryCore(c), 200);
+            } else {
+                memRenderDashboard();
+            }
         } else {
             $(this).removeClass("active").css("border-color", "var(--border-color)");
             $("#mem_main_content").slideUp(200);
@@ -2912,10 +3344,12 @@ function renderMemoryCore(c) {
         mem.architecture = $(this).val();
         if (mem.architecture === "raw_long") {
             $("#mem_short_slider_row").hide();
+            $("#mem_short_desc_row").hide();
             $("#mem_dash_short_lbl").hide();
             $("#mem_bar_short, #mem_bar_short_pend").hide();
         } else {
             $("#mem_short_slider_row").css("display", "flex");
+            $("#mem_short_desc_row").show();
             $("#mem_dash_short_lbl").show();
             $("#mem_bar_short, #mem_bar_short_pend").css("display", "block");
         }
@@ -2957,8 +3391,46 @@ function renderMemoryCore(c) {
     });
     $("#mem_short_slider").on("change", function () { memRunVaultMigration(); });
 
+    $("#mem_chunk_slider").on("input", function () {
+        let val = parseInt($(this).val());
+        mem.chunkSize = val;
+        $("#mem_chunk_val").text(val);
+
+        // Update step and min for dependent sliders
+        $("#mem_work_slider").attr("step", val).attr("min", val);
+        $("#mem_short_slider").attr("step", val).attr("min", val);
+
+        // Snap working limit to a multiple of chunk size
+        let workVal = parseInt($("#mem_work_slider").val());
+        workVal = Math.max(val, Math.round(workVal / val) * val);
+        mem.workingLimit = workVal;
+        $("#mem_work_slider").val(workVal);
+        $("#mem_work_val").text(workVal);
+
+        // Snap short limit to a multiple of chunk size
+        let shortVal = parseInt($("#mem_short_slider").val());
+        shortVal = Math.max(val, Math.round(shortVal / val) * val);
+        mem.shortTermLimit = shortVal;
+        $("#mem_short_slider").val(shortVal);
+        $("#mem_short_val").text(shortVal);
+
+        saveProfileToMemory();
+        memRenderDashboard();
+    });
+    $("#mem_chunk_slider").on("change", function () { memRunVaultMigration(); });
+
     $("#mem_trigger").on("change", function () {
         mem.triggerMode = $(this).val();
+        if (mem.triggerMode === "frequency") {
+            $("#mem_freq_val").show();
+        } else {
+            $("#mem_freq_val").hide();
+        }
+        saveProfileToMemory();
+    });
+
+    $("#mem_freq_val").on("change", function () {
+        mem.autoFreq = parseInt($(this).val());
         saveProfileToMemory();
     });
 
@@ -3057,60 +3529,59 @@ function memRenderDashboard() {
 
     const isRawLong = (mem.architecture === "raw_long");
 
-    // 1. Determine the projected TARGET sizes based purely on sliders
-    const targetWork = Math.min(totalRealMessages, mem.workingLimit || 30);
-    const targetShort = isRawLong ? 0 : Math.min(Math.max(0, totalRealMessages - targetWork), mem.shortTermLimit || 70);
-    const targetLong = isRawLong ? Math.max(0, totalRealMessages - targetWork) : Math.max(0, totalRealMessages - (targetWork + (mem.shortTermLimit || 70)));
+    // 1. Calculate active Working segment size (Solid Green - Rightmost)
+    const workingSize = Math.min(totalRealMessages, mem.workingLimit || 30);
 
-    // 2. Determine ACTUAL summarized chunks currently in memory
-    let actualShort = 0;
-    if (mem.shortTermChunks && !isRawLong) {
-        mem.shortTermChunks.forEach(c => {
-            const parts = c.id.split("-");
-            actualShort += (parseInt(parts[1]) - parseInt(parts[0]) + 1);
-        });
-    }
-
-    let actualLong = 0;
+    // 2. Calculate the actual number of messages currently archived in the Vault (Solid Blue - Leftmost)
+    let vaultSize = 0;
     if (mem.longTermVault) {
         mem.longTermVault.forEach(c => {
             const parts = c.id.split("-");
-            actualLong += (parseInt(parts[1]) - parseInt(parts[0]) + 1);
+            vaultSize += (parseInt(parts[1]) - parseInt(parts[0]) + 1);
         });
     }
 
-    // 3. Calculate Pending (Stripes) vs Displayed Actuals (Solid)
-    const pendShort = Math.max(0, targetShort - actualShort);
-    const displayShort = Math.min(targetShort, actualShort);
-
-    const pendLong = Math.max(0, targetLong - actualLong);
-    const displayLong = Math.min(targetLong, actualLong);
-
-    if (isRawLong) {
-        $("#mem_bar_short_pend, #mem_bar_short").hide();
-    } else {
-        $("#mem_bar_short_pend, #mem_bar_short").css("display", "block"); // Force it to show!
+    // 3. Calculate the actual number of messages currently archived in Short-Term (Solid Yellow - Middle Left)
+    let shortTermSize = 0;
+    if (mem.shortTermChunks && !isRawLong) {
+        mem.shortTermChunks.forEach(c => {
+            const parts = c.id.split("-");
+            shortTermSize += (parseInt(parts[1]) - parseInt(parts[0]) + 1);
+        });
     }
 
-    // 4. Convert to Percentages for the CSS Bar
+    // 4. Calculate Pending Raw Messages (Stripes Green - Middle Right)
+    // Any message that isn't in active working raw and isn't archived yet is pending raw
+    const totalArchived = vaultSize + shortTermSize;
+    const pendingSize = Math.max(0, totalRealMessages - workingSize - totalArchived);
+
+    // 5. Convert to percentages for the left-to-right bar (Oldest -> Newest)
     const maxBarScale = Math.max(totalRealMessages, 1);
-    const pWork = (targetWork / maxBarScale) * 100;
-    const pPendShort = (pendShort / maxBarScale) * 100;
-    const pDispShort = (displayShort / maxBarScale) * 100;
-    const pPendLong = (pendLong / maxBarScale) * 100;
-    const pDispLong = (displayLong / maxBarScale) * 100;
+    const pVault = (vaultSize / maxBarScale) * 100;
+    const pShort = (shortTermSize / maxBarScale) * 100;
+    const pPend = (pendingSize / maxBarScale) * 100;
+    const pWork = (workingSize / maxBarScale) * 100;
 
+    // Apply widths to elements
+    $("#mem_bar_long").css("width", `${pVault}%`);
+    $("#mem_bar_short").css("width", `${pShort}%`);
+    $("#mem_bar_pend").css("width", `${pPend}%`);
     $("#mem_bar_work").css("width", `${pWork}%`);
-    $("#mem_bar_short_pend").css("width", `${pPendShort}%`);
-    $("#mem_bar_short").css("width", `${pDispShort}%`);
-    $("#mem_bar_long_pend").css("width", `${pPendLong}%`);
-    $("#mem_bar_long").css("width", `${pDispLong}%`);
 
-    const shortText = isRawLong ? "" : `Pend Short: ${pendShort} | Short: ${displayShort} | `;
-    $("#mem_status_text").text(`Total: ${totalRealMessages} | Working: ${targetWork} | ${shortText}Pend Vault: ${pendLong} | Vault: ${displayLong}`);
+    // Hide or show Short-Term bar depending on architecture setting
+    if (isRawLong) {
+        $("#mem_bar_short").hide();
+    } else {
+        $("#mem_bar_short").show();
+    }
+
+    // Update descriptive status text beneath progress bar
+    const shortText = isRawLong ? "" : `Short: ${shortTermSize} | `;
+    $("#mem_status_text").text(`Total: ${totalRealMessages} | Vault: ${vaultSize} | ${shortText}Pending (Raw): ${pendingSize} | Working (Raw): ${workingSize}`);
 }
 
-// Renders the editable text areas for chunks already processed
+// Renders the editable text areas for chunks already processed — PAGINATED (20 at a time)
+const MEM_ACCORDION_PAGE_SIZE = 20;
 function memRenderAccordion() {
     const mem = localProfile.memoryCore;
     const list = $("#mem_short_term_list");
@@ -3123,62 +3594,83 @@ function memRenderAccordion() {
 
     // Reverse array to show newest chunks at the top
     const chunks = [...mem.shortTermChunks].reverse();
+    let renderedCount = 0;
 
-    chunks.forEach(chunk => {
-        const dateStr = new Date(chunk.timestamp).toLocaleString();
-        const acc = $(`
-            <div class="mem-accordion">
-                <div class="mem-accordion-header">
-                    <span><i class="fa-solid fa-layer-group" style="color:var(--gold); margin-right:6px;"></i> Messages: ${chunk.id}</span>
-                    <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 400;"><i class="fa-regular fa-clock"></i> ${dateStr}</span>
-                </div>
-                <div class="mem-accordion-body">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <div style="font-size:0.7rem; color:var(--text-muted);">You can manually edit this state extraction before it gets pushed to the Vector DB.</div>
-                        <button class="mem_short_del" data-id="${chunk.id}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem; padding: 2px 6px;" title="Delete Chunk"><i class="fa-solid fa-trash"></i></button>
+    function renderAccordionBatch() {
+        const fragment = document.createDocumentFragment();
+        const end = Math.min(renderedCount + MEM_ACCORDION_PAGE_SIZE, chunks.length);
+
+        for (let idx = renderedCount; idx < end; idx++) {
+            const chunk = chunks[idx];
+            const dateStr = new Date(chunk.timestamp).toLocaleString();
+            const acc = $(`
+                <div class="mem-accordion">
+                    <div class="mem-accordion-header">
+                        <span><i class="fa-solid fa-layer-group" style="color:var(--gold); margin-right:6px;"></i> Messages: ${chunk.id}</span>
+                        <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 400;"><i class="fa-regular fa-clock"></i> ${dateStr}</span>
                     </div>
-                    <textarea class="mem_chunk_edit" data-id="${chunk.id}">${chunk.summary}</textarea>
+                    <div class="mem-accordion-body">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <div style="font-size:0.7rem; color:var(--text-muted);">You can manually edit this state extraction before it gets pushed to the Vector DB.</div>
+                            <button class="mem_short_del" data-id="${chunk.id}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem; padding: 2px 6px;" title="Delete Chunk"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                        <textarea class="mem_chunk_edit" data-id="${chunk.id}">${chunk.summary}</textarea>
+                    </div>
                 </div>
-            </div>
-        `);
+            `);
 
-        // Accordion Toggle
-        acc.find(".mem-accordion-header").on("click", function () {
-            $(this).next(".mem-accordion-body").slideToggle(150);
-        });
+            // Accordion Toggle
+            acc.find(".mem-accordion-header").on("click", function () {
+                $(this).next(".mem-accordion-body").slideToggle(150);
+            });
 
-        // Auto-save edits
-        acc.find("textarea").on("input", function () {
-            const id = $(this).attr("data-id");
-            const newText = $(this).val();
-            const target = localProfile.memoryCore.shortTermChunks.find(c => c.id === id);
-            if (target) {
-                target.summary = newText;
-                saveProfileToMemory();
-            }
-        });
-
-        // Delete button logic
-        acc.find(".mem_short_del").on("click", function () {
-            if (confirm(`Delete short-term memory chunk [Messages: ${chunk.id}]? It will be permanently removed.`)) {
+            // Auto-save edits
+            acc.find("textarea").on("input", function () {
                 const id = $(this).attr("data-id");
-                
-                // Remove from array
-                localProfile.memoryCore.shortTermChunks = localProfile.memoryCore.shortTermChunks.filter(c => c.id !== id);
-                saveProfileToMemory();
-                
-                // Refresh UI components
-                memRenderAccordion();
-                memRenderDashboard();
-                updateMemoryVisuals();
-            }
-        });
+                const newText = $(this).val();
+                const target = localProfile.memoryCore.shortTermChunks.find(c => c.id === id);
+                if (target) {
+                    target.summary = newText;
+                    mem._tokensDirty = true;
+                    saveProfileToMemory();
+                }
+            });
 
-        list.append(acc);
-    });
+            // Delete button logic
+            acc.find(".mem_short_del").on("click", function () {
+                if (confirm(`Delete short-term memory chunk [Messages: ${chunk.id}]? It will be permanently removed.`)) {
+                    const id = $(this).attr("data-id");
+                    localProfile.memoryCore.shortTermChunks = localProfile.memoryCore.shortTermChunks.filter(c => c.id !== id);
+                    mem._tokensDirty = true; delete mem._archivedSet;
+                    saveProfileToMemory();
+                    memRenderAccordion();
+                    memRenderDashboard();
+                    updateMemoryVisuals();
+                }
+            });
+
+            fragment.appendChild(acc[0]);
+        }
+
+        // Remove old "Load More" button if present
+        list.find(".mem-accordion-load-more").remove();
+        list[0].appendChild(fragment);
+        renderedCount = end;
+
+        // Add "Load More" button if there are more entries
+        if (renderedCount < chunks.length) {
+            const remaining = chunks.length - renderedCount;
+            const loadMoreBtn = $(`<button class="mem-accordion-load-more ps-modern-btn secondary" style="width: 100%; padding: 8px; margin-top: 6px; font-size: 0.75rem; color: #f59e0b; border-color: rgba(245,158,11,0.3);"><i class="fa-solid fa-chevron-down"></i> Load More (${remaining} remaining)</button>`);
+            loadMoreBtn.on("click", function () { renderAccordionBatch(); });
+            list.append(loadMoreBtn);
+        }
+    }
+
+    renderAccordionBatch();
 }
 
-// Renders the Long-Term Vault UI with Search Filtering
+// Renders the Long-Term Vault UI with Search Filtering — PAGINATED (20 at a time)
+const MEM_VAULT_PAGE_SIZE = 20;
 function memRenderVault(searchFilter = "") {
     const mem = localProfile.memoryCore;
     const list = $("#mem_vault_list");
@@ -3199,46 +3691,71 @@ function memRenderVault(searchFilter = "") {
         return content.toLowerCase().includes(searchFilter.toLowerCase());
     }).reverse();
 
-    filtered.forEach(chunk => {
-        const dateStr = new Date(chunk.timestamp).toLocaleDateString();
-        const content = chunk.text || chunk.summary || "";
+    let renderedCount = 0;
 
-        const row = $(`
-            <div style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; position: relative;">
-                <div style="font-size: 0.65rem; color: #3b82f6; font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between;">
-                    <span>ARCHIVE #${chunk.id}</span>
-                    <span>${dateStr}</span>
+    function renderVaultBatch() {
+        const fragment = document.createDocumentFragment();
+        const end = Math.min(renderedCount + MEM_VAULT_PAGE_SIZE, filtered.length);
+
+        for (let idx = renderedCount; idx < end; idx++) {
+            const chunk = filtered[idx];
+            const dateStr = new Date(chunk.timestamp).toLocaleDateString();
+            const content = chunk.text || chunk.summary || "";
+
+            const row = $(`
+                <div style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; position: relative;">
+                    <div style="font-size: 0.65rem; color: #3b82f6; font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                        <span>ARCHIVE #${chunk.id}</span>
+                        <span>${dateStr}</span>
+                    </div>
+                    <textarea class="ps-modern-input mem_vault_edit" data-id="${chunk.id}" style="height: 120px; resize: vertical; font-size: 0.75rem; border: none; background: transparent; padding: 0;">${content}</textarea>
+                    <button class="mem_vault_del" data-id="${chunk.id}" style="position: absolute; bottom: 8px; right: 10px; background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem;" title="Delete Archive"><i class="fa-solid fa-trash"></i></button>
                 </div>
-                <textarea class="ps-modern-input mem_vault_edit" data-id="${chunk.id}" style="height: 120px; resize: vertical; font-size: 0.75rem; border: none; background: transparent; padding: 0;">${content}</textarea>
-                <button class="mem_vault_del" data-id="${chunk.id}" style="position: absolute; bottom: 8px; right: 10px; background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem;" title="Delete Archive"><i class="fa-solid fa-trash"></i></button>
-            </div>
-        `);
+            `);
 
-        // Auto-save edits to .text
-        row.find(".mem_vault_edit").on("change", function () {
-            const id = $(this).attr("data-id");
-            const target = localProfile.memoryCore.longTermVault.find(c => c.id === id);
-            if (target) {
-                target.text = $(this).val();
-                saveProfileToMemory();
-                if (localProfile.memoryCore.scannerEngine === 'semantic') memInsertToVectorDB([target]);
-            }
-        });
-
-        // Delete button
-        row.find(".mem_vault_del").on("click", function () {
-            if (confirm("Permanently delete this archived memory?")) {
+            // Auto-save edits to .text
+            row.find(".mem_vault_edit").on("change", function () {
                 const id = $(this).attr("data-id");
-                localProfile.memoryCore.longTermVault = localProfile.memoryCore.longTermVault.filter(c => c.id !== id);
-                if (localProfile.memoryCore.scannerEngine === 'semantic') memDeleteFromVectorDB([id]);
-                saveProfileToMemory();
-                memRenderVault($("#mem_vault_search").val());
-                memRenderDashboard();
-            }
-        });
+                const target = localProfile.memoryCore.longTermVault.find(c => c.id === id);
+                if (target) {
+                    target.text = $(this).val();
+                    mem._tokensDirty = true; delete mem._archivedSet;
+                    saveProfileToMemory();
+                    if (localProfile.memoryCore.scannerEngine === 'semantic') memInsertToVectorDB([target]);
+                }
+            });
 
-        list.append(row);
-    });
+            // Delete button
+            row.find(".mem_vault_del").on("click", function () {
+                if (confirm("Permanently delete this archived memory?")) {
+                    const id = $(this).attr("data-id");
+                    localProfile.memoryCore.longTermVault = localProfile.memoryCore.longTermVault.filter(c => c.id !== id);
+                    if (localProfile.memoryCore.scannerEngine === 'semantic') memDeleteFromVectorDB([id]);
+                    mem._tokensDirty = true; delete mem._archivedSet;
+                    saveProfileToMemory();
+                    memRenderVault($("#mem_vault_search").val());
+                    memRenderDashboard();
+                }
+            });
+
+            fragment.appendChild(row[0]);
+        }
+
+        // Remove old "Load More" button if present
+        list.find(".mem-vault-load-more").remove();
+        list[0].appendChild(fragment);
+        renderedCount = end;
+
+        // Add "Load More" button if there are more entries
+        if (renderedCount < filtered.length) {
+            const remaining = filtered.length - renderedCount;
+            const loadMoreBtn = $(`<button class="mem-vault-load-more ps-modern-btn secondary" style="width: 100%; padding: 8px; margin-top: 6px; font-size: 0.75rem; color: #3b82f6; border-color: rgba(59,130,246,0.3);"><i class="fa-solid fa-chevron-down"></i> Load More (${remaining} remaining)</button>`);
+            loadMoreBtn.on("click", function () { renderVaultBatch(); });
+            list.append(loadMoreBtn);
+        }
+    }
+
+    renderVaultBatch();
 }
 
 // Live Search Listener
@@ -3248,7 +3765,7 @@ $("body").off("input", "#mem_vault_search").on("input", "#mem_vault_search", fun
 
 // --- MEMORY GENERATION LOGIC ---
 
-async function memProcessPendingChunks() {
+async function memProcessPendingChunks(isAuto = false) {
     const context = typeof getContext === "function" ? getContext() : null;
     if (!context || !context.chat || !localProfile.memoryCore.enabled) return;
 
@@ -3264,7 +3781,7 @@ async function memProcessPendingChunks() {
     }
 
     if (realMessages.length <= workingLimit) {
-        toastr.info("Not enough messages past the working limit to archive.");
+        if (!isAuto) toastr.info("Not enough messages past the working limit to archive.");
         return;
     }
 
@@ -3279,59 +3796,88 @@ async function memProcessPendingChunks() {
         vaultCutoffMessageIndex = realMessages[vaultCutoffLimit].originalIndex;
     }
 
-    // 3. Group into chunks of 10 and find what is missing
+    // 3. Group into chunks of chunkSize and find what is missing
+    const chunkSize = mem.chunkSize || 10;
     const chunksToProcess = [];
-    for (let i = 0; i < archivableMessages.length; i += 10) {
-        const chunk = archivableMessages.slice(i, i + 10);
-        if (chunk.length === 0) continue;
+
+    // Filter archivable messages to only those not already archived (automatically handles gaps)
+    const unarchivedArchivable = archivableMessages.filter(item => !isMessageArchived(item.originalIndex, mem));
+
+    for (let i = 0; i < unarchivedArchivable.length; i += chunkSize) {
+        const chunk = unarchivedArchivable.slice(i, i + chunkSize);
+        if (chunk.length < chunkSize) continue; // SMART CHUNKING: Wait until a complete chunk accumulates
 
         const startId = chunk[0].originalIndex;
         const endId = chunk[chunk.length - 1].originalIndex;
         const chunkId = `${startId}-${endId}`;
 
-        if (!isMessageArchived(startId, mem)) {
-            let rawText = "";
-            chunk.forEach(item => {
-                rawText += `${item.msg.name}: ${meguminCleanChatHistoryText(item.msg.mes)}\n\n`;
-            });
-            chunksToProcess.push({ id: chunkId, text: rawText.trim(), endId: endId });
-        }
+        let rawText = "";
+        chunk.forEach(item => {
+            rawText += `${item.msg.name}: ${meguminCleanChatHistoryText(item.msg.mes)}\n\n`;
+        });
+        chunksToProcess.push({ id: chunkId, text: rawText.trim(), endId: endId });
     }
 
     if (chunksToProcess.length === 0) {
         memRunVaultMigration();
-        toastr.info("All archives are up to date.");
+        if (!isAuto) toastr.info("All archives are up to date.");
         return;
     }
 
-    // 4. Process the missing chunks
+    // 4. Process the missing chunks — BATCHED with UI yields
     $("#mem_processing_spinner").show();
+    $("#mem_processing_progress").show().text(`Preparing...`);
     $("#mem_btn_generate").prop("disabled", true).css("opacity", "0.5");
 
+    let changesMade = false;
+    const newlyAddedBypassedVaultChunks = [];
+    let bypassedCount = 0;
+
     try {
-        for (let chunkData of chunksToProcess) {
+        const totalChunks = chunksToProcess.length;
+        const BATCH_SIZE = 5;
+        const SAVE_INTERVAL = 10;
+        let chunksSinceLastSave = 0;
+
+        for (let idx = 0; idx < totalChunks; idx++) {
+            const chunkData = chunksToProcess[idx];
+
+            // Update progress text
+            const percent = Math.round((idx / totalChunks) * 100);
+            $("#mem_processing_progress").text(`Processing ${idx + 1}/${totalChunks} (${percent}%)`);
 
             // --- DIRECT-TO-VAULT BYPASS ---
             // If this chunk is older than the Short-Term limit, skip the AI entirely!
             if (vaultCutoffMessageIndex !== -1 && chunkData.endId < vaultCutoffMessageIndex) {
-                toastr.info(`Bypassing AI: Archiving Messages ${chunkData.id} directly to Vault...`);
-
                 if (!mem.longTermVault) mem.longTermVault = [];
-                mem.longTermVault.push({
+                const newVaultChunk = {
                     id: chunkData.id,
                     text: chunkData.text, // Store the raw text directly!
                     timestamp: Date.now()
-                });
+                };
+                mem.longTermVault.push(newVaultChunk);
+                newlyAddedBypassedVaultChunks.push(newVaultChunk);
+                changesMade = true;
+                bypassedCount++;
+                chunksSinceLastSave++;
 
-                saveProfileToMemory();
-                memRenderVault($("#mem_vault_search").val() || "");
-                memRenderDashboard();
-                updateMemoryVisuals();
+                // Yield to UI every BATCH_SIZE chunks to prevent freezing
+                if (bypassedCount % BATCH_SIZE === 0) {
+                    await new Promise(r => setTimeout(r, 0));
+                }
+
+                // Save progress every SAVE_INTERVAL chunks for crash safety
+                if (chunksSinceLastSave >= SAVE_INTERVAL) {
+                    delete mem._archivedSet; mem._tokensDirty = true;
+                    saveProfileToMemory();
+                    chunksSinceLastSave = 0;
+                }
+
                 continue; // Skip the rest of the loop
             }
 
             // --- NORMAL SHORT-TERM AI SUMMARIZATION ---
-            toastr.info(`Extracting State: Messages ${chunkData.id}...`);
+            toastr.info(`Extracting State: Messages ${chunkData.id} (${idx + 1}/${totalChunks})...`);
 
             let summaryResult = "";
             activeMemorySummarizationRequest = chunkData.text;
@@ -3353,16 +3899,61 @@ async function memProcessPendingChunks() {
                     summary: summaryResult,
                     timestamp: Date.now()
                 });
+                changesMade = true;
+                chunksSinceLastSave++;
 
-                saveProfileToMemory();
-                memRunVaultMigration(); // Check if anything aged out
-                memRenderAccordion();
-                memRenderDashboard();
-                updateMemoryVisuals();
+                // Save progress every SAVE_INTERVAL chunks for crash safety
+                if (chunksSinceLastSave >= SAVE_INTERVAL) {
+                    delete mem._archivedSet; mem._tokensDirty = true;
+                    saveProfileToMemory();
+                    chunksSinceLastSave = 0;
+                }
             }
         }
 
-        memRunVaultMigration();
+        // Show single summary toast for vault bypass instead of per-chunk spam
+        if (bypassedCount > 0) {
+            toastr.info(`Archived ${bypassedCount} chunk(s) directly to Vault (bypassed AI).`);
+        }
+
+        if (changesMade) {
+            // Invalidate caches
+            delete mem._archivedSet;
+            mem._tokensDirty = true;
+
+            // Sort shortTermChunks chronologically by start ID
+            if (mem.shortTermChunks) {
+                mem.shortTermChunks.sort((a, b) => {
+                    const aStart = parseInt(a.id.split("-")[0]);
+                    const bStart = parseInt(b.id.split("-")[0]);
+                    return aStart - bStart;
+                });
+            }
+
+            // Sort longTermVault chronologically by start ID
+            if (mem.longTermVault) {
+                mem.longTermVault.sort((a, b) => {
+                    const aStart = parseInt(a.id.split("-")[0]);
+                    const bStart = parseInt(b.id.split("-")[0]);
+                    return aStart - bStart;
+                });
+            }
+
+            saveProfileToMemory();
+
+            // Batch insert bypassed vault chunks to Vector DB if semantic engine is active
+            if (newlyAddedBypassedVaultChunks.length > 0 && mem.scannerEngine === 'semantic') {
+                toastr.info("Syncing new Vault archives to Vector Database...");
+                await memInsertToVectorDB(newlyAddedBypassedVaultChunks);
+            }
+
+            memRunVaultMigration();
+            memRenderAccordion();
+            memRenderVault($("#mem_vault_search").val() || "");
+            memRenderDashboard();
+            updateMemoryVisuals();
+        }
+
         toastr.success("Archive Extraction Complete!");
 
     } catch (err) {
@@ -3371,11 +3962,12 @@ async function memProcessPendingChunks() {
     } finally {
         activeMemorySummarizationRequest = null;
         $("#mem_processing_spinner").hide();
+        $("#mem_processing_progress").hide().text("");
         $("#mem_btn_generate").prop("disabled", false).css("opacity", "1");
     }
 }
 
-// Standalone helper to push old chunks into the Vault (AS RAW TEXT)
+// Standalone helper to push old chunks into the Vault (AS RAW TEXT) — OPTIMIZED
 function memRunVaultMigration() {
     const context = typeof getContext === "function" ? getContext() : null;
     if (!context || !context.chat || !localProfile.memoryCore.enabled) return;
@@ -3398,6 +3990,8 @@ function memRunVaultMigration() {
 
     if (cutoffMessageIndex !== -1 && mem.shortTermChunks && mem.shortTermChunks.length > 0) {
         let migrated = false;
+        const newVaultChunksForDB = []; // Batch vector DB inserts
+
         for (let i = mem.shortTermChunks.length - 1; i >= 0; i--) {
             const chunk = mem.shortTermChunks[i];
             const endMsgId = parseInt(chunk.id.split("-")[1]);
@@ -3413,26 +4007,39 @@ function memRunVaultMigration() {
                 let rawText = "";
 
                 for (let j = startId; j <= stopId; j++) {
-                    if (chat[j] && !chat[j].is_system) {
+                    if (j >= 0 && j < chat.length && chat[j] && !chat[j].is_system) {
                         rawText += `${chat[j].name}: ${meguminCleanChatHistoryText(chat[j].mes)}\n\n`;
                     }
                 }
 
+                // If reconstruction failed (e.g. messages were deleted), use the summary as fallback
+                if (!rawText.trim() && chunk.summary) {
+                    rawText = chunk.summary;
+                }
+
                 // Push raw text instead of summary
-                mem.longTermVault.push({
+                const newVaultChunk = {
                     id: chunk.id,
                     text: rawText.trim(), // Use 'text' key for raw data
                     timestamp: Date.now()
-                });
-
-                const newVaultChunk = mem.longTermVault[mem.longTermVault.length - 1];
-                if (mem.scannerEngine === 'semantic') memInsertToVectorDB([newVaultChunk]);
+                };
+                mem.longTermVault.push(newVaultChunk);
+                newVaultChunksForDB.push(newVaultChunk);
 
                 mem.shortTermChunks.splice(i, 1);
                 migrated = true;
             }
         }
         if (migrated) {
+            // Invalidate caches
+            delete mem._archivedSet;
+            mem._tokensDirty = true;
+
+            // Batch vector DB insert instead of one-per-chunk
+            if (newVaultChunksForDB.length > 0 && mem.scannerEngine === 'semantic') {
+                memInsertToVectorDB(newVaultChunksForDB);
+            }
+
             saveProfileToMemory();
             memRenderAccordion();
             memRenderVault($("#mem_vault_search").val() || "");
@@ -3449,15 +4056,22 @@ function memRunVaultMigration() {
 function isMessageArchived(mesId, mem) {
     if (!mem) return false;
 
-    const checkChunk = (c) => {
-        const parts = c.id.split("-");
-        return mesId >= parseInt(parts[0]) && mesId <= parseInt(parts[1]);
-    };
+    // Lazy load the cached Set of archived message IDs for O(1) lookups
+    if (!mem._archivedSet) {
+        mem._archivedSet = new Set();
+        const addChunk = (c) => {
+            const parts = c.id.split("-");
+            const start = parseInt(parts[0]);
+            const end = parseInt(parts[1]);
+            for (let i = start; i <= end; i++) {
+                mem._archivedSet.add(i);
+            }
+        };
+        if (mem.shortTermChunks) mem.shortTermChunks.forEach(addChunk);
+        if (mem.longTermVault) mem.longTermVault.forEach(addChunk);
+    }
 
-    const inShort = mem.shortTermChunks && mem.shortTermChunks.some(checkChunk);
-    const inLong = mem.longTermVault && mem.longTermVault.some(checkChunk);
-
-    return inShort || inLong;
+    return mem._archivedSet.has(mesId);
 }
 
 // Scrubs the memory arrays and pulls overlapping chunks back into active chat
@@ -3519,6 +4133,8 @@ function memSyncLimits() {
     }
 
     if (changesMade) {
+        delete mem._archivedSet;
+        mem._tokensDirty = true;
         saveProfileToMemory();
         toastr.success("Limits Applied! Overlapping archives returned to chat.");
     } else {
@@ -3562,11 +4178,16 @@ function memExtractKeywords(text) {
     });
 }
 
-// Calculates estimated tokens saved by the memory system
+// Calculates estimated tokens saved by the memory system (CACHED)
 function memCalculateTokensSaved() {
     const context = typeof getContext === "function" ? getContext() : null;
     const mem = localProfile?.memoryCore;
     if (!context || !context.chat || !mem || !mem.enabled) return 0;
+
+    // Return cached value if not dirty
+    if (mem._cachedTokensSaved !== undefined && !mem._tokensDirty) {
+        return mem._cachedTokensSaved;
+    }
 
     let strippedChars = 0;
     for (let i = 0; i < context.chat.length; i++) {
@@ -3586,6 +4207,8 @@ function memCalculateTokensSaved() {
 
     // Standard approximation: 4 characters = 1 token
     const savedTokens = Math.max(0, Math.ceil((strippedChars - injectedChars) / 4));
+    mem._cachedTokensSaved = savedTokens;
+    mem._tokensDirty = false;
     return savedTokens;
 }
 
@@ -3761,31 +4384,51 @@ function memGetRelevantVaultEntries() {
     return scoredVault.filter(s => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
 }
 
-// Rule B: Visual Fading Update (STRICT)
+// Rule B: Visual Fading Update (STRICT) — DEBOUNCED + RANGE-BASED CSS
+let _memVisualsTimer = null;
 function updateMemoryVisuals() {
+    if (_memVisualsTimer) clearTimeout(_memVisualsTimer);
+    _memVisualsTimer = setTimeout(_updateMemoryVisualsCore, 150);
+}
+function _updateMemoryVisualsCore() {
+    _memVisualsTimer = null;
     const context = typeof getContext === "function" ? getContext() : null;
     if (!context || !context.chat || !context.chat.length) return;
 
     const mem = localProfile?.memoryCore;
+
+    // Remove old injected style
+    $("#megumin-archived-style").remove();
+
     if (!mem?.enabled) {
-        $(".mes .mes_text").removeClass("megumin_archived_text");
         return;
     }
 
-    $(".mes").each(function () {
-        const mesId = parseInt($(this).attr("mesid"));
-        if (isNaN(mesId)) return;
+    // Build the archived set once (uses cached Set from isMessageArchived)
+    if (!mem._archivedSet) {
+        // Force rebuild
+        isMessageArchived(0, mem);
+    }
+    const archivedSet = mem._archivedSet;
 
-        const msg = context.chat[mesId];
-        if (!msg || msg.is_system) return;
+    if (archivedSet && archivedSet.size > 0) {
+        // Collect visible mesids that are archived — only scan what's in the DOM
+        const selectors = [];
+        $(".mes").each(function () {
+            const mesId = parseInt(this.getAttribute("mesid"));
+            if (!isNaN(mesId) && archivedSet.has(mesId)) {
+                selectors.push(`.mes[mesid="${mesId}"] .mes_text`);
+            }
+        });
 
-        // ONLY dim the message if it actually exists inside a saved chunk
-        if (isMessageArchived(mesId, mem)) {
-            $(this).find(".mes_text").addClass("megumin_archived_text");
-        } else {
-            $(this).find(".mes_text").removeClass("megumin_archived_text");
+        if (selectors.length > 0) {
+            // Inject a single <style> block instead of toggling classes on each element
+            const css = selectors.join(",") + `{ opacity: 0.35; filter: saturate(0.3); transition: opacity 0.2s ease; }`;
+            $("head").append(`<style id="megumin-archived-style">${css}</style>`);
         }
-    });
+    }
+
+    // Use cached token count
     $("#mem_live_tokens_saved").text(`~${memCalculateTokensSaved()}`);
 }
 
@@ -4152,6 +4795,15 @@ function getCleanedChatHistory() {
     return cleanedMessages.join("\n\n");
 }
 
+function getChatForNpcScan() {
+    const context = getContext();
+    if (!context.chat || context.chat.length === 0) return "";
+    const depth = localProfile?.npcBank?.scanDepth || 60;
+    // Grab the last 'depth' actual messages (both user and AI) to have complete context
+    const msgs = context.chat.filter(m => !m.is_system).slice(-depth);
+    return msgs.map(m => `${m.name}: ${meguminCleanChatHistoryText(m.mes)}`).join("\n\n");
+}
+
 async function analyzeSlopDirectly(chatText) {
     activeBanListChat = chatText;
     try {
@@ -4219,6 +4871,10 @@ function buildBaseDict() {
     const dict = {};
     if (!localProfile) return dict;
 
+    const allAvailableModes = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])];
+    const activeEngine = allAvailableModes.find(m => m.id === localProfile.mode);
+    const isV7 = activeEngine ? (activeEngine.id.startsWith("v7") || activeEngine.isV7 === true) : false;
+
     // 1. GLOBAL DEFAULTS (Language, Pronouns, Word Count)
     const targetLang = (localProfile.userLanguage && localProfile.userLanguage.trim() !== "")
         ? localProfile.userLanguage.toUpperCase()
@@ -4232,8 +4888,10 @@ function buildBaseDict() {
         ? String(localProfile.userWordCount).trim()
         : null;
 
+    const countType = localProfile.userWordCountType === "min" ? "minimum" : "maximum";
+
     if (wordCountStr) {
-        dict["[[count]]"] = `— maximum ${wordCountStr} words`;
+        dict["[[count]]"] = `— ${countType} ${wordCountStr} words`;
     } else {
         dict["[[count]]"] = "";
     }
@@ -4254,8 +4912,12 @@ function buildBaseDict() {
     // Standard Toggles & Addons
     if (localProfile.toggles.ooc) dict["[[OOC]]"] = hardcodedLogic.toggles.ooc.content;
     if (localProfile.toggles.control) dict["[[control]]"] = hardcodedLogic.toggles.control.content;
-    if (localProfile.aiRule) {
-        if (localProfile.mode.startsWith("v7") && localProfile.activeStyleId !== "dir_v7") {
+    if (localProfile.mode === "v7.5") {
+        let narratorPersona = localProfile.aiRule ? localProfile.aiRule : "Adopt the narration of an unseen, witty observer who is vividly present in the scene. The narrator has a distinct personality—dry, occasionally judgmental, quietly amused, or sharply critical. Feel free to throw subtle shade at terrible decisions, point out the absurdity of a situation, or comment on the scene's chaos with a bit of comedic flair.";
+        
+        dict["[[aiprompt]]"] = `<Narration_style>\n narrator_persona: "${narratorPersona}"\n quarantine_rule: "CRITICAL: This opinionated voice applies STRICTLY and EXCLUSIVELY to the narration. It MUST NOT bleed into <NPC_dialogue>. NPCs do not share the narrator's wit or perspective; their dialogue remains entirely bound by their own demographics, stress levels, and individual flaws."\n proportional_prose: "Match narrative intensity to the event. A spilled coffee is just a minor annoyance, not a catalyst for dramatic prose. Zero purple prose. Use grounded metaphors sparingly to anchor a scene, not distract from it."\n</Narration_style>`;
+    } else if (localProfile.aiRule) {
+        if (isV7 && localProfile.activeStyleId !== "dir_v7" && localProfile.activeStyleId !== "dir_v7_core" && localProfile.activeStyleId !== "dir_v7_gentle") {
             dict["[[aiprompt]]"] = `<narrative_style>\n voice: ${localProfile.aiRule}\n  pacing: "Unhurried where it should be. A quiet moment can take a paragraph. A violent one can take a sentence. Match the rhythm to the content."\n  length_directive: "Typical outputs should run 3–6 substantial paragraphs, scaling with scene density. Lean toward the higher end during rich, atmospheric, or multi-character scenes. Go shorter — even a single paragraph — only when the moment genuinely demands economy: a held breath, a door closing, a line that hits harder alone. Never pad, never rush."\n</narrative_style>`;
         } else {
             dict["[[aiprompt]]"] = localProfile.aiRule;
@@ -4291,7 +4953,7 @@ function buildBaseDict() {
     if (localProfile.dnRatio && localProfile.dnRatio.enabled) {
         const d = localProfile.dnRatio.dialogue;
         const n = 100 - d;
-        dict["[[DNRATIO]]"] = `- Ratio: Maintain a balance of ${d}% Dialogue and ${n}% Narration.`;
+        dict["[[DNRATIO]]"] = `Ratio: Maintain a balance of ${d}% Dialogue and ${n}% Narration.`;
     } else {
         dict["[[DNRATIO]]"] = "";
     }
@@ -4309,16 +4971,14 @@ function buildBaseDict() {
     // MVU Logic
     if (localProfile.blocks.includes("mvu")) {
         let baseMvu = hardcodedLogic.blocks.find(b => b.id === "mvu").content;
-        if (wordCountStr) dict["[[MVU]]"] = baseMvu.replace("[[count]]", `maximum ${wordCountStr} words`);
+        if (wordCountStr) dict["[[MVU]]"] = baseMvu.replace("[[count]]", `${countType} ${wordCountStr} words`);
         else dict["[[MVU]]"] = baseMvu.replace("[[count]]", "...");
     } else {
-        dict["[[MVU]]"] = wordCountStr ? `{main response — maximum ${wordCountStr} words}` : `{main response}`;
+        dict["[[MVU]]"] = wordCountStr ? `{main response — ${countType} ${wordCountStr} words}` : `{main response}`;
     }
 
     // 3. ENGINE OVERRIDES (The "Superior" Layer)
     // This part runs last so it can overwrite standard Stage choices
-    const allAvailableModes = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])];
-    const activeEngine = allAvailableModes.find(m => m.id === localProfile.mode);
     const isCustom = activeEngine && !hardcodedLogic.modes.find(x => x.id === activeEngine.id);
 
     if (activeEngine) {
@@ -4382,7 +5042,7 @@ function buildBaseDict() {
         }
 
         // V7 Dynamic Stripping
-        if (activeEngine.id.startsWith("v7")) {
+        if (isV7) {
             if (!localProfile.toggles.v7_ooc && dict["[[prompt1]]"]) {
                 dict["[[prompt1]]"] = dict["[[prompt1]]"].replace(/<ooc_protocol>[\s\S]*?<\/ooc_protocol>/g, "");
             }
@@ -4403,7 +5063,7 @@ function buildBaseDict() {
         }
     }
 
-    if (localProfile.mode.includes("v6-dream-team") || localProfile.mode.startsWith("v7")) {
+    if (localProfile.mode.includes("v6-dream-team") || isV7) {
         dict["[[main]]"] = "";
     }
 
@@ -4418,13 +5078,15 @@ function buildBaseDict() {
     if (localProfile.storyPlan && localProfile.storyPlan.enabled) {
         const planText = localProfile.storyPlan.currentPlan;
         if (planText && planText.trim() !== "") {
-            dict["[[storyplan]]"] = `<Story_Plan>\nThis is a possible event for the story, take from it:\n${planText}\n</Story_Plan>`;
+            const template = (localProfile.storyPlan.customPrompts && localProfile.storyPlan.customPrompts.injectionTemplate) || DEFAULT_PROMPTS.storyPlan.injectionTemplate;
+            dict["[[storyplan]]"] = template.replace('{{planText}}', planText);
         } else {
             dict["[[storyplan]]"] = "";
         }
 
         // The refined tracker block you asked for
-        dict["[[storytracker]]"] = `<Story_Tracker>\narc: The Arc that is now active.\nchapter: The chapter that is now active.\nEpisode: The episode that is now active.\nSecrets: Any secret that the user/{{user}} doesn't know.\n</Story_Tracker>`;
+        const trackerTemplate = (localProfile.storyPlan.customPrompts && localProfile.storyPlan.customPrompts.trackerTemplate) || DEFAULT_PROMPTS.storyPlan.trackerTemplate;
+        dict["[[storytracker]]"] = trackerTemplate;
     } else {
         dict["[[storyplan]]"] = "";
         dict["[[storytracker]]"] = "";
@@ -4433,7 +5095,8 @@ function buildBaseDict() {
     // 4. FINAL INJECTIONS (Banlist & Image Gen)
     if (localProfile.banList && localProfile.banList.length > 0) {
         const banStr = localProfile.banList.map(b => `- ${b}`).join("\n");
-        dict["[[banlist]]"] = `[BAN LIST]\nNever rely on these clichés, tropes, or repetitive patterns. They are dead language:\n${banStr}`;
+        const template = (localProfile.banListCustomPrompts && localProfile.banListCustomPrompts.injectionTemplate) || DEFAULT_PROMPTS.banList.injectionTemplate;
+        dict["[[banlist]]"] = template.replace('{{banItems}}', banStr);
     } else {
         dict["[[banlist]]"] = "";
     }
@@ -4456,9 +5119,12 @@ function buildBaseDict() {
         }
 
         if (shouldInject) {
-            let styleStr = ig.promptStyle === "illustrious" ? "Use Danbooru-style tags. Focus on anime." : (ig.promptStyle === "sdxl" ? "Use natural descriptive sentences. Focus on photorealism." : "Use keywords.");
-            let perspStr = ig.promptPerspective === "pov" ? "First-Person (POV)." : (ig.promptPerspective === "character" ? "Focus on character appearance." : "Describe environment.");
-            dict["[[img1]]"] = `[IMAGE GENERATION]\n${conditionalText}Style: ${styleStr}\nPerspective: ${perspStr}${ig.promptExtra ? `\nExtra: ${ig.promptExtra}` : ""}`;
+            const customIg = localProfile.imageGen.customPrompts || {};
+            const defIg = DEFAULT_PROMPTS.imageGen;
+            let styleStr = ig.promptStyle === "illustrious" ? (customIg.styleIllustrious || defIg.styleIllustrious) : (ig.promptStyle === "sdxl" ? (customIg.styleSdxl || defIg.styleSdxl) : (customIg.styleDefault || defIg.styleDefault));
+            let perspStr = ig.promptPerspective === "pov" ? (customIg.perspPov || defIg.perspPov) : (ig.promptPerspective === "character" ? (customIg.perspCharacter || defIg.perspCharacter) : (customIg.perspDefault || defIg.perspDefault));
+            const template = customIg.injectionTemplate || defIg.injectionTemplate;
+            dict["[[img1]]"] = template.replace('{{conditionalText}}', conditionalText).replace('{{styleStr}}', styleStr).replace('{{perspStr}}', perspStr).replace('{{promptExtra}}', ig.promptExtra ? `\nExtra: ${ig.promptExtra}` : "");
             dict["[[img2]]"] = `<img prompt="prompt">`;
         } else {
             dict["[[img1]]"] = ""; dict["[[img2]]"] = "";
@@ -4472,7 +5138,7 @@ function buildBaseDict() {
     }
 
     if (dict["[[cyoa]]"]) dict["[[cyoa2]]"] = "[CYOA block here]"; else dict["[[cyoa2]]"] = "";
-    if (dict["[[infoblock]]"]) dict["[[infoblock2]]"] = "[Info block here]"; else dict["[[infoblock2]]"] = "";
+    if (dict["[[infoblock]]"]) dict["[[infoblock2]]"] = "[World state block here]"; else dict["[[infoblock2]]"] = "";
     if (dict["[[summary]]"]) dict["[[summary2]]"] = "[Summary block here]"; else dict["[[summary2]]"] = "";
     if (dict["[[storytracker]]"]) dict["[[storytracker2]]"] = "[Story tracker here]"; else dict["[[storytracker2]]"] = "";
     if (dict["[[npc_inner_chatter]]"]) dict["[[npc_inner_chatter2]]"] = "[Npc inner chatter here]"; else dict["[[npc_inner_chatter2]]"] = "";
@@ -4510,7 +5176,8 @@ function buildBaseDict() {
                 });
                 longXML += "</retrieved_archives>";
 
-                dict["[[long-Memory]]"] = `[LONG-TERM MEMORY VAULT]\nThe following are raw archives of highly relevant past events. Use timestamps to prevent context collapse. Do not hallucinate them as currently happening.\n${longXML}`;
+                const template = (mem.customPrompts && mem.customPrompts.longTermTemplate) || DEFAULT_PROMPTS.memoryCore.longTermTemplate;
+                dict["[[long-Memory]]"] = template.replace('{{archiveXML}}', longXML);
             }
         }
 
@@ -4523,7 +5190,8 @@ function buildBaseDict() {
             });
             shortXML += "</recent_state_extracts>";
 
-            dict["[[Short-memory]]"] = `[SHORT-TERM MEMORY]\nRecent state extractions:\n${shortXML}`;
+            const template = (mem.customPrompts && mem.customPrompts.shortTermTemplate) || DEFAULT_PROMPTS.memoryCore.shortTermTemplate;
+            dict["[[Short-memory]]"] = template.replace('{{shortXML}}', shortXML);
         }
     }
 
@@ -4533,35 +5201,10 @@ function buildBaseDict() {
     dict["[[npc list]]"] = "";
 
     if (localProfile.npcBank && localProfile.npcBank.enabled) {
-        dict["[[npc_dossier]]"] = `<npc_dossier>
-  trigger: "Generates ONLY when a new significant NPC is introduced not cashiers, bartenders, random passersby, or one-line background faces. A 'significant NPC' is one with a name, meaningful dialogue, and likely recurrence."
-format: "Collapsible HTML details block. Dense, dashboard-style no prose."
-
-  template: |
-    <details>
-    <summary>🆕 <b>New NPC: [Full Name]</b></summary>
-
-    **Name:** [Full name, nickname if used] | **Age:** [Age] | **Sex:** [M/F/Other]
-    **Appearance:**  [Hair, body, skin....etc]
-    **Occupation:** [Specific current job/role]
-
-    **Background:** [3–5 sentences. Where they grew up, how they got here, what shaped them. A life sketch not a résumé. Include details the PC may never learn.]
-
-    **Inner Circle:**
-    * [Name] — [Relationship] | [One-line: age, status, dynamic e.g., "Younger sister, 19, uni student in another city they text daily"]
-    * [Name] — [Relationship] | [Same format]
-    * [Name] — [Relationship] | [Include people the PC hasn't met and may never meet]
-
-    **Personality Snapshot:** [2–3 contradictions or defining traits as behavior, not labels.]
-    **Current Agenda:** [What they want RIGHT NOW in the story's context]
-    **Hidden Layer:** [Something the PC doesn't know a secret, a motive.]
-
-    </details>
-
-  guidelines:
-    inner_circle_rule: "Include 2–5 people. At least one must be unknown to the story a mother, an ex, a childhood friend. These are future plot seeds."
-    hidden_layer: "For YOUR use as narrative engine. Drives NPC behavior the PC can't predict. Never reveal in narration unless the NPC actually discloses it."
-</npc_dossier>`;
+        // Use custom prompt if it exists, otherwise use default
+        const nbPrompts = (localProfile.npcBank.customPrompts) ? localProfile.npcBank.customPrompts : DEFAULT_PROMPTS.npcBank;
+        
+        dict["[[npc_dossier]]"] = nbPrompts.dossierTemplate;
         dict["[[npc_dossier2]]"] = "[NPC Dossier block here]";
 
         if (localProfile.npcBank.npcs && localProfile.npcBank.npcs.length > 0) {
@@ -4623,17 +5266,21 @@ async function handlePromptInjection(data, type) {
         const charLore = typeof substituteParams === 'function' ? substituteParams('{{description}}') : "No character description found.";
         const userPersona = typeof substituteParams === 'function' ? substituteParams('{{persona}}') : "No user persona found.";
 
+        const sys = (localProfile.storyPlan.customPrompts && localProfile.storyPlan.customPrompts.systemPrompt) || DEFAULT_PROMPTS.storyPlan.systemPrompt;
+        const userTask = (localProfile.storyPlan.customPrompts && localProfile.storyPlan.customPrompts.userPrompt) || DEFAULT_PROMPTS.storyPlan.userPrompt;
+        const thinking = (localProfile.storyPlan.customPrompts && localProfile.storyPlan.customPrompts.thinkingPrompt) || DEFAULT_PROMPTS.storyPlan.thinkingPrompt;
+
         messages.push({
             "role": "system",
-            "content": `Role: You are an expert Story Architect and Plot Planner.\n\n<lore>\n${charLore}\n</lore>\n\nUser Persona ({{user}}):\n<user_persona>\n${userPersona}\n</user_persona>\n\n<Story>\n${activeStoryPlanRequest}\n</Story>`
+            "content": sys.replace('{{charLore}}', charLore).replace('{{userPersona}}', userPersona).replace('{{chatHistory}}', activeStoryPlanRequest)
         });
         messages.push({
             "role": "user",
-            "content": `Task: Brainstorm a minimum of 10 theoretical, medium-to-long-term plot developments based on the story so far.\n\nStrict Rules & Constraints:\n1. DO NOT write the immediate next scene. Skip past the current moment and look ahead to future structural milestones.\n2. Use Narrative Structure, NOT Timeframes: Do not use phrases like "three days later" or "next month." Instead, frame every idea as a theoretical future Arc, Chapter, or Episode.\n3. Create a Menu of Possibilities: Treat this list as a theoretical menu of branching paths. Focus on major plot shifts, new character introductions, or escalating conflicts that could anchor a future chapter.\n4. Zero Agency Theft: You are STRICTLY FORBIDDEN from writing dialogue, actions, thoughts, or emotional reactions for {{user}}. You must never describe what {{user}} does, feels, or says under any circumstances.\n5. No Assumptions or Suggestions: Do not predict, suggest, or assume what {{user}} will do next. Never end a response by telling or hinting at what {{user}} should do.\n\nFormat & Style: Keep the ideas punchy, plot-focused, and clearly labeled by narrative structure.`
+            "content": userTask
         });
         messages.push({
             "role": "system",
-            "content": "<thinking_steps>\nBefore creating the response, think deeply.\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main text must immediately follow </think>.\n<think>\nReflect in approximately 100–150 words as a seamless paragraph.\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\nEvery response must follow this exact structure in this exact order:\n<think>\n{Thinking}\n</think>\n<plot>\n{main response}\n</plot>"
+            "content": thinking
         });
         if (!disablePrefill) {
             messages.push({
@@ -4646,11 +5293,44 @@ async function handlePromptInjection(data, type) {
         return;
     }
 
+    // --- INJECT NPC SCAN PROMPT ---
+    if (activeNpcScanRequest) {
+        messages.length = 0;
+        const nbPrompts = (localProfile.npcBank && localProfile.npcBank.customPrompts) ? localProfile.npcBank.customPrompts : DEFAULT_PROMPTS.npcBank;
+        const formatTemplate = nbPrompts.dossierTemplate;
+        
+        messages.push({
+            "role": "system",
+            "content": "You are an expert narrative analyst and world-builder."
+        });
+        messages.push({
+            "role": "user",
+            "content": `Analyze the following story history. Identify any SIGNIFICANT NPCs (characters with names and dialogue/impact) that are NOT in this list of already known NPCs: [${activeNpcScanRequest.existingNames || "None"}].\n\nFor every new significant NPC you find, generate a dossier using EXACTLY this format:\n\n${formatTemplate}\n\nStory History:\n<chat>\n${activeNpcScanRequest.chatText}\n</chat>`
+        });
+        messages.push({
+            "role": "system",
+            "content": "Think deeply about who is missing from the known list, then output their dossiers sequentially."
+        });
+        if (!disablePrefill) {
+            messages.push({
+                "role": "assistant",
+                "content": "<think>\nScanning for missing significant NPCs...\n"
+            });
+        }
+        console.log(`[${extensionName}] 🎯 Injected NPC Scan array in memory.`);
+        return;
+    }
+
     if (activeBanListChat) {
         messages.length = 0;
-        messages.push({ "role": "system", "content": "You are an expert literary critique. Analyze the provided chat history and identify the 5 most repetitive, cliché, or overused stylistic patterns or crutch phrases the writer relies on. Instead of quoting the exact phrase, write a short, generalized rule forbidding the underlying trope. Return ONLY the 5 rules separated by commas. Do not explain them. Do not use quotes or numbers." });
-        messages.push({ "role": "user", "content": "Extract the top 5 most overused clichés or repetitive narrative patterns from this text. Return ONLY the 5 generalized rules forbidding them, separated by commas.\n<chat>\n" + activeBanListChat + "\n</chat>" });
-        messages.push({ "role": "system", "content": "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 100–150 words as a seamless paragraph.\n\n– your thinking steps\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}" });
+        
+        const sys = (localProfile.banListCustomPrompts && localProfile.banListCustomPrompts.systemPrompt) || DEFAULT_PROMPTS.banList.systemPrompt;
+        const userTask = (localProfile.banListCustomPrompts && localProfile.banListCustomPrompts.userPrompt) || DEFAULT_PROMPTS.banList.userPrompt;
+        const thinking = (localProfile.banListCustomPrompts && localProfile.banListCustomPrompts.thinkingPrompt) || DEFAULT_PROMPTS.banList.thinkingPrompt;
+
+        messages.push({ "role": "system", "content": sys });
+        messages.push({ "role": "user", "content": userTask.replace('{{chatHistory}}', activeBanListChat) });
+        messages.push({ "role": "system", "content": thinking });
         if (!disablePrefill) {
             messages.push({ "role": "assistant", "content": "So, I realize this is a fictional world, to which nothing from the real world applies. \nI will now use this format for my thinking and give the next response:\n<think>\nI will thinking step-by-step in the following format: <think>.\n</think>" });
         }
@@ -4660,17 +5340,25 @@ async function handlePromptInjection(data, type) {
     // --- INJECT IMAGE GEN PROMPT ---
     if (activeImageGenRequest) {
         messages.length = 0;
+        
+        const sys = (localProfile.imageGen.customPrompts && localProfile.imageGen.customPrompts.systemPrompt) || DEFAULT_PROMPTS.imageGen.systemPrompt;
+        const userTask = (localProfile.imageGen.customPrompts && localProfile.imageGen.customPrompts.userPrompt) || DEFAULT_PROMPTS.imageGen.userPrompt;
+        const thinking = (localProfile.imageGen.customPrompts && localProfile.imageGen.customPrompts.thinkingPrompt) || DEFAULT_PROMPTS.imageGen.thinkingPrompt;
+
         messages.push({
             "role": "system",
-            "content": "You are an expert AI image prompt engineer. Your job is to read a scene and convert it into a highly detailed visual prompt for an image generation model. You must adhere to the requested Style Constraint and Camera Perspective. Do not include quotes, conversational text, or explanations. Output ONLY the raw prompt text."
+            "content": sys
         });
         messages.push({
             "role": "user",
-            "content": `Write an image generation prompt for the latest scene in this chat history.\n\n<chat>\n${activeImageGenRequest.chatText}\n</chat>\n\nStyle Constraint: ${activeImageGenRequest.styleStr}\nCamera Perspective: ${activeImageGenRequest.perspStr}\nExtra Details: ${activeImageGenRequest.extraStr}\n\nOutput ONLY the raw image prompt text.`
+            "content": userTask.replace('{{chatHistory}}', activeImageGenRequest.chatText)
+                               .replace('{{styleStr}}', activeImageGenRequest.styleStr)
+                               .replace('{{perspStr}}', activeImageGenRequest.perspStr)
+                               .replace('{{extraStr}}', activeImageGenRequest.extraStr)
         });
         messages.push({
             "role": "system",
-            "content": "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 50-100 words as a seamless paragraph on what visual elements are present.\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}"
+            "content": thinking
         });
         if (!disablePrefill) {
             messages.push({
@@ -4686,17 +5374,23 @@ async function handlePromptInjection(data, type) {
     // --- INJECT NPC PORTRAIT PROMPT ---
     if (activeNpcPfpRequest) {
         messages.length = 0;
+        const nbPrompts = (localProfile.npcBank && localProfile.npcBank.customPrompts) ? localProfile.npcBank.customPrompts : DEFAULT_PROMPTS.npcBank;
+
         messages.push({
             "role": "system",
-            "content": "You are an expert AI image prompt engineer specializing in character portraits. Your job is to read a character's dossier and convert their visual description into a highly detailed image generation prompt for a portrait. You must adhere to the requested Style Constraint and Camera Perspective. Do not include quotes, conversational text, or explanations. Output ONLY the raw prompt text."
+            "content": nbPrompts.systemPrompt
         });
         messages.push({
             "role": "user",
-            "content": `Write a character portrait image generation prompt based on this NPC's dossier:\n\n<npc_dossier>\n${activeNpcPfpRequest.npcText}\n</npc_dossier>\n\nStyle Constraint: ${activeNpcPfpRequest.styleStr}\nCamera Perspective: ${activeNpcPfpRequest.perspStr}\nExtra Details: ${activeNpcPfpRequest.extraStr}\n\nUse the character's appearance, age, sex, occupation, and personality to inform the visual. Output ONLY the raw image prompt text.`
+            "content": nbPrompts.userPrompt
+                .replace('{{npcText}}', activeNpcPfpRequest.npcText)
+                .replace('{{styleStr}}', activeNpcPfpRequest.styleStr)
+                .replace('{{perspStr}}', activeNpcPfpRequest.perspStr)
+                .replace('{{extraStr}}', activeNpcPfpRequest.extraStr)
         });
         messages.push({
             "role": "system",
-            "content": "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 50-100 words on what this character looks like and what visual elements best capture them.\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}"
+            "content": nbPrompts.thinkingPrompt
         });
         if (!disablePrefill) {
             messages.push({
@@ -4718,13 +5412,16 @@ async function handlePromptInjection(data, type) {
             ? localProfile.userLanguage
             : "the same language used in the chat history";
 
+        const sys = (localProfile.memoryCore.customPrompts && localProfile.memoryCore.customPrompts.systemPrompt) || DEFAULT_PROMPTS.memoryCore.systemPrompt;
+        const userTask = (localProfile.memoryCore.customPrompts && localProfile.memoryCore.customPrompts.userPrompt) || DEFAULT_PROMPTS.memoryCore.userPrompt;
+
         messages.push({
             "role": "system",
-            "content": `You are an expert narrative condenser. Your task is to read a chunk of chat history and summarize exactly what happened. Preserve important story details, but aggressively remove all 'purple prose' and flowery descriptions.\n\nFocus ONLY on impactful actions and meaningful dialogue:\n- Condense small talk (e.g., summarize a long, drawn-out greeting simply as 'He said hello').\n- Ignore trivial, unnecessary physical actions (e.g., grabbing a glass of water, shifting in a chair) unless they directly impact the story.\n- Do not quote dialogue directly; summarize the core point of the conversation.\n\nWrite a direct, clear narrative summary of what the characters did and what was communicated.\n\nCRITICAL: You must write the summary in ${targetLang}.`
+            "content": sys.replace('{{targetLang}}', targetLang)
         });
         messages.push({
             "role": "user",
-            "content": `Summarize the impactful events and meaningful conversations from the following chat chunk. Strip out the purple prose and trivial actions.\n\n<chat>\n${activeMemorySummarizationRequest}\n</chat>\n\nOutput the summary in ${targetLang}:`
+            "content": userTask.replace('{{chatHistory}}', activeMemorySummarizationRequest).replace('{{targetLang}}', targetLang)
         });
 
         if (!disablePrefill) {
@@ -4991,8 +5688,9 @@ function renderDevMode(view = "landing", selectedModeId = null, passedModeData =
                 id: "custom_" + Date.now(),
                 label: "New Custom Engine",
                 isCoreClone: false,
+                isV7: false,
                 p1: "", p2: "", p3: "", p4: "", p5: "", p6: "",
-                cot: "", prefill: "", cyoa: "", info: "", summary: "",
+                cot: "", prefill: "", cyoa: "", info: "", summary: "", npc_inner_chatter: "",
                 customToggles: []
             };
         } else {
@@ -5001,11 +5699,13 @@ function renderDevMode(view = "landing", selectedModeId = null, passedModeData =
                 isNew = true; modeData = JSON.parse(JSON.stringify(coreMatch));
                 modeData.id = "custom_" + Date.now(); modeData.label = coreMatch.label + " (Copy)";
                 modeData.isCoreClone = true;
+                modeData.isV7 = coreMatch.id.startsWith("v7");
                 if (!modeData.cot) modeData.cot = "";
                 if (!modeData.prefill) modeData.prefill = "";
                 if (!modeData.cyoa) modeData.cyoa = "";
                 if (!modeData.info) modeData.info = "";
                 if (!modeData.summary) modeData.summary = "";
+                if (!modeData.npc_inner_chatter) modeData.npc_inner_chatter = "";
             } else {
                 modeData = extension_settings[extensionName].customModes.find(m => m.id === selectedModeId);
             }
@@ -5038,11 +5738,12 @@ function renderDevMode(view = "landing", selectedModeId = null, passedModeData =
         const saveCurrentTextState = () => {
             modeData.label = $("#dev_mode_name").val();
             if ($("#dev_edit_p1").length) modeData.p1 = $("#dev_edit_p1").val();
+            if ($("#dev_edit_p2").length) modeData.p2 = $("#dev_edit_p2").val();
             modeData.p3 = $("#dev_edit_p3").val();
             modeData.p4 = $("#dev_edit_p4").val(); modeData.p5 = $("#dev_edit_p5").val(); modeData.p6 = $("#dev_edit_p6").val();
 
             // Loop through all override fields
-            const fields = ["cot", "prefill", "cyoa", "info", "summary", "death", "combat", "direct", "dn", "dialogueColor", "mvu", "storytracker", "think", "language", "pronouns", "count", "dnratio", "onomato", "banlist"];
+            const fields = ["cot", "prefill", "cyoa", "info", "summary", "death", "combat", "direct", "dn", "dialogueColor", "mvu", "storytracker", "think", "language", "pronouns", "count", "dnratio", "onomato", "banlist", "npc_inner_chatter"];
             fields.forEach(f => {
                 if ($(`#dev_edit_${f}`).length) modeData[f] = $(`#dev_edit_${f}`).val();
             });
@@ -5091,12 +5792,8 @@ function renderDevMode(view = "landing", selectedModeId = null, passedModeData =
 
         const flow = $(`<div style="display: flex; flex-direction: column;"></div>`);
 
-        if (modeData.isCoreClone) {
-            flow.append(createLockedBlock("[[prompt1]]", modeData.p1));
-            flow.append(createLockedBlock("[[prompt2]]", modeData.p2));
-        } else {
-            flow.append(createEditableBlock("[[prompt1]]", "p1", modeData.p1));
-        }
+        flow.append(createEditableBlock("[[prompt1]]", "p1", modeData.p1));
+        flow.append(createEditableBlock("[[prompt2]]", "p2", modeData.p2));
         flow.append(createEditableBlock("[[prompt3]]", "p3", modeData.p3));
 
         // Custom Modules Logic
@@ -5156,14 +5853,19 @@ function renderDevMode(view = "landing", selectedModeId = null, passedModeData =
         flow.append(createOverrideBlock("[[DN]]", "dn", modeData.dn, [{ label: "No Change", value: "" }, { label: "Default", value: getAddon("dn") }]));
         flow.append(createOverrideBlock("[[COLOR]]", "dialogueColor", modeData.dialogueColor, [{ label: "No Change", value: "" }, { label: "Default", value: getAddon("color") }])); flow.append(createOverrideBlock("[[MVU]]", "mvu", modeData.mvu, [{ label: "No Change", value: "" }, { label: "Default", value: getBlock("mvu") }]));
         flow.append(createOverrideBlock("[[storytracker]]", "storytracker", modeData.storytracker, [{ label: "No Change", value: "" }, { label: "Default", value: "# at the very end of the response put this block:\n<Story_Tracker>\narc: The Arc that is now active.\nchapter: The chapter that is now active.\nEpisode: The episode that is now active.\nSecrets: Any secret that the user/{{user}} doesn't know.\n</Story_Tracker>" }]));
+        flow.append(createOverrideBlock("[[npc_inner_chatter]]", "npc_inner_chatter", modeData.npc_inner_chatter, [
+            { label: "No Change", value: "" },
+            { label: "Default", value: getBlock("npc_inner_chatter") },
+            { label: "Simple", value: getBlock("npc_inner_chatter_v2") }
+        ]));
 
         // Section 3: Global Variables
         flow.append(`<div class="ps-rule-title" style="margin: 30px 0 10px 0; color: #f59e0b;"><i class="fa-solid fa-earth-americas"></i> Global Variables Overrides</div>`);
         flow.append(createOverrideBlock("[[Language]]", "language", modeData.language, [{ label: "No Change", value: "" }, { label: "English Template", value: "[LANGUAGE RULE]\nALL OUTPUT EXCEPT THINKING MUST BE IN ENGLISH ONLY." }]));
         flow.append(createOverrideBlock("[[pronouns]]", "pronouns", modeData.pronouns, [{ label: "No Change", value: "" }, { label: "Male Template", value: "{{user}} is male. Always portray and address him as such." }]));
         flow.append(createOverrideBlock("[[count]]", "count", modeData.count, [{ label: "No Change", value: "" }, { label: "Example 400", value: "— maximum 400 words" }]));
-        flow.append(createOverrideBlock("[[DNRATIO]]", "dnratio", modeData.dnratio, [{ label: "No Change", value: "" }, { label: "Example 50/50", value: "- Ratio: Maintain a balance of 50% Dialogue and 50% Narration." }]));
-        flow.append(createOverrideBlock("[[onomato]]", "onomato", modeData.onomato, [{ label: "No Change", value: "" }, { label: "Default", value: "- Narration must utilize onomatopoeia. Use precise, context-specific phonetic representations for physical interactions (e.g., the click of a latch, the thud of a heavy object, the soughing of wind) rather than abstract descriptions of sound." }]));
+        flow.append(createOverrideBlock("[[DNRATIO]]", "dnratio", modeData.dnratio, [{ label: "No Change", value: "" }, { label: "Example 50/50", value: "Ratio: Maintain a balance of 50% Dialogue and 50% Narration." }]));
+        flow.append(createOverrideBlock("[[onomato]]", "onomato", modeData.onomato, [{ label: "No Change", value: "" }, { label: "Default", value: "Narration must utilize onomatopoeia. Use precise, context-specific phonetic representations for physical interactions (e.g., the click of a latch, the thud of a heavy object, the soughing of wind) rather than abstract descriptions of sound." }]));
         flow.append(createOverrideBlock("[[banlist]]", "banlist", modeData.banlist, [{ label: "No Change", value: "" }, { label: "Example", value: "[BAN LIST]\nNever rely on these clichés, tropes, or repetitive patterns. They are dead language:\n- A shiver ran down their spine." }]));
 
         c.append(flow);
@@ -5221,10 +5923,186 @@ $("body").off("click", "#ps_btn_dev_mode").on("click", "#ps_btn_dev_mode", funct
     }
 });
 
+// -------------------------------------------------------------
+// DRAGGABLE FIXED BUTTON WITH SNAP-TO-VIEWPORT & PERSISTENCE
+// -------------------------------------------------------------
+function initDraggableButton() {
+    const $btn = $('#prompt-slot-fixed-btn');
+    if (!$btn.length) return;
+
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let initialLeft = 0;
+    let initialTop = 0;
+    let hasMoved = false;
+
+    // Load saved position
+    let savedPos = null;
+    try {
+        const stored = localStorage.getItem('megumin_btn_position');
+        if (stored) savedPos = JSON.parse(stored);
+    } catch (e) {
+        console.error('Failed to parse megumin_btn_position', e);
+    }
+
+    // Apply saved position or defaults
+    function applyPosition(pos) {
+        // Reset positioning styles
+        $btn.css({ left: '', right: '', top: '', bottom: '' });
+
+        if (pos) {
+            const topPx = Math.max(10, Math.min($(window).height() - $btn.outerHeight() - 10, (pos.topPercent / 100) * $(window).height()));
+            $btn.css('top', `${topPx}px`);
+
+            const gutter = $(window).width() <= 768 ? 12 : 20;
+            if (pos.side === 'left') {
+                $btn.css('left', `${gutter}px`);
+            } else {
+                $btn.css('right', `${gutter}px`);
+            }
+        } else {
+            // Default position
+            $btn.css({
+                top: '60px',
+                right: $(window).width() <= 768 ? '12px' : '20px'
+            });
+        }
+    }
+
+    applyPosition(savedPos);
+
+    // Dynamic resize handler
+    $(window).off('resize.megumin_btn').on('resize.megumin_btn', function () {
+        applyPosition(savedPos);
+    });
+
+    // Start drag handler
+    function dragStart(e) {
+        // Only left click
+        if (e.type === 'mousedown' && e.which !== 1) return;
+
+        const event = e.originalEvent.touches ? e.originalEvent.touches[0] : e;
+        startX = event.clientX;
+        startY = event.clientY;
+
+        // Since the button is fixed, let's use client coordinates instead of offset() relative to page
+        const bounding = $btn[0].getBoundingClientRect();
+        initialLeft = bounding.left;
+        initialTop = bounding.top;
+
+        hasMoved = false;
+        isDragging = true;
+
+        // Remove transitions during drag for immediate tracking
+        $btn.removeClass('ps-btn-transition');
+
+        // Bind document level listeners
+        $(document).on('mousemove.megumin_drag touchmove.megumin_drag', dragMove);
+        $(document).on('mouseup.megumin_drag touchend.megumin_drag', dragEnd);
+
+        // Prevent default actions to stop scrolling/text selection ONLY on mouse events
+        if (e.type === 'mousedown') {
+            e.preventDefault();
+        }
+    }
+
+    // Drag move handler
+    function dragMove(e) {
+        if (!isDragging) return;
+
+        const event = e.originalEvent.touches ? e.originalEvent.touches[0] : e;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+
+        // Set movement threshold to avoid clicking issues
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+            hasMoved = true;
+        }
+
+        if (hasMoved && e.cancelable) {
+            e.preventDefault(); // Prevent scrolling while dragging
+        }
+
+        let newLeft = initialLeft + dx;
+        let newTop = initialTop + dy;
+
+        // Keep it in bounds
+        const btnWidth = $btn.outerWidth();
+        const btnHeight = $btn.outerHeight();
+        newLeft = Math.max(0, Math.min($(window).width() - btnWidth, newLeft));
+        newTop = Math.max(10, Math.min($(window).height() - btnHeight - 10, newTop));
+
+        $btn.css({
+            left: `${newLeft}px`,
+            right: 'auto',
+            top: `${newTop}px`
+        });
+    }
+
+    // Drag end handler
+    function dragEnd(e) {
+        if (!isDragging) return;
+        isDragging = false;
+
+        // Unbind move/up events
+        $(document).off('.megumin_drag');
+
+        if (hasMoved) {
+            // Apply snap transition
+            $btn.addClass('ps-btn-transition');
+
+            const btnWidth = $btn.outerWidth();
+            const btnHeight = $btn.outerHeight();
+            const bounding = $btn[0].getBoundingClientRect();
+            const currentLeft = bounding.left;
+            const currentTop = bounding.top;
+
+            const midPoint = $(window).width() / 2;
+            const gutter = $(window).width() <= 768 ? 12 : 20;
+
+            let side = 'right';
+            let targetLeft = 0;
+
+            if (currentLeft + btnWidth / 2 < midPoint) {
+                side = 'left';
+                targetLeft = gutter;
+                $btn.css({
+                    left: `${targetLeft}px`,
+                    right: 'auto'
+                });
+            } else {
+                side = 'right';
+                targetLeft = $(window).width() - btnWidth - gutter;
+                $btn.css({
+                    left: 'auto',
+                    right: `${gutter}px`
+                });
+            }
+
+            // Calculate vertical percentage
+            const topPercent = (currentTop / $(window).height()) * 100;
+
+            savedPos = { side, topPercent };
+            localStorage.setItem('megumin_btn_position', JSON.stringify(savedPos));
+
+            // Prevent the subsequent click event from bubbling or executing handlers
+            $btn.one('click', function (clickEvent) {
+                clickEvent.stopImmediatePropagation();
+                clickEvent.preventDefault();
+            });
+        }
+    }
+
+    // Attach start listeners
+    $btn.off('mousedown.megumin_drag touchstart.megumin_drag').on('mousedown.megumin_drag touchstart.megumin_drag', dragStart);
+}
+
 jQuery(async () => {
     try {
         const h = await $.get(`${extensionFolderPath}/example.html`);
         $("body").append(h);
+        initDraggableButton();
         $("body").append('<div id="ps-global-tooltip"></div>');
         // Modify DOM to transition from Wizard -> Tabs
         $(".ps-breadcrumbs").hide();
@@ -5309,16 +6187,35 @@ jQuery(async () => {
 
                 // AUTO-TRIGGER MEMORY CORE
                 const mem = localProfile?.memoryCore;
-                if (mem && mem.enabled && mem.triggerMode === 'frequency') {
+                if (mem && mem.enabled && (mem.triggerMode === 'frequency' || mem.triggerMode === 'every')) {
                     const chat = getContext().chat;
                     const aiMsgCount = chat.filter(m => !m.is_user && !m.is_system).length;
 
-                    if (aiMsgCount > 0 && aiMsgCount % 10 === 0) {
-                        toastr.info("Background Memory Scan Triggered...", "Megumin Suite");
-                        // We run it after a small delay so ST finishes saving the chat first
-                        setTimeout(async () => {
-                            await memProcessPendingChunks();
-                        }, 3000);
+                    const freq = mem.triggerMode === 'every' ? 1 : (mem.autoFreq || 10);
+                    if (aiMsgCount > 0 && aiMsgCount % freq === 0) {
+                        // Check if we actually have enough messages to archive (avoid background notification spam)
+                        let hasWork = false;
+                        const workingLimit = mem.workingLimit || 30;
+                        const chunkSize = mem.chunkSize || 10;
+                        const realMessages = [];
+                        for (let i = 0; i < chat.length; i++) {
+                            if (!chat[i].is_system) realMessages.push({ originalIndex: i, msg: chat[i] });
+                        }
+                        if (realMessages.length > workingLimit) {
+                            const archivableMessages = realMessages.slice(0, realMessages.length - workingLimit);
+                            const unarchivedArchivable = archivableMessages.filter(item => !isMessageArchived(item.originalIndex, mem));
+                            if (unarchivedArchivable.length >= chunkSize) {
+                                hasWork = true;
+                            }
+                        }
+
+                        if (hasWork) {
+                            toastr.info("Background Memory Scan Triggered...", "Megumin Suite");
+                            // We run it after a small delay so ST finishes saving the chat first
+                            setTimeout(async () => {
+                                await memProcessPendingChunks(true);
+                            }, 3000);
+                        }
                     }
                 }
 

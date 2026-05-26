@@ -1,3 +1,10 @@
+# beta 26/05/26
+* fixed memory core
+* added scan history to NPC Bank
+* you can now edit prompts in tabs
+* added v7.5
+* fixed token counter
+* added Minimum or Maximum word count
 # beta 17/05/26
 * added full mamory manager change from Cohee/jina-embeddings-v2-base-en to Xenova/all-MiniLM-L6-v2 if you going to use Semantic Embeddings. i recommend only using the keywords its faster and do 90% like Semantic Embeddings.
 * added NPC bank.
