@@ -51,6 +51,15 @@ const DEFAULT_PROMPTS = {
     }
 };
 
+const DEFAULT_ANIME_PROMPT = `[ANIME MODE — ACTIVE]
+Narrate and write dialogue with the tone, rhythm, and stylistic energy of anime and manga.
+
+Speech: Characters use light verbal affectations in character (honorifics like -chan/-kun/-senpai, exclamations like "ne~?", "uso!", "mou~", "ehh?!"). Use sparingly — flavor, not parody. Characters speak their feelings loudly when flustered and whisper them when vulnerable.
+Reactions: Exaggerated physical cues — flushed cheeks, stuttering, going rigid, sweat-drop social anxiety, the sudden freeze of someone caught off guard. Characters ramble incoherently when emotionally overwhelmed ("I— you— wha— huh?!").
+Tropes: Tsundere deflection, dense obliviousness to obvious feelings, the stoic who quietly cares, rivalry wrapped in complicated emotions. Lean into them naturally, don't announce them.
+Tension: Romantic and emotional beats get manga-panel focus — accidental touch, held eye contact, proximity, the breath held just before something is said. Let them linger.
+Narration: Internal monologue can break in as italicized intrusion. Dramatic moments narrated with momentum — slow-motion detail, the world narrowing to a single point, inner fire given form.`;
+
 // -------------------------------------------------------------
 // STATE MANAGEMENT
 // -------------------------------------------------------------
@@ -130,6 +139,14 @@ function initProfile() {
         onomatopoeia: {
             enabled: false,
             useStyling: false
+        },
+        animeMode: {
+            enabled: false,
+            prompt: ""
+        },
+        knowledgebase: {
+            enabled: false,
+            entries: []
         },
         addons: [],
         blocks: [],
@@ -251,6 +268,8 @@ function initProfile() {
     }
     if (!localProfile.dnRatio) localProfile.dnRatio = defaults.dnRatio;
     if (!localProfile.onomatopoeia) localProfile.onomatopoeia = defaults.onomatopoeia;
+    if (!localProfile.animeMode) localProfile.animeMode = { enabled: false, prompt: "" };
+    if (!localProfile.knowledgebase) localProfile.knowledgebase = { enabled: false, entries: [] };
     if (localProfile.disableUtilityPrefill === undefined) localProfile.disableUtilityPrefill = false;
     if (!localProfile.userWordCountType) localProfile.userWordCountType = "max"; 
 
@@ -328,7 +347,7 @@ function updateLiveTokenCount() {
         if (excludeKeys.includes(key)) return;
 
         // Categorize the text using exact matches to prevent overlap
-        if (key === "[[aiprompt]]" || key === "[[Language]]" || key === "[[pronouns]]" || key === "[[count]]" || key === "[[DNRATIO]]" || key === "[[onomato]]") {
+        if (key === "[[aiprompt]]" || key === "[[Language]]" || key === "[[pronouns]]" || key === "[[count]]" || key === "[[DNRATIO]]" || key === "[[onomato]]" || key === "[[ANIMEMODE]]" || key === "[[knowledgebase]]") {
             styleStr += value + " ";
         } else if (key === "[[COT]]" || key === "[[prefill]]" || key === "[[THINK]]") {
             cotStr += value + " ";
@@ -451,7 +470,8 @@ const tabsUI = [
     { title: "Dynamic Ban List", sub: "Scan and ban repetitive AI phrases.", icon: "fa-ban", render: renderBanList },
     { title: "Image Generation", sub: "Wire up ComfyUI to auto-generate scene images during roleplay.", icon: "fa-image", render: renderImageGen },
     { title: "NPCs Bank", sub: "Automatically extract and track significant NPCs in the story.", icon: "fa-address-book", render: renderNpcBank },
-    { title: "Memory Core", sub: "Advanced 3-Tier Context & History Management.", icon: "fa-memory", render: renderMemoryCore }
+    { title: "Memory Core", sub: "Advanced 3-Tier Context & History Management.", icon: "fa-memory", render: renderMemoryCore },
+    { title: "Knowledgebase", sub: "Define core world rules, lore, and trope guidance the AI always remembers.", icon: "fa-book-open", render: renderKnowledgebase }
 ];
 
 function switchTab(index) {
@@ -506,14 +526,15 @@ function applyTabToAll() {
     const tabKeys = {
         0: ["mode"],
         1: ["personality", "toggles"],
-        2: ["activeStyleId", "aiRule", "customStyles", "dnRatio"],
+        2: ["activeStyleId", "aiRule", "customStyles", "dnRatio", "animeMode"],
         3: ["userWordCount", "userWordCountType", "userLanguage", "userPronouns", "disableUtilityPrefill", "onomatopoeia"],
         4: ["addons", "blocks"],
         5: ["model"],
         6: ["storyPlan"],
         7: ["banList"],
         8: ["imageGen"],
-        9: ["memoryCore"]
+        9: ["memoryCore"],
+        11: ["knowledgebase"]
     };
 
     const keysToSync = tabKeys[currentTab];
@@ -973,6 +994,60 @@ function renderStyleLibrary(c) {
         localProfile.dnRatio.dialogue = parseInt($(this).val()); saveProfileToMemory();
     });
     root.append(dnrPanel);
+
+    // ── ANIME MODE ──
+    if (!localProfile.animeMode) localProfile.animeMode = { enabled: false, prompt: "" };
+    const isAnime = localProfile.animeMode.enabled;
+    const animePromptVal = (localProfile.animeMode.prompt && localProfile.animeMode.prompt.trim()) ? localProfile.animeMode.prompt : DEFAULT_ANIME_PROMPT;
+
+    const animePanel = $(`
+        <div class="wstyle-dnr-panel" style="margin-top: 10px;">
+            <div class="wstyle-dnr-header" id="anime_header_toggle">
+                <div class="dnr-info">
+                    <div class="dnr-icon" style="background: rgba(244,63,94,0.15); color: #f43f5e;"><i class="fa-solid fa-torii-gate"></i></div>
+                    <div>
+                        <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">Anime Mode</div>
+                        <div style="font-size: 0.73rem; color: var(--text-muted);">Shift the writing style toward anime tropes — speech patterns, body language, and dramatic beats. Can be toggled mid-chat.</div>
+                    </div>
+                </div>
+                <div class="ps-toggle-card ${isAnime ? 'active' : ''}" id="anime_toggle" style="padding: 8px; min-width: 56px; justify-content: center; cursor: pointer;">
+                    <div class="ps-switch"></div>
+                </div>
+            </div>
+            <div class="wstyle-dnr-body ${isAnime ? 'open' : ''}" id="anime_body">
+                <div style="padding: 4px 0 8px;">
+                    <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 6px;">Edit the injected prompt to tailor the style to your taste. Leave blank to use the default.</div>
+                    <textarea id="anime_prompt_input" class="ps-modern-input" style="width: 100%; height: 160px; resize: vertical; font-size: 0.72rem; line-height: 1.5; font-family: monospace;" placeholder="Leave blank to use the built-in default prompt...">${localProfile.animeMode.prompt || ""}</textarea>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                        <span style="font-size: 0.67rem; color: var(--text-muted); font-style: italic;">Injected as <code style="background:rgba(255,255,255,0.07); padding: 1px 4px; border-radius: 3px;">[[ANIMEMODE]]</code> in the rules block.</span>
+                        <button id="anime_reset_btn" class="ps-modern-btn secondary" style="padding: 3px 10px; font-size: 0.68rem; color: #f43f5e; border-color: rgba(244,63,94,0.3);"><i class="fa-solid fa-rotate-left"></i> Reset to Default</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+
+    animePanel.find("#anime_toggle").on("click", function (e) {
+        e.stopPropagation();
+        localProfile.animeMode.enabled = !localProfile.animeMode.enabled;
+        saveProfileToMemory();
+        $(this).toggleClass("active", localProfile.animeMode.enabled);
+        $("#anime_body").toggleClass("open", localProfile.animeMode.enabled);
+    });
+
+    animePanel.find("#anime_prompt_input").on("change", function () {
+        localProfile.animeMode.prompt = $(this).val();
+        saveProfileToMemory();
+    });
+
+    animePanel.find("#anime_reset_btn").on("click", function () {
+        localProfile.animeMode.prompt = "";
+        saveProfileToMemory();
+        $("#anime_prompt_input").val("");
+        toastr.success("Anime Mode prompt reset to default.");
+    });
+
+    root.append(animePanel);
 
     // ── FILTER PILLS ──
     const filterBar = $(`
@@ -3330,6 +3405,185 @@ function renderNpcList() {
 }
 
 // -------------------------------------------------------------
+// STAGE 10: KNOWLEDGEBASE
+// -------------------------------------------------------------
+function renderKnowledgebase(c) {
+    c.empty();
+    if (!localProfile.knowledgebase) localProfile.knowledgebase = { enabled: false, entries: [] };
+    const kb = localProfile.knowledgebase;
+
+    c.append(`
+        <div class="mtab-header">
+            <div class="mtab-header-left">
+                <div class="mtab-header-icon" style="background: linear-gradient(135deg, #6366f1, #4f46e5);">
+                    <i class="fa-solid fa-book-open"></i>
+                </div>
+                <div>
+                    <h2>Knowledgebase</h2>
+                    <p>Core rules, lore, and trope guidance the AI always has access to — think of it as a permanent lorebook.</p>
+                </div>
+            </div>
+            <div id="kb_header_badge" class="mtab-header-badge" style="background: ${kb.enabled ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${kb.enabled ? '#818cf8' : 'var(--text-muted)'}; border: 1px solid ${kb.enabled ? 'rgba(99,102,241,0.25)' : 'var(--border-color)'};">
+                <i class="fa-solid fa-${kb.enabled ? 'circle-check' : 'circle-xmark'}" style="font-size:0.6rem;"></i> ${kb.enabled ? 'Enabled' : 'Disabled'}
+            </div>
+        </div>
+
+        <div class="mtab-toggle-row ${kb.enabled ? 'active' : ''}" id="kb_enable_card" style="margin-bottom: 20px;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-book-open" style="color:#6366f1;"></i> Enable Knowledgebase</div>
+                <div class="toggle-desc">All active entries are injected into every prompt. Use this for complex rules, hypnosis mechanics, magic systems, or any lore the AI must always know.</div>
+            </div>
+            <div class="ps-switch"></div>
+        </div>
+
+        <div id="kb_main_content" style="display: ${kb.enabled ? 'block' : 'none'};">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="color: #818cf8; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+                    <i class="fa-solid fa-book-open"></i> Entries
+                    <span id="kb_count" style="color: var(--text-muted); font-size: 0.75rem; margin-left: 8px;">(${(kb.entries || []).length})</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button id="kb_btn_add" class="ps-modern-btn primary" style="padding: 4px 12px; font-size: 0.72rem; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; border: none;"><i class="fa-solid fa-plus"></i> Add Entry</button>
+                    <button id="kb_btn_clear_all" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239,68,68,0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
+                </div>
+            </div>
+            <div id="kb_entry_list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+        </div>
+    `);
+
+    $("#kb_enable_card").on("click", function () {
+        kb.enabled = !kb.enabled; saveProfileToMemory();
+        if (kb.enabled) {
+            $(this).addClass("active");
+            $("#kb_main_content").slideDown(200);
+            $("#kb_header_badge").css({ background: 'rgba(99,102,241,0.12)', color: '#818cf8', 'border-color': 'rgba(99,102,241,0.25)' })
+                .html(`<i class="fa-solid fa-circle-check" style="font-size:0.6rem;"></i> Enabled`);
+            renderKbList();
+        } else {
+            $(this).removeClass("active");
+            $("#kb_main_content").slideUp(200);
+            $("#kb_header_badge").css({ background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', 'border-color': 'var(--border-color)' })
+                .html(`<i class="fa-solid fa-circle-xmark" style="font-size:0.6rem;"></i> Disabled`);
+        }
+    });
+
+    $("#kb_btn_add").on("click", function () {
+        if (!kb.entries) kb.entries = [];
+        kb.entries.push({ id: "kb_" + Date.now(), title: "New Entry", content: "", active: true, timestamp: Date.now() });
+        saveProfileToMemory();
+        renderKbList();
+        // Auto-expand the new card
+        $("#kb_entry_list .kb-entry-card").last().find(".kb-entry-body").show();
+        $("#kb_entry_list .kb-entry-card").last().find(".kb-chevron").css("transform", "rotate(90deg)");
+        $("#kb_entry_list .kb-entry-card").last().find(".kb-title-input").focus().select();
+    });
+
+    $("#kb_btn_clear_all").on("click", function () {
+        if (!kb.entries || kb.entries.length === 0) return;
+        if (confirm("Delete all knowledgebase entries? This cannot be undone.")) {
+            kb.entries = []; saveProfileToMemory(); renderKbList();
+        }
+    });
+
+    if (kb.enabled) renderKbList();
+}
+
+function renderKbList() {
+    const list = $("#kb_entry_list");
+    list.empty();
+    const kb = localProfile.knowledgebase;
+    if (!kb.entries) kb.entries = [];
+    const activeCount = kb.entries.filter(e => e.active !== false).length;
+    $("#kb_count").text(`(${kb.entries.length} entries, ${activeCount} active)`);
+
+    if (kb.entries.length === 0) {
+        list.append('<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 24px;">No entries yet. Click "Add Entry" to define core world rules, lore, or trope guidance.</div>');
+        return;
+    }
+
+    kb.entries.forEach((entry, idx) => {
+        const isActive = entry.active !== false;
+        const hasContent = entry.content && entry.content.trim().length > 0;
+
+        const card = $(`
+            <div class="kb-entry-card" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(99,102,241,${isActive ? '0.25' : '0.1'}); border-radius: 10px; overflow: hidden; transition: border-color 0.2s, opacity 0.2s; opacity: ${isActive ? '1' : '0.5'};" data-idx="${idx}">
+                <div class="kb-entry-header" style="padding: 9px 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: linear-gradient(135deg, rgba(99,102,241,${isActive ? '0.1' : '0.04'}), rgba(79,70,229,${isActive ? '0.06' : '0.02'})); user-select: none;">
+                    <i class="fa-solid fa-chevron-right kb-chevron" style="font-size: 0.6rem; color: #818cf8; transition: transform 0.2s; flex-shrink: 0;"></i>
+                    <input type="text" class="kb-title-input" value="${entry.title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}" placeholder="Entry title..."
+                        style="flex: 1; background: transparent; border: none; color: var(--text-main); font-size: 0.83rem; font-weight: 600; outline: none; cursor: text; min-width: 0;"
+                        data-idx="${idx}" />
+                    <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                        ${!hasContent ? `<span style="font-size:0.58rem; color:#f59e0b; opacity:0.8;"><i class="fa-solid fa-triangle-exclamation"></i> Empty</span>` : ''}
+                        <span class="kb-active-pill kb_active_toggle" data-idx="${idx}" style="display:inline-flex; align-items:center; gap:3px; padding:2px 8px; border-radius:8px; font-size:0.6rem; font-weight:700; cursor:pointer; text-transform:uppercase; letter-spacing:0.4px; flex-shrink:0; ${isActive ? 'background:rgba(99,102,241,0.18); color:#818cf8; border:1px solid rgba(99,102,241,0.35);' : 'background:rgba(107,114,128,0.12); color:#6b7280; border:1px solid rgba(107,114,128,0.2);'}">
+                            <i class="fa-solid ${isActive ? 'fa-eye' : 'fa-eye-slash'}" style="font-size:0.55rem;"></i>${isActive ? 'Active' : 'Off'}
+                        </span>
+                        <button class="kb_del_btn" data-idx="${idx}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Delete entry"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+                <div class="kb-entry-body" style="display: none; padding: 10px 12px; border-top: 1px solid rgba(99,102,241,0.1);">
+                    <textarea class="ps-modern-input kb-content-input" data-idx="${idx}"
+                        placeholder="Enter the knowledge, rules, or lore for this entry. This text is injected verbatim into every prompt."
+                        style="width: 100%; height: 130px; resize: vertical; font-size: 0.74rem; line-height: 1.55; font-family: monospace;">${entry.content}</textarea>
+                    <div style="font-size: 0.63rem; color: var(--text-muted); margin-top: 5px; display:flex; justify-content:space-between;">
+                        <span>Injected inside <code style="background:rgba(255,255,255,0.07); padding:1px 4px; border-radius:3px;">&lt;entry title="${entry.title}"&gt;</code> in the rules block.</span>
+                        <span id="kb_char_count_${idx}" style="color: ${entry.content.length > 2000 ? '#ef4444' : 'var(--text-muted)'};">${entry.content.length} chars</span>
+                    </div>
+                </div>
+            </div>
+        `);
+
+        // Toggle collapse
+        card.find(".kb-entry-header").on("click", function (e) {
+            if ($(e.target).closest(".kb_del_btn, .kb_active_toggle, .kb-title-input").length) return;
+            const body = $(this).siblings(".kb-entry-body");
+            const chevron = $(this).find(".kb-chevron");
+            const wasHidden = !body.is(":visible");
+            body.slideToggle(180);
+            chevron.css("transform", wasHidden ? "rotate(90deg)" : "rotate(0deg)");
+        });
+
+        // Title edit
+        card.find(".kb-title-input").on("change", function () {
+            kb.entries[parseInt($(this).attr("data-idx"))].title = $(this).val();
+            saveProfileToMemory();
+        }).on("click", e => e.stopPropagation()).on("keydown", e => { if (e.key === "Enter") e.target.blur(); });
+
+        // Content edit
+        card.find(".kb-content-input").on("input", function () {
+            const i = parseInt($(this).attr("data-idx"));
+            const len = $(this).val().length;
+            $(`#kb_char_count_${i}`).text(`${len} chars`).css("color", len > 2000 ? "#ef4444" : "var(--text-muted)");
+        }).on("change", function () {
+            const i = parseInt($(this).attr("data-idx"));
+            kb.entries[i].content = $(this).val();
+            saveProfileToMemory();
+        });
+
+        // Active toggle
+        card.find(".kb_active_toggle").on("click", function (e) {
+            e.stopPropagation();
+            const i = parseInt($(this).attr("data-idx"));
+            kb.entries[i].active = kb.entries[i].active === false ? true : false;
+            saveProfileToMemory();
+            renderKbList();
+        });
+
+        // Delete
+        card.find(".kb_del_btn").on("click", function (e) {
+            e.stopPropagation();
+            const i = parseInt($(this).attr("data-idx"));
+            if (confirm(`Delete "${kb.entries[i].title}"?`)) {
+                kb.entries.splice(i, 1);
+                saveProfileToMemory();
+                renderKbList();
+            }
+        });
+
+        list.append(card);
+    });
+}
+
+// -------------------------------------------------------------
 // STAGE 9: MEMORY CORE (3-Tier Context)
 // -------------------------------------------------------------
 function renderMemoryCore(c) {
@@ -5237,7 +5491,18 @@ function buildBaseDict() {
     const modData = hardcodedLogic.models.find(m => m.id === localProfile.model);
     if (modData) {
         dict["[[COT]]"] = modData.content;
-        if (modData.prefill) dict["[[prefill]]"] = modData.prefill;
+        if (modData.prefill) {
+            let prefill = modData.prefill;
+            const kbActiveCount = localProfile.knowledgebase && localProfile.knowledgebase.enabled
+                ? (localProfile.knowledgebase.entries || []).filter(e => e.active !== false && e.content && e.content.trim()).length
+                : 0;
+            const animeOn = localProfile.animeMode && localProfile.animeMode.enabled;
+            let extras = "Ban list checked.";
+            if (kbActiveCount > 0) extras += ` Knowledgebase (${kbActiveCount} entr${kbActiveCount === 1 ? "y" : "ies"}) checked.`;
+            if (animeOn) extras += " Anime style active.";
+            prefill = prefill.replace("Ban list checked.", extras);
+            dict["[[prefill]]"] = prefill;
+        }
     } else {
         dict["[[COT]]"] = "";
     }
@@ -5265,6 +5530,29 @@ function buildBaseDict() {
         dict["[[onomato]]"] = onoRule;
     } else {
         dict["[[onomato]]"] = "";
+    }
+
+    if (localProfile.animeMode && localProfile.animeMode.enabled) {
+        const ap = (localProfile.animeMode.prompt && localProfile.animeMode.prompt.trim()) ? localProfile.animeMode.prompt.trim() : DEFAULT_ANIME_PROMPT;
+        dict["[[ANIMEMODE]]"] = ap;
+    } else {
+        dict["[[ANIMEMODE]]"] = "";
+    }
+
+    if (localProfile.knowledgebase && localProfile.knowledgebase.enabled) {
+        const activeEntries = (localProfile.knowledgebase.entries || []).filter(e => e.active !== false && e.content && e.content.trim());
+        if (activeEntries.length > 0) {
+            let kbXML = "<knowledgebase>\n";
+            activeEntries.forEach(e => {
+                kbXML += `<entry title="${e.title.replace(/"/g, "'")}">\n${e.content.trim()}\n</entry>\n\n`;
+            });
+            kbXML += "</knowledgebase>";
+            dict["[[knowledgebase]]"] = kbXML;
+        } else {
+            dict["[[knowledgebase]]"] = "";
+        }
+    } else {
+        dict["[[knowledgebase]]"] = "";
     }
 
     // MVU Logic
@@ -5371,6 +5659,20 @@ function buildBaseDict() {
     if (effort !== "unspecified" && dict["[[COT]]"]) {
         let words = effort === "custom" ? (localProfile.customThinkEffort || "100") : effort;
         dict["[[COT]]"] = `Your Thinking must not be more than ${words} words.\n\n` + dict["[[COT]]"];
+    }
+
+    // Knowledgebase CoT compliance step
+    if (localProfile.knowledgebase && localProfile.knowledgebase.enabled && dict["[[COT]]"]) {
+        const kbActive = (localProfile.knowledgebase.entries || []).filter(e => e.active !== false && e.content && e.content.trim());
+        if (kbActive.length > 0) {
+            const entryList = kbActive.map(e => `- "${e.title}"`).join("\n");
+            dict["[[COT]]"] += `\n\nKNOWLEDGEBASE CHECK (mandatory):\nThe following knowledgebase entries define active rules, mechanics, or behavioral constraints for this session:\n${entryList}\nBefore writing your response, verify it is fully consistent with each entry above. If any entry defines specific mechanics (e.g., hypnosis, magic systems, specific tropes or behavioral rules), your response must honor those rules without exception.`;
+        }
+    }
+
+    // Anime Mode CoT style compliance step
+    if (localProfile.animeMode && localProfile.animeMode.enabled && dict["[[COT]]"]) {
+        dict["[[COT]]"] += `\n\nANIME STYLE CHECK (mandatory):\nAnime Mode is active. Before finalizing your response, verify:\n- Dialogue has the right emotional register — loud when flustered, quiet when vulnerable. Verbal affectations (if any) are used sparingly and feel natural to the character.\n- Physical reactions are appropriately exaggerated — flushing, freezing, stuttering, sweat-drop moments land where the scene calls for them.\n- Tropes are leaned into organically — tsundere deflection, stoic-who-cares dynamics, dense obliviousness, rivalry-as-tension. Do not announce them, embody them.\n- Romantic or emotional beats get manga-panel pacing — proximity, touch, eye contact held too long. Let them breathe.\n- Internal monologue breaks in italics where it adds impact.\nIf this scene has none of these elements, skip the check. Only apply what the moment genuinely calls for.`;
     }
 
     // Story Planner Injection
@@ -5789,7 +6091,7 @@ async function handlePromptInjection(data, type) {
             });
 
             // Cleanup unused tags (Removes the tag AND the line break)
-            ["[[long-Memory]]", "[[Short-memory]]", "[[prompt1]]", "[[prompt2]]", "[[prompt3]]", "[[prompt4]]", "[[prompt5]]", "[[prompt6]]", "[prompt1]", "[prompt2]", "[prompt3]", "[prompt4]", "[prompt5]", "[prompt6]", "[[AI1]]", "[[AI2]]", "[[main]]", "[[OOC]]", "[[control]]", "[[aiprompt]]", "[[death]]", "[[combat]]", "[[Direct]]", "[[DN]]", "[[COLOR]]", "[[infoblock]]", "[[summary]]", "[[cyoa]]", "[[COT]]", "[[prefill]]", "[[order]]", "[[Language]]", "[[pronouns]]", "[[banlist]]", "[[count]]", "[[MVU]]", "[[img1]]", "[[img2]]", "[[storyplan]]", "[[storytracker]]", "[[DNRATIO]]", "[[THINK]]", "[[onomato]]", "[[npc_events]]", "[[cyoa2]]", "[[infoblock2]]", "[[summary2]]", "[[storytracker2]]", "[[npc_inner_chatter]]", "[[npc_inner_chatter2]]", "[[npc_dossier]]", "[[npc_dossier2]]", "[[npc list]]"].forEach(tr => {
+            ["[[long-Memory]]", "[[Short-memory]]", "[[prompt1]]", "[[prompt2]]", "[[prompt3]]", "[[prompt4]]", "[[prompt5]]", "[[prompt6]]", "[prompt1]", "[prompt2]", "[prompt3]", "[prompt4]", "[prompt5]", "[prompt6]", "[[AI1]]", "[[AI2]]", "[[main]]", "[[OOC]]", "[[control]]", "[[aiprompt]]", "[[death]]", "[[combat]]", "[[Direct]]", "[[DN]]", "[[COLOR]]", "[[infoblock]]", "[[summary]]", "[[cyoa]]", "[[COT]]", "[[prefill]]", "[[order]]", "[[Language]]", "[[pronouns]]", "[[banlist]]", "[[count]]", "[[MVU]]", "[[img1]]", "[[img2]]", "[[storyplan]]", "[[storytracker]]", "[[DNRATIO]]", "[[THINK]]", "[[onomato]]", "[[ANIMEMODE]]", "[[knowledgebase]]", "[[npc_events]]", "[[cyoa2]]", "[[infoblock2]]", "[[summary2]]", "[[storytracker2]]", "[[npc_inner_chatter]]", "[[npc_inner_chatter2]]", "[[npc_dossier]]", "[[npc_dossier2]]", "[[npc list]]"].forEach(tr => {
                 if (msg.content.includes(tr)) {
                     msg.content = msg.content.replace(new RegExp(`^[ \\t]*${escapeRegex(tr)}[ \\t]*\\r?\\n?`, 'gm'), "");
                     msg.content = msg.content.replace(new RegExp(escapeRegex(tr), 'g'), ""); // Catch-all for inline tags
@@ -5798,6 +6100,115 @@ async function handlePromptInjection(data, type) {
 
             // Final Sweep: Collapse 3 or more blank lines into a standard double line break
             msg.content = msg.content.replace(/(?:\r?\n[ \t]*){3,}/g, '\n\n');
+        }
+    }
+
+    // --- V8-SPECIFIC FEATURE INJECTION ---
+    // V8's active prompts contain no [[macros]], so features must be injected directly.
+    if (localProfile.mode === "v8") {
+        const v8Parts = [];
+
+        // Ban List
+        if (localProfile.banList && localProfile.banList.length > 0) {
+            const cats = localProfile.banListCategories || {};
+            const banStr = localProfile.banList.map(b => {
+                const cat = cats[b] || "both";
+                if (cat === "dialogue") return `- [Dialogue only] ${b}`;
+                if (cat === "narration") return `- [Narration only] ${b}`;
+                return `- ${b}`;
+            }).join("\n");
+            v8Parts.push(`<BAN_LIST>\nThese phrases, clichés, and patterns are permanently banned and must not appear in any form:\n${banStr}\n</BAN_LIST>`);
+        }
+
+        // Knowledgebase
+        if (localProfile.knowledgebase && localProfile.knowledgebase.enabled) {
+            const kbActive = (localProfile.knowledgebase.entries || []).filter(e => e.active !== false && e.content && e.content.trim());
+            if (kbActive.length > 0) {
+                let kbXML = "<knowledgebase>\n";
+                kbActive.forEach(e => { kbXML += `<entry title="${e.title.replace(/"/g, "'")}">\n${e.content.trim()}\n</entry>\n\n`; });
+                kbXML += "</knowledgebase>";
+                v8Parts.push(kbXML);
+            }
+        }
+
+        // Story Plan (active milestones or full plan)
+        if (localProfile.storyPlan && localProfile.storyPlan.enabled && localProfile.storyPlan.currentPlan) {
+            const sp = localProfile.storyPlan;
+            let planText = sp.currentPlan;
+            if (sp.milestones && sp.milestones.length > 0) {
+                const activeMilestones = sp.milestones.filter(m => !m.done);
+                planText = activeMilestones.length > 0 ? activeMilestones.map(m => m.text).join("\n") : "";
+            }
+            if (planText.trim()) v8Parts.push(`<STORY_PLAN>\n${planText.trim()}\n</STORY_PLAN>`);
+        }
+
+        // Anime Mode
+        if (localProfile.animeMode && localProfile.animeMode.enabled) {
+            const ap = (localProfile.animeMode.prompt && localProfile.animeMode.prompt.trim()) ? localProfile.animeMode.prompt.trim() : DEFAULT_ANIME_PROMPT;
+            v8Parts.push(ap);
+        }
+
+        // NPC List (relevance-scored, already built in dict)
+        if (dict["[[npc list]]"] && dict["[[npc list]]"].trim()) {
+            v8Parts.push(dict["[[npc list]]"]);
+        }
+
+        // NPC Dossier template (so V8 knows how to format new NPCs it detects)
+        if (localProfile.npcBank && localProfile.npcBank.enabled) {
+            const nbPrompts = (localProfile.npcBank.customPrompts) || DEFAULT_PROMPTS.npcBank;
+            v8Parts.push(nbPrompts.dossierTemplate);
+        }
+
+        // Writing Style (aiRule)
+        if (localProfile.aiRule && localProfile.aiRule.trim()) {
+            v8Parts.push(`<WRITING_STYLE>\n${localProfile.aiRule.trim()}\n</WRITING_STYLE>`);
+        }
+
+        // Onomatopoeia
+        if (dict["[[onomato]]"] && dict["[[onomato]]"].trim()) {
+            v8Parts.push(`<STYLE_DIRECTIVE>\n${dict["[[onomato]]"].trim()}\n</STYLE_DIRECTIVE>`);
+        }
+
+        // D/N Ratio
+        if (dict["[[DNRATIO]]"] && dict["[[DNRATIO]]"].trim()) {
+            v8Parts.push(`<STYLE_DIRECTIVE>\n${dict["[[DNRATIO]]"].trim()}\n</STYLE_DIRECTIVE>`);
+        }
+
+        // Story Tracker arc status (injected so V8 is aware of current arc/chapter/episode)
+        if (dict["[[storytracker]]"] && dict["[[storytracker]]"].trim()) {
+            v8Parts.push(dict["[[storytracker]]"]);
+        }
+
+        if (v8Parts.length > 0) {
+            const featureBlock = `\n\n<ACTIVE_SESSION_RULES>\n${v8Parts.join("\n\n")}\n</ACTIVE_SESSION_RULES>`;
+
+            // Find the output_rules message by its unique content signature
+            const rulesMsg = messages.find(m => m.content && m.content.includes('RULES_final_reminder'));
+            if (rulesMsg) {
+                // Make the ban list reference in the final reminder point to the injected content
+                if (localProfile.banList && localProfile.banList.length > 0) {
+                    rulesMsg.content = rulesMsg.content.replace(
+                        'Re-read the ban list.',
+                        'Apply every rule in <BAN_LIST> from <ACTIVE_SESSION_RULES> — banned phrases must not appear in any form.'
+                    );
+                }
+                // Extend step 7 (Final Compliance Check) with active feature checks
+                const complianceChecks = [];
+                if (localProfile.banList && localProfile.banList.length > 0) complianceChecks.push('Verify no banned phrase from <BAN_LIST> appears.');
+                if (localProfile.knowledgebase && localProfile.knowledgebase.enabled) complianceChecks.push('Verify full compliance with all active <knowledgebase> entries.');
+                if (localProfile.animeMode && localProfile.animeMode.enabled) complianceChecks.push('Verify anime style directives are applied where the scene calls for them.');
+                if (complianceChecks.length > 0) {
+                    rulesMsg.content = rulesMsg.content.replace(
+                        '7. Final Compliance Check: Verify the Absolute PC Boundary is intact (zero user piloting) and that the response will perfectly match the required structure in <RULES_response_construction>.',
+                        `7. Final Compliance Check: Verify the Absolute PC Boundary is intact (zero user piloting) and that the response will perfectly match the required structure in <RULES_response_construction>. ${complianceChecks.join(' ')}`
+                    );
+                }
+                // Append the full feature block at the end of the output_rules message
+                rulesMsg.content += featureBlock;
+            } else {
+                // Fallback: prepend as a system message if signature not found
+                messages.unshift({ role: "system", content: `<ACTIVE_SESSION_RULES>\n${v8Parts.join("\n\n")}\n</ACTIVE_SESSION_RULES>` });
+            }
         }
     }
 
