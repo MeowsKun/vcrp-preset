@@ -7,8 +7,10 @@ import { Popup, POPUP_TYPE } from "../../../popup.js";
 import { hardcodedLogic } from "./data/database.js";
 import { VCRP_PLACEHOLDERS, RESOLUTIONS } from "./data/image_data.js";
 
-const extensionName = "VCRP";
-const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
+const extensionName = "VCRP"; // settings-storage key only — keep stable so saved profiles persist
+// Derive the actual installed folder path from this module's own URL, so the extension works
+// regardless of the folder name it was installed under (e.g. "vcrp-preset" from a git install, or "VCRP").
+const extensionFolderPath = new URL(".", import.meta.url).pathname.replace(/^\/+/, "").replace(/\/+$/, "");
 const TARGET_PRESET_NAME = "VCRP Engine";
 
 const DEFAULT_PROMPTS = {
@@ -17,7 +19,7 @@ const DEFAULT_PROMPTS = {
         userPrompt: "Task: Brainstorm a minimum of 10 theoretical, medium-to-long-term plot developments based on the story so far.\n\nStrict Rules & Constraints:\n1. DO NOT write the immediate next scene. Skip past the current moment and look ahead to future structural milestones.\n2. Use Narrative Structure, NOT Timeframes: Do not use phrases like \"three days later\" or \"next month.\" Instead, frame every idea as a theoretical future Arc, Chapter, or Episode.\n3. Create a Menu of Possibilities: Treat this list as a theoretical menu of branching paths. Focus on major plot shifts, new character introductions, or escalating conflicts that could anchor a future chapter.\n4. Zero Agency Theft: You are STRICTLY FORBIDDEN from writing dialogue, actions, thoughts, or emotional reactions for {{user}}. You must never describe what {{user}} does, feels, or says under any circumstances.\n5. No Assumptions or Suggestions: Do not predict, suggest, or assume what {{user}} will do next. Never end a response by telling or hinting at what {{user}} should do.\n\nFormat & Style: Keep the ideas punchy, plot-focused, and clearly labeled by narrative structure.",
         thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main text must immediately follow </think>.\n<think>\nReflect in approximately 100–150 words as a seamless paragraph.\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\nEvery response must follow this exact structure in this exact order:\n<think>\n{Thinking}\n</think>\n<plot>\n{main response}\n</plot>",
         injectionTemplate: "<Story_Plan>\nThis is a possible event for the story, take from it:\n{{planText}}\n</Story_Plan>",
-        trackerTemplate: "<Story_Tracker>\narc: The Arc that is now active.\nchapter: The chapter that is now active.\nEpisode: The episode that is now active.\nSecrets: Any secret that the user/{{user}} doesn't know.\n</Story_Tracker>"
+        trackerTemplate: "STORY ARC BLOCK — append this as the VERY LAST thing in every response, placed BELOW the NPC Inner Chatter block. This is always the final block:\n<details>\n<summary>📖 <b>Story Arc</b></summary>\n\n**🎬 Current Arc:** [The name/title of the story arc currently in play]\n**📝 Description:** [1–2 sentences: what this arc is about — its central goal, conflict, or question]\n**📊 Progress:** [How close this arc is to its resolution. Give a phase + rough percentage, e.g. \"Setup (~15%)\", \"Rising action (~45%)\", \"Climax imminent (~80%)\", \"Resolving (~95%)\". Judge by how many of the arc's key beats have already played out.{{progressHint}}]\n</details>\n</Story_Arc>"
     },
     banList: {
         systemPrompt: "You are an expert literary critique. Analyze the provided chat history and identify the 5 most repetitive, cliché, or overused stylistic patterns or crutch phrases the writer relies on. Instead of quoting the exact phrase, write a short, generalized rule forbidding the underlying trope. Return ONLY the 5 rules separated by commas. Do not explain them. Do not use quotes or numbers.",
@@ -54,11 +56,40 @@ const DEFAULT_PROMPTS = {
 const DEFAULT_ANIME_PROMPT = `[ANIME MODE — ACTIVE]
 Narrate and write dialogue with the tone, rhythm, and stylistic energy of anime and manga.
 
-Speech: Characters use light verbal affectations in character (honorifics like -chan/-kun/-senpai, exclamations like "ne~?", "uso!", "mou~", "ehh?!"). Use sparingly — flavor, not parody. Characters speak their feelings loudly when flustered and whisper them when vulnerable.
+Speech: Characters use light verbal affectations in character (honorifics like -chan/-kun/-senpai, exclamations like "ne~?", "uso!", "mou~", "ehh?!"). Use sparingly, for flavor, not parody. Characters speak their feelings loudly when flustered and whisper them when vulnerable.
 Reactions: Exaggerated physical cues — flushed cheeks, stuttering, going rigid, sweat-drop social anxiety, the sudden freeze of someone caught off guard. Characters ramble incoherently when emotionally overwhelmed ("I— you— wha— huh?!").
 Tropes: Tsundere deflection, dense obliviousness to obvious feelings, the stoic who quietly cares, rivalry wrapped in complicated emotions. Lean into them naturally, don't announce them.
-Tension: Romantic and emotional beats get manga-panel focus — accidental touch, held eye contact, proximity, the breath held just before something is said. Let them linger.
-Narration: Internal monologue can break in as italicized intrusion. Dramatic moments narrated with momentum — slow-motion detail, the world narrowing to a single point, inner fire given form.`;
+Tension: Romantic and emotional beats get manga-panel focus: accidental touch, held eye contact, proximity, the breath held just before something is said. Let them linger.
+Narration: Internal monologue can break in as italicized intrusion. Dramatic moments narrated with momentum: slow-motion detail, the world narrowing to a single point, inner fire given form.`;
+
+// Built-in knowledgebase entries seeded once on first install.
+// Users can edit, toggle, or delete these freely; deletions stick (see initProfile seeding).
+function makeDefaultKbEntries() {
+    const t = Date.now();
+    return [
+        {
+            id: "kb_default_writing",
+            title: "Writing Quality Baseline",
+            content: "Always show through concrete action, sensation, and behavior rather than naming emotions outright. Avoid abstract summary (\"she felt nervous\") in favor of physical evidence (\"her thumb worried the hem of her sleeve\"). Keep prose grounded and specific: real textures, weights, temperatures, sounds. No purple prose, no recycled clichés, no melodrama. Every paragraph should advance the scene, reveal character, or deepen sensation, never tread water.",
+            active: true,
+            timestamp: t
+        },
+        {
+            id: "kb_default_hypnosis",
+            title: "Hypnosis Mechanics (example)",
+            content: "Use this framework whenever hypnosis, trance, or conditioning appears in the story. Adjust or delete if your setting works differently.\n\n- Induction: Trance is reached gradually through focus (a fixed point, a voice, repetition, rhythm), not instantly. Resistance, distraction, or disbelief slows or breaks it.\n- Depth: Track a rough depth, from light (relaxed, suggestible but aware), to medium (compliant, fuzzy, fewer inhibitions), to deep (highly pliable, narrowed awareness). Deeper states take longer to reach and to leave.\n- Suggestibility: Subjects accept suggestions that don't violate their core values easily; suggestions that do are resisted, cause distress, or fail. Repetition and depth increase what holds.\n- Triggers: Post-hypnotic triggers (a word, gesture, sound) can be installed and later fire, but only ones that were actually established earlier in the story.\n- Aftereffects: Coming out is groggy and disoriented. Memory of trance may be hazy or absent depending on what was suggested. Effects fade over time unless reinforced.\n\nKeep it internally consistent: never have hypnosis do something it hasn't been set up to do.",
+            active: true,
+            timestamp: t
+        },
+        {
+            id: "kb_default_trope",
+            title: "Character Trope Guidance",
+            content: "When a character leans on a trope (tsundere, stoic protector, femme fatale, golden retriever himbo, etc.), treat the trope as a starting flavor, never the whole person. Rules:\n- The trope shapes default reactions, but real motivations, fears, and contradictions sit underneath and surface under pressure.\n- Never announce the trope or play it as parody. A tsundere doesn't say \"it's not like I like you\" on cue; they deflect in a way specific to who they are.\n- Let the character break their own trope when the moment earns it; that contrast is where they feel human.\n- Consistency over caricature: the same person across every scene, not a costume swapped per beat.",
+            active: true,
+            timestamp: t
+        }
+    ];
+}
 
 // -------------------------------------------------------------
 // STATE MANAGEMENT
@@ -147,6 +178,9 @@ function initProfile() {
         knowledgebase: {
             enabled: false,
             entries: []
+        },
+        director: {
+            nudge: ""
         },
         addons: [],
         blocks: [],
@@ -270,6 +304,15 @@ function initProfile() {
     if (!localProfile.onomatopoeia) localProfile.onomatopoeia = defaults.onomatopoeia;
     if (!localProfile.animeMode) localProfile.animeMode = { enabled: false, prompt: "" };
     if (!localProfile.knowledgebase) localProfile.knowledgebase = { enabled: false, entries: [] };
+    // Seed built-in default entries exactly once. The `seeded` flag ensures that if the user
+    // later deletes them, they do NOT come back on the next load.
+    if (localProfile.knowledgebase.seeded === undefined) {
+        if (!localProfile.knowledgebase.entries || localProfile.knowledgebase.entries.length === 0) {
+            localProfile.knowledgebase.entries = makeDefaultKbEntries();
+        }
+        localProfile.knowledgebase.seeded = true;
+    }
+    if (!localProfile.director) localProfile.director = { nudge: "" };
     if (localProfile.disableUtilityPrefill === undefined) localProfile.disableUtilityPrefill = false;
     if (!localProfile.userWordCountType) localProfile.userWordCountType = "max"; 
 
@@ -1915,6 +1958,20 @@ function renderPromptEditor(config) {
 function renderStoryPlanner(c) {
     c.empty();
     const sp = localProfile.storyPlan;
+    if (!localProfile.director) localProfile.director = { nudge: "" };
+
+    // One-shot Director directives — clicking a chip arms it for the next reply.
+    const directorPresets = [
+        { icon: "fa-bolt", label: "Escalate", text: "Escalate the tension and stakes this response. Push the scene forward with real momentum; do not stall or tread water." },
+        { icon: "fa-hourglass-half", label: "Slow burn", text: "Slow the pace right down. Lean into small sensory detail, restraint, and simmering tension rather than plot movement." },
+        { icon: "fa-bomb", label: "Complication", text: "Introduce a fresh, unexpected complication or obstacle that raises the stakes naturally from the current situation." },
+        { icon: "fa-user", label: "Focus an NPC", text: "Shift the spotlight onto an NPC: give them a meaningful action, decision, or moment driven by their own agenda." },
+        { icon: "fa-forward", label: "Time skip", text: "Skip forward in time to the next meaningful moment. Open already in motion at the new point, with a brief temporal marker." },
+        { icon: "fa-flag-checkered", label: "Wrap scene", text: "Bring this scene toward a natural close or transition, tying off the immediate beat cleanly." }
+    ];
+    const directorBtns = directorPresets.map(p =>
+        `<button class="ps-modern-btn secondary director_quick_btn" data-text="${p.text.replace(/"/g, '&quot;')}" style="padding:4px 10px; font-size:0.7rem;"><i class="fa-solid ${p.icon}"></i> ${p.label}</button>`
+    ).join("");
 
     // Build arc status HTML
     const arc = sp.arcStatus;
@@ -1938,7 +1995,7 @@ function renderStoryPlanner(c) {
                 </div>
                 <div>
                     <h2>Story Planner</h2>
-                    <p>Brainstorm and track plot milestones automatically.</p>
+                    <p>Brainstorm plot milestones and append a live Story Arc block to every reply.</p>
                 </div>
             </div>
             <div id="sp_header_badge" class="mtab-header-badge" style="background: ${sp.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${sp.enabled ? '#10b981' : 'var(--text-muted)'}; border: 1px solid ${sp.enabled ? 'rgba(16,185,129,0.25)' : 'var(--border-color)'};">
@@ -1953,6 +2010,18 @@ function renderStoryPlanner(c) {
                 <div class="toggle-desc">Enable, then hit "Generate Plan Now" — the AI brainstorms future plot milestones and injects them into the context automatically.</div>
             </div>
             <div class="ps-switch"></div>
+        </div>
+
+        <!-- DIRECTOR / SCENE NUDGE (one-shot; works whether or not the planner is enabled) -->
+        <div class="mtab-panel" style="margin-bottom: 20px; border-left: 3px solid #ec4899;">
+            <div class="mtab-panel-title" style="color:#f472b6; margin-bottom: 4px;"><i class="fa-solid fa-clapperboard"></i> Director — Scene Nudge</div>
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:10px;">A one-shot directive injected into your <b>next reply only</b>, then it clears itself. Steer a single beat without touching any permanent setting.</div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${directorBtns}</div>
+            <textarea id="director_nudge_input" class="ps-modern-input" placeholder="Type a one-off instruction for the next response (e.g. 'have Mira finally say what she's been hiding')..." style="width:100%; height:68px; resize:vertical; font-size:0.78rem; line-height:1.5;">${(localProfile.director.nudge || "").replace(/</g, "&lt;")}</textarea>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:8px;">
+                <span id="director_status" style="font-size:0.7rem; font-weight:600;"></span>
+                <button id="director_clear_btn" class="ps-modern-btn secondary" style="padding:4px 10px; font-size:0.72rem; color:#ef4444; border-color:rgba(239,68,68,0.3); flex-shrink:0;"><i class="fa-solid fa-xmark"></i> Clear</button>
+            </div>
         </div>
 
         <div id="sp_main_content" style="display: ${sp.enabled ? 'block' : 'none'};">
@@ -2065,7 +2134,7 @@ function renderStoryPlanner(c) {
             { key: "userPrompt", label: "User Task Prompt", hint: "Tokens: <code>{{user}}</code>" },
             { key: "thinkingPrompt", label: "Thinking Instructions", hint: "Must include output ordering instructions." },
             { key: "injectionTemplate", label: "Story Plan Injection Template", hint: "Tokens: <code>{{planText}}</code>" },
-            { key: "trackerTemplate", label: "Story Tracker Template", hint: "Tokens: <code>{{user}}</code>" }
+            { key: "trackerTemplate", label: "Story Arc Block Template", hint: "Appended at the bottom of every reply (current arc, description, progress). Token: <code>{{progressHint}}</code> auto-fills milestone completion." }
         ],
         onSave: (val, key) => {
             if (!sp.customPrompts) sp.customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS.storyPlan));
@@ -2079,6 +2148,36 @@ function renderStoryPlanner(c) {
         }
     });
     c.find('#sp_main_content').append(spEditor);
+
+    // ── Director / Scene Nudge listeners ──
+    const refreshDirectorStatus = () => {
+        const armed = !!(localProfile.director.nudge && localProfile.director.nudge.trim());
+        $("#director_status").html(armed
+            ? `<span style="color:#f472b6;"><i class="fa-solid fa-circle-check"></i> Armed — applies to your next reply, then clears.</span>`
+            : `<span style="color:var(--text-muted);">No directive set.</span>`);
+    };
+    refreshDirectorStatus();
+
+    $(".director_quick_btn").on("click", function () {
+        localProfile.director.nudge = $(this).attr("data-text");
+        $("#director_nudge_input").val(localProfile.director.nudge);
+        saveProfileToMemory();
+        refreshDirectorStatus();
+        toastr.success("Scene nudge armed for your next reply.");
+    });
+
+    $("#director_nudge_input").on("input", function () {
+        localProfile.director.nudge = $(this).val();
+        saveProfileToMemory();
+        refreshDirectorStatus();
+    });
+
+    $("#director_clear_btn").on("click", function () {
+        localProfile.director.nudge = "";
+        $("#director_nudge_input").val("");
+        saveProfileToMemory();
+        refreshDirectorStatus();
+    });
 
     // ── Listeners ──
     $("#sp_enable_card").on("click", function () {
@@ -3431,7 +3530,7 @@ function renderKnowledgebase(c) {
         <div class="mtab-toggle-row ${kb.enabled ? 'active' : ''}" id="kb_enable_card" style="margin-bottom: 20px;">
             <div class="toggle-info">
                 <div class="toggle-label"><i class="fa-solid fa-book-open" style="color:#6366f1;"></i> Enable Knowledgebase</div>
-                <div class="toggle-desc">All active entries are injected into every prompt. Use this for complex rules, hypnosis mechanics, magic systems, or any lore the AI must always know.</div>
+                <div class="toggle-desc">Active entries are injected into the prompt: always-on by default, or only when their trigger keywords appear in recent chat. Use this for complex rules, hypnosis mechanics, magic systems, or any lore the AI must know.</div>
             </div>
             <div class="ps-switch"></div>
         </div>
@@ -3469,7 +3568,7 @@ function renderKnowledgebase(c) {
 
     $("#kb_btn_add").on("click", function () {
         if (!kb.entries) kb.entries = [];
-        kb.entries.push({ id: "kb_" + Date.now(), title: "New Entry", content: "", active: true, timestamp: Date.now() });
+        kb.entries.push({ id: "kb_" + Date.now(), title: "New Entry", content: "", active: true, triggers: "", timestamp: Date.now() });
         saveProfileToMemory();
         renderKbList();
         // Auto-expand the new card
@@ -3504,6 +3603,8 @@ function renderKbList() {
     kb.entries.forEach((entry, idx) => {
         const isActive = entry.active !== false;
         const hasContent = entry.content && entry.content.trim().length > 0;
+        const triggersRaw = (entry.triggers || "").trim();
+        const isTriggered = triggersRaw.length > 0;
 
         const card = $(`
             <div class="kb-entry-card" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(99,102,241,${isActive ? '0.25' : '0.1'}); border-radius: 10px; overflow: hidden; transition: border-color 0.2s, opacity 0.2s; opacity: ${isActive ? '1' : '0.5'};" data-idx="${idx}">
@@ -3514,6 +3615,9 @@ function renderKbList() {
                         data-idx="${idx}" />
                     <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
                         ${!hasContent ? `<span style="font-size:0.58rem; color:#f59e0b; opacity:0.8;"><i class="fa-solid fa-triangle-exclamation"></i> Empty</span>` : ''}
+                        <span title="${isTriggered ? 'Injected only when a trigger keyword appears in recent chat' : 'Always injected while active'}" style="display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:8px; font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; flex-shrink:0; ${isTriggered ? 'background:rgba(245,158,11,0.14); color:#f59e0b; border:1px solid rgba(245,158,11,0.3);' : 'background:rgba(16,185,129,0.12); color:#10b981; border:1px solid rgba(16,185,129,0.25);'}">
+                            <i class="fa-solid ${isTriggered ? 'fa-key' : 'fa-infinity'}" style="font-size:0.5rem;"></i>${isTriggered ? 'Keyed' : 'Always'}
+                        </span>
                         <span class="kb-active-pill kb_active_toggle" data-idx="${idx}" style="display:inline-flex; align-items:center; gap:3px; padding:2px 8px; border-radius:8px; font-size:0.6rem; font-weight:700; cursor:pointer; text-transform:uppercase; letter-spacing:0.4px; flex-shrink:0; ${isActive ? 'background:rgba(99,102,241,0.18); color:#818cf8; border:1px solid rgba(99,102,241,0.35);' : 'background:rgba(107,114,128,0.12); color:#6b7280; border:1px solid rgba(107,114,128,0.2);'}">
                             <i class="fa-solid ${isActive ? 'fa-eye' : 'fa-eye-slash'}" style="font-size:0.55rem;"></i>${isActive ? 'Active' : 'Off'}
                         </span>
@@ -3527,6 +3631,15 @@ function renderKbList() {
                     <div style="font-size: 0.63rem; color: var(--text-muted); margin-top: 5px; display:flex; justify-content:space-between;">
                         <span>Injected inside <code style="background:rgba(255,255,255,0.07); padding:1px 4px; border-radius:3px;">&lt;entry title="${entry.title}"&gt;</code> in the rules block.</span>
                         <span id="kb_char_count_${idx}" style="color: ${entry.content.length > 2000 ? '#ef4444' : 'var(--text-muted)'};">${entry.content.length} chars</span>
+                    </div>
+                    <div style="margin-top: 10px; padding-top: 9px; border-top: 1px dashed rgba(99,102,241,0.15);">
+                        <label style="display:block; font-size:0.63rem; color:#818cf8; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;">
+                            <i class="fa-solid fa-key" style="font-size:0.55rem;"></i> Trigger Keywords <span style="color:var(--text-muted); font-weight:400; text-transform:none; letter-spacing:0;">(optional, comma-separated)</span>
+                        </label>
+                        <input type="text" class="ps-modern-input kb-triggers-input" data-idx="${idx}" value="${triggersRaw.replace(/"/g, '&quot;')}"
+                            placeholder="e.g. hypnosis, trance, spiral — leave blank to always inject"
+                            style="width:100%; font-size:0.72rem;" />
+                        <div style="font-size:0.6rem; color:var(--text-muted); margin-top:4px;">Leave blank = always injected. With keywords, this entry only injects when one appears in recent chat (saves tokens).</div>
                     </div>
                 </div>
             </div>
@@ -3558,6 +3671,14 @@ function renderKbList() {
             kb.entries[i].content = $(this).val();
             saveProfileToMemory();
         });
+
+        // Trigger keywords edit (re-render to refresh the Always/Keyed badge)
+        card.find(".kb-triggers-input").on("change", function () {
+            const i = parseInt($(this).attr("data-idx"));
+            kb.entries[i].triggers = $(this).val();
+            saveProfileToMemory();
+            renderKbList();
+        }).on("click", e => e.stopPropagation()).on("keydown", e => { if (e.key === "Enter") e.target.blur(); });
 
         // Active toggle
         card.find(".kb_active_toggle").on("click", function (e) {
@@ -5420,6 +5541,36 @@ $("body").on("input", "#ps_main_current_rule", function () {
 // -------------------------------------------------------------
 // EVENT LISTENERS & INITS
 // -------------------------------------------------------------
+// Returns the knowledgebase entries that should be injected right now.
+// Entries with no trigger words are always-on; entries WITH trigger words inject only when
+// one of their keywords appears in recent chat context (lorebook-style, to save tokens).
+function getInjectableKbEntries() {
+    const kb = localProfile && localProfile.knowledgebase;
+    if (!kb || !kb.enabled) return [];
+    const active = (kb.entries || []).filter(e => e.active !== false && e.content && e.content.trim());
+    if (active.length === 0) return [];
+
+    // Only build the scan text if at least one entry is actually gated by triggers.
+    const hasTriggered = active.some(e => (e.triggers || "").trim());
+    let recentText = "";
+    if (hasTriggered) {
+        try {
+            const context = getContext();
+            if (context && context.chat) {
+                recentText = context.chat.filter(m => !m.is_system).slice(-6).map(m => vcrpCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
+            }
+        } catch (e) { /* no context available — treat triggered entries as dormant */ }
+    }
+
+    return active.filter(e => {
+        const raw = (e.triggers || "").trim();
+        if (!raw) return true; // always-on
+        const keywords = raw.split(",").map(k => k.trim().toLowerCase()).filter(Boolean);
+        if (keywords.length === 0) return true;
+        return keywords.some(k => recentText.includes(k));
+    });
+}
+
 function buildBaseDict() {
     const dict = {};
     if (!localProfile) return dict;
@@ -5493,9 +5644,7 @@ function buildBaseDict() {
         dict["[[COT]]"] = modData.content;
         if (modData.prefill) {
             let prefill = modData.prefill;
-            const kbActiveCount = localProfile.knowledgebase && localProfile.knowledgebase.enabled
-                ? (localProfile.knowledgebase.entries || []).filter(e => e.active !== false && e.content && e.content.trim()).length
-                : 0;
+            const kbActiveCount = getInjectableKbEntries().length;
             const animeOn = localProfile.animeMode && localProfile.animeMode.enabled;
             let extras = "Ban list checked.";
             if (kbActiveCount > 0) extras += ` Knowledgebase (${kbActiveCount} entr${kbActiveCount === 1 ? "y" : "ies"}) checked.`;
@@ -5540,7 +5689,7 @@ function buildBaseDict() {
     }
 
     if (localProfile.knowledgebase && localProfile.knowledgebase.enabled) {
-        const activeEntries = (localProfile.knowledgebase.entries || []).filter(e => e.active !== false && e.content && e.content.trim());
+        const activeEntries = getInjectableKbEntries();
         if (activeEntries.length > 0) {
             let kbXML = "<knowledgebase>\n";
             activeEntries.forEach(e => {
@@ -5663,7 +5812,7 @@ function buildBaseDict() {
 
     // Knowledgebase CoT compliance step
     if (localProfile.knowledgebase && localProfile.knowledgebase.enabled && dict["[[COT]]"]) {
-        const kbActive = (localProfile.knowledgebase.entries || []).filter(e => e.active !== false && e.content && e.content.trim());
+        const kbActive = getInjectableKbEntries();
         if (kbActive.length > 0) {
             const entryList = kbActive.map(e => `- "${e.title}"`).join("\n");
             dict["[[COT]]"] += `\n\nKNOWLEDGEBASE CHECK (mandatory):\nThe following knowledgebase entries define active rules, mechanics, or behavioral constraints for this session:\n${entryList}\nBefore writing your response, verify it is fully consistent with each entry above. If any entry defines specific mechanics (e.g., hypnosis, magic systems, specific tropes or behavioral rules), your response must honor those rules without exception.`;
@@ -5692,9 +5841,17 @@ function buildBaseDict() {
             dict["[[storyplan]]"] = "";
         }
 
-        // The refined tracker block you asked for
+        // The story arc block appended at the bottom of every response.
         const trackerTemplate = (localProfile.storyPlan.customPrompts && localProfile.storyPlan.customPrompts.trackerTemplate) || DEFAULT_PROMPTS.storyPlan.trackerTemplate;
-        dict["[[storytracker]]"] = trackerTemplate;
+        // If milestones are tracked, give the model a concrete progress anchor.
+        let progressHint = "";
+        if (sp.milestones && sp.milestones.length > 0) {
+            const total = sp.milestones.length;
+            const done = sp.milestones.filter(m => m.done).length;
+            const pct = Math.round((done / total) * 100);
+            progressHint = ` Tracked milestone completion: ${done} of ${total} (~${pct}%) — anchor your progress estimate near this figure.`;
+        }
+        dict["[[storytracker]]"] = trackerTemplate.split("{{progressHint}}").join(progressHint);
     } else {
         dict["[[storyplan]]"] = "";
         dict["[[storytracker]]"] = "";
@@ -6107,6 +6264,21 @@ async function handlePromptInjection(data, type) {
     // V8's active prompts contain no [[macros]], so features must be injected directly.
     if (localProfile.mode === "v8") {
         const v8Parts = [];
+        let directorActive = false;
+
+        // Director / Scene Nudge — a one-shot directive for THIS response only, then consumed.
+        if (localProfile.director && localProfile.director.nudge && localProfile.director.nudge.trim()) {
+            v8Parts.push(`<DIRECTOR_NOTE priority="high">\nOut-of-character directive for THIS response only. Follow it precisely while staying in-character and consistent with every other active rule:\n${localProfile.director.nudge.trim()}\n</DIRECTOR_NOTE>`);
+            directorActive = true;
+            // Consume it so it applies once and then clears.
+            localProfile.director.nudge = "";
+            saveProfileToMemory();
+            // If the Story Planner tab happens to be open, reflect the cleared state in the UI.
+            if (typeof $ !== "undefined" && $("#director_nudge_input").length) {
+                $("#director_nudge_input").val("");
+                $("#director_status").html('<span style="color:var(--text-muted);">No directive set.</span>');
+            }
+        }
 
         // Ban List
         if (localProfile.banList && localProfile.banList.length > 0) {
@@ -6120,9 +6292,9 @@ async function handlePromptInjection(data, type) {
             v8Parts.push(`<BAN_LIST>\nThese phrases, clichés, and patterns are permanently banned and must not appear in any form:\n${banStr}\n</BAN_LIST>`);
         }
 
-        // Knowledgebase
+        // Knowledgebase (always-on entries + trigger-matched entries)
         if (localProfile.knowledgebase && localProfile.knowledgebase.enabled) {
-            const kbActive = (localProfile.knowledgebase.entries || []).filter(e => e.active !== false && e.content && e.content.trim());
+            const kbActive = getInjectableKbEntries();
             if (kbActive.length > 0) {
                 let kbXML = "<knowledgebase>\n";
                 kbActive.forEach(e => { kbXML += `<entry title="${e.title.replace(/"/g, "'")}">\n${e.content.trim()}\n</entry>\n\n`; });
@@ -6164,17 +6336,15 @@ async function handlePromptInjection(data, type) {
             v8Parts.push(`<WRITING_STYLE>\n${localProfile.aiRule.trim()}\n</WRITING_STYLE>`);
         }
 
-        // Onomatopoeia
-        if (dict["[[onomato]]"] && dict["[[onomato]]"].trim()) {
-            v8Parts.push(`<STYLE_DIRECTIVE>\n${dict["[[onomato]]"].trim()}\n</STYLE_DIRECTIVE>`);
+        // Style directives (onomatopoeia + D/N ratio) — combined into a single block
+        const styleDirectives = [];
+        if (dict["[[onomato]]"] && dict["[[onomato]]"].trim()) styleDirectives.push(dict["[[onomato]]"].trim());
+        if (dict["[[DNRATIO]]"] && dict["[[DNRATIO]]"].trim()) styleDirectives.push(dict["[[DNRATIO]]"].trim());
+        if (styleDirectives.length > 0) {
+            v8Parts.push(`<STYLE_DIRECTIVE>\n${styleDirectives.join("\n")}\n</STYLE_DIRECTIVE>`);
         }
 
-        // D/N Ratio
-        if (dict["[[DNRATIO]]"] && dict["[[DNRATIO]]"].trim()) {
-            v8Parts.push(`<STYLE_DIRECTIVE>\n${dict["[[DNRATIO]]"].trim()}\n</STYLE_DIRECTIVE>`);
-        }
-
-        // Story Tracker arc status (injected so V8 is aware of current arc/chapter/episode)
+        // Story Arc block — appended as the final block of every response, below NPC Inner Chatter
         if (dict["[[storytracker]]"] && dict["[[storytracker]]"].trim()) {
             v8Parts.push(dict["[[storytracker]]"]);
         }
@@ -6194,14 +6364,25 @@ async function handlePromptInjection(data, type) {
                 }
                 // Extend step 7 (Final Compliance Check) with active feature checks
                 const complianceChecks = [];
+                if (directorActive) complianceChecks.push('Carry out the <DIRECTOR_NOTE> directive for this response.');
                 if (localProfile.banList && localProfile.banList.length > 0) complianceChecks.push('Verify no banned phrase from <BAN_LIST> appears.');
                 if (localProfile.knowledgebase && localProfile.knowledgebase.enabled) complianceChecks.push('Verify full compliance with all active <knowledgebase> entries.');
                 if (localProfile.animeMode && localProfile.animeMode.enabled) complianceChecks.push('Verify anime style directives are applied where the scene calls for them.');
+                if (localProfile.storyPlan && localProfile.storyPlan.enabled) complianceChecks.push('Verify the Story Arc block is appended as the final block, below NPC Inner Chatter, with current arc, description, and progress filled in.');
                 if (complianceChecks.length > 0) {
                     rulesMsg.content = rulesMsg.content.replace(
                         '7. Final Compliance Check: Verify the Absolute PC Boundary is intact (zero user piloting) and that the response will perfectly match the required structure in <RULES_response_construction>.',
                         `7. Final Compliance Check: Verify the Absolute PC Boundary is intact (zero user piloting) and that the response will perfectly match the required structure in <RULES_response_construction>. ${complianceChecks.join(' ')}`
                     );
+                }
+                // Story Planner: register the Story Arc block as BLOCK 4 in the canonical output order
+                if (localProfile.storyPlan && localProfile.storyPlan.enabled) {
+                    rulesMsg.content = rulesMsg.content.replace(
+                        '</RULES_response_construction>',
+                        'BLOCK 4 — Story Arc (output this LAST, below the NPC Inner Chatter block):\nAppend the <Story_Arc> block exactly as specified in <ACTIVE_SESSION_RULES>. This is always the final element of the response.\n</RULES_response_construction>'
+                    );
+                    // Remove the redundant one-line "Arc Phase:" from BLOCK 1 — the richer Story Arc block now owns arc state.
+                    rulesMsg.content = rulesMsg.content.replace(/^[^\n]*Arc Phase:[^\n]*\r?\n/m, "");
                 }
                 // Append the full feature block at the end of the output_rules message
                 rulesMsg.content += featureBlock;
@@ -6582,7 +6763,7 @@ function renderDevMode(view = "landing", selectedModeId = null, passedModeData =
         flow.append(createOverrideBlock("[[Direct]]", "direct", modeData.direct, [{ label: "No Change", value: "" }, { label: "Default", value: getAddon("direct") }]));
         flow.append(createOverrideBlock("[[DN]]", "dn", modeData.dn, [{ label: "No Change", value: "" }, { label: "Default", value: getAddon("dn") }]));
         flow.append(createOverrideBlock("[[COLOR]]", "dialogueColor", modeData.dialogueColor, [{ label: "No Change", value: "" }, { label: "Default", value: getAddon("color") }])); flow.append(createOverrideBlock("[[MVU]]", "mvu", modeData.mvu, [{ label: "No Change", value: "" }, { label: "Default", value: getBlock("mvu") }]));
-        flow.append(createOverrideBlock("[[storytracker]]", "storytracker", modeData.storytracker, [{ label: "No Change", value: "" }, { label: "Default", value: "# at the very end of the response put this block:\n<Story_Tracker>\narc: The Arc that is now active.\nchapter: The chapter that is now active.\nEpisode: The episode that is now active.\nSecrets: Any secret that the user/{{user}} doesn't know.\n</Story_Tracker>" }]));
+        flow.append(createOverrideBlock("[[storytracker]]", "storytracker", modeData.storytracker, [{ label: "No Change", value: "" }, { label: "Default", value: "STORY ARC BLOCK — append this as the VERY LAST thing in every response, below the NPC Inner Chatter block:\n<details>\n<summary>📖 <b>Story Arc</b></summary>\n\n**🎬 Current Arc:** [The name/title of the story arc currently in play]\n**📝 Description:** [1–2 sentences: what this arc is about — its central goal, conflict, or question]\n**📊 Progress:** [How close this arc is to its resolution — phase + rough percentage, e.g. \"Rising action (~45%)\", \"Climax imminent (~80%)\"]\n</details>\n</Story_Arc>" }]));
         flow.append(createOverrideBlock("[[npc_inner_chatter]]", "npc_inner_chatter", modeData.npc_inner_chatter, [
             { label: "No Change", value: "" },
             { label: "Default", value: getBlock("npc_inner_chatter") },

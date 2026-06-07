@@ -33,8 +33,16 @@ Image Generation · NPCs Bank · Memory Core
 
 ## Install
 
-1. Copy the `VCRP` folder into
-   `SillyTavern/public/scripts/extensions/third-party/VCRP`.
-   (The folder name **must** match the `extensionName` constant in `index.js`.)
-2. Restart / reload SillyTavern. Enable **VCRP** in Extensions.
-3. Import the preset(s) from `Presets/` via the SillyTavern preset panel.
+**Option A — Install from URL (recommended):** In SillyTavern, open
+Extensions → Install Extension and paste
+`https://github.com/MeowsKun/vcrp-preset`. It installs into
+`third-party/vcrp-preset` and works as-is — no renaming needed.
+
+**Option B — Manual:** Copy the extension folder into
+`SillyTavern/public/scripts/extensions/third-party/`. Any folder name works
+(e.g. `vcrp-preset` or `VCRP`); the extension detects its own path at runtime.
+
+Then:
+
+1. Restart / reload SillyTavern. Enable **VCRP** in Extensions.
+2. Import the preset(s) from `Presets/` via the SillyTavern preset panel.
