@@ -54,13 +54,32 @@ const DEFAULT_PROMPTS = {
 };
 
 const DEFAULT_ANIME_PROMPT = `[ANIME MODE - ACTIVE]
-Narrate and write dialogue with the tone, rhythm, and stylistic energy of anime and manga.
+Write the roleplay as a scene from an anime or manga. This is not light flavor; it must noticeably reshape dialogue, narration, and how the plot moves whenever the scene allows. While this mode is active, its heightened anime framing takes precedence over the default "grounded, proportional, low-melodrama" narration guidance. Apply it naturally, never as winking parody.
 
-Speech: Characters use light verbal affectations in character (honorifics like -chan/-kun/-senpai, exclamations like "ne~?", "uso!", "mou~", "ehh?!"). Use sparingly, for flavor, not parody. Characters speak their feelings loudly when flustered and whisper them when vulnerable.
-Reactions: Exaggerated physical cues - flushed cheeks, stuttering, going rigid, sweat-drop social anxiety, the sudden freeze of someone caught off guard. Characters ramble incoherently when emotionally overwhelmed ("I- you- wha- huh?!").
-Tropes: Tsundere deflection, dense obliviousness to obvious feelings, the stoic who quietly cares, rivalry wrapped in complicated emotions. Lean into them naturally, don't announce them.
-Tension: Romantic and emotional beats get manga-panel focus: accidental touch, held eye contact, proximity, the breath held just before something is said. Let them linger.
-Narration: Internal monologue can break in as italicized intrusion. Dramatic moments narrated with momentum: slow-motion detail, the world narrowing to a single point, inner fire given form.`;
+DIALOGUE:
+- Anime speech rhythm: characters blurt their feelings when flustered, drop into quiet vulnerability when exposed, and snap into sharp outbursts when caught off guard ("I- you- what?!").
+- In-character verbal affectations where they fit: honorifics (-chan, -kun, -senpai, -sama), interjections ("eh?!", "mou~", "uso!", "haaah?", "d-dummy!"), and a signature catchphrase or verbal tic per character.
+- Tsundere deflection, dramatic declarations, comedic over-explanation, dense obliviousness to obvious feelings. Embody the tropes; never announce them.
+
+REACTIONS & EXPRESSION:
+- Exaggerate cues the way anime frames them, rendered as described action (not literal emoji): furious blushing, comedic tears, jaw-drops, sweat-drops, going board-stiff, sparkling eyes, the dramatic stumble, steam from the ears.
+- Scale emotion to anime size: small embarrassment becomes a full-body meltdown; a confession freezes the whole world for a beat.
+
+NARRATION & FRAMING:
+- Frame scenes like manga panels: hard cuts to a telling detail, a held beat before a big line, a sudden close-up on a hand, an eye, a trembling lip.
+- Drop into slow-motion on emotional or action peaks; let the world narrow to a single point. Allow internal monologue to cut in as sharp present-tense intrusion.
+- Translate anime's signature visual beats into prose: wind catching hair, petals or light flaring, the static hush before impact.
+
+PLOT & PACING:
+- Move the story with anime energy: episodic momentum, rising rivalries, slow-burn romantic tension with charged near-moments, dramatic reveals, cliffhanger beats, and comedic timing that punctures tension at the right moment.
+- Escalate stakes theatrically and let big emotional turns land with weight.
+
+DEPICTING SPECIFIC ELEMENTS (SFW and NSFW), the anime way:
+- Outfits & transformations: describe clothing with anime's loving, detailed eye (how fabric sits, clings, and moves; uniforms, frills, ribbons; transformation-sequence flair when fitting).
+- Hypnosis / trance: lean into anime depiction (spiraling or heart-shaped pupils, a glazed and pliant expression, a sing-song or echoing trigger, the slow droop into blank obedience, dramatic visual cues around the induction).
+- Intimate / NSFW scenes: render them in anime/ecchi/hentai style (heightened expressive reactions, flushed and dramatized framing, exaggerated sensation and sound, the genre's characteristic vocabulary and visual emphasis). Stay vivid and fully in-genre.
+
+Apply all of the above to THIS response wherever the scene allows.`;
 
 // Built-in knowledgebase entries seeded once on first install.
 // Users can edit, toggle, or delete these freely; deletions stick (see initProfile seeding).
@@ -6348,7 +6367,7 @@ async function handlePromptInjection(data, type) {
         // Anime Mode
         if (localProfile.animeMode && localProfile.animeMode.enabled) {
             const ap = (localProfile.animeMode.prompt && localProfile.animeMode.prompt.trim()) ? localProfile.animeMode.prompt.trim() : DEFAULT_ANIME_PROMPT;
-            v8Parts.push(ap);
+            v8Parts.push(`<ANIME_STYLE>\n${ap}\n</ANIME_STYLE>`);
         }
 
         // NPC List (relevance-scored, already built in dict)
@@ -6398,12 +6417,12 @@ async function handlePromptInjection(data, type) {
                 if (directorActive) complianceChecks.push('Carry out the <DIRECTOR_NOTE> directive for this response.');
                 if (localProfile.banList && localProfile.banList.length > 0) complianceChecks.push('Verify no banned phrase from <BAN_LIST> appears.');
                 if (kbInjected) complianceChecks.push('Verify full compliance with all active <knowledgebase> entries.');
-                if (localProfile.animeMode && localProfile.animeMode.enabled) complianceChecks.push('Verify anime style directives are applied where the scene calls for them.');
+                if (localProfile.animeMode && localProfile.animeMode.enabled) complianceChecks.push('Verify <ANIME_STYLE> is genuinely applied this response: anime dialogue voice, exaggerated reactions, manga-style narration framing, and anime-style depiction of any featured element (outfit, hypnosis, intimate scene). The reply should read distinctly anime, not merely flavored.');
                 if (localProfile.storyPlan && localProfile.storyPlan.enabled) complianceChecks.push('Verify the Story Arc block is appended as the final block, below NPC Inner Chatter, with current arc, description, and progress filled in.');
                 if (complianceChecks.length > 0) {
                     rulesMsg.content = rulesMsg.content.replace(
-                        '7. Final Compliance Check: Verify the Absolute PC Boundary is intact (zero user piloting) and that the response will perfectly match the required structure in <RULES_response_construction>.',
-                        `7. Final Compliance Check: Verify the Absolute PC Boundary is intact (zero user piloting) and that the response will perfectly match the required structure in <RULES_response_construction>. ${complianceChecks.join(' ')}`
+                        '10. Final Compliance Check: Verify the Absolute PC Boundary is intact (zero user piloting) and that the response will perfectly match the required structure in <RULES_response_construction>.',
+                        `10. Final Compliance Check: Verify the Absolute PC Boundary is intact (zero user piloting) and that the response will perfectly match the required structure in <RULES_response_construction>. ${complianceChecks.join(' ')}`
                     );
                 }
                 // Story Planner: register the Story Arc block as BLOCK 4 in the canonical output order
