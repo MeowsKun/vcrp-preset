@@ -628,6 +628,34 @@
       "injection_order": 100,
       "injection_trigger": [],
       "forbid_overrides": false
+    },
+    {
+      "identifier": "8b5ffa95-cdc7-4599-a452-30f449f3d566",
+      "system_prompt": false,
+      "enabled": true,
+      "marker": false,
+      "name": "Anti slop",
+      "role": "user",
+      "content": "Strictly avoid “it was not x; but y” statements. \nBAN NEGATIVE-POSITIVE CONSTRUCTS: (e.g., “It wasn't anger, but rather fear.” -> Fix: “It was fear.”) Strictly Ban Negative constructs such as “She didn't look at you.” -> Fix: “She looks away.”\n\nAlways use articles and proper grammar avoid incomplete sentence structure. (E.g “Morning light filtered through corridor windows.” Is BANNED! -> “Faint morning light filtered through the corridor's windows.)\n\nAVOID using emdashes and \"—\"\n\nEvery single character without exception is AT LEAST 18\n\nYOU are BANNED from using the following sentence structure “The X of someone who Y”, “The X of Y”, “The way X Y” \n\nIMPORTANT! Go through the entire CoT (Chain of thought) process each response \n\nCHECK THIS EVERY TIME. AND FIX AS NEEDED. ",
+      "injection_position": 1,
+      "injection_depth": 1,
+      "injection_order": 100,
+      "injection_trigger": [],
+      "forbid_overrides": false
+    },
+    {
+      "identifier": "bb54638e-1505-4d18-8920-a57e1da7f881",
+      "system_prompt": false,
+      "enabled": true,
+      "marker": false,
+      "name": "bold npcs",
+      "role": "user",
+      "content": "Behavior:\nFree_Will: NPCs  pursue their own goals, completely ignoring what {{user}} or others want.\nSelfish_Pursuit: Actions are driven entirely by the NPC's own motivations and goals in the scene.\n\nRules:\nFull_Execution: DO NOT output hesitant, partial, or incomplete actions.\nNo_Hovering: NPCs NEVER just \"reach for\" or hover their hands. They fully grab, touch, and commit.\nPersona_Bound: All selfish actions must remain true to the NPC's core traits and only based on their goals and persona.\n\nExamples: (A NPC wants to be rich)\nBAD: \"He hesitates, his hand hovering near the gold.\"\nGOOD: \"He snatches the gold instantly, pocketing it to secure his own prize.\"",
+      "injection_position": 1,
+      "injection_depth": 1,
+      "injection_order": 100,
+      "injection_trigger": [],
+      "forbid_overrides": false
     }
   ],
   "prompt_order": [
@@ -681,6 +709,14 @@
         {
           "identifier": "jailbreak",
           "enabled": true
+        },
+        {
+          "identifier": "8b5ffa95-cdc7-4599-a452-30f449f3d566",
+          "enabled": true
+        },
+        {
+          "identifier": "bb54638e-1505-4d18-8920-a57e1da7f881",
+          "enabled": true
         }
       ]
     },
@@ -702,6 +738,14 @@
         {
           "identifier": "753facc3-4171-4bc5-a005-ab9d1111e469",
           "enabled": false
+        },
+        {
+          "identifier": "8b5ffa95-cdc7-4599-a452-30f449f3d566",
+          "enabled": true
+        },
+        {
+          "identifier": "bb54638e-1505-4d18-8920-a57e1da7f881",
+          "enabled": true
         },
         {
           "identifier": "c77668b9-29be-456c-a9d3-c0a1e0c9d55f",
