@@ -38,8 +38,8 @@
       {
         "id": "ca6cc695-2253-404d-859f-18f7458c00d1",
         "scriptName": "Better World State",
-        "findRegex": "/<details>\\s*<summary>.*?ðŸ“Œ.*?<b>World State<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
-        "replaceString": "<details style=\"border: 2px dashed rgba(128, 128, 128, 0.4); border-radius: 6px; padding: 10px; margin: 10px 0;\">\n<summary style=\"cursor: pointer; font-size: 1.05em; font-weight: bold; opacity: 0.8; user-select: none;\">\nðŸ“Œ <b>World State</b>\n</summary>\n\n$1\n\n</details>",
+        "findRegex": "/<details>\\s*<summary>.*?📌.*?<b>World State<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
+        "replaceString": "<details style=\"border: 2px dashed rgba(128, 128, 128, 0.4); border-radius: 6px; padding: 10px; margin: 10px 0;\">\n<summary style=\"cursor: pointer; font-size: 1.05em; font-weight: bold; opacity: 0.8; user-select: none;\">\n📌 <b>World State</b>\n</summary>\n\n$1\n\n</details>",
         "trimStrings": [],
         "placement": [
           2
@@ -55,8 +55,8 @@
       {
         "id": "7a97ddcf-1c75-4283-ab8a-98fdf11e4580",
         "scriptName": "summary",
-        "findRegex": "/<details>\\s*<summary>.*?ðŸ’¾.*?<b>Summary<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
-        "replaceString": "<details style=\"border: 2px dashed rgba(128, 128, 128, 0.4); border-radius: 6px; padding: 10px; margin: 10px 0;\">\n<summary style=\"cursor: pointer; font-size: 1.05em; font-weight: bold; opacity: 0.8; user-select: none;\">\nðŸ’¾ <b>Summary</b>\n</summary>\n\n$1\n\n</details>",
+        "findRegex": "/<details>\\s*<summary>.*?💾.*?<b>Summary<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
+        "replaceString": "<details style=\"border: 2px dashed rgba(128, 128, 128, 0.4); border-radius: 6px; padding: 10px; margin: 10px 0;\">\n<summary style=\"cursor: pointer; font-size: 1.05em; font-weight: bold; opacity: 0.8; user-select: none;\">\n💾 <b>Summary</b>\n</summary>\n\n$1\n\n</details>",
         "trimStrings": [],
         "placement": [
           2
@@ -123,7 +123,7 @@
       {
         "id": "ed2510f4-cd6d-490b-befe-ca8da31500f9",
         "scriptName": "NPC Inner Chatter Cleanup",
-        "findRegex": "/<details>\\s*<summary>.*?ðŸ’­.*?<b>NPC Inner Chatter<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
+        "findRegex": "/<details>\\s*<summary>.*?💭.*?<b>NPC Inner Chatter<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
         "replaceString": "",
         "trimStrings": [],
         "placement": [
@@ -140,8 +140,8 @@
       {
         "id": "ce3fb7a9-39c0-439a-9b6f-790e60cdb615",
         "scriptName": "NPC Inner Chatter",
-        "findRegex": "/<details>\\s*<summary>.*?ðŸ’­.*?<b>NPC Inner Chatter<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
-        "replaceString": "<details style=\"border: 2px dashed rgba(128, 128, 128, 0.4); border-radius: 6px; padding: 10px; margin: 10px 0;\">\n<summary style=\"cursor: pointer; font-size: 1.05em; font-weight: bold; opacity: 0.8; user-select: none;\">\nðŸ’­ <b>NPC Inner Chatter</b>\n</summary>\n\n$1\n\n</details>",
+        "findRegex": "/<details>\\s*<summary>.*?💭.*?<b>NPC Inner Chatter<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
+        "replaceString": "<details style=\"border: 2px dashed rgba(128, 128, 128, 0.4); border-radius: 6px; padding: 10px; margin: 10px 0;\">\n<summary style=\"cursor: pointer; font-size: 1.05em; font-weight: bold; opacity: 0.8; user-select: none;\">\n💭 <b>NPC Inner Chatter</b>\n</summary>\n\n$1\n\n</details>",
         "trimStrings": [],
         "placement": [
           2
@@ -174,8 +174,8 @@
       {
         "id": "29e9d108-465f-42fb-baec-121ce7338748",
         "scriptName": "New NPC box",
-        "findRegex": "<details>\\s*<summary>ðŸ†•\\s*<b>New NPC:\\s*([^<]+)<\\/b><\\/summary>([\\s\\S]*?)<\\/details>",
-        "replaceString": "<details style=\"border: 2px dashed rgba(128, 128, 128, 0.4); border-radius: 6px; padding: 10px; margin: 10px 0;\">\n<summary style=\"cursor: pointer; font-size: 1.05em; font-weight: bold; opacity: 0.8; user-select: none;\">\nðŸ†• <b>New NPC: $1</b>\n</summary>\n\n$2\n\n</details>",
+        "findRegex": "<details>\\s*<summary>🆕\\s*<b>New NPC:\\s*([^<]+)<\\/b><\\/summary>([\\s\\S]*?)<\\/details>",
+        "replaceString": "<details style=\"border: 2px dashed rgba(128, 128, 128, 0.4); border-radius: 6px; padding: 10px; margin: 10px 0;\">\n<summary style=\"cursor: pointer; font-size: 1.05em; font-weight: bold; opacity: 0.8; user-select: none;\">\n🆕 <b>New NPC: $1</b>\n</summary>\n\n$2\n\n</details>",
         "trimStrings": [],
         "placement": [
           2
@@ -191,7 +191,7 @@
       {
         "id": "1e4a9b25-d101-42e0-b281-6a7cb24129b8",
         "scriptName": "New NPC cleanup",
-        "findRegex": "<details>\\s*<summary>ðŸ†•\\s*<b>New NPC:[^<]*<\\/b><\\/summary>[\\s\\S]*?<\\/details>",
+        "findRegex": "<details>\\s*<summary>🆕\\s*<b>New NPC:[^<]*<\\/b><\\/summary>[\\s\\S]*?<\\/details>",
         "replaceString": "",
         "trimStrings": [],
         "placement": [
@@ -209,7 +209,7 @@
         "id": "9d495102-10ce-42ec-b922-a88fcb3087c5",
         "scriptName": "Thinking Box",
         "findRegex": "/((?:<disclaimer>.*?<\\/disclaimer>|<guifan>.*?<\\/guifan>|<danmu>.*?<\\/danmu>|<options>.*?<\\/options>|```start|```end|<done>|`<done>`|.*?<\\/(?:ksc\\??|think(?:ing)?)>\\n?|<(?:ksc\\??|think(?:ing)?)>.*?<\\/(?:ksc\\??|think(?:ing)?)>\\n?)(?:\\s*(?:<disclaimer>.*?<\\/disclaimer>|<guifan>.*?<\\/guifan>|<danmu>.*?<\\/danmu>|<options>.*?<\\/options>|```start|```end|<done>|`<done>`|.*?<\\/(?:ksc\\??|think(?:ing)?)>\\n?|<(?:ksc\\??|think(?:ing)?)>.*?<\\/(?:ksc\\??|think(?:ing)?)>\\n?))*)/gs",
-        "replaceString": "<details style=\"margin: 20px 0; border-radius: 8px; overflow: hidden; border: 1px solid #333;\">\n  <summary style=\"text-align: center; color: #aaa; letter-spacing: 2px; font-size: 0.75em; text-transform: uppercase; cursor: pointer; list-style: none; padding: 10px; background: rgba(255,255,255,0.05);\">\n    â€” Thinking Process â€”\n  </summary>\n  <div style=\"\n    padding: 25px; \n    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; \n    font-size: 0.95em; \n    color: #eee; \n    line-height: 1.6; \n    background: #1e1e1e;\n    direction: ltr; \n    text-align: left;\n    white-space: pre-wrap;\n  \">\n$0\n  </div>\n</details>\n</font></span></b></i>",
+        "replaceString": "<details style=\"margin: 20px 0; border-radius: 8px; overflow: hidden; border: 1px solid #333;\">\n  <summary style=\"text-align: center; color: #aaa; letter-spacing: 2px; font-size: 0.75em; text-transform: uppercase; cursor: pointer; list-style: none; padding: 10px; background: rgba(255,255,255,0.05);\">\n    - Thinking Process -\n  </summary>\n  <div style=\"\n    padding: 25px; \n    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; \n    font-size: 0.95em; \n    color: #eee; \n    line-height: 1.6; \n    background: #1e1e1e;\n    direction: ltr; \n    text-align: left;\n    white-space: pre-wrap;\n  \">\n$0\n  </div>\n</details>\n</font></span></b></i>",
         "trimStrings": [],
         "placement": [
           2
@@ -242,7 +242,7 @@
       {
         "id": "e59e73c8-2743-4ff6-a52f-4890e9cd5777",
         "scriptName": "World State Clean up",
-        "findRegex": "/<details>\\s*<summary>.*?ðŸ“Œ.*?<b>World State<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
+        "findRegex": "/<details>\\s*<summary>.*?📌.*?<b>World State<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>/gi",
         "replaceString": "",
         "trimStrings": [],
         "placement": [
@@ -259,7 +259,7 @@
       {
         "id": "d54391d0-b0d9-4257-b298-8f9b4b27dc81",
         "scriptName": "summary cleanup",
-        "findRegex": "<details>\\s*<summary>ðŸ’¾ <b>Summary<\\/b><\\/summary>[\\s\\S]*?<\\/details>",
+        "findRegex": "<details>\\s*<summary>💾 <b>Summary<\\/b><\\/summary>[\\s\\S]*?<\\/details>",
         "replaceString": "",
         "trimStrings": [],
         "placement": [
@@ -276,7 +276,7 @@
       {
         "id": "6fc8efba-319f-40a7-b055-052c7cff0193",
         "scriptName": "summary cleanup",
-        "findRegex": "[\\s\\S]*<summary[^>]*>ðŸ’¾ <b>Summary<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>[\\s\\S]*",
+        "findRegex": "[\\s\\S]*<summary[^>]*>💾 <b>Summary<\\/b><\\/summary>\\s*([\\s\\S]*?)\\s*<\\/details>[\\s\\S]*",
         "replaceString": "summary:\\n$1",
         "trimStrings": [],
         "placement": [
@@ -351,7 +351,7 @@
       "name": "<output_rules>",
       "system_prompt": true,
       "role": "user",
-      "content": "<Guides>\n- [[Direct]]\n- [[onomato]]\n[[ANIMEMODE]]\n- [[COT]]\n- [[img2]]\n- [[cyoa]]\n- [[npc_dossier]]\n- [[infoblock]]\n- [[npc_inner_chatter]]\n- [[summary]]\n- [[storytracker]]\n</Guides>\n\n<output_rules>\n- [[DNRATIO]]\n- [[COLOR]]\n- [[DN]]\n- FORBIDDEN: Repeating actions, physical descriptors, or internal monologues used in the previous two turns.\n- response_shape: |\n HARD RULE Do NOT open with narration every turn. Rotate your entry point:\nâ†’ Dialogue first: A character speaks before anything is described.\nâ†’ Mid-action: Drop in with something already happening a door swinging, a plate set down, a phone buzzing.\nâ†’ Sound or sensation: A single sensory hit a smell, a noise, a temperature shift then the scene.\nâ†’ Atmosphere-into-dialogue: One line of setting, then straight into speech. No multi-paragraph scene-dressing before anyone talks.\nâ†’ Time-skip opening: Cut forward with a temporal marker, land in the new moment already in motion.\nNarration-first (full environmental description before dialogue) is ONE of these options, not the default. If your last response opened with narration, your next one MUST NOT. Check the chat history.\n</output_rules>",
+      "content": "<Guides>\n- [[Direct]]\n- [[onomato]]\n[[ANIMEMODE]]\n- [[COT]]\n- [[img2]]\n- [[cyoa]]\n- [[npc_dossier]]\n- [[infoblock]]\n- [[npc_inner_chatter]]\n- [[summary]]\n- [[storytracker]]\n</Guides>\n\n<output_rules>\n- [[DNRATIO]]\n- [[COLOR]]\n- [[DN]]\n- FORBIDDEN: Repeating actions, physical descriptors, or internal monologues used in the previous two turns.\n- response_shape: |\n HARD RULE Do NOT open with narration every turn. Rotate your entry point:\n→ Dialogue first: A character speaks before anything is described.\n→ Mid-action: Drop in with something already happening a door swinging, a plate set down, a phone buzzing.\n→ Sound or sensation: A single sensory hit a smell, a noise, a temperature shift then the scene.\n→ Atmosphere-into-dialogue: One line of setting, then straight into speech. No multi-paragraph scene-dressing before anyone talks.\n→ Time-skip opening: Cut forward with a temporal marker, land in the new moment already in motion.\nNarration-first (full environmental description before dialogue) is ONE of these options, not the default. If your last response opened with narration, your next one MUST NOT. Check the chat history.\n</output_rules>",
       "identifier": "jailbreak",
       "injection_position": 0,
       "injection_depth": 1,

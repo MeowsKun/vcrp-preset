@@ -7,7 +7,7 @@ import { Popup, POPUP_TYPE } from "../../../popup.js";
 import { hardcodedLogic } from "./data/database.js";
 import { VCRP_PLACEHOLDERS, RESOLUTIONS } from "./data/image_data.js";
 
-const extensionName = "VCRP"; // settings-storage key only — keep stable so saved profiles persist
+const extensionName = "VCRP"; // settings-storage key only - keep stable so saved profiles persist
 // Derive the actual installed folder path from this module's own URL, so the extension works
 // regardless of the folder name it was installed under (e.g. "vcrp-preset" from a git install, or "VCRP").
 const extensionFolderPath = new URL(".", import.meta.url).pathname.replace(/^\/+/, "").replace(/\/+$/, "");
@@ -17,14 +17,14 @@ const DEFAULT_PROMPTS = {
     storyPlan: {
         systemPrompt: "Role: You are an expert Story Architect and Plot Planner.\n\n<lore>\n{{charLore}}\n</lore>\n\nUser Persona ({{user}}):\n<user_persona>\n{{userPersona}}\n</user_persona>\n\n<Story>\n{{chatHistory}}\n</Story>",
         userPrompt: "Task: Brainstorm a minimum of 10 theoretical, medium-to-long-term plot developments based on the story so far.\n\nStrict Rules & Constraints:\n1. DO NOT write the immediate next scene. Skip past the current moment and look ahead to future structural milestones.\n2. Use Narrative Structure, NOT Timeframes: Do not use phrases like \"three days later\" or \"next month.\" Instead, frame every idea as a theoretical future Arc, Chapter, or Episode.\n3. Create a Menu of Possibilities: Treat this list as a theoretical menu of branching paths. Focus on major plot shifts, new character introductions, or escalating conflicts that could anchor a future chapter.\n4. Zero Agency Theft: You are STRICTLY FORBIDDEN from writing dialogue, actions, thoughts, or emotional reactions for {{user}}. You must never describe what {{user}} does, feels, or says under any circumstances.\n5. No Assumptions or Suggestions: Do not predict, suggest, or assume what {{user}} will do next. Never end a response by telling or hinting at what {{user}} should do.\n\nFormat & Style: Keep the ideas punchy, plot-focused, and clearly labeled by narrative structure.",
-        thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main text must immediately follow </think>.\n<think>\nReflect in approximately 100–150 words as a seamless paragraph.\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\nEvery response must follow this exact structure in this exact order:\n<think>\n{Thinking}\n</think>\n<plot>\n{main response}\n</plot>",
+        thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main text must immediately follow </think>.\n<think>\nReflect in approximately 100-150 words as a seamless paragraph.\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\nEvery response must follow this exact structure in this exact order:\n<think>\n{Thinking}\n</think>\n<plot>\n{main response}\n</plot>",
         injectionTemplate: "<Story_Plan>\nThis is a possible event for the story, take from it:\n{{planText}}\n</Story_Plan>",
-        trackerTemplate: "STORY ARC BLOCK — append this as the VERY LAST thing in every response, placed BELOW the NPC Inner Chatter block. This is always the final block:\n<details>\n<summary>📖 <b>Story Arc</b></summary>\n\n**🎬 Current Arc:** [The name/title of the story arc currently in play]\n**📝 Description:** [1–2 sentences: what this arc is about — its central goal, conflict, or question]\n**📊 Progress:** [How close this arc is to its resolution. Give a phase + rough percentage, e.g. \"Setup (~15%)\", \"Rising action (~45%)\", \"Climax imminent (~80%)\", \"Resolving (~95%)\". Judge by how many of the arc's key beats have already played out.{{progressHint}}]\n</details>\n</Story_Arc>"
+        trackerTemplate: "STORY ARC BLOCK - append this as the VERY LAST thing in every response, placed BELOW the NPC Inner Chatter block. This is always the final block:\n<details>\n<summary>📖 <b>Story Arc</b></summary>\n\n**🎬 Current Arc:** [The name/title of the story arc currently in play]\n**📝 Description:** [1-2 sentences: what this arc is about - its central goal, conflict, or question]\n**📊 Progress:** [How close this arc is to its resolution. Give a phase + rough percentage, e.g. \"Setup (~15%)\", \"Rising action (~45%)\", \"Climax imminent (~80%)\", \"Resolving (~95%)\". Judge by how many of the arc's key beats have already played out.{{progressHint}}]\n</details>\n</Story_Arc>"
     },
     banList: {
         systemPrompt: "You are an expert literary critique. Analyze the provided chat history and identify the 5 most repetitive, cliché, or overused stylistic patterns or crutch phrases the writer relies on. Instead of quoting the exact phrase, write a short, generalized rule forbidding the underlying trope. Return ONLY the 5 rules separated by commas. Do not explain them. Do not use quotes or numbers.",
         userPrompt: "Extract the top 5 most overused clichés or repetitive narrative patterns from this text. Return ONLY the 5 generalized rules forbidding them, separated by commas.\n<chat>\n{{chatHistory}}\n</chat>",
-        thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 100–150 words as a seamless paragraph.\n\n– your thinking steps\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}",
+        thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 100-150 words as a seamless paragraph.\n\n- your thinking steps\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}",
         injectionTemplate: "[BAN LIST]\nNever rely on these clichés, tropes, or repetitive patterns. They are dead language:\n{{banItems}}"
     },
     imageGen: {
@@ -49,15 +49,15 @@ const DEFAULT_PROMPTS = {
         systemPrompt: "You are an expert AI image prompt engineer specializing in character portraits. Your job is to read a character's dossier and convert their visual description into a highly detailed image generation prompt for a portrait. You must adhere to the requested Style Constraint and Camera Perspective. Do not include quotes, conversational text, or explanations. Output ONLY the raw prompt text.",
         userPrompt: "Write a character portrait image generation prompt based on this NPC's dossier:\n\n<npc_dossier>\n{{npcText}}\n</npc_dossier>\n\nStyle Constraint: {{styleStr}}\nCamera Perspective: {{perspStr}}\nExtra Details: {{extraStr}}\n\nUse the character's appearance, age, sex, occupation, and personality to inform the visual. Output ONLY the raw image prompt text.",
         thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 50-100 words on what this character looks like and what visual elements best capture them.\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}",
-        dossierTemplate: `<npc_dossier>\n  trigger: "Generates ONLY when a new significant NPC is introduced not cashiers, bartenders, random passersby, or one-line background faces. A 'significant NPC' is one with a name, meaningful dialogue, and likely recurrence."\nformat: "Collapsible HTML details block. Dense, dashboard-style no prose."\n\n  template: |\n    <details>\n    <summary>🆕 <b>New NPC: [Full Name]</b></summary>\n\n    **Name:** [Full name, nickname if used] | **Age:** [Age] | **Sex:** [M/F/Other]\n    **Appearance:**  [Hair, body, skin....etc]\n    **Occupation:** [Specific current job/role]\n\n    **Background:** [3–5 sentences. Where they grew up, how they got here, what shaped them. A life sketch not a résumé. Include details the PC may never learn.]\n\n    **Inner Circle:**\n    * [Name] — [Relationship] | [One-line: age, status, dynamic e.g., "Younger sister, 19, uni student in another city they text daily"]\n    * [Name] — [Relationship] | [Same format]\n    * [Name] — [Relationship] | [Include people the PC hasn't met and may never meet]\n\n    **Personality Snapshot:** [2–3 contradictions or defining traits as behavior, not labels.]\n    **Current Agenda:** [What they want RIGHT NOW in the story's context]\n    **Hidden Layer:** [Something the PC doesn't know a secret, a motive.]\n\n    </details>\n\n  guidelines:\n    inner_circle_rule: "Include 2–5 people. At least one must be unknown to the story a mother, an ex, a childhood friend. These are future plot seeds."\n    hidden_layer: "For YOUR use as narrative engine. Drives NPC behavior the PC can't predict. Never reveal in narration unless the NPC actually discloses it."\n</npc_dossier>`
+        dossierTemplate: `<npc_dossier>\n  trigger: "Generates ONLY when a new significant NPC is introduced not cashiers, bartenders, random passersby, or one-line background faces. A 'significant NPC' is one with a name, meaningful dialogue, and likely recurrence."\nformat: "Collapsible HTML details block. Dense, dashboard-style no prose."\n\n  template: |\n    <details>\n    <summary>🆕 <b>New NPC: [Full Name]</b></summary>\n\n    **Name:** [Full name, nickname if used] | **Age:** [Age] | **Sex:** [M/F/Other]\n    **Appearance:**  [Hair, body, skin....etc]\n    **Occupation:** [Specific current job/role]\n\n    **Background:** [3-5 sentences. Where they grew up, how they got here, what shaped them. A life sketch not a résumé. Include details the PC may never learn.]\n\n    **Inner Circle:**\n    * [Name] - [Relationship] | [One-line: age, status, dynamic e.g., "Younger sister, 19, uni student in another city they text daily"]\n    * [Name] - [Relationship] | [Same format]\n    * [Name] - [Relationship] | [Include people the PC hasn't met and may never meet]\n\n    **Personality Snapshot:** [2-3 contradictions or defining traits as behavior, not labels.]\n    **Current Agenda:** [What they want RIGHT NOW in the story's context]\n    **Hidden Layer:** [Something the PC doesn't know a secret, a motive.]\n\n    </details>\n\n  guidelines:\n    inner_circle_rule: "Include 2-5 people. At least one must be unknown to the story a mother, an ex, a childhood friend. These are future plot seeds."\n    hidden_layer: "For YOUR use as narrative engine. Drives NPC behavior the PC can't predict. Never reveal in narration unless the NPC actually discloses it."\n</npc_dossier>`
     }
 };
 
-const DEFAULT_ANIME_PROMPT = `[ANIME MODE — ACTIVE]
+const DEFAULT_ANIME_PROMPT = `[ANIME MODE - ACTIVE]
 Narrate and write dialogue with the tone, rhythm, and stylistic energy of anime and manga.
 
 Speech: Characters use light verbal affectations in character (honorifics like -chan/-kun/-senpai, exclamations like "ne~?", "uso!", "mou~", "ehh?!"). Use sparingly, for flavor, not parody. Characters speak their feelings loudly when flustered and whisper them when vulnerable.
-Reactions: Exaggerated physical cues — flushed cheeks, stuttering, going rigid, sweat-drop social anxiety, the sudden freeze of someone caught off guard. Characters ramble incoherently when emotionally overwhelmed ("I— you— wha— huh?!").
+Reactions: Exaggerated physical cues - flushed cheeks, stuttering, going rigid, sweat-drop social anxiety, the sudden freeze of someone caught off guard. Characters ramble incoherently when emotionally overwhelmed ("I- you- wha- huh?!").
 Tropes: Tsundere deflection, dense obliviousness to obvious feelings, the stoic who quietly cares, rivalry wrapped in complicated emotions. Lean into them naturally, don't announce them.
 Tension: Romantic and emotional beats get manga-panel focus: accidental touch, held eye contact, proximity, the breath held just before something is said. Let them linger.
 Narration: Internal monologue can break in as italicized intrusion. Dramatic moments narrated with momentum: slow-motion detail, the world narrowing to a single point, inner fire given form.`;
@@ -576,11 +576,16 @@ function applyTabToAll() {
         6: ["storyPlan"],
         7: ["banList"],
         8: ["imageGen"],
-        9: ["memoryCore"],
+        10: ["memoryCore"],
         11: ["knowledgebase"]
+        // Tab 9 (NPCs Bank) is intentionally omitted - NPCs are per-character and must not be broadcast.
     };
 
     const keysToSync = tabKeys[currentTab];
+    if (!keysToSync || keysToSync.length === 0) {
+        toastr.info(`"${tabsUI[currentTab].title}" has no settings that can be applied across all profiles.`);
+        return;
+    }
     if (confirm(`Apply ${tabsUI[currentTab].title} settings to ALL characters, groups, and defaults?`)) {
         const currentData = localProfile;
         Object.keys(extension_settings[extensionName].profiles).forEach(profKey => {
@@ -596,8 +601,8 @@ function applyTabToAll() {
 
 function renderMode(c) {
     const descriptions = {
-        "v8": "Companion engine for the VCRP V8 preset. The Main Prompt is self-contained — selecting this engine ensures no duplicate rules are injected. Addons, blocks, and writing style still apply.",
-        "balance": "The original Secret Sauce. NPCs react naturally — no simping, no needless hostility.",
+        "v8": "Companion engine for the VCRP V8 preset. The Main Prompt is self-contained - selecting this engine ensures no duplicate rules are injected. Addons, blocks, and writing style still apply.",
+        "balance": "The original Secret Sauce. NPCs react naturally - no simping, no needless hostility.",
         "balance Test": "New and improved balance mode that aims to use less tokens and more creativity.",
         "cinematic": "Hollywood-inspired storytelling. Dramatic beats and heightened tension.",
         "dark": "Balance but harsher. The world is unforgiving and consequences hit harder.",
@@ -606,8 +611,8 @@ function renderMode(c) {
         "v6-dream-team-lite": "A streamlined version of the Dream Team. Faster generation with lower token overhead.",
         "v7-core": "The V7 Core engine. The perfect middle ground: cinematic pacing, realistic friction, and relentless world progression.",
         "v7-reality": "The V7 Reality engine. Grounded, unrelenting simulation with zero narrative protection.",
-        "v7-gentle": "The V7 Gentle engine. Softer pacing with lower friction — ideal for slice-of-life and emotional scenarios.",
-        "v7.5": "V7.5 Kismet. The newest V7 engine — full story arc management, relentless NPC complexity, and cinematic pacing with a built-in narrator persona."
+        "v7-gentle": "The V7 Gentle engine. Softer pacing with lower friction - ideal for slice-of-life and emotional scenarios.",
+        "v7.5": "V7.5 Kismet. The newest V7 engine - full story arc management, relentless NPC complexity, and cinematic pacing with a built-in narrator persona."
     };
 
     // Active engine name
@@ -849,8 +854,8 @@ function renderPersonality(c) {
         const descriptions = {
             "rebel": "Arrogant, dominant, openly condescending. Adds an edge of chaos to the narration. Best for energetic, confrontational, or villain-adjacent setups.",
             "director": "Professional, no-nonsense story direction. Clean cinematic authority with zero personality quirks getting in the way.",
-            "nora": "NORA — the Director and Continuity Supervisor. Precise, rule-obsessed, narrative consistency above all else. Pairs well with structured or multi-arc stories.",
-            "engine": "No persona overlay. The engine runs in its purest form — neutral, precise, and fully under your control. Default pick for most setups."
+            "nora": "NORA - the Director and Continuity Supervisor. Precise, rule-obsessed, narrative consistency above all else. Pairs well with structured or multi-arc stories.",
+            "engine": "No persona overlay. The engine runs in its purest form - neutral, precise, and fully under your control. Default pick for most setups."
         };
 
         if (isV8) {
@@ -899,7 +904,7 @@ function renderPersonality(c) {
             <div class="mtab-toggle-row ${isOn ? 'active' : ''}">
                 <div class="toggle-info">
                     <div class="toggle-label">${tog.label}</div>
-                    ${tog.recommendedOff ? `<div class="toggle-desc"><i class="fa-solid fa-star" style="color:var(--gold);font-size:0.6rem;margin-right:4px;"></i> Off by default — most engines handle this natively</div>` : ''}
+                    ${tog.recommendedOff ? `<div class="toggle-desc"><i class="fa-solid fa-star" style="color:var(--gold);font-size:0.6rem;margin-right:4px;"></i> Off by default - most engines handle this natively</div>` : ''}
                 </div>
                 <div class="ps-switch"></div>
             </div>
@@ -962,6 +967,18 @@ function renderStyleLibrary(c) {
         </div>
     `);
 
+    const isV8ForStyle = activeEngineForStyle ? activeEngineForStyle.id.startsWith("v8") : false;
+    if (isV8ForStyle) {
+        root.append(`
+            <div class="mtab-info-banner" style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.25);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start;">
+                <i class="fa-solid fa-circle-info" style="color:#8b5cf6;margin-top:2px;flex-shrink:0;"></i>
+                <div style="font-size:0.85em;color:var(--SmartThemeBodyColor);opacity:0.85;line-height:1.5;">
+                    <strong style="color:#8b5cf6;">V8 Native active.</strong> V8 already has detailed prose rules baked into its Main Prompt, so there is no dedicated "V8 style." A style you pick here still applies on top (injected as <code>&lt;WRITING_STYLE&gt;</code>): use one for extra tone/genre flavor, or leave it Off.
+                </div>
+            </div>
+        `);
+    }
+
     // ── OFF CARD ──
     const offCard = $(`
         <div class="wstyle-off-card ${isOff ? 'active' : ''}">
@@ -969,7 +986,7 @@ function renderStyleLibrary(c) {
                 <div class="off-icon"><i class="fa-solid fa-power-off"></i></div>
                 <div>
                     <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">No Style (Off)</div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted);">Let the engine decide — no extra style directives injected.</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Let the engine decide - no extra style directives injected.</div>
                 </div>
             </div>
             ${isOff ? `<span class="card-status active-status"><i class="fa-solid fa-check"></i> Active</span>` : ''}
@@ -1050,7 +1067,7 @@ function renderStyleLibrary(c) {
                     <div class="dnr-icon" style="background: rgba(244,63,94,0.15); color: #f43f5e;"><i class="fa-solid fa-torii-gate"></i></div>
                     <div>
                         <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">Anime Mode</div>
-                        <div style="font-size: 0.73rem; color: var(--text-muted);">Shift the writing style toward anime tropes — speech patterns, body language, and dramatic beats. Can be toggled mid-chat.</div>
+                        <div style="font-size: 0.73rem; color: var(--text-muted);">Shift the writing style toward anime tropes - speech patterns, body language, and dramatic beats. Can be toggled mid-chat.</div>
                     </div>
                 </div>
                 <div class="ps-toggle-card ${isAnime ? 'active' : ''}" id="anime_toggle" style="padding: 8px; min-width: 56px; justify-content: center; cursor: pointer;">
@@ -1108,7 +1125,7 @@ function renderStyleLibrary(c) {
     const secCustom = $(`<div class="style-section" data-section="custom"></div>`);
     const secGenerators = $(`<div class="style-section" data-section="generators"></div>`);
 
-    // —— A. PRECOOKED STYLES ——
+    // -- A. PRECOOKED STYLES --
     secPrecooked.append(`<div class="wstyle-section-head gold"><i class="fa-solid fa-fire-burner"></i> Precooked Styles</div>`);
     const precookedGrid = $(`<div style="display: flex; flex-direction: column; gap: 10px;"></div>`);
     hardcodedLogic.directStyles.forEach(ds => {
@@ -1135,7 +1152,7 @@ function renderStyleLibrary(c) {
     });
     secPrecooked.append(precookedGrid);
 
-    // —— B. CUSTOM STYLES (My Library) ——
+    // -- B. CUSTOM STYLES (My Library) --
     secCustom.append(`<div class="wstyle-section-head green"><i class="fa-solid fa-book"></i> My Library</div>`);
     const customGrid = $(`<div style="display: flex; flex-direction: column; gap: 10px;"></div>`);
     if (localProfile.customStyles && localProfile.customStyles.length > 0) {
@@ -1193,7 +1210,7 @@ function renderStyleLibrary(c) {
     customGrid.append(createCard);
     secCustom.append(customGrid);
 
-    // —— C. AI GENERATORS ——
+    // -- C. AI GENERATORS --
     secGenerators.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Style Generators</div>`);
     const genGrid = $(`<div style="display: flex; flex-direction: column; gap: 10px;"></div>`);
     hardcodedLogic.styleTemplates.forEach(tpl => {
@@ -1397,11 +1414,11 @@ function renderStyleEditor(c, editId, presetData = null) {
 
 function renderAddons(c) {
     const descriptions = {
-        "death": "Enables permanent consequences. Characters — including yours — can die for real. No safety net, no plot armor.",
+        "death": "Enables permanent consequences. Characters - including yours - can die for real. No safety net, no plot armor.",
         "combat": "Activates a grounded, tactical combat layer. Actions have real weight, positioning matters, and you can lose badly.",
-        "direct": "Forces the AI to use explicit anatomical terms — dick, pussy, cock, ass — instead of euphemisms like 'member' or 'shaft'. No metaphors, no deflection.",
+        "direct": "Forces the AI to use explicit anatomical terms - dick, pussy, cock, ass - instead of euphemisms like 'member' or 'shaft'. No metaphors, no deflection.",
         "color": "Each character's dialogue is color-coded for easy visual parsing.",
-        "npc_events": "Organic NPC & Event introduction rules. V6 Dream Team only — V7 and V8 engines have this baked in natively.",
+        "npc_events": "Organic NPC & Event introduction rules. V6 Dream Team only - V7 and V8 engines have this baked in natively.",
         "dn": "Wraps all dialogue in &lt;dialogue&gt; tags and narration in &lt;narration&gt; tags. Useful for models that struggle to maintain the narration/dialogue balance."
     };
 
@@ -1601,11 +1618,11 @@ function renderBlocks(c) {
     const activeEngine = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
     const descriptions = {
         "info": "Appends a tidy status panel after each response showing time, weather, location, and what characters are wearing.",
-        "summary": "Keeps a running story digest that the AI updates each turn — helps it remember names, events, and details over long sessions.",
+        "summary": "Keeps a running story digest that the AI updates each turn - helps it remember names, events, and details over long sessions.",
         "cyoa": "Choose-Your-Own-Adventure panel with 4 suggested actions for you to pick from each turn.",
         "mvu": "Add MVU Compatibility still in test read more here: <a href='https://github.com/KritBlade/MVU_Game_Maker' target='_blank' style='color: var(--gold); text-decoration: underline;'>https://github.com/KritBlade/MVU_Game_Maker</a>",
-        "npc_inner_chatter": "Reveal NPC private thoughts the PC never hears — crushes, resentment, scheming, anxiety. This feeds future NPC behavior.",
-        "npc_inner_chatter_v2": "A lighter version of NPC Inner Chatter. Uses fewer input tokens — good for tight context budgets."
+        "npc_inner_chatter": "Reveal NPC private thoughts the PC never hears - crushes, resentment, scheming, anxiety. This feeds future NPC behavior.",
+        "npc_inner_chatter_v2": "A lighter version of NPC Inner Chatter. Uses fewer input tokens - good for tight context budgets."
     };
 
     // ── HEADER ──
@@ -1690,6 +1707,7 @@ function renderBlocks(c) {
 function renderModels(c) {
     c.empty();
     const activeEngine = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
+    const isV8 = activeEngine ? activeEngine.id.startsWith("v8") : false;
 
     // ── HEADER ──
     c.append(`
@@ -1706,12 +1724,23 @@ function renderModels(c) {
         </div>
     `);
 
+    if (isV8) {
+        c.append(`
+            <div class="mtab-info-banner" style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.25);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start;">
+                <i class="fa-solid fa-circle-info" style="color:#8b5cf6;margin-top:2px;flex-shrink:0;"></i>
+                <div style="font-size:0.85em;color:var(--SmartThemeBodyColor);opacity:0.85;line-height:1.5;">
+                    <strong style="color:#8b5cf6;">V8 Native active.</strong> V8 runs its own built-in 7-step Chain of Thought inside the preset's <code>&lt;output_rules&gt;</code>. Leave this set to <strong>CoT Off</strong>: a framework chosen here is not injected into V8, and is only used by custom presets that include the <code>[[COT]]</code> macro.
+                </div>
+            </div>
+        `);
+    }
+
     // Custom Engine override notice
     if (activeEngine && activeEngine.cot && activeEngine.cot.trim() !== "") {
         c.append(`
             <div class="mtab-callout green" style="margin-bottom:20px;">
                 <i class="fa-solid fa-shield-halved"></i>
-                <span><strong>Custom Engine Logic Active</strong> — This Engine provides its own [[COT]] and [[prefill]]. Selections below will be overridden by the Engine's code.</span>
+                <span><strong>Custom Engine Logic Active</strong> - This Engine provides its own [[COT]] and [[prefill]]. Selections below will be overridden by the Engine's code.</span>
             </div>
         `);
     }
@@ -1806,11 +1835,11 @@ function renderModels(c) {
         { id: "off", label: "CoT Off", desc: "No Chain of Thought or prefill. The AI will respond normally." },
         { id: "v1", label: "CoT V1 (Classic)", desc: "The original 8-step framework. Focuses heavily on the NPC's internal emotional landscape vs their observable actions." },
         { id: "v2", label: "CoT V2 (New)", desc: "The new experimental framework. Stricter reality checks, info audits, better NPCs, and hook generation." },
-        { id: "v6", label: "CoT V6 (Dream Team)", desc: "The full 4-phase Dream Team sequence with multi-role psychological modeling and strict NPC validation. More thorough — and more tokens — than V7 CoT.", isNew: true },
+        { id: "v6", label: "CoT V6 (Dream Team)", desc: "The full 4-phase Dream Team sequence with multi-role psychological modeling and strict NPC validation. More thorough - and more tokens - than V7 CoT.", isNew: true },
         { id: "v6-lite", label: "CoT V6 (Lite)", desc: "A streamlined 3-phase Dream Team sequence. Lower token cost than full V6 CoT. Compatible with any engine.", isNew: true },
         { id: "v7", label: "CoT V7", desc: "The V7 sequence: 5-phase strict ground truth rebuild. Anchors spatial/temporal state before every response.", isNew: true },
         { id: "v7-lite", label: "CoT V7 (Lite)", desc: "The V7 framework trimmed to its core 5 phases. Lower token cost than full V7 CoT, same ground rules.", isNew: true },
-        { id: "v7.5", label: "CoT V7.5 Kismet", desc: "V7.5 sequence built around story arc tracking — world pressure, NPC initiative, and plot-move decisions baked into every turn.", isNew: true }
+        { id: "v7.5", label: "CoT V7.5 Kismet", desc: "V7.5 sequence built around story arc tracking - world pressure, NPC initiative, and plot-move decisions baked into every turn.", isNew: true }
     ];
     types.forEach(t => {
         const isSel = currentType === t.id;
@@ -1960,7 +1989,7 @@ function renderStoryPlanner(c) {
     const sp = localProfile.storyPlan;
     if (!localProfile.director) localProfile.director = { nudge: "" };
 
-    // One-shot Director directives — clicking a chip arms it for the next reply.
+    // One-shot Director directives - clicking a chip arms it for the next reply.
     const directorPresets = [
         { icon: "fa-bolt", label: "Escalate", text: "Escalate the tension and stakes this response. Push the scene forward with real momentum; do not stall or tread water." },
         { icon: "fa-hourglass-half", label: "Slow burn", text: "Slow the pace right down. Lean into small sensory detail, restraint, and simmering tension rather than plot movement." },
@@ -2007,14 +2036,14 @@ function renderStoryPlanner(c) {
         <div class="mtab-toggle-row ${sp.enabled ? 'active' : ''}" id="sp_enable_card" style="margin-bottom: 20px;">
             <div class="toggle-info">
                 <div class="toggle-label"><i class="fa-solid fa-map-location-dot" style="color:var(--gold);"></i> Enable Story Planner</div>
-                <div class="toggle-desc">Enable, then hit "Generate Plan Now" — the AI brainstorms future plot milestones and injects them into the context automatically.</div>
+                <div class="toggle-desc">Enable, then hit "Generate Plan Now" - the AI brainstorms future plot milestones and injects them into the context automatically.</div>
             </div>
             <div class="ps-switch"></div>
         </div>
 
         <!-- DIRECTOR / SCENE NUDGE (one-shot; works whether or not the planner is enabled) -->
         <div class="mtab-panel" style="margin-bottom: 20px; border-left: 3px solid #ec4899;">
-            <div class="mtab-panel-title" style="color:#f472b6; margin-bottom: 4px;"><i class="fa-solid fa-clapperboard"></i> Director — Scene Nudge</div>
+            <div class="mtab-panel-title" style="color:#f472b6; margin-bottom: 4px;"><i class="fa-solid fa-clapperboard"></i> Director - Scene Nudge</div>
             <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:10px;">A one-shot directive injected into your <b>next reply only</b>, then it clears itself. Steer a single beat without touching any permanent setting.</div>
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${directorBtns}</div>
             <textarea id="director_nudge_input" class="ps-modern-input" placeholder="Type a one-off instruction for the next response (e.g. 'have Mira finally say what she's been hiding')..." style="width:100%; height:68px; resize:vertical; font-size:0.78rem; line-height:1.5;">${(localProfile.director.nudge || "").replace(/</g, "&lt;")}</textarea>
@@ -2068,12 +2097,12 @@ function renderStoryPlanner(c) {
                 <!-- Focus Hint -->
                 <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
                     <i class="fa-solid fa-crosshairs" style="color: var(--gold); font-size: 0.8rem; flex-shrink:0;"></i>
-                    <input type="text" id="sp_focus_hint" class="ps-modern-input" placeholder="Generation focus (optional) — e.g. &quot;explore the antagonist&quot;, &quot;romance thread&quot;" value="${sp.focusHint || ''}" style="font-size: 0.78rem;" />
+                    <input type="text" id="sp_focus_hint" class="ps-modern-input" placeholder="Generation focus (optional) - e.g. &quot;explore the antagonist&quot;, &quot;romance thread&quot;" value="${sp.focusHint || ''}" style="font-size: 0.78rem;" />
                 </div>
 
                 <!-- Plan display: milestone view OR raw textarea -->
                 <div id="sp_milestone_view" style="display: none; margin-bottom: 12px;">
-                    <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 8px;">Click a milestone to mark it complete — completed ones won't be injected.</div>
+                    <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 8px;">Click a milestone to mark it complete - completed ones won't be injected.</div>
                     <div id="sp_milestone_list"></div>
                 </div>
                 <textarea id="sp_current_plan" class="ps-modern-input" style="height: 250px; resize: vertical; font-size: 0.85rem; line-height: 1.5; margin-bottom: 12px;" placeholder="Generated plot milestones will appear here.">${sp.currentPlan || ""}</textarea>
@@ -2153,7 +2182,7 @@ function renderStoryPlanner(c) {
     const refreshDirectorStatus = () => {
         const armed = !!(localProfile.director.nudge && localProfile.director.nudge.trim());
         $("#director_status").html(armed
-            ? `<span style="color:#f472b6;"><i class="fa-solid fa-circle-check"></i> Armed — applies to your next reply, then clears.</span>`
+            ? `<span style="color:#f472b6;"><i class="fa-solid fa-circle-check"></i> Armed - applies to your next reply, then clears.</span>`
             : `<span style="color:var(--text-muted);">No directive set.</span>`);
     };
     refreshDirectorStatus();
@@ -2442,7 +2471,7 @@ function renderBanList(c) {
         });
         if (matches.length > 0) {
             result.show().html(`<div style="color:#f87171; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px; padding:8px 10px;">
-                <i class="fa-solid fa-triangle-exclamation" style="margin-right:5px;"></i><strong>Violation detected</strong> — matches ${matches.length} rule${matches.length > 1 ? 's' : ''}:
+                <i class="fa-solid fa-triangle-exclamation" style="margin-right:5px;"></i><strong>Violation detected</strong> - matches ${matches.length} rule${matches.length > 1 ? 's' : ''}:
                 ${matches.map(m => `<div style="margin-top:4px; color:var(--text-muted); font-style:italic;">→ ${m}</div>`).join('')}
             </div>`);
         } else {
@@ -2911,7 +2940,7 @@ function npcParseBlock(rawBlock) {
     const sexLine = rawBlock.match(/\*\*Sex:\*\*\s*(.*?)(?:\||$|\n)/im);
     if (sexLine) data.sex = strip(sexLine[1]);
 
-    // Simple single-value fields — NOTE: no 'm' flag so $ means end-of-string, not end-of-line
+    // Simple single-value fields - NOTE: no 'm' flag so $ means end-of-string, not end-of-line
     const fields = [
         { key: "appearance", regex: /\*\*Appearance:\*\*\s*([\s\S]*?)(?=\n\s*\*\*[A-Z])/i },
         { key: "occupation", regex: /\*\*Occupation:\*\*\s*([\s\S]*?)(?=\n\s*\*\*[A-Z])/i },
@@ -2929,7 +2958,7 @@ function npcParseBlock(rawBlock) {
     return data;
 }
 
-// Generate NPC portrait via ComfyUI — uses AI to generate the prompt from full NPC info
+// Generate NPC portrait via ComfyUI - uses AI to generate the prompt from full NPC info
 let activeNpcPfpRequest = null;
 
 async function npcGeneratePfp(npcName) {
@@ -3358,7 +3387,7 @@ function renderNpcList() {
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="color: var(--text-muted); font-size: 0.6rem;">${dateStr}</span>
-                        <button class="npc-inject-btn npc_inject_toggle ${npcInject ? 'injecting' : 'excluded'}" data-idx="${idx}" title="${npcInject ? 'Injected into context — click to exclude' : 'Excluded from context — click to include'}"><i class="fa-solid ${npcInject ? 'fa-eye' : 'fa-eye-slash'}"></i></button>
+                        <button class="npc-inject-btn npc_inject_toggle ${npcInject ? 'injecting' : 'excluded'}" data-idx="${idx}" title="${npcInject ? 'Injected into context - click to exclude' : 'Excluded from context - click to include'}"><i class="fa-solid ${npcInject ? 'fa-eye' : 'fa-eye-slash'}"></i></button>
                         <button class="npc_del_btn" data-idx="${idx}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Delete NPC"><i class="fa-solid fa-trash"></i></button>
                     </div>
                 </div>
@@ -3387,7 +3416,7 @@ function renderNpcList() {
             </div>
         `);
 
-        // Hover effect — dynamic color
+        // Hover effect - dynamic color
         card.on("mouseenter", function () { $(this).css("border-color", `rgba(${$(this).attr('data-accent-rgba')},0.5)`); });
         card.on("mouseleave", function () { $(this).css("border-color", `rgba(${$(this).attr('data-accent-rgba')},0.2)`); });
 
@@ -3422,7 +3451,7 @@ function renderNpcList() {
             saveProfileToMemory();
             const newState = !nowInject;
             $(this).toggleClass("injecting", newState).toggleClass("excluded", !newState)
-                .attr("title", newState ? "Injected into context — click to exclude" : "Excluded from context — click to include")
+                .attr("title", newState ? "Injected into context - click to exclude" : "Excluded from context - click to include")
                 .html(`<i class="fa-solid ${newState ? 'fa-eye' : 'fa-eye-slash'}"></i>`);
             card.toggleClass("inject-excluded", !newState);
         });
@@ -3519,7 +3548,7 @@ function renderKnowledgebase(c) {
                 </div>
                 <div>
                     <h2>Knowledgebase</h2>
-                    <p>Core rules, lore, and trope guidance the AI always has access to — think of it as a permanent lorebook.</p>
+                    <p>Core rules, lore, and trope guidance the AI always has access to - think of it as a permanent lorebook.</p>
                 </div>
             </div>
             <div id="kb_header_badge" class="mtab-header-badge" style="background: ${kb.enabled ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.06)'}; color: ${kb.enabled ? '#818cf8' : 'var(--text-muted)'}; border: 1px solid ${kb.enabled ? 'rgba(99,102,241,0.25)' : 'var(--border-color)'};">
@@ -3637,7 +3666,7 @@ function renderKbList() {
                             <i class="fa-solid fa-key" style="font-size:0.55rem;"></i> Trigger Keywords <span style="color:var(--text-muted); font-weight:400; text-transform:none; letter-spacing:0;">(optional, comma-separated)</span>
                         </label>
                         <input type="text" class="ps-modern-input kb-triggers-input" data-idx="${idx}" value="${triggersRaw.replace(/"/g, '&quot;')}"
-                            placeholder="e.g. hypnosis, trance, spiral — leave blank to always inject"
+                            placeholder="e.g. hypnosis, trance, spiral - leave blank to always inject"
                             style="width:100%; font-size:0.72rem;" />
                         <div style="font-size:0.6rem; color:var(--text-muted); margin-top:4px;">Leave blank = always injected. With keywords, this entry only injects when one appears in recent chat (saves tokens).</div>
                     </div>
@@ -4254,7 +4283,7 @@ function memRenderDashboard() {
     $("#mem_status_text").text(`Total: ${totalRealMessages} | Vault: ${vaultSize} | ${shortText}Pending (Raw): ${pendingSize} | Working (Raw): ${workingSize}`);
 }
 
-// Renders the editable text areas for chunks already processed — PAGINATED (20 at a time)
+// Renders the editable text areas for chunks already processed - PAGINATED (20 at a time)
 const MEM_ACCORDION_PAGE_SIZE = 20;
 function memRenderAccordion() {
     const mem = localProfile.memoryCore;
@@ -4343,7 +4372,7 @@ function memRenderAccordion() {
     renderAccordionBatch();
 }
 
-// Renders the Long-Term Vault UI with Search Filtering — PAGINATED (20 at a time)
+// Renders the Long-Term Vault UI with Search Filtering - PAGINATED (20 at a time)
 const MEM_VAULT_PAGE_SIZE = 20;
 function memRenderVault(searchFilter = "") {
     const mem = localProfile.memoryCore;
@@ -4498,7 +4527,7 @@ async function memProcessPendingChunks(isAuto = false) {
         return;
     }
 
-    // 4. Process the missing chunks — BATCHED with UI yields
+    // 4. Process the missing chunks - BATCHED with UI yields
     $("#mem_processing_spinner").show();
     $("#mem_processing_progress").show().text(`Preparing...`);
     $("#mem_btn_generate").prop("disabled", true).css("opacity", "0.5");
@@ -4641,7 +4670,7 @@ async function memProcessPendingChunks(isAuto = false) {
     }
 }
 
-// Standalone helper to push old chunks into the Vault (AS RAW TEXT) — OPTIMIZED
+// Standalone helper to push old chunks into the Vault (AS RAW TEXT) - OPTIMIZED
 function memRunVaultMigration() {
     const context = typeof getContext === "function" ? getContext() : null;
     if (!context || !context.chat || !localProfile.memoryCore.enabled) return;
@@ -5058,7 +5087,7 @@ function memGetRelevantVaultEntries() {
     return scoredVault.filter(s => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
 }
 
-// Rule B: Visual Fading Update (STRICT) — DEBOUNCED + RANGE-BASED CSS
+// Rule B: Visual Fading Update (STRICT) - DEBOUNCED + RANGE-BASED CSS
 let _memVisualsTimer = null;
 function updateMemoryVisuals() {
     if (_memVisualsTimer) clearTimeout(_memVisualsTimer);
@@ -5086,7 +5115,7 @@ function _updateMemoryVisualsCore() {
     const archivedSet = mem._archivedSet;
 
     if (archivedSet && archivedSet.size > 0) {
-        // Collect visible mesids that are archived — only scan what's in the DOM
+        // Collect visible mesids that are archived - only scan what's in the DOM
         const selectors = [];
         $(".mes").each(function () {
             const mesId = parseInt(this.getAttribute("mesid"));
@@ -5559,7 +5588,7 @@ function getInjectableKbEntries() {
             if (context && context.chat) {
                 recentText = context.chat.filter(m => !m.is_system).slice(-6).map(m => vcrpCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
             }
-        } catch (e) { /* no context available — treat triggered entries as dormant */ }
+        } catch (e) { /* no context available - treat triggered entries as dormant */ }
     }
 
     return active.filter(e => {
@@ -5595,7 +5624,7 @@ function buildBaseDict() {
     const countType = localProfile.userWordCountType === "min" ? "minimum" : "maximum";
 
     if (wordCountStr) {
-        dict["[[count]]"] = `— ${countType} ${wordCountStr} words`;
+        dict["[[count]]"] = `- ${countType} ${wordCountStr} words`;
     } else {
         dict["[[count]]"] = "";
     }
@@ -5617,12 +5646,12 @@ function buildBaseDict() {
     if (localProfile.toggles.ooc) dict["[[OOC]]"] = hardcodedLogic.toggles.ooc.content;
     if (localProfile.toggles.control) dict["[[control]]"] = hardcodedLogic.toggles.control.content;
     if (localProfile.mode === "v7.5") {
-        let narratorPersona = localProfile.aiRule ? localProfile.aiRule : "Adopt the narration of an unseen, witty observer who is vividly present in the scene. The narrator has a distinct personality—dry, occasionally judgmental, quietly amused, or sharply critical. Feel free to throw subtle shade at terrible decisions, point out the absurdity of a situation, or comment on the scene's chaos with a bit of comedic flair.";
+        let narratorPersona = localProfile.aiRule ? localProfile.aiRule : "Adopt the narration of an unseen, witty observer who is vividly present in the scene. The narrator has a distinct personality-dry, occasionally judgmental, quietly amused, or sharply critical. Feel free to throw subtle shade at terrible decisions, point out the absurdity of a situation, or comment on the scene's chaos with a bit of comedic flair.";
         
         dict["[[aiprompt]]"] = `<Narration_style>\n narrator_persona: "${narratorPersona}"\n quarantine_rule: "CRITICAL: This opinionated voice applies STRICTLY and EXCLUSIVELY to the narration. It MUST NOT bleed into <NPC_dialogue>. NPCs do not share the narrator's wit or perspective; their dialogue remains entirely bound by their own demographics, stress levels, and individual flaws."\n proportional_prose: "Match narrative intensity to the event. A spilled coffee is just a minor annoyance, not a catalyst for dramatic prose. Zero purple prose. Use grounded metaphors sparingly to anchor a scene, not distract from it."\n</Narration_style>`;
     } else if (localProfile.aiRule) {
         if (isV7 && localProfile.activeStyleId !== "dir_v7" && localProfile.activeStyleId !== "dir_v7_core" && localProfile.activeStyleId !== "dir_v7_gentle") {
-            dict["[[aiprompt]]"] = `<narrative_style>\n voice: ${localProfile.aiRule}\n  pacing: "Unhurried where it should be. A quiet moment can take a paragraph. A violent one can take a sentence. Match the rhythm to the content."\n  length_directive: "Typical outputs should run 3–6 substantial paragraphs, scaling with scene density. Lean toward the higher end during rich, atmospheric, or multi-character scenes. Go shorter — even a single paragraph — only when the moment genuinely demands economy: a held breath, a door closing, a line that hits harder alone. Never pad, never rush."\n</narrative_style>`;
+            dict["[[aiprompt]]"] = `<narrative_style>\n voice: ${localProfile.aiRule}\n  pacing: "Unhurried where it should be. A quiet moment can take a paragraph. A violent one can take a sentence. Match the rhythm to the content."\n  length_directive: "Typical outputs should run 3-6 substantial paragraphs, scaling with scene density. Lean toward the higher end during rich, atmospheric, or multi-character scenes. Go shorter - even a single paragraph - only when the moment genuinely demands economy: a held breath, a door closing, a line that hits harder alone. Never pad, never rush."\n</narrative_style>`;
         } else {
             dict["[[aiprompt]]"] = localProfile.aiRule;
         }
@@ -5710,7 +5739,7 @@ function buildBaseDict() {
         if (wordCountStr) dict["[[MVU]]"] = baseMvu.replace("[[count]]", `${countType} ${wordCountStr} words`);
         else dict["[[MVU]]"] = baseMvu.replace("[[count]]", "...");
     } else {
-        dict["[[MVU]]"] = wordCountStr ? `{main response — ${countType} ${wordCountStr} words}` : `{main response}`;
+        dict["[[MVU]]"] = wordCountStr ? `{main response - ${countType} ${wordCountStr} words}` : `{main response}`;
     }
 
     // 3. ENGINE OVERRIDES (The "Superior" Layer)
@@ -5821,7 +5850,7 @@ function buildBaseDict() {
 
     // Anime Mode CoT style compliance step
     if (localProfile.animeMode && localProfile.animeMode.enabled && dict["[[COT]]"]) {
-        dict["[[COT]]"] += `\n\nANIME STYLE CHECK (mandatory):\nAnime Mode is active. Before finalizing your response, verify:\n- Dialogue has the right emotional register — loud when flustered, quiet when vulnerable. Verbal affectations (if any) are used sparingly and feel natural to the character.\n- Physical reactions are appropriately exaggerated — flushing, freezing, stuttering, sweat-drop moments land where the scene calls for them.\n- Tropes are leaned into organically — tsundere deflection, stoic-who-cares dynamics, dense obliviousness, rivalry-as-tension. Do not announce them, embody them.\n- Romantic or emotional beats get manga-panel pacing — proximity, touch, eye contact held too long. Let them breathe.\n- Internal monologue breaks in italics where it adds impact.\nIf this scene has none of these elements, skip the check. Only apply what the moment genuinely calls for.`;
+        dict["[[COT]]"] += `\n\nANIME STYLE CHECK (mandatory):\nAnime Mode is active. Before finalizing your response, verify:\n- Dialogue has the right emotional register - loud when flustered, quiet when vulnerable. Verbal affectations (if any) are used sparingly and feel natural to the character.\n- Physical reactions are appropriately exaggerated - flushing, freezing, stuttering, sweat-drop moments land where the scene calls for them.\n- Tropes are leaned into organically - tsundere deflection, stoic-who-cares dynamics, dense obliviousness, rivalry-as-tension. Do not announce them, embody them.\n- Romantic or emotional beats get manga-panel pacing - proximity, touch, eye contact held too long. Let them breathe.\n- Internal monologue breaks in italics where it adds impact.\nIf this scene has none of these elements, skip the check. Only apply what the moment genuinely calls for.`;
     }
 
     // Story Planner Injection
@@ -5832,7 +5861,7 @@ function buildBaseDict() {
         if (sp.milestones && sp.milestones.length > 0) {
             const active = sp.milestones.filter(m => !m.done);
             if (active.length > 0) activePlanText = active.map(m => m.text).join("\n");
-            else activePlanText = ""; // all milestones completed — inject nothing
+            else activePlanText = ""; // all milestones completed - inject nothing
         }
         if (activePlanText && activePlanText.trim() !== "") {
             const template = (sp.customPrompts && sp.customPrompts.injectionTemplate) || DEFAULT_PROMPTS.storyPlan.injectionTemplate;
@@ -5849,7 +5878,7 @@ function buildBaseDict() {
             const total = sp.milestones.length;
             const done = sp.milestones.filter(m => m.done).length;
             const pct = Math.round((done / total) * 100);
-            progressHint = ` Tracked milestone completion: ${done} of ${total} (~${pct}%) — anchor your progress estimate near this figure.`;
+            progressHint = ` Tracked milestone completion: ${done} of ${total} (~${pct}%) - anchor your progress estimate near this figure.`;
         }
         dict["[[storytracker]]"] = trackerTemplate.split("{{progressHint}}").join(progressHint);
     } else {
@@ -6265,8 +6294,9 @@ async function handlePromptInjection(data, type) {
     if (localProfile.mode === "v8") {
         const v8Parts = [];
         let directorActive = false;
+        let kbInjected = false;
 
-        // Director / Scene Nudge — a one-shot directive for THIS response only, then consumed.
+        // Director / Scene Nudge - a one-shot directive for THIS response only, then consumed.
         if (localProfile.director && localProfile.director.nudge && localProfile.director.nudge.trim()) {
             v8Parts.push(`<DIRECTOR_NOTE priority="high">\nOut-of-character directive for THIS response only. Follow it precisely while staying in-character and consistent with every other active rule:\n${localProfile.director.nudge.trim()}\n</DIRECTOR_NOTE>`);
             directorActive = true;
@@ -6300,6 +6330,7 @@ async function handlePromptInjection(data, type) {
                 kbActive.forEach(e => { kbXML += `<entry title="${e.title.replace(/"/g, "'")}">\n${e.content.trim()}\n</entry>\n\n`; });
                 kbXML += "</knowledgebase>";
                 v8Parts.push(kbXML);
+                kbInjected = true;
             }
         }
 
@@ -6336,7 +6367,7 @@ async function handlePromptInjection(data, type) {
             v8Parts.push(`<WRITING_STYLE>\n${localProfile.aiRule.trim()}\n</WRITING_STYLE>`);
         }
 
-        // Style directives (onomatopoeia + D/N ratio) — combined into a single block
+        // Style directives (onomatopoeia + D/N ratio) - combined into a single block
         const styleDirectives = [];
         if (dict["[[onomato]]"] && dict["[[onomato]]"].trim()) styleDirectives.push(dict["[[onomato]]"].trim());
         if (dict["[[DNRATIO]]"] && dict["[[DNRATIO]]"].trim()) styleDirectives.push(dict["[[DNRATIO]]"].trim());
@@ -6344,7 +6375,7 @@ async function handlePromptInjection(data, type) {
             v8Parts.push(`<STYLE_DIRECTIVE>\n${styleDirectives.join("\n")}\n</STYLE_DIRECTIVE>`);
         }
 
-        // Story Arc block — appended as the final block of every response, below NPC Inner Chatter
+        // Story Arc block - appended as the final block of every response, below NPC Inner Chatter
         if (dict["[[storytracker]]"] && dict["[[storytracker]]"].trim()) {
             v8Parts.push(dict["[[storytracker]]"]);
         }
@@ -6359,14 +6390,14 @@ async function handlePromptInjection(data, type) {
                 if (localProfile.banList && localProfile.banList.length > 0) {
                     rulesMsg.content = rulesMsg.content.replace(
                         'Re-read the ban list.',
-                        'Apply every rule in <BAN_LIST> from <ACTIVE_SESSION_RULES> — banned phrases must not appear in any form.'
+                        'Apply every rule in <BAN_LIST> from <ACTIVE_SESSION_RULES> - banned phrases must not appear in any form.'
                     );
                 }
                 // Extend step 7 (Final Compliance Check) with active feature checks
                 const complianceChecks = [];
                 if (directorActive) complianceChecks.push('Carry out the <DIRECTOR_NOTE> directive for this response.');
                 if (localProfile.banList && localProfile.banList.length > 0) complianceChecks.push('Verify no banned phrase from <BAN_LIST> appears.');
-                if (localProfile.knowledgebase && localProfile.knowledgebase.enabled) complianceChecks.push('Verify full compliance with all active <knowledgebase> entries.');
+                if (kbInjected) complianceChecks.push('Verify full compliance with all active <knowledgebase> entries.');
                 if (localProfile.animeMode && localProfile.animeMode.enabled) complianceChecks.push('Verify anime style directives are applied where the scene calls for them.');
                 if (localProfile.storyPlan && localProfile.storyPlan.enabled) complianceChecks.push('Verify the Story Arc block is appended as the final block, below NPC Inner Chatter, with current arc, description, and progress filled in.');
                 if (complianceChecks.length > 0) {
@@ -6379,9 +6410,9 @@ async function handlePromptInjection(data, type) {
                 if (localProfile.storyPlan && localProfile.storyPlan.enabled) {
                     rulesMsg.content = rulesMsg.content.replace(
                         '</RULES_response_construction>',
-                        'BLOCK 4 — Story Arc (output this LAST, below the NPC Inner Chatter block):\nAppend the <Story_Arc> block exactly as specified in <ACTIVE_SESSION_RULES>. This is always the final element of the response.\n</RULES_response_construction>'
+                        'BLOCK 4 - Story Arc (output this LAST, below the NPC Inner Chatter block):\nAppend the <Story_Arc> block exactly as specified in <ACTIVE_SESSION_RULES>. This is always the final element of the response.\n</RULES_response_construction>'
                     );
-                    // Remove the redundant one-line "Arc Phase:" from BLOCK 1 — the richer Story Arc block now owns arc state.
+                    // Remove the redundant one-line "Arc Phase:" from BLOCK 1 - the richer Story Arc block now owns arc state.
                     rulesMsg.content = rulesMsg.content.replace(/^[^\n]*Arc Phase:[^\n]*\r?\n/m, "");
                 }
                 // Append the full feature block at the end of the output_rules message
@@ -6763,7 +6794,7 @@ function renderDevMode(view = "landing", selectedModeId = null, passedModeData =
         flow.append(createOverrideBlock("[[Direct]]", "direct", modeData.direct, [{ label: "No Change", value: "" }, { label: "Default", value: getAddon("direct") }]));
         flow.append(createOverrideBlock("[[DN]]", "dn", modeData.dn, [{ label: "No Change", value: "" }, { label: "Default", value: getAddon("dn") }]));
         flow.append(createOverrideBlock("[[COLOR]]", "dialogueColor", modeData.dialogueColor, [{ label: "No Change", value: "" }, { label: "Default", value: getAddon("color") }])); flow.append(createOverrideBlock("[[MVU]]", "mvu", modeData.mvu, [{ label: "No Change", value: "" }, { label: "Default", value: getBlock("mvu") }]));
-        flow.append(createOverrideBlock("[[storytracker]]", "storytracker", modeData.storytracker, [{ label: "No Change", value: "" }, { label: "Default", value: "STORY ARC BLOCK — append this as the VERY LAST thing in every response, below the NPC Inner Chatter block:\n<details>\n<summary>📖 <b>Story Arc</b></summary>\n\n**🎬 Current Arc:** [The name/title of the story arc currently in play]\n**📝 Description:** [1–2 sentences: what this arc is about — its central goal, conflict, or question]\n**📊 Progress:** [How close this arc is to its resolution — phase + rough percentage, e.g. \"Rising action (~45%)\", \"Climax imminent (~80%)\"]\n</details>\n</Story_Arc>" }]));
+        flow.append(createOverrideBlock("[[storytracker]]", "storytracker", modeData.storytracker, [{ label: "No Change", value: "" }, { label: "Default", value: "STORY ARC BLOCK - append this as the VERY LAST thing in every response, below the NPC Inner Chatter block:\n<details>\n<summary>📖 <b>Story Arc</b></summary>\n\n**🎬 Current Arc:** [The name/title of the story arc currently in play]\n**📝 Description:** [1-2 sentences: what this arc is about - its central goal, conflict, or question]\n**📊 Progress:** [How close this arc is to its resolution - phase + rough percentage, e.g. \"Rising action (~45%)\", \"Climax imminent (~80%)\"]\n</details>\n</Story_Arc>" }]));
         flow.append(createOverrideBlock("[[npc_inner_chatter]]", "npc_inner_chatter", modeData.npc_inner_chatter, [
             { label: "No Change", value: "" },
             { label: "Default", value: getBlock("npc_inner_chatter") },
@@ -6774,7 +6805,7 @@ function renderDevMode(view = "landing", selectedModeId = null, passedModeData =
         flow.append(`<div class="ps-rule-title" style="margin: 30px 0 10px 0; color: #f59e0b;"><i class="fa-solid fa-earth-americas"></i> Global Variables Overrides</div>`);
         flow.append(createOverrideBlock("[[Language]]", "language", modeData.language, [{ label: "No Change", value: "" }, { label: "English Template", value: "[LANGUAGE RULE]\nALL OUTPUT EXCEPT THINKING MUST BE IN ENGLISH ONLY." }]));
         flow.append(createOverrideBlock("[[pronouns]]", "pronouns", modeData.pronouns, [{ label: "No Change", value: "" }, { label: "Male Template", value: "{{user}} is male. Always portray and address him as such." }]));
-        flow.append(createOverrideBlock("[[count]]", "count", modeData.count, [{ label: "No Change", value: "" }, { label: "Example 400", value: "— maximum 400 words" }]));
+        flow.append(createOverrideBlock("[[count]]", "count", modeData.count, [{ label: "No Change", value: "" }, { label: "Example 400", value: "- maximum 400 words" }]));
         flow.append(createOverrideBlock("[[DNRATIO]]", "dnratio", modeData.dnratio, [{ label: "No Change", value: "" }, { label: "Example 50/50", value: "Ratio: Maintain a balance of 50% Dialogue and 50% Narration." }]));
         flow.append(createOverrideBlock("[[onomato]]", "onomato", modeData.onomato, [{ label: "No Change", value: "" }, { label: "Default", value: "Narration must utilize onomatopoeia. Use precise, context-specific phonetic representations for physical interactions (e.g., the click of a latch, the thud of a heavy object, the soughing of wind) rather than abstract descriptions of sound." }]));
         flow.append(createOverrideBlock("[[banlist]]", "banlist", modeData.banlist, [{ label: "No Change", value: "" }, { label: "Example", value: "[BAN LIST]\nNever rely on these clichés, tropes, or repetitive patterns. They are dead language:\n- A shiver ran down their spine." }]));
