@@ -5,11 +5,11 @@ import { saveBase64AsFile } from "../../../utils.js";
 import { humanizedDateTime } from "../../../RossAscends-mods.js";
 import { Popup, POPUP_TYPE } from "../../../popup.js";
 import { hardcodedLogic } from "./data/database.js";
-import { KAZUMA_PLACEHOLDERS, RESOLUTIONS } from "./data/image_data.js";
+import { VCRP_PLACEHOLDERS, RESOLUTIONS } from "./data/image_data.js";
 
-const extensionName = "Megumin-Suite-Beta";
+const extensionName = "VCRP";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
-const TARGET_PRESET_NAME = "Megumin Engine";
+const TARGET_PRESET_NAME = "VCRP Engine";
 
 const DEFAULT_PROMPTS = {
     storyPlan: {
@@ -63,6 +63,7 @@ let activeMemorySummarizationRequest = null;
 let activeBanListChat = null;
 let activeImageGenRequest = null;
 let activeStoryPlanRequest = null;
+let activeStoryPlanFocusHint = "";
 let activeNpcImages = [];
 let isDevEngineDirty = false;
 let activeNpcScanRequest = null;
@@ -96,7 +97,7 @@ function cleanGhostProfiles() {
 
     if (deletedCount > 0) {
         saveSettingsDebounced();
-        console.log(`[Megumin Suite] Garbage Collection: Cleaned up ${deletedCount} ghost profiles.`);
+        console.log(`[VCRP] Garbage Collection: Cleaned up ${deletedCount} ghost profiles.`);
     }
 }
 
@@ -140,6 +141,8 @@ function initProfile() {
         userPronouns: "off",
         devOverrides: {},
         banList: [],
+        banListCategories: {},
+        banListHits: {},
         banListBackend: "direct",
         banListCustomPrompts: null,
         customModes: [],
@@ -151,7 +154,10 @@ function initProfile() {
             triggerMode: "manual",
             autoFreq: 10,
             currentPlan: "",
-            customPrompts: null
+            customPrompts: null,
+            milestones: [],
+            arcStatus: null,
+            focusHint: ""
         },
         imageGen: {
             enabled: false,
@@ -226,7 +232,18 @@ function initProfile() {
     if (!localProfile.toggles) localProfile.toggles = defaults.toggles;
     if (!localProfile.imageGen) localProfile.imageGen = defaults.imageGen;
     if (!localProfile.storyPlan) localProfile.storyPlan = defaults.storyPlan;
+    if (localProfile.storyPlan.milestones === undefined) localProfile.storyPlan.milestones = [];
+    if (localProfile.storyPlan.arcStatus === undefined) localProfile.storyPlan.arcStatus = null;
+    if (localProfile.storyPlan.focusHint === undefined) localProfile.storyPlan.focusHint = "";
+    if (!localProfile.banListCategories) localProfile.banListCategories = {};
+    if (!localProfile.banListHits) localProfile.banListHits = {};
     if (localProfile.npcBank && localProfile.npcBank.scanDepth === undefined) localProfile.npcBank.scanDepth = 60;
+    if (localProfile.npcBank && localProfile.npcBank.npcs) {
+        localProfile.npcBank.npcs.forEach(n => {
+            if (n.role === undefined) n.role = "unknown";
+            if (n.inject === undefined) n.inject = true;
+        });
+    }
     if (!localProfile.memoryCore) {
         localProfile.memoryCore = defaults.memoryCore;
     } else {
@@ -397,12 +414,12 @@ function cleanAIOutput(text) {
     return text.replace(re, "").trim();
 }
 
-// MASTER CHAT CLEANER: Removes Megumin UI blocks, thoughts, and raw HTML from chat text.
-function meguminCleanChatHistoryText(text) {
+// MASTER CHAT CLEANER: Removes VCRP UI blocks, thoughts, and raw HTML from chat text.
+function vcrpCleanChatHistoryText(text) {
     if (!text) return "";
     let cleaned = text;
 
-    // 1. Remove Specific Megumin Suite Blocks (Inner Chatter, World State, CYOA, NPC Dossiers)
+    // 1. Remove Specific VCRP Blocks (Inner Chatter, World State, CYOA, NPC Dossiers)
     cleaned = cleaned.replace(/<details>\s*<summary>.*?💭.*?<b>NPC Inner Chatter<\/b><\/summary>\s*([\s\S]*?)\s*<\/details>/gi, "");
     cleaned = cleaned.replace(/<details>\s*<summary>.*?📌.*?<b>World State<\/b><\/summary>\s*([\s\S]*?)\s*<\/details>/gi, "");
     cleaned = cleaned.replace(/<details>\s*<summary>.*?🆕.*?<b>New NPC:.*?<\/b><\/summary>\s*([\s\S]*?)\s*<\/details>/gi, ""); // <-- NEW
@@ -515,6 +532,7 @@ function applyTabToAll() {
 
 function renderMode(c) {
     const descriptions = {
+        "v8": "Companion engine for the VCRP V8 preset. The Main Prompt is self-contained — selecting this engine ensures no duplicate rules are injected. Addons, blocks, and writing style still apply.",
         "balance": "The original Secret Sauce. NPCs react naturally — no simping, no needless hostility.",
         "balance Test": "New and improved balance mode that aims to use less tokens and more creativity.",
         "cinematic": "Hollywood-inspired storytelling. Dramatic beats and heightened tension.",
@@ -524,7 +542,8 @@ function renderMode(c) {
         "v6-dream-team-lite": "A streamlined version of the Dream Team. Faster generation with lower token overhead.",
         "v7-core": "The V7 Core engine. The perfect middle ground: cinematic pacing, realistic friction, and relentless world progression.",
         "v7-reality": "The V7 Reality engine. Grounded, unrelenting simulation with zero narrative protection.",
-        "v7-gentle": "The V7 Gentle engine. A softer, For pussies."
+        "v7-gentle": "The V7 Gentle engine. Softer pacing with lower friction — ideal for slice-of-life and emotional scenarios.",
+        "v7.5": "V7.5 Kismet. The newest V7 engine — full story arc management, relentless NPC complexity, and cinematic pacing with a built-in narrator persona."
     };
 
     // Active engine name
@@ -532,9 +551,10 @@ function renderMode(c) {
     const activeLabel = activeEng ? activeEng.label : localProfile.mode;
 
     // Count by version
-    let v4Count = 0, v5Count = 0, v6Count = 0, v7Count = 0;
+    let v4Count = 0, v5Count = 0, v6Count = 0, v7Count = 0, v8Count = 0;
     hardcodedLogic.modes.forEach(m => {
-        if (m.label.includes("V4")) v4Count++;
+        if (m.id.startsWith("v8")) v8Count++;
+        else if (m.label.includes("V4")) v4Count++;
         else if (m.label.includes("V5")) v5Count++;
         else if (m.id.includes("v6")) v6Count++;
         else if (m.id.includes("v7")) v7Count++;
@@ -563,10 +583,11 @@ function renderMode(c) {
     const filterBar = $(`
         <div class="wstyle-filters" style="margin-bottom: 20px;">
             <button class="wstyle-filter-pill active" data-filter="all">All <span class="pill-count">${totalCount}</span></button>
-            <button class="wstyle-filter-pill" data-filter="V4">V4 <span class="pill-count">${v4Count}</span></button>
-            <button class="wstyle-filter-pill" data-filter="V5">V5 <span class="pill-count">${v5Count}</span></button>
-            <button class="wstyle-filter-pill" data-filter="V6"><i class="fa-solid fa-lock" style="font-size:0.6rem;"></i> V6 <span class="pill-count">${v6Count}</span></button>
+            <button class="wstyle-filter-pill" data-filter="V8">V8 <span class="pill-count">${v8Count}</span></button>
             <button class="wstyle-filter-pill" data-filter="V7">V7 <span class="pill-count">${v7Count}</span></button>
+            <button class="wstyle-filter-pill" data-filter="V6"><i class="fa-solid fa-lock" style="font-size:0.6rem;"></i> V6 <span class="pill-count">${v6Count}</span></button>
+            <button class="wstyle-filter-pill" data-filter="V5">V5 <span class="pill-count">${v5Count}</span></button>
+            <button class="wstyle-filter-pill" data-filter="V4">V4 <span class="pill-count">${v4Count}</span></button>
         </div>
     `);
     c.append(filterBar);
@@ -577,7 +598,8 @@ function renderMode(c) {
 
     hardcodedLogic.modes.forEach(m => {
         let version = "all";
-        if (m.label.includes("V4")) version = "V4";
+        if (m.id.startsWith("v8")) version = "V8";
+        else if (m.label.includes("V4")) version = "V4";
         else if (m.label.includes("V5")) version = "V5";
         else if (m.id.includes("v6")) version = "V6";
         else if (m.id.includes("v7")) version = "V7";
@@ -722,6 +744,7 @@ function renderPersonality(c) {
     const isV6DreamTeam = localProfile.mode.includes("v6-dream-team");
     const activeEngineForPersona = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
     const isV7 = activeEngineForPersona ? (activeEngineForPersona.id.startsWith("v7") || activeEngineForPersona.isV7 === true) : false;
+    const isV8 = activeEngineForPersona ? activeEngineForPersona.id.startsWith("v8") : false;
     const isLockedPersona = isV6DreamTeam || isV7;
 
     // ── HEADER ──
@@ -760,11 +783,22 @@ function renderPersonality(c) {
         `);
     } else {
         const descriptions = {
-            "megumin": "A rebellious, dominant voice. Adds an edge of arrogance and chaos to the narration. Best for energetic or confrontational stories.",
-            "director": "Professional narrator. Clean, authoritative story direction with cinematic awareness.",
-            "Nora": "Nora should i say more.",
-            "engine": "No personality overlay at all. The engine speaks in its purest form — precise, neutral, and fully under your control. Recommended for most setups."
+            "rebel": "Arrogant, dominant, openly condescending. Adds an edge of chaos to the narration. Best for energetic, confrontational, or villain-adjacent setups.",
+            "director": "Professional, no-nonsense story direction. Clean cinematic authority with zero personality quirks getting in the way.",
+            "nora": "NORA — the Director and Continuity Supervisor. Precise, rule-obsessed, narrative consistency above all else. Pairs well with structured or multi-arc stories.",
+            "engine": "No persona overlay. The engine runs in its purest form — neutral, precise, and fully under your control. Default pick for most setups."
         };
+
+        if (isV8) {
+            c.append(`
+                <div class="mtab-info-banner" style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.25);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start;">
+                    <i class="fa-solid fa-circle-info" style="color:#8b5cf6;margin-top:2px;flex-shrink:0;"></i>
+                    <div style="font-size:0.85em;color:var(--SmartThemeBodyColor);opacity:0.85;line-height:1.5;">
+                        <strong style="color:#8b5cf6;">V8 Native active.</strong> The V8 preset has its own narrator voice baked directly into the Main Prompt. Persona selection here only applies to custom presets that inject <code>[[main]]</code>.
+                    </div>
+                </div>
+            `);
+        }
 
         c.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-masks-theater"></i> Select Persona</div>`);
         const grid = $(`<div class="mtab-card-grid" style="margin-bottom: 24px;"></div>`);
@@ -1020,9 +1054,9 @@ function renderStyleLibrary(c) {
             });
             card.find(".ps-btn-regen").on("click", async function () {
                 $(this).html(`<i class="fa-solid fa-spinner fa-spin"></i>`);
-                await useMeguminEngine(async () => {
+                await useVcrpEngine(async () => {
                     const orderText = `Inspired by ${style.notes}. Write a writing style rule based on: ${style.tags.join(", ")}. Direct instructions only. 2-3 paragraphs. No fluff.`;
-                    let rule = await runMeguminTask(orderText);
+                    let rule = await runVcrpTask(orderText);
                     style.rule = cleanAIOutput(rule).trim();
                     if (localProfile.activeStyleId === style.id) localProfile.aiRule = style.rule;
                     saveProfileToMemory(); renderStyleLibrary(c); toastr.success("Rule Regenerated!");
@@ -1059,9 +1093,9 @@ function renderStyleLibrary(c) {
         `);
         card.find(".ps-btn-tpl-gen").on("click", async function () {
             const btn = $(this); btn.prop("disabled", true).html(`<i class="fa-solid fa-spinner fa-spin"></i>`);
-            await useMeguminEngine(async () => {
+            await useVcrpEngine(async () => {
                 const orderText = `Inspired by ${tpl.notes}. Write a writing style rule based on: ${tpl.tags.join(", ")}. Direct instructions only. 2-3 paragraphs. No fluff.`;
-                let rule = await runMeguminTask(orderText);
+                let rule = await runVcrpTask(orderText);
                 const newId = "style_" + Date.now();
                 const newStyle = { id: newId, name: tpl.name, tags: [...tpl.tags], notes: tpl.notes, rule: cleanAIOutput(rule).trim() };
                 localProfile.customStyles.push(newStyle); localProfile.activeStyleId = newId; localProfile.aiRule = newStyle.rule;
@@ -1219,9 +1253,9 @@ function renderStyleEditor(c, editId, presetData = null) {
     $("#ps_btn_get_authors_style").on("click", async function () {
         if (!getCharacterKey()) return toastr.warning("Open a chat or group first so I can read the context!");
         $(this).prop("disabled", true).html(`<i class="fa-solid fa-spinner fa-spin"></i> Brainstorming...`);
-        await useMeguminEngine(async () => {
+        await useVcrpEngine(async () => {
             const orderText = `Based on the active characters and scenario, give me EXACTLY 2 famous author names or literary writing styles (e.g. Edgar Allan Poe, Jane Austen style, Dark Fantasy Author) and 5 tags that fit the rp (e.g. internet culture, femboy, virtual game) whose writing style perfectly fits the tone and world. Return ONLY the 7 items separated by a comma. Do not explain them.`;
-            let aiRawOutput = await runMeguminTask(orderText);
+            let aiRawOutput = await runVcrpTask(orderText);
             const aiTagsTemp = cleanAIOutput(aiRawOutput).split(",").map(t => t.trim().replace(/['"[\].]/g, '')).filter(t => t.length > 0);
             if (aiTagsTemp.length > 0) {
                 currentStyle.tags = currentStyle.tags.filter(tag => !tag.endsWith("✨"));
@@ -1234,9 +1268,9 @@ function renderStyleEditor(c, editId, presetData = null) {
     $("#ps_btn_generate_style").on("click", async function () {
         if (currentStyle.tags.length === 0) return toastr.warning("Select tags first!");
         $(this).prop("disabled", true).html(`<i class="fa-solid fa-spinner fa-spin"></i> Finalizing...`);
-        await useMeguminEngine(async () => {
+        await useVcrpEngine(async () => {
             const orderText = `Create a writing style prompt based on these traits:\n\nSelected style tags: ${currentStyle.tags.join(", ")}\n\nAdditional user instructions: ${currentStyle.notes}\n\nWrite a concise, well-structured writing style rule (100 words max) that the AI must follow. Combine all tags into a cohesive directive. Write it as a direct instruction. Do not use bullet points or introductory text.`;
-            let rule = await runMeguminTask(orderText);
+            let rule = await runVcrpTask(orderText);
             currentStyle.rule = cleanAIOutput(rule).trim();
             $("#ps_style_rule_text").val(currentStyle.rule); toastr.success("Live AI Rule Generated!");
         }); $(this).prop("disabled", false).html(`<i class="fa-solid fa-bolt"></i> Generate Writing Rule`);
@@ -1247,14 +1281,15 @@ function renderAddons(c) {
     const descriptions = {
         "death": "Enables permanent consequences. Characters — including yours — can die for real. No safety net, no plot armor.",
         "combat": "Activates a grounded, tactical combat layer. Actions have real weight, positioning matters, and you can lose badly.",
-        "direct": "Forces AI to say words like D and P. No dancing around the subject, no polite deflection. you know what i mean.",
+        "direct": "Forces the AI to use explicit anatomical terms — dick, pussy, cock, ass — instead of euphemisms like 'member' or 'shaft'. No metaphors, no deflection.",
         "color": "Each character's dialogue is color-coded for easy visual parsing.",
-        "npc_events": "Requires all new story events to grow naturally from prior context or environmental cues — no random drama out of nowhere. V6 only.",
-        "dn": "Forces dialogue and narration to be wrapped in their respective XML tags. Useful for specific Models for better narration style adherence."
+        "npc_events": "Organic NPC & Event introduction rules. V6 Dream Team only — V7 and V8 engines have this baked in natively.",
+        "dn": "Wraps all dialogue in &lt;dialogue&gt; tags and narration in &lt;narration&gt; tags. Useful for models that struggle to maintain the narration/dialogue balance."
     };
 
     const activeMode = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
     const isV6 = activeMode && (activeMode.id.includes("v6") || activeMode.label.includes("V6"));
+    const isV7orV8 = activeMode && (activeMode.id.startsWith("v7") || activeMode.id.startsWith("v8"));
 
     // ── HEADER ──
     c.append(`
@@ -1288,7 +1323,11 @@ function renderAddons(c) {
         if (a.id === "npc_events") {
             if (!isV6) {
                 extraClass = 'locked-card';
-                v6BadgeHtml = `<span class="ecard-badge" style="background:rgba(239,68,68,0.12);color:#ef4444;"><i class="fa-solid fa-lock"></i> Requires V6</span>`;
+                const npcBadgeText = isV7orV8
+                    ? `<i class="fa-solid fa-circle-check"></i> Built into V7/V8`
+                    : `<i class="fa-solid fa-lock"></i> Requires V6`;
+                const npcBadgeColor = isV7orV8 ? 'rgba(16,185,129,0.12);color:#10b981' : 'rgba(239,68,68,0.12);color:#ef4444';
+                v6BadgeHtml = `<span class="ecard-badge" style="background:${npcBadgeColor};">${npcBadgeText}</span>`;
             } else {
                 v6BadgeHtml = `<span class="ecard-badge v6-active"><i class="fa-solid fa-unlock"></i> V6 Active</span>`;
             }
@@ -1448,7 +1487,7 @@ function renderBlocks(c) {
         "cyoa": "Choose-Your-Own-Adventure panel with 4 suggested actions for you to pick from each turn.",
         "mvu": "Add MVU Compatibility still in test read more here: <a href='https://github.com/KritBlade/MVU_Game_Maker' target='_blank' style='color: var(--gold); text-decoration: underline;'>https://github.com/KritBlade/MVU_Game_Maker</a>",
         "npc_inner_chatter": "Reveal NPC private thoughts the PC never hears — crushes, resentment, scheming, anxiety. This feeds future NPC behavior.",
-        "npc_inner_chatter_v2": "A simpler version of NPC Inner Chatter. use less input token."
+        "npc_inner_chatter_v2": "A lighter version of NPC Inner Chatter. Uses fewer input tokens — good for tight context budgets."
     };
 
     // ── HEADER ──
@@ -1642,18 +1681,18 @@ function renderModels(c) {
     c.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-diagram-project"></i> Thinking Framework</div>`);
     c.append(`<div class="mtab-callout" style="margin-bottom:12px; background: rgba(245,158,11,0.1); border-left: 3px solid #f59e0b; padding: 8px 12px; font-size: 0.8rem; color: var(--text-main);">
         <i class="fa-solid fa-triangle-exclamation" style="color: #f59e0b; margin-right: 6px;"></i>
-        <strong>Important:</strong> When using GLM or DS4 models, you must disable "Main 3" and enable "Main 3 DS4 + GLM" in the Megumin Suite preset.
+        <strong>Important:</strong> When using GLM or DS4 models, you must disable "Main 3" and enable "Main 3 DS4 + GLM" in the VCRP V8 preset.
     </div>`);
     const typeGrid = $(`<div class="mtab-card-grid" style="margin-bottom: 20px;"></div>`);
     const types = [
         { id: "off", label: "CoT Off", desc: "No Chain of Thought or prefill. The AI will respond normally." },
         { id: "v1", label: "CoT V1 (Classic)", desc: "The original 8-step framework. Focuses heavily on the NPC's internal emotional landscape vs their observable actions." },
         { id: "v2", label: "CoT V2 (New)", desc: "The new experimental framework. Stricter reality checks, info audits, better NPCs, and hook generation." },
-        { id: "v6", label: "CoT V6 (Dream Team)", desc: "The full 4-phase sequence designed specifically for V6 engines. Specialized validation and modeling.", isNew: true },
-        { id: "v6-lite", label: "CoT V6 (Lite)", desc: "A streamlined 3-phase sequence. Less token overhead while maintaining narrative rules.", isNew: true },
-        { id: "v7", label: "CoT V7", desc: "The new V7 sequence with 5-phase strict ground truth rebuilding.", isNew: true },
-        { id: "v7-lite", label: "CoT V7 (Lite)", desc: "A streamlined 5-phase sequence for V7.", isNew: true },
-        { id: "v7.5", label: "CoT V7.5 Kismet", desc: "The new V7.5 sequence focused on story engine mechanics.", isNew: true }
+        { id: "v6", label: "CoT V6 (Dream Team)", desc: "The full 4-phase Dream Team sequence with multi-role psychological modeling and strict NPC validation. More thorough — and more tokens — than V7 CoT.", isNew: true },
+        { id: "v6-lite", label: "CoT V6 (Lite)", desc: "A streamlined 3-phase Dream Team sequence. Lower token cost than full V6 CoT. Compatible with any engine.", isNew: true },
+        { id: "v7", label: "CoT V7", desc: "The V7 sequence: 5-phase strict ground truth rebuild. Anchors spatial/temporal state before every response.", isNew: true },
+        { id: "v7-lite", label: "CoT V7 (Lite)", desc: "The V7 framework trimmed to its core 5 phases. Lower token cost than full V7 CoT, same ground rules.", isNew: true },
+        { id: "v7.5", label: "CoT V7.5 Kismet", desc: "V7.5 sequence built around story arc tracking — world pressure, NPC initiative, and plot-move decisions baked into every turn.", isNew: true }
     ];
     types.forEach(t => {
         const isSel = currentType === t.id;
@@ -1802,6 +1841,19 @@ function renderStoryPlanner(c) {
     c.empty();
     const sp = localProfile.storyPlan;
 
+    // Build arc status HTML
+    const arc = sp.arcStatus;
+    const arcHtml = arc && (arc.arc || arc.chapter || arc.episode) ? `
+        <div class="mtab-panel" style="margin-bottom:16px; border-left: 3px solid #f59e0b;">
+            <div class="mtab-panel-title gold" style="margin-bottom: 10px;"><i class="fa-solid fa-clapperboard"></i> Current Story Status</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: ${arc.secrets ? '10px' : '0'};">
+                ${arc.arc ? `<span class="sp-arc-chip" style="background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3);"><i class="fa-solid fa-layer-group"></i> Arc: ${arc.arc}</span>` : ''}
+                ${arc.chapter ? `<span class="sp-arc-chip" style="background:rgba(245,158,11,0.15); color:#f59e0b; border:1px solid rgba(245,158,11,0.3);"><i class="fa-solid fa-book"></i> Chapter: ${arc.chapter}</span>` : ''}
+                ${arc.episode ? `<span class="sp-arc-chip" style="background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3);"><i class="fa-solid fa-film"></i> Episode: ${arc.episode}</span>` : ''}
+            </div>
+            ${arc.secrets ? `<div style="font-size:0.72rem; color:var(--text-muted); background:rgba(239,68,68,0.07); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:6px 10px; margin-top:8px;"><i class="fa-solid fa-eye-slash" style="color:#f87171; margin-right:5px;"></i>${arc.secrets}</div>` : ''}
+        </div>` : '';
+
     c.append(`
         <!-- HEADER -->
         <div class="mtab-header">
@@ -1823,19 +1875,22 @@ function renderStoryPlanner(c) {
         <div class="mtab-toggle-row ${sp.enabled ? 'active' : ''}" id="sp_enable_card" style="margin-bottom: 20px;">
             <div class="toggle-info">
                 <div class="toggle-label"><i class="fa-solid fa-map-location-dot" style="color:var(--gold);"></i> Enable Story Planner</div>
-                <div class="toggle-desc">Just enable and hit generate plan now and let the ai do the rest.</div>
+                <div class="toggle-desc">Enable, then hit "Generate Plan Now" — the AI brainstorms future plot milestones and injects them into the context automatically.</div>
             </div>
             <div class="ps-switch"></div>
         </div>
 
         <div id="sp_main_content" style="display: ${sp.enabled ? 'block' : 'none'};">
-            <div class="mtab-panel">
+
+            ${arcHtml}
+
+            <div class="mtab-panel" style="margin-bottom:16px;">
                 <div class="mtab-panel-title gold"><i class="fa-solid fa-gears"></i> Engine Settings</div>
                 <div class="mtab-setting-row">
                     <div class="set-info"><div class="set-label">Generation Backend</div></div>
                     <select id="sp_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
                         <option value="direct" ${sp.backend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                        <option value="preset" ${sp.backend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
+                        <option value="preset" ${sp.backend === 'preset' ? 'selected' : ''}>VCRP Engine Preset</option>
                     </select>
                 </div>
                 <div class="mtab-setting-row">
@@ -1854,18 +1909,75 @@ function renderStoryPlanner(c) {
             </div>
 
             <div class="mtab-panel">
+                <!-- Plan header row -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
                     <div class="mtab-panel-title gold" style="margin-bottom:0;"><i class="fa-solid fa-book-open"></i> Current Story Plan</div>
-                    <button id="sp_btn_generate" class="wstyle-gen-btn" style="padding: 8px 18px; font-size: 0.78rem;"><i class="fa-solid fa-bolt"></i> Generate Plan Now</button>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <button id="sp_btn_view_toggle" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem;">
+                            <i class="fa-solid fa-list-check"></i> ${(sp.milestones && sp.milestones.length > 0) ? 'Milestone View' : 'Edit Raw'}
+                        </button>
+                        ${(sp.milestones && sp.milestones.length > 0) ? `<button id="sp_btn_reset_milestones" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: var(--text-muted);"><i class="fa-solid fa-rotate-left"></i> Reset</button>` : ''}
+                        <button id="sp_btn_generate" class="wstyle-gen-btn" style="padding: 8px 18px; font-size: 0.78rem;"><i class="fa-solid fa-bolt"></i> Generate Plan Now</button>
+                    </div>
+                </div>
+
+                <!-- Focus Hint -->
+                <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
+                    <i class="fa-solid fa-crosshairs" style="color: var(--gold); font-size: 0.8rem; flex-shrink:0;"></i>
+                    <input type="text" id="sp_focus_hint" class="ps-modern-input" placeholder="Generation focus (optional) — e.g. &quot;explore the antagonist&quot;, &quot;romance thread&quot;" value="${sp.focusHint || ''}" style="font-size: 0.78rem;" />
+                </div>
+
+                <!-- Plan display: milestone view OR raw textarea -->
+                <div id="sp_milestone_view" style="display: none; margin-bottom: 12px;">
+                    <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 8px;">Click a milestone to mark it complete — completed ones won't be injected.</div>
+                    <div id="sp_milestone_list"></div>
                 </div>
                 <textarea id="sp_current_plan" class="ps-modern-input" style="height: 250px; resize: vertical; font-size: 0.85rem; line-height: 1.5; margin-bottom: 12px;" placeholder="Generated plot milestones will appear here.">${sp.currentPlan || ""}</textarea>
+
                 <div class="mtab-callout">
                     <i class="fa-solid fa-circle-info"></i>
-                    <span>A tracker will be added automatically at the end of each response.</span>
+                    <span>A tracker block is added at the end of each response to keep arc/chapter status current.</span>
                 </div>
             </div>
         </div>
     `);
+
+    // ── Helper: render the milestone checklist ──
+    function spRenderMilestones() {
+        const list = $("#sp_milestone_list");
+        list.empty();
+        if (!sp.milestones || sp.milestones.length === 0) return;
+        sp.milestones.forEach((m, i) => {
+            const item = $(`
+                <div class="sp-milestone-item ${m.done ? 'done' : ''}" data-idx="${i}">
+                    <div class="sp-milestone-check">${m.done ? '<i class="fa-solid fa-check" style="font-size:0.55rem;"></i>' : ''}</div>
+                    <span class="sp-milestone-text">${m.text}</span>
+                </div>
+            `);
+            item.on("click", function () {
+                sp.milestones[i].done = !sp.milestones[i].done;
+                saveProfileToMemory();
+                spRenderMilestones();
+            });
+            list.append(item);
+        });
+    }
+
+    // ── Determine initial view ──
+    let inMilestoneView = sp.milestones && sp.milestones.length > 0;
+    function spApplyView() {
+        if (inMilestoneView) {
+            $("#sp_current_plan").hide();
+            $("#sp_milestone_view").show();
+            $("#sp_btn_view_toggle").html('<i class="fa-solid fa-pen-to-square"></i> Edit Raw');
+            spRenderMilestones();
+        } else {
+            $("#sp_milestone_view").hide();
+            $("#sp_current_plan").show();
+            $("#sp_btn_view_toggle").html('<i class="fa-solid fa-list-check"></i> Milestone View');
+        }
+    }
+    spApplyView();
 
     // --- PROMPT EDITOR UI ---
     const spEditor = renderPromptEditor({
@@ -1893,7 +2005,7 @@ function renderStoryPlanner(c) {
     });
     c.find('#sp_main_content').append(spEditor);
 
-    // Listeners
+    // ── Listeners ──
     $("#sp_enable_card").on("click", function () {
         sp.enabled = !sp.enabled; saveProfileToMemory();
         if (sp.enabled) {
@@ -1913,30 +2025,60 @@ function renderStoryPlanner(c) {
         if (sp.triggerMode === 'frequency') $("#sp_freq").show(); else $("#sp_freq").hide();
     });
     $("#sp_freq").on("input", e => { sp.autoFreq = Math.max(1, parseInt($(e.target).val()) || 10); saveProfileToMemory(); });
-    $("#sp_current_plan").on("input", e => { sp.currentPlan = $(e.target).val(); saveProfileToMemory(); });
+    $("#sp_current_plan").on("input", e => {
+        sp.currentPlan = $(e.target).val();
+        // Re-parse milestones when raw text changes
+        sp.milestones = spParseMilestones(sp.currentPlan);
+        saveProfileToMemory();
+    });
+    $("#sp_focus_hint").on("input", e => { sp.focusHint = $(e.target).val(); saveProfileToMemory(); });
 
+    // View toggle
+    $("#sp_btn_view_toggle").on("click", function () {
+        if (!inMilestoneView && (!sp.milestones || sp.milestones.length === 0) && sp.currentPlan) {
+            sp.milestones = spParseMilestones(sp.currentPlan);
+            saveProfileToMemory();
+        }
+        inMilestoneView = !inMilestoneView;
+        spApplyView();
+    });
+
+    // Reset milestones
+    $("#sp_btn_reset_milestones").on("click", function () {
+        if (sp.milestones) {
+            sp.milestones.forEach(m => m.done = false);
+            saveProfileToMemory();
+            spRenderMilestones();
+            toastr.success("All milestones reset to active.");
+        }
+    });
+
+    // Generate button
     $("#sp_btn_generate").on("click", async function () {
         const chatText = getCleanedChatHistory();
         if (chatText.length < 100) return toastr.warning("Not enough chat history to generate a plot.");
 
         const btn = $(this);
         btn.prop("disabled", true).html(`<i class="fa-solid fa-spinner fa-spin"></i> Brainstorming...`);
+        const focusHint = (sp.focusHint || "").trim();
 
         try {
             let output;
             if (!sp.backend || sp.backend === "direct") {
-                output = await generateStoryPlanLogic(chatText);
+                output = await generateStoryPlanLogic(chatText, focusHint);
             } else {
-                await useMeguminEngine(async () => { output = await generateStoryPlanLogic(chatText); });
+                await useVcrpEngine(async () => { output = await generateStoryPlanLogic(chatText, focusHint); });
             }
 
             if (output) {
-                // Extract only what is inside <plot></plot>
                 const plotMatch = output.match(/<plot>([\s\S]*?)<\/plot>/i);
                 if (plotMatch) {
                     sp.currentPlan = plotMatch[1].trim();
+                    sp.milestones = spParseMilestones(sp.currentPlan);
                     $("#sp_current_plan").val(sp.currentPlan);
                     saveProfileToMemory();
+                    inMilestoneView = true;
+                    spApplyView();
                     toastr.success("Story Plan Generated!");
                 } else {
                     toastr.warning("AI failed to format the plot correctly. Try again.");
@@ -1950,22 +2092,36 @@ function renderStoryPlanner(c) {
     });
 }
 
-async function generateStoryPlanLogic(chatText) {
+async function generateStoryPlanLogic(chatText, focusHint = "") {
     activeStoryPlanRequest = chatText;
+    activeStoryPlanFocusHint = focusHint;
     try {
         let rawOutput = await generateQuietPrompt({ prompt: "___PS_STORY_PLAN___" });
         return rawOutput;
     } finally {
         activeStoryPlanRequest = null;
+        activeStoryPlanFocusHint = "";
     }
+}
+
+function spParseMilestones(planText) {
+    return planText.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 3)
+        .map(text => ({ text, done: false }));
 }
 
 function renderBanList(c) {
     c.empty();
     if (!localProfile.banList) localProfile.banList = [];
+    if (!localProfile.banListCategories) localProfile.banListCategories = {};
+    if (!localProfile.banListHits) localProfile.banListHits = {};
 
-    // ── AI SLOP DETECTOR ──
+    const CAT_CYCLE = ["both", "dialogue", "narration"];
+    const CAT_LABELS = { both: "Both", dialogue: "Dialogue", narration: "Narration" };
+
     c.append(`
+        <!-- AI SLOP DETECTOR -->
         <div class="mtab-panel" style="margin-bottom:16px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
                 <div class="mtab-panel-title purple" style="margin-bottom:0;"><i class="fa-solid fa-radar"></i> AI Slop Detector</div>
@@ -1977,19 +2133,33 @@ function renderBanList(c) {
                     <div class="set-desc">Choose how to generate the analysis.</div>
                 </div>
                 <select id="ban_list_backend" class="ps-modern-input" style="width: 200px; cursor: pointer;">
-                <option value="direct" ${localProfile.banListBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                <option value="preset" ${localProfile.banListBackend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
-            </select>
+                    <option value="direct" ${localProfile.banListBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
+                    <option value="preset" ${localProfile.banListBackend === 'preset' ? 'selected' : ''}>VCRP Engine Preset</option>
+                </select>
+            </div>
         </div>
 
+        <!-- TEST A PHRASE -->
+        <div class="mtab-panel" style="margin-bottom:16px;">
+            <div class="mtab-panel-title gold"><i class="fa-solid fa-flask-vial"></i> Test a Phrase</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px;">Type anything the AI wrote and check if it violates an active ban rule.</div>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="ban_test_input" class="ps-modern-input" placeholder="e.g. her eyes danced with mischief…" style="flex: 1;" />
+                <button id="ban_test_btn" class="ps-modern-btn secondary" style="padding: 0 15px;"><i class="fa-solid fa-magnifying-glass"></i> Test</button>
+            </div>
+            <div id="ban_test_result" style="margin-top: 8px; font-size: 0.75rem; display: none;"></div>
+        </div>
+
+        <!-- ADD PHRASE -->
         <div class="mtab-panel" style="margin-bottom:16px;">
             <div class="mtab-panel-title red"><i class="fa-solid fa-plus-circle"></i> Add Phrase</div>
             <div style="display: flex; gap: 10px;">
-                <input type="text" id="ps_manual_ban_input" class="ps-modern-input" placeholder="Manually add a phrase to ban…" style="flex: 1;" />
+                <input type="text" id="ps_manual_ban_input" class="ps-modern-input" placeholder="Manually add a phrase or rule to ban…" style="flex: 1;" />
                 <button id="ps_btn_add_ban" class="ps-modern-btn secondary" style="padding: 0 15px;">Add</button>
             </div>
         </div>
 
+        <!-- ACTIVE BANNED PHRASES -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <div class="wstyle-section-head red" style="margin-bottom:0;"><i class="fa-solid fa-list"></i> Active Banned Phrases</div>
             <div class="mtab-btn-row">
@@ -1999,14 +2169,14 @@ function renderBanList(c) {
                 <button id="ps_btn_clear_bans" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
             </div>
         </div>
+        <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 8px;">Click the category pill to cycle: Both → Dialogue → Narration. Amber badge = AI used this recently.</div>
         <div id="ps_banlist_container" class="mtab-card-list" style="min-height: 50px; padding: 10px; border: 1px dashed var(--border-color); border-radius: 10px; margin-bottom: 16px;"></div>
-        
-        <!-- NEW DEDICATED CONTAINER FOR THE EDITOR -->
+
         <div id="ban_editor_container" style="margin-bottom: 16px;"></div>
 
         <div class="mtab-callout purple" style="margin-top: 16px;">
             <i class="fa-solid fa-circle-info"></i>
-            <span>This is a beta feature. Don't complain if you have to generate more than once.</span>
+            <span>Run Analyze Chat after a few exchanges to catch the AI's bad habits. Hit count badges reset when you clear the list.</span>
         </div>
     `);
 
@@ -2039,17 +2209,75 @@ function renderBanList(c) {
 
     const renderTags = () => {
         const box = $("#ps_banlist_container"); box.empty();
-        if (localProfile.banList.length === 0) { box.append(`<span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">No phrases banned yet.</span>`); $("#ban_header_badge").html(`<i class="fa-solid fa-ban" style="font-size:0.6rem;"></i> 0 Banned`); return; }
+        if (localProfile.banList.length === 0) {
+            box.append(`<span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">No phrases banned yet.</span>`);
+            $("#ban_header_badge").html(`<i class="fa-solid fa-ban" style="font-size:0.6rem;"></i> 0 Banned`);
+            return;
+        }
         localProfile.banList.forEach(phrase => {
-            const tEl = $(`<div class="mtab-ban-item">
-                <span style="padding-right: 15px;">${phrase}</span>
-                <i class="fa-solid fa-xmark"></i>
-            </div>`);
-            tEl.on("click", () => { localProfile.banList = localProfile.banList.filter(p => p !== phrase); saveProfileToMemory(); renderTags(); }); box.append(tEl);
+            const cat = localProfile.banListCategories[phrase] || "both";
+            const hits = localProfile.banListHits[phrase];
+            const hitBadge = hits && hits.count > 0
+                ? `<span class="ban-hit-badge"><i class="fa-solid fa-triangle-exclamation"></i> ${hits.count} hit${hits.count > 1 ? 's' : ''}</span>`
+                : '';
+            const tEl = $(`
+                <div class="mtab-ban-item" style="align-items:center; gap:8px; flex-wrap: nowrap;">
+                    <span style="flex:1; min-width:0; word-break:break-word;">${phrase}</span>
+                    <span class="ban-cat-pill cat-${cat}" data-phrase="${phrase.replace(/"/g, '&quot;')}">${CAT_LABELS[cat]}</span>
+                    ${hitBadge}
+                    <i class="fa-solid fa-xmark" style="flex-shrink:0; cursor:pointer;"></i>
+                </div>
+            `);
+            // Delete on × click
+            tEl.find(".fa-xmark").on("click", (e) => {
+                e.stopPropagation();
+                localProfile.banList = localProfile.banList.filter(p => p !== phrase);
+                delete localProfile.banListCategories[phrase];
+                delete localProfile.banListHits[phrase];
+                saveProfileToMemory();
+                renderTags();
+            });
+            // Cycle category on pill click
+            tEl.find(".ban-cat-pill").on("click", (e) => {
+                e.stopPropagation();
+                const cur = localProfile.banListCategories[phrase] || "both";
+                const next = CAT_CYCLE[(CAT_CYCLE.indexOf(cur) + 1) % CAT_CYCLE.length];
+                localProfile.banListCategories[phrase] = next;
+                saveProfileToMemory();
+                renderTags();
+            });
+            box.append(tEl);
         });
-        // Update header badge dynamically
         $("#ban_header_badge").html(`<i class="fa-solid fa-ban" style="font-size:0.6rem;"></i> ${localProfile.banList.length} Banned`);
     }; renderTags();
+
+    // Test-a-phrase handler
+    const BAN_STOP_WORDS = new Set(["avoid", "never", "using", "through", "their", "other", "about", "these", "those", "where", "which", "should", "would", "could", "being", "having", "from", "with", "that", "this", "they", "them", "than", "then", "when", "always", "often", "every", "after", "before", "describe", "instead", "words", "phrase", "pattern", "dont", "dont", "used", "only"]);
+    $("#ban_test_btn").on("click", () => {
+        const testPhrase = $("#ban_test_input").val().trim().toLowerCase();
+        const result = $("#ban_test_result");
+        if (!testPhrase) { result.hide(); return; }
+        if (!localProfile.banList || localProfile.banList.length === 0) {
+            result.show().html(`<span style="color:var(--text-muted);">No active ban rules to check against.</span>`);
+            return;
+        }
+        const testWords = testPhrase.split(/\s+/).filter(w => w.length > 3 && !BAN_STOP_WORDS.has(w));
+        const matches = localProfile.banList.filter(rule => {
+            const ruleWords = rule.toLowerCase().split(/\s+/).filter(w => w.length > 4 && !BAN_STOP_WORDS.has(w));
+            return testWords.some(tw => ruleWords.some(rw => rw.includes(tw) || tw.includes(rw)));
+        });
+        if (matches.length > 0) {
+            result.show().html(`<div style="color:#f87171; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px; padding:8px 10px;">
+                <i class="fa-solid fa-triangle-exclamation" style="margin-right:5px;"></i><strong>Violation detected</strong> — matches ${matches.length} rule${matches.length > 1 ? 's' : ''}:
+                ${matches.map(m => `<div style="margin-top:4px; color:var(--text-muted); font-style:italic;">→ ${m}</div>`).join('')}
+            </div>`);
+        } else {
+            result.show().html(`<div style="color:#10b981; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.25); border-radius:6px; padding:8px 10px;">
+                <i class="fa-solid fa-check" style="margin-right:5px;"></i>No active ban rules triggered.
+            </div>`);
+        }
+    });
+    $("#ban_test_input").on("keydown", e => { if (e.key === "Enter") $("#ban_test_btn").trigger("click"); });
 
     $("#ps_btn_add_ban").on("click", () => {
         const val = $("#ps_manual_ban_input").val().trim();
@@ -2057,7 +2285,12 @@ function renderBanList(c) {
     });
     $("#ps_btn_clear_bans").on("click", () => {
         if (localProfile.banList.length === 0) return;
-        if (confirm("Are you sure you want to delete all banned phrases?")) { localProfile.banList = []; saveProfileToMemory(); renderTags(); toastr.info("Ban list cleared."); }
+        if (confirm("Are you sure you want to delete all banned phrases?")) {
+            localProfile.banList = [];
+            localProfile.banListCategories = {};
+            localProfile.banListHits = {};
+            saveProfileToMemory(); renderTags(); toastr.info("Ban list cleared.");
+        }
     });
     $("#ps_btn_export_bans").on("click", () => {
         if (!localProfile.banList || localProfile.banList.length === 0) return toastr.warning("Ban list is empty!");
@@ -2121,12 +2354,12 @@ function renderBanList(c) {
             newPhrases.forEach(p => { if (!localProfile.banList.includes(p)) { localProfile.banList.push(p); addedCount++; } });
             if (addedCount > 0) { saveProfileToMemory(); renderTags(); toastr.success(`Caught and banned ${addedCount} repetitive phrases!`); } else { toastr.info("No new repetitive phrases found."); }
         }
-        $(this).prop("disabled", false).html(`<i class="fa-solid fa-radar"></i> Analyze Chat History`);
+        $(this).prop("disabled", false).html(`<i class="fa-solid fa-radar"></i> Analyze Chat`);
     });
 }
 
 // -------------------------------------------------------------
-// STAGE 8: IMAGE GEN KAZUMA (ComfyUI Integration)
+// STAGE 8: IMAGE GEN (ComfyUI Integration)
 // -------------------------------------------------------------
 function renderImageGen(c) {
     c.empty();
@@ -2164,11 +2397,11 @@ function renderImageGen(c) {
             <div class="mtab-setting-row">
                 <div class="set-info">
                     <div class="set-label">Generation Method</div>
-                    <div class="set-desc">"Direct" is faster. "Megumin Image" is more creative.</div>
+                    <div class="set-desc">"Direct" is faster. "VCRP Image" is more creative.</div>
                 </div>
                 <select id="img_gen_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
                     <option value="direct" ${s.generatorBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                    <option value="preset" ${s.generatorBackend === 'preset' ? 'selected' : ''}>Megumin Image Preset</option>
+                    <option value="preset" ${s.generatorBackend === 'preset' ? 'selected' : ''}>VCRP Image Preset</option>
                 </select>
             </div>
         </div>
@@ -2470,7 +2703,7 @@ async function igFetchComfyLists() {
                 if (val) sel.val(val);
             }
         }
-    } catch (e) { console.warn(`[Megumin-Suite] ComfyLists failed`, e); }
+    } catch (e) { console.warn(`[VCRP] ComfyLists failed`, e); }
 }
 
 // -------------------------------------------------------------
@@ -2542,7 +2775,7 @@ async function npcGeneratePfp(npcName) {
     let perspStr = "This is a CHARACTER PORTRAIT. Frame it as an upper-body/bust shot focused on the character's face and shoulders. Soft, flattering lighting. Clean or simple background. Capture their personality through expression and posture.";
 
     toastr.info(`Generating portrait prompt for ${npcName}...`, "NPC Bank");
-    showKazumaProgress("AI is writing portrait prompt...");
+    showVcrpProgress("AI is writing portrait prompt...");
 
     // Step 1: Ask the AI to generate an image prompt from the NPC dossier
     activeNpcPfpRequest = { npcText, styleStr, perspStr, extraStr: s.promptExtra || "None" };
@@ -2558,7 +2791,7 @@ async function npcGeneratePfp(npcName) {
         if (match) promptText = match[1];
     } catch (e) {
         console.error("NPC PFP prompt generation failed:", e);
-        $("#kazuma_progress_overlay").hide();
+        $("#vcrp_progress_overlay").hide();
         toastr.error("Failed to generate portrait prompt.");
         activeNpcPfpRequest = null;
         return null;
@@ -2567,21 +2800,21 @@ async function npcGeneratePfp(npcName) {
     }
 
     if (!promptText || promptText.length < 5) {
-        $("#kazuma_progress_overlay").hide();
+        $("#vcrp_progress_overlay").hide();
         toastr.error("AI returned an empty prompt.");
         return null;
     }
 
-    console.log(`[Megumin-Suite] NPC PFP prompt for ${npcName}: ${promptText}`);
+    console.log(`[VCRP] NPC PFP prompt for ${npcName}: ${promptText}`);
     toastr.info("Sending portrait prompt to ComfyUI...", "NPC Bank");
-    showKazumaProgress("Rendering NPC Portrait...");
+    showVcrpProgress("Rendering NPC Portrait...");
 
     // Step 2: Send the AI-generated prompt to ComfyUI
     let workflowRaw;
     try {
         const res = await fetch('/api/sd/comfy/workflow', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ file_name: s.currentWorkflowName }) });
         if (!res.ok) throw new Error("Load failed"); workflowRaw = await res.json();
-    } catch (e) { $("#kazuma_progress_overlay").hide(); toastr.error("Could not load workflow."); return null; }
+    } catch (e) { $("#vcrp_progress_overlay").hide(); toastr.error("Could not load workflow."); return null; }
 
     let workflow = (typeof workflowRaw === 'string') ? JSON.parse(workflowRaw) : workflowRaw;
     let finalSeed = Math.floor(Math.random() * 1000000000);
@@ -2620,7 +2853,7 @@ async function npcGeneratePfp(npcName) {
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
 
-        showKazumaProgress("Rendering Portrait...");
+        showVcrpProgress("Rendering Portrait...");
         return new Promise((resolve) => {
             const checkInterval = setInterval(async () => {
                 try {
@@ -2646,19 +2879,19 @@ async function npcGeneratePfp(npcName) {
 
                             npc.pfp = compressed;
                             saveProfileToMemory();
-                            $("#kazuma_progress_overlay").hide();
+                            $("#vcrp_progress_overlay").hide();
                             toastr.success(`Portrait generated for ${npcName}!`);
                             renderNpcList();
                             resolve(compressed);
                         } else {
-                            $("#kazuma_progress_overlay").hide();
+                            $("#vcrp_progress_overlay").hide();
                             resolve(null);
                         }
                     }
                 } catch (e) { }
             }, 1000);
         });
-    } catch (e) { $("#kazuma_progress_overlay").hide(); toastr.error("ComfyUI Error: " + e.message); return null; }
+    } catch (e) { $("#vcrp_progress_overlay").hide(); toastr.error("ComfyUI Error: " + e.message); return null; }
 }
 
 function renderNpcBank(c) {
@@ -2715,9 +2948,13 @@ function renderNpcBank(c) {
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <div style="color: #f43f5e; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;"><i class="fa-solid fa-address-card"></i> Saved NPCs <span id="npc_count" style="color: var(--text-muted); font-size: 0.75rem; margin-left: 8px;">(${(nb.npcs || []).length})</span></div>
                     <div style="display: flex; gap: 8px;">
+                        <button id="npc_btn_add_manual" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #a78bfa; border-color: rgba(167,139,250,0.3);"><i class="fa-solid fa-user-plus"></i> Add NPC</button>
                         <button id="npc_btn_scan_story" class="ps-modern-btn primary" style="padding: 4px 10px; font-size: 0.72rem; background: linear-gradient(135deg, #f43f5e, #e11d48); color: #fff; border: none;"><i class="fa-solid fa-radar"></i> Scan Story</button>
                         <button id="npc_btn_clear_all" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-trash-can"></i> Clear All</button>
                     </div>
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <input type="text" id="npc_search" class="ps-modern-input" placeholder="Filter NPCs by name..." style="width: 100%; font-size: 0.78rem;" />
                 </div>
                 <div id="npc_bank_list" style="display: flex; flex-direction: column; gap: 14px; padding: 4px;">
                 </div>
@@ -2807,6 +3044,8 @@ function renderNpcBank(c) {
                         agenda: parsed.agenda || "",
                         hiddenLayer: parsed.hiddenLayer || "",
                         pfp: "",
+                        role: "unknown",
+                        inject: true,
                         timestamp: Date.now()
                     });
                     addedCount++;
@@ -2845,6 +3084,31 @@ function renderNpcBank(c) {
         saveProfileToMemory();
     });
 
+    $("#npc_btn_add_manual").on("click", function () {
+        const name = prompt("Enter NPC name:");
+        if (!name || !name.trim()) return;
+        if (!localProfile.npcBank.npcs) localProfile.npcBank.npcs = [];
+        if (localProfile.npcBank.npcs.find(n => n.name.toLowerCase() === name.trim().toLowerCase())) {
+            return toastr.warning(`An NPC named "${name.trim()}" already exists.`);
+        }
+        localProfile.npcBank.npcs.push({
+            name: name.trim(), age: "", sex: "", appearance: "", occupation: "",
+            background: "", innerCircle: "", personality: "", agenda: "", hiddenLayer: "",
+            pfp: "", role: "unknown", inject: true, timestamp: Date.now()
+        });
+        saveProfileToMemory();
+        renderNpcList();
+        toastr.success(`"${name.trim()}" added to NPC Bank.`);
+    });
+
+    $("#npc_search").on("input", function () {
+        const q = $(this).val().trim().toLowerCase();
+        $("#npc_bank_list .npc-card").each(function () {
+            const name = ($(this).attr("data-npc-name") || "").toLowerCase();
+            $(this).toggle(!q || name.includes(q));
+        });
+    });
+
     if (nb.enabled) renderNpcList();
 }
 
@@ -2870,10 +3134,16 @@ function renderNpcList() {
         { key: "hiddenLayer", label: "Hidden Layer", icon: "fa-eye-slash", color: "#ef4444" }
     ];
 
+    const NPC_ROLES = ["unknown", "ally", "romantic", "neutral", "enemy"];
+    const NPC_ROLE_LABELS = { unknown: "Unknown", ally: "Ally", romantic: "Romantic", neutral: "Neutral", enemy: "Enemy" };
+    const NPC_ROLE_ICONS = { unknown: "fa-question", ally: "fa-shield-heart", romantic: "fa-heart", neutral: "fa-circle-half-stroke", enemy: "fa-skull" };
+
     [...npcs].reverse().forEach((n, revIdx) => {
         const idx = npcs.length - 1 - revIdx;
         const dateStr = new Date(n.timestamp).toLocaleDateString();
         const pfpSrc = n.pfp || "";
+        const npcRole = n.role || "unknown";
+        const npcInject = n.inject !== false;
 
         // Dynamic color based on sex: Blue for male, Red/pink for female/other
         const isMale = (n.sex || "").trim().toLowerCase().startsWith("m");
@@ -2901,7 +3171,7 @@ function renderNpcList() {
         const miniPfp = pfpSrc ? `<img src="${pfpSrc}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;border:1px solid rgba(${accentRgba},0.3);" />` : "";
 
         const card = $(`
-            <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(${accentRgba},0.2); border-radius: 12px; overflow: hidden; transition: border-color 0.2s;" class="npc-card" data-accent-rgba="${accentRgba}">
+            <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(${accentRgba},0.2); border-radius: 12px; overflow: hidden; transition: border-color 0.2s;" class="npc-card${npcInject ? '' : ' inject-excluded'}" data-accent-rgba="${accentRgba}" data-npc-name="${n.name.toLowerCase()}">
                 <!-- Header (clickable to toggle) -->
                 <div class="npc-card-header" style="background: linear-gradient(135deg, ${gradientFrom}, ${gradientTo}); padding: 8px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;">
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -2910,9 +3180,11 @@ function renderNpcList() {
                         <span style="font-size: 0.85rem; font-weight: 700; color: ${accentColor};">${n.name}</span>
                         <button class="npc_edit_name_btn" data-idx="${idx}" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.7rem; padding: 2px 4px; margin-left: -4px;" title="Edit Name"><i class="fa-solid fa-pen"></i></button>
                         <span style="font-size: 0.6rem; color: var(--text-muted); background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">${n.age || "?"} · ${n.sex || "?"}</span>
+                        <span class="npc-role-pill role-${npcRole} npc_role_pill" data-idx="${idx}" title="Click to change role"><i class="fa-solid ${NPC_ROLE_ICONS[npcRole]}"></i> ${NPC_ROLE_LABELS[npcRole]}</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="color: var(--text-muted); font-size: 0.6rem;">${dateStr}</span>
+                        <button class="npc-inject-btn npc_inject_toggle ${npcInject ? 'injecting' : 'excluded'}" data-idx="${idx}" title="${npcInject ? 'Injected into context — click to exclude' : 'Excluded from context — click to include'}"><i class="fa-solid ${npcInject ? 'fa-eye' : 'fa-eye-slash'}"></i></button>
                         <button class="npc_del_btn" data-idx="${idx}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Delete NPC"><i class="fa-solid fa-trash"></i></button>
                     </div>
                 </div>
@@ -2947,11 +3219,38 @@ function renderNpcList() {
 
         // Collapse / Expand toggle
         card.find(".npc-card-header").on("click", function (e) {
-            if ($(e.target).closest(".npc_del_btn").length) return; // Don't toggle when clicking delete
+            if ($(e.target).closest(".npc_del_btn, .npc_inject_toggle, .npc_role_pill, .npc_edit_name_btn").length) return;
             const body = $(this).siblings(".npc-card-body");
             const chevron = $(this).find(".npc-chevron");
+            const wasHidden = !body.is(":visible");
             body.slideToggle(200);
-            chevron.css("transform", body.is(":visible") ? "rotate(0deg)" : "rotate(90deg)");
+            chevron.css("transform", wasHidden ? "rotate(90deg)" : "rotate(0deg)");
+        });
+
+        // Role cycle
+        card.find(".npc_role_pill").on("click", function (e) {
+            e.stopPropagation();
+            const i = parseInt($(this).attr("data-idx"));
+            const cur = localProfile.npcBank.npcs[i].role || "unknown";
+            const next = NPC_ROLES[(NPC_ROLES.indexOf(cur) + 1) % NPC_ROLES.length];
+            localProfile.npcBank.npcs[i].role = next;
+            saveProfileToMemory();
+            $(this).removeClass(NPC_ROLES.map(r => "role-" + r).join(" ")).addClass("role-" + next)
+                .html(`<i class="fa-solid ${NPC_ROLE_ICONS[next]}"></i> ${NPC_ROLE_LABELS[next]}`);
+        });
+
+        // Inject toggle
+        card.find(".npc_inject_toggle").on("click", function (e) {
+            e.stopPropagation();
+            const i = parseInt($(this).attr("data-idx"));
+            const nowInject = localProfile.npcBank.npcs[i].inject !== false;
+            localProfile.npcBank.npcs[i].inject = !nowInject;
+            saveProfileToMemory();
+            const newState = !nowInject;
+            $(this).toggleClass("injecting", newState).toggleClass("excluded", !newState)
+                .attr("title", newState ? "Injected into context — click to exclude" : "Excluded from context — click to include")
+                .html(`<i class="fa-solid ${newState ? 'fa-eye' : 'fa-eye-slash'}"></i>`);
+            card.toggleClass("inject-excluded", !newState);
         });
 
         // Field editing
@@ -3165,11 +3464,11 @@ function renderMemoryCore(c) {
                 <div class="mtab-setting-row" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 14px;">
                     <div class="set-info">
                         <div class="set-label">Generator Backend</div>
-                        <div class="set-desc">Bypass standard preset configs for fast direct API calls, or use defined Megumin engine settings for character-style summaries.</div>
+                        <div class="set-desc">Bypass standard preset configs for fast direct API calls, or use defined VCRP engine settings for character-style summaries.</div>
                     </div>
                     <select id="mem_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
                         <option value="direct" ${mem.backend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                        <option value="preset" ${mem.backend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
+                        <option value="preset" ${mem.backend === 'preset' ? 'selected' : ''}>VCRP Engine Preset</option>
                     </select>
                 </div>
                 <div class="mtab-setting-row" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 14px;">
@@ -3325,7 +3624,7 @@ function renderMemoryCore(c) {
             $("#mem_header_badge").css({ background: 'rgba(16,185,129,0.12)', color: '#10b981', 'border-color': 'rgba(16,185,129,0.25)' }).html(`<i class="fa-solid fa-circle-check" style="font-size:0.6rem;"></i> Enabled`);
             
             if (isFirstEnable) {
-                toastr.success("Memory Core activated! Auto-archiving on every reply.", "Megumin Suite");
+                toastr.success("Memory Core activated! Auto-archiving on every reply.", "VCRP");
                 // Re-render to update the dropdowns and settings values in the UI
                 setTimeout(() => renderMemoryCore(c), 200);
             } else {
@@ -3477,7 +3776,7 @@ function renderMemoryCore(c) {
 
         // Only show TF-IDF block if Semantic failed OR TF-IDF is manually selected
         if (engine === 'tfidf' || currentSemanticMatches.length === 0) {
-            const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-4).map(m => meguminCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
+            const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-4).map(m => vcrpCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
             const uniqueKeywords = memExtractKeywords(recentCleanedText);
             html += `<div style="background: rgba(16,185,129,0.1); border-left: 3px solid #10b981; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
             <div style="color: #10b981; font-weight: bold; margin-bottom: 4px;">TF-IDF Smart Keywords (Last 2 Messages):</div>
@@ -3813,7 +4112,7 @@ async function memProcessPendingChunks(isAuto = false) {
 
         let rawText = "";
         chunk.forEach(item => {
-            rawText += `${item.msg.name}: ${meguminCleanChatHistoryText(item.msg.mes)}\n\n`;
+            rawText += `${item.msg.name}: ${vcrpCleanChatHistoryText(item.msg.mes)}\n\n`;
         });
         chunksToProcess.push({ id: chunkId, text: rawText.trim(), endId: endId });
     }
@@ -3885,9 +4184,9 @@ async function memProcessPendingChunks(isAuto = false) {
             if (!mem.backend || mem.backend === "direct") {
                 summaryResult = await generateQuietPrompt({ prompt: "___PS_MEMORY_SUMMARIZE___" });
             } else {
-                await useMeguminEngine(async () => {
+                await useVcrpEngine(async () => {
                     summaryResult = await generateQuietPrompt({ prompt: "___PS_MEMORY_SUMMARIZE___" });
-                }, "Megumin Engine");
+                }, "VCRP Engine");
             }
 
             summaryResult = summaryResult.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
@@ -4008,7 +4307,7 @@ function memRunVaultMigration() {
 
                 for (let j = startId; j <= stopId; j++) {
                     if (j >= 0 && j < chat.length && chat[j] && !chat[j].is_system) {
-                        rawText += `${chat[j].name}: ${meguminCleanChatHistoryText(chat[j].mes)}\n\n`;
+                        rawText += `${chat[j].name}: ${vcrpCleanChatHistoryText(chat[j].mes)}\n\n`;
                     }
                 }
 
@@ -4251,9 +4550,9 @@ let currentSemanticMatches = [];
 // Creates a unique database collection name for this specific character/group
 function memGetCollectionId() {
     const context = typeof getContext === "function" ? getContext() : null;
-    if (!context) return "megumin_default";
+    if (!context) return "vcrp_default";
     const charId = context.characterId !== undefined ? String(context.characterId) : "group_" + context.groupId;
-    return ("megumin_" + charId).replace(/[^a-zA-Z0-9_]/g, "_");
+    return ("vcrp_" + charId).replace(/[^a-zA-Z0-9_]/g, "_");
 }
 
 // Inserts vault chunks into ST's native vector database
@@ -4272,7 +4571,7 @@ async function memInsertToVectorDB(chunks) {
             headers: getRequestHeaders(),
             body: JSON.stringify({ collectionId, items, source: 'transformers' })
         });
-    } catch (e) { console.warn("Megumin Suite: Vector Insert failed.", e); }
+    } catch (e) { console.warn("VCRP: Vector Insert failed.", e); }
 }
 
 // Deletes vault chunks from ST's native vector database
@@ -4287,7 +4586,7 @@ async function memDeleteFromVectorDB(ids) {
             headers: getRequestHeaders(),
             body: JSON.stringify({ collectionId, hashes, source: 'transformers' })
         });
-    } catch (e) { console.warn("Megumin Suite: Vector Delete failed.", e); }
+    } catch (e) { console.warn("VCRP: Vector Delete failed.", e); }
 }
 
 // Background task: Queries the DB silently while you chat so the AI's prompt is always ready
@@ -4300,7 +4599,7 @@ async function memUpdateSemanticQuery() {
     const context = typeof getContext === "function" ? getContext() : null;
     if (!context || !context.chat) return;
 
-    const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-2).map(m => meguminCleanChatHistoryText(m.mes)).join(" ");
+    const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-2).map(m => vcrpCleanChatHistoryText(m.mes)).join(" ");
     if (!recentCleanedText.trim()) return;
 
     const collectionId = memGetCollectionId();
@@ -4336,7 +4635,7 @@ async function memUpdateSemanticQuery() {
             }
         }
     } catch (e) {
-        console.warn("Megumin Suite: Semantic query failed, falling back to TF-IDF.", e);
+        console.warn("VCRP: Semantic query failed, falling back to TF-IDF.", e);
         currentSemanticMatches = [];
     }
 }
@@ -4358,7 +4657,7 @@ function memGetRelevantVaultEntries() {
     }
 
     // --- ENGINE 2: TF-IDF MULTILINGUAL (Keywords / Fallback) ---
-    const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-2).map(m => meguminCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
+    const recentCleanedText = context.chat.filter(m => !m.is_system).slice(-2).map(m => vcrpCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
     const uniqueKeywords = memExtractKeywords(recentCleanedText);
     const totalDocs = vault.length;
 
@@ -4398,7 +4697,7 @@ function _updateMemoryVisualsCore() {
     const mem = localProfile?.memoryCore;
 
     // Remove old injected style
-    $("#megumin-archived-style").remove();
+    $("#vcrp-archived-style").remove();
 
     if (!mem?.enabled) {
         return;
@@ -4424,7 +4723,7 @@ function _updateMemoryVisualsCore() {
         if (selectors.length > 0) {
             // Inject a single <style> block instead of toggling classes on each element
             const css = selectors.join(",") + `{ opacity: 0.35; filter: saturate(0.3); transition: opacity 0.2s ease; }`;
-            $("head").append(`<style id="megumin-archived-style">${css}</style>`);
+            $("head").append(`<style id="vcrp-archived-style">${css}</style>`);
         }
     }
 
@@ -4433,7 +4732,7 @@ function _updateMemoryVisualsCore() {
 }
 
 // Rule A: The Prompt Interceptor (STRICT)
-window.megumin_memory_intercept = function (chat, _contextSize, _abort, type) {
+window.vcrp_memory_intercept = function (chat, _contextSize, _abort, type) {
     const mem = localProfile?.memoryCore;
     if (!mem?.enabled) return;
 
@@ -4458,9 +4757,9 @@ window.megumin_memory_intercept = function (chat, _contextSize, _abort, type) {
 function toggleQuickGenButton() {
     const s = localProfile?.imageGen;
     if (s && s.enabled && s.triggerMode === 'manual') {
-        $("#kazuma_quick_gen").css("display", "flex");
+        $("#vcrp_quick_gen").css("display", "flex");
     } else {
-        $("#kazuma_quick_gen").css("display", "none");
+        $("#vcrp_quick_gen").css("display", "none");
     }
 }
 
@@ -4546,7 +4845,7 @@ async function igOpenWorkflowEditorClick() {
     const $textarea = $container.find('.wf-textarea'); const $list = $container.find('.wf-list'); const $fileInput = $container.find('.wf-file-input');
     $textarea.val(currentJsonText);
 
-    KAZUMA_PLACEHOLDERS.forEach(item => {
+    VCRP_PLACEHOLDERS.forEach(item => {
         const $itemDiv = $('<div></div>').css({ 'padding': '8px', 'margin-bottom': '6px', 'background': 'rgba(255,255,255,0.05)', 'border-radius': '6px', 'border': '1px solid transparent', 'transition': '0.2s' });
         $itemDiv.append($('<span></span>').text(item.key).css({ 'font-weight': 'bold', 'color': 'var(--gold)', 'font-family': 'monospace' })).append($('<div></div>').text(item.desc).css({ 'font-size': '0.7rem', 'color': 'var(--text-muted)', 'margin-top': '4px' }));
         $list.append($itemDiv);
@@ -4576,50 +4875,50 @@ async function igOpenWorkflowEditorClick() {
     }
 }
 
-function showKazumaProgress(text = "Processing...") {
-    if ($("#kazuma_progress_overlay").length === 0) {
+function showVcrpProgress(text = "Processing...") {
+    if ($("#vcrp_progress_overlay").length === 0) {
         $("body").append(`
-            <div id="kazuma_progress_overlay" style="position: fixed; bottom: 20px; right: 20px; width: 300px; background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 15px; z-index: 99999; box-shadow: 0 10px 30px rgba(0,0,0,0.8); display: none; align-items: center; gap: 15px; font-family: 'Inter', sans-serif;">
+            <div id="vcrp_progress_overlay" style="position: fixed; bottom: 20px; right: 20px; width: 300px; background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 15px; z-index: 99999; box-shadow: 0 10px 30px rgba(0,0,0,0.8); display: none; align-items: center; gap: 15px; font-family: 'Inter', sans-serif;">
                 <div style="flex:1">
-                    <span id="kazuma_progress_text" style="font-weight: 600; font-size: 0.85rem; color: #fff; margin-bottom: 8px; display: block;">Generating Image...</span>
+                    <span id="vcrp_progress_text" style="font-weight: 600; font-size: 0.85rem; color: #fff; margin-bottom: 8px; display: block;">Generating Image...</span>
                     <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
-                        <div style="height: 100%; width: 100%; background: linear-gradient(45deg, #a855f7 25%, transparent 25%, transparent 50%, #a855f7 50%, #a855f7 75%, transparent 75%, transparent); background-size: 20px 20px; animation: kazuma-stripe-anim 1s linear infinite;"></div>
+                        <div style="height: 100%; width: 100%; background: linear-gradient(45deg, #a855f7 25%, transparent 25%, transparent 50%, #a855f7 50%, #a855f7 75%, transparent 75%, transparent); background-size: 20px 20px; animation: vcrp-stripe-anim 1s linear infinite;"></div>
                     </div>
                 </div>
             </div>
-            <style>@keyframes kazuma-stripe-anim { 0% { background-position: 0 0; } 100% { background-position: 20px 0; } }</style>
+            <style>@keyframes vcrp-stripe-anim { 0% { background-position: 0 0; } 100% { background-position: 20px 0; } }</style>
         `);
     }
-    $("#kazuma_progress_text").text(text); $("#kazuma_progress_overlay").css("display", "flex");
+    $("#vcrp_progress_text").text(text); $("#vcrp_progress_overlay").css("display", "flex");
 }
 
 async function igManualGenerate() {
     const s = localProfile?.imageGen;
     if (!s || !s.enabled) return;
 
-    showKazumaProgress("Analyzing Scene...");
+    showVcrpProgress("Analyzing Scene...");
 
     try {
         let promptText;
         if (!s.generatorBackend || s.generatorBackend === "direct") {
             promptText = await generateImagePromptText();
         } else {
-            // Use the "Megumin Image" preset, but still run the exact same prompt logic
-            await useMeguminEngine(async () => {
+            // Use the "VCRP Image" preset, but still run the exact same prompt logic
+            await useVcrpEngine(async () => {
                 promptText = await generateImagePromptText();
-            }, "Megumin Image");
+            }, "VCRP Image");
         }
 
         const imgRegex = /<img\s+prompt=["'](.*?)["']\s*\/?>/i;
         const match = promptText.match(imgRegex);
         if (match) promptText = match[1];
 
-        toastr.info("Sending to ComfyUI...", "Megumin Suite");
+        toastr.info("Sending to ComfyUI...", "VCRP");
         igGenerateWithComfy(promptText, null);
 
     } catch (e) {
         console.error(e);
-        $("#kazuma_progress_overlay").hide();
+        $("#vcrp_progress_overlay").hide();
         toastr.error("Manual generation failed.");
     } finally {
         activeImageGenRequest = null;
@@ -4633,7 +4932,7 @@ async function generateImagePromptText() {
     const badStuffRegex = /(<disclaimer>.*?<\/disclaimer>)|(<guifan>.*?<\/guifan>)|(<danmu>.*?<\/danmu>)|(<options>.*?<\/options>)|```start|```end|<done>|`<done>`|(.*?<\/(?:ksc??|think(?:ing)?)>(\n)?)|(<(?:ksc??|think(?:ing)?)>[\s\S]*?<\/(?:ksc??|think(?:ing)?)>(\n)?)/gs;
 
     const lastMessages = chat.filter(m => !m.is_system).slice(-5).map(m => {
-        return `${m.name}: ${meguminCleanChatHistoryText(m.mes)}`;
+        return `${m.name}: ${vcrpCleanChatHistoryText(m.mes)}`;
     }).join("\n\n");
 
     let styleStr = s.promptStyle === "illustrious" ? "Use Danbooru-style tags separated by commas." : (s.promptStyle === "sdxl" ? "Use natural, descriptive prose and full sentences." : "Use a comma-separated list of detailed keywords and visual descriptors.");
@@ -4651,7 +4950,7 @@ async function igGenerateWithComfy(positivePrompt, target = null) {
 
     // --- INTERCEPT PROMPT IF PREVIEW IS ENABLED ---
     if (s.previewPrompt) {
-        $("#kazuma_progress_overlay").hide(); // Hide the progress bar temporarily
+        $("#vcrp_progress_overlay").hide(); // Hide the progress bar temporarily
 
         const $content = $(`
             <div style="display:flex; flex-direction:column; gap:10px; font-family: 'Inter', sans-serif;">
@@ -4678,7 +4977,7 @@ async function igGenerateWithComfy(positivePrompt, target = null) {
         finalPrompt = liveText.trim();
         if (!finalPrompt) return toastr.warning("Prompt cannot be empty.");
 
-        showKazumaProgress("Preparing to Render..."); // Bring progress bar back
+        showVcrpProgress("Preparing to Render..."); // Bring progress bar back
     }
 
     let workflowRaw;
@@ -4725,7 +5024,7 @@ async function igGenerateWithComfy(positivePrompt, target = null) {
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
 
-        showKazumaProgress("Rendering Image...");
+        showVcrpProgress("Rendering Image...");
         const checkInterval = setInterval(async () => {
             try {
                 const h = await (await fetch(`${s.comfyUrl}/history/${data.prompt_id}`)).json();
@@ -4737,7 +5036,7 @@ async function igGenerateWithComfy(positivePrompt, target = null) {
                         if (nodeOut.images && nodeOut.images.length > 0) { finalImage = nodeOut.images[0]; break; }
                     }
                     if (finalImage) {
-                        showKazumaProgress("Downloading...");
+                        showVcrpProgress("Downloading...");
                         const imgUrl = `${s.comfyUrl}/view?filename=${finalImage.filename}&subfolder=${finalImage.subfolder}&type=${finalImage.type}`;
 
                         // Download & Compress
@@ -4766,17 +5065,17 @@ async function igGenerateWithComfy(positivePrompt, target = null) {
                             if (typeof appendMediaToMessage === "function") appendMediaToMessage(target.message, target.element);
                             await saveChat(); toastr.success("Gallery updated!");
                         } else {
-                            const newMsg = { name: "Image Gen Kazuma", is_user: false, is_system: true, send_date: Date.now(), mes: "", extra: { media: [mediaAttach], media_display: "gallery", media_index: 0 }, force_avatar: "img/five.png" };
+                            const newMsg = { name: "VCRP Image Gen", is_user: false, is_system: true, send_date: Date.now(), mes: "", extra: { media: [mediaAttach], media_display: "gallery", media_index: 0 }, force_avatar: "img/five.png" };
                             getContext().chat.push(newMsg); await saveChat();
                             if (typeof addOneMessage === "function") addOneMessage(newMsg); else await reloadCurrentChat();
                             toastr.success("Image inserted!");
                         }
-                        $("#kazuma_progress_overlay").hide();
-                    } else { $("#kazuma_progress_overlay").hide(); }
+                        $("#vcrp_progress_overlay").hide();
+                    } else { $("#vcrp_progress_overlay").hide(); }
                 }
             } catch (e) { }
         }, 1000);
-    } catch (e) { $("#kazuma_progress_overlay").hide(); toastr.error("Comfy Error: " + e.message); }
+    } catch (e) { $("#vcrp_progress_overlay").hide(); toastr.error("Comfy Error: " + e.message); }
 }
 
 // -------------------------------------------------------------
@@ -4789,7 +5088,7 @@ function getCleanedChatHistory() {
     const aiMessages = context.chat.filter(m => !m.is_user && !m.is_system).slice(-50);
     const badStuffRegex = /(<disclaimer>.*?<\/disclaimer>)|(<guifan>.*?<\/guifan>)|(<danmu>.*?<\/danmu>)|(<options>.*?<\/options>)|```start|```end|<done>|`<done>`|(.*?<\/(?:ksc??|think(?:ing)?)>(\n)?)|(<(?:ksc??|think(?:ing)?)>[\s\S]*?<\/(?:ksc??|think(?:ing)?)>(\n)?)/gs;
 
-    let cleanedMessages = aiMessages.map(m => meguminCleanChatHistoryText(m.mes));
+    let cleanedMessages = aiMessages.map(m => vcrpCleanChatHistoryText(m.mes));
 
     cleanedMessages = cleanedMessages.filter(t => t.length > 0);
     return cleanedMessages.join("\n\n");
@@ -4801,7 +5100,7 @@ function getChatForNpcScan() {
     const depth = localProfile?.npcBank?.scanDepth || 60;
     // Grab the last 'depth' actual messages (both user and AI) to have complete context
     const msgs = context.chat.filter(m => !m.is_system).slice(-depth);
-    return msgs.map(m => `${m.name}: ${meguminCleanChatHistoryText(m.mes)}`).join("\n\n");
+    return msgs.map(m => `${m.name}: ${vcrpCleanChatHistoryText(m.mes)}`).join("\n\n");
 }
 
 async function analyzeSlopDirectly(chatText) {
@@ -4819,14 +5118,14 @@ async function analyzeSlopDirectly(chatText) {
 
 async function analyzeSlopWithPreset(chatText) {
     let result = null;
-    await useMeguminEngine(async () => {
+    await useVcrpEngine(async () => {
         // We still use the interceptor! This just makes the engine switch first.
         result = await analyzeSlopDirectly(chatText);
     });
     return result;
 }
 
-async function useMeguminEngine(task, targetPreset = TARGET_PRESET_NAME) { // Added parameter with default value
+async function useVcrpEngine(task, targetPreset = TARGET_PRESET_NAME) { // Added parameter with default value
     const selector = $("#settings_preset_openai");
     const option = selector.find(`option`).filter(function () { return $(this).text().trim() === targetPreset; }); // Use the new parameter
     let originalValue = null;
@@ -4851,7 +5150,7 @@ async function useMeguminEngine(task, targetPreset = TARGET_PRESET_NAME) { // Ad
     }
 }
 
-async function runMeguminTask(orderText) {
+async function runVcrpTask(orderText) {
     activeGenerationOrder = orderText;
     try {
         return await generateQuietPrompt({ prompt: "___PS_DUMMY___" });
@@ -4904,7 +5203,7 @@ function buildBaseDict() {
     dict["[[AI1]]"] = "Understood."; // Default
     dict["[[AI2]]"] = "Understood."; // Default
 
-    if (localProfile.personality === "megumin") {
+    if (localProfile.personality === "rebel") {
         dict["[[AI1]]"] = "Fine i read the rules.";
         dict["[[AI2]]"] = "OK i Understnd it.";
     }
@@ -5076,10 +5375,17 @@ function buildBaseDict() {
 
     // Story Planner Injection
     if (localProfile.storyPlan && localProfile.storyPlan.enabled) {
-        const planText = localProfile.storyPlan.currentPlan;
-        if (planText && planText.trim() !== "") {
-            const template = (localProfile.storyPlan.customPrompts && localProfile.storyPlan.customPrompts.injectionTemplate) || DEFAULT_PROMPTS.storyPlan.injectionTemplate;
-            dict["[[storyplan]]"] = template.replace('{{planText}}', planText);
+        const sp = localProfile.storyPlan;
+        let activePlanText = sp.currentPlan;
+        // If milestones exist, inject only the incomplete ones
+        if (sp.milestones && sp.milestones.length > 0) {
+            const active = sp.milestones.filter(m => !m.done);
+            if (active.length > 0) activePlanText = active.map(m => m.text).join("\n");
+            else activePlanText = ""; // all milestones completed — inject nothing
+        }
+        if (activePlanText && activePlanText.trim() !== "") {
+            const template = (sp.customPrompts && sp.customPrompts.injectionTemplate) || DEFAULT_PROMPTS.storyPlan.injectionTemplate;
+            dict["[[storyplan]]"] = template.replace('{{planText}}', activePlanText);
         } else {
             dict["[[storyplan]]"] = "";
         }
@@ -5094,7 +5400,13 @@ function buildBaseDict() {
 
     // 4. FINAL INJECTIONS (Banlist & Image Gen)
     if (localProfile.banList && localProfile.banList.length > 0) {
-        const banStr = localProfile.banList.map(b => `- ${b}`).join("\n");
+        const cats = localProfile.banListCategories || {};
+        const banStr = localProfile.banList.map(b => {
+            const cat = cats[b] || "both";
+            if (cat === "dialogue") return `- [Dialogue only] ${b}`;
+            if (cat === "narration") return `- [Narration only] ${b}`;
+            return `- ${b}`;
+        }).join("\n");
         const template = (localProfile.banListCustomPrompts && localProfile.banListCustomPrompts.injectionTemplate) || DEFAULT_PROMPTS.banList.injectionTemplate;
         dict["[[banlist]]"] = template.replace('{{banItems}}', banStr);
     } else {
@@ -5210,11 +5522,11 @@ function buildBaseDict() {
         if (localProfile.npcBank.npcs && localProfile.npcBank.npcs.length > 0) {
             const context = typeof getContext === 'function' ? getContext() : null;
             if (context && context.chat) {
-                const recentText = context.chat.filter(m => !m.is_system).slice(-4).map(m => meguminCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
+                const recentText = context.chat.filter(m => !m.is_system).slice(-4).map(m => vcrpCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
                 const keywords = typeof memExtractKeywords === 'function' ? memExtractKeywords(recentText) : [];
                 if (keywords.length > 0) {
                     let scoredNpcs = [];
-                    localProfile.npcBank.npcs.forEach(n => {
+                    localProfile.npcBank.npcs.filter(n => n.inject !== false).forEach(n => {
                         let score = 0;
                         let matchedWords = [];
                         const contentLower = npcBuildTextFromData(n).toLowerCase();
@@ -5229,7 +5541,10 @@ function buildBaseDict() {
                     const topNpcs = scoredNpcs.slice(0, 3);
                     if (topNpcs.length > 0) {
                         let npcXML = "<retrieved_npcs>\n";
-                        topNpcs.forEach(n => { npcXML += `<${n.name}>\n${npcBuildTextFromData(n)}\n</${n.name}>\n\n`; });
+                        topNpcs.forEach(n => {
+                            const roleTag = (n.role && n.role !== "unknown") ? ` role="${n.role}"` : "";
+                            npcXML += `<${n.name}${roleTag}>\n${npcBuildTextFromData(n)}\n</${n.name}>\n\n`;
+                        });
                         npcXML += "</retrieved_npcs>";
                         dict["[[npc list]]"] = `[RELEVANT NPCs]\nThe following are details of known NPCs relevant to the current context:\n${npcXML}`;
 
@@ -5274,9 +5589,13 @@ async function handlePromptInjection(data, type) {
             "role": "system",
             "content": sys.replace('{{charLore}}', charLore).replace('{{userPersona}}', userPersona).replace('{{chatHistory}}', activeStoryPlanRequest)
         });
+        let userContent = userTask;
+        if (activeStoryPlanFocusHint && activeStoryPlanFocusHint.trim()) {
+            userContent += `\n\nAdditional focus directive: ${activeStoryPlanFocusHint.trim()}`;
+        }
         messages.push({
             "role": "user",
-            "content": userTask
+            "content": userContent
         });
         messages.push({
             "role": "system",
@@ -5940,10 +6259,10 @@ function initDraggableButton() {
     // Load saved position
     let savedPos = null;
     try {
-        const stored = localStorage.getItem('megumin_btn_position');
+        const stored = localStorage.getItem('vcrp_btn_position');
         if (stored) savedPos = JSON.parse(stored);
     } catch (e) {
-        console.error('Failed to parse megumin_btn_position', e);
+        console.error('Failed to parse vcrp_btn_position', e);
     }
 
     // Apply saved position or defaults
@@ -5973,7 +6292,7 @@ function initDraggableButton() {
     applyPosition(savedPos);
 
     // Dynamic resize handler
-    $(window).off('resize.megumin_btn').on('resize.megumin_btn', function () {
+    $(window).off('resize.vcrp_btn').on('resize.vcrp_btn', function () {
         applyPosition(savedPos);
     });
 
@@ -5998,8 +6317,8 @@ function initDraggableButton() {
         $btn.removeClass('ps-btn-transition');
 
         // Bind document level listeners
-        $(document).on('mousemove.megumin_drag touchmove.megumin_drag', dragMove);
-        $(document).on('mouseup.megumin_drag touchend.megumin_drag', dragEnd);
+        $(document).on('mousemove.vcrp_drag touchmove.vcrp_drag', dragMove);
+        $(document).on('mouseup.vcrp_drag touchend.vcrp_drag', dragEnd);
 
         // Prevent default actions to stop scrolling/text selection ONLY on mouse events
         if (e.type === 'mousedown') {
@@ -6046,7 +6365,7 @@ function initDraggableButton() {
         isDragging = false;
 
         // Unbind move/up events
-        $(document).off('.megumin_drag');
+        $(document).off('.vcrp_drag');
 
         if (hasMoved) {
             // Apply snap transition
@@ -6084,7 +6403,7 @@ function initDraggableButton() {
             const topPercent = (currentTop / $(window).height()) * 100;
 
             savedPos = { side, topPercent };
-            localStorage.setItem('megumin_btn_position', JSON.stringify(savedPos));
+            localStorage.setItem('vcrp_btn_position', JSON.stringify(savedPos));
 
             // Prevent the subsequent click event from bubbling or executing handlers
             $btn.one('click', function (clickEvent) {
@@ -6095,7 +6414,7 @@ function initDraggableButton() {
     }
 
     // Attach start listeners
-    $btn.off('mousedown.megumin_drag touchstart.megumin_drag').on('mousedown.megumin_drag touchstart.megumin_drag', dragStart);
+    $btn.off('mousedown.vcrp_drag touchstart.vcrp_drag').on('mousedown.vcrp_drag touchstart.vcrp_drag', dragStart);
 }
 
 jQuery(async () => {
@@ -6161,21 +6480,69 @@ jQuery(async () => {
             eventSource.on(event_types.MESSAGE_RECEIVED, async () => {
                 updateMemoryVisuals();
 
+                // ── PARSE STORY TRACKER FROM LAST AI MESSAGE ──
+                const spCtx = localProfile?.storyPlan;
+                if (spCtx && spCtx.enabled) {
+                    const ctxChat = getContext().chat;
+                    const lastAi = ctxChat && [...ctxChat].reverse().find(m => !m.is_user && !m.is_system);
+                    if (lastAi) {
+                        const trackerMatch = lastAi.mes.match(/<Story_Tracker>([\s\S]*?)<\/Story_Tracker>/i);
+                        if (trackerMatch) {
+                            const block = trackerMatch[1];
+                            const arcMatch = block.match(/arc:\s*(.+)/i);
+                            const chapterMatch = block.match(/chapter:\s*(.+)/i);
+                            const episodeMatch = block.match(/episode:\s*(.+)/i);
+                            const secretsMatch = block.match(/secrets?:\s*([\s\S]+?)(?=\n\w|$)/i);
+                            spCtx.arcStatus = {
+                                arc: arcMatch ? arcMatch[1].trim() : (spCtx.arcStatus?.arc || ""),
+                                chapter: chapterMatch ? chapterMatch[1].trim() : (spCtx.arcStatus?.chapter || ""),
+                                episode: episodeMatch ? episodeMatch[1].trim() : (spCtx.arcStatus?.episode || ""),
+                                secrets: secretsMatch ? secretsMatch[1].trim() : (spCtx.arcStatus?.secrets || "")
+                            };
+                            saveProfileToMemory();
+                            if (currentTab === 6) switchTab(6);
+                        }
+                    }
+                }
+
+                // ── BAN HIT SCANNER ──
+                if (localProfile.banList && localProfile.banList.length > 0) {
+                    const banCtxChat = getContext().chat;
+                    const lastBanMsg = banCtxChat && [...banCtxChat].reverse().find(m => !m.is_user && !m.is_system);
+                    if (lastBanMsg) {
+                        const msgLower = lastBanMsg.mes.toLowerCase();
+                        const BL_STOP = new Set(["avoid","never","using","through","their","other","about","these","those","where","which","should","would","could","being","having","from","with","that","this","they","them","than","then","when","always","often","every","after","before","describe","instead","words","phrase","pattern","dont","used","only"]);
+                        if (!localProfile.banListHits) localProfile.banListHits = {};
+                        let anyHit = false;
+                        localProfile.banList.forEach(rule => {
+                            const ruleWords = rule.toLowerCase().split(/\s+/).filter(w => w.length > 4 && !BL_STOP.has(w));
+                            const hit = ruleWords.some(rw => msgLower.includes(rw));
+                            if (hit) {
+                                if (!localProfile.banListHits[rule]) localProfile.banListHits[rule] = { count: 0 };
+                                localProfile.banListHits[rule].count++;
+                                anyHit = true;
+                            }
+                        });
+                        if (anyHit) saveProfileToMemory();
+                    }
+                }
+
                 // AUTO-TRIGGER STORY PLANNER
                 const sp = localProfile?.storyPlan;
                 if (sp && sp.enabled && sp.triggerMode === 'frequency') {
                     const chat = getContext().chat;
                     const aiMsgCount = chat.filter(m => !m.is_user && !m.is_system).length;
                     if (aiMsgCount > 0 && aiMsgCount % sp.autoFreq === 0) {
-                        toastr.info("Auto-Generating new Story Plan...", "Megumin Suite");
+                        toastr.info("Auto-Generating new Story Plan...", "VCRP");
                         setTimeout(async () => {
                             const chatText = getCleanedChatHistory();
                             if (chatText.length < 100) return;
                             try {
-                                let output = sp.backend === "direct" ? await generateStoryPlanLogic(chatText) : await new Promise(r => useMeguminEngine(async () => r(await generateStoryPlanLogic(chatText))));
+                                let output = sp.backend === "direct" ? await generateStoryPlanLogic(chatText) : await new Promise(r => useVcrpEngine(async () => r(await generateStoryPlanLogic(chatText))));
                                 const plotMatch = output?.match(/<plot>([\s\S]*?)<\/plot>/i);
                                 if (plotMatch) {
                                     sp.currentPlan = plotMatch[1].trim();
+                                    sp.milestones = spParseMilestones(sp.currentPlan);
                                     saveProfileToMemory();
                                     if ($("#sp_current_plan").length) $("#sp_current_plan").val(sp.currentPlan);
                                     toastr.success("Story Plan Updated silently!");
@@ -6210,7 +6577,7 @@ jQuery(async () => {
                         }
 
                         if (hasWork) {
-                            toastr.info("Background Memory Scan Triggered...", "Megumin Suite");
+                            toastr.info("Background Memory Scan Triggered...", "VCRP");
                             // We run it after a small delay so ST finishes saving the chat first
                             setTimeout(async () => {
                                 await memProcessPendingChunks(true);
@@ -6250,10 +6617,12 @@ jQuery(async () => {
                                         agenda: parsed.agenda || "",
                                         hiddenLayer: parsed.hiddenLayer || "",
                                         pfp: "",
+                                        role: "unknown",
+                                        inject: true,
                                         timestamp: Date.now()
                                     });
                                     added = true;
-                                    toastr.success(`NPC added to Bank: ${npcName}`, "Megumin Suite");
+                                    toastr.success(`NPC added to Bank: ${npcName}`, "VCRP");
                                     if ($("#npc_bank_list").length) renderNpcList();
                                 }
                             }
@@ -6289,7 +6658,7 @@ jQuery(async () => {
                     }, 500);
                 }
             });
-            const meguminSwipeHandler = async (data) => {
+            const vcrpSwipeHandler = async (data) => {
                 const s = localProfile?.imageGen;
                 if (!s || !s.enabled) return;
 
@@ -6329,18 +6698,18 @@ jQuery(async () => {
                     if (ogExt && extension_settings.image_generation) extension_settings.image_generation.overswipe = ogExt;
                 }, 200);
 
-                toastr.info("Regenerating Image...", "Megumin Suite");
+                toastr.info("Regenerating Image...", "VCRP");
                 await igGenerateWithComfy(mediaObj.title, { message: message, element: $(element) });
             };
 
             // Bind the listener
-            eventSource.on(event_types.IMAGE_SWIPED, meguminSwipeHandler);
+            eventSource.on(event_types.IMAGE_SWIPED, vcrpSwipeHandler);
 
             // FORCE IT TO THE FRONT OF THE REAL ARRAY
             // This ensures our extension evaluates the swipe BEFORE SillyTavern does.
             if (eventSource._events && Array.isArray(eventSource._events[event_types.IMAGE_SWIPED])) {
                 const arr = eventSource._events[event_types.IMAGE_SWIPED];
-                if (arr.length > 1 && arr[arr.length - 1] === meguminSwipeHandler) {
+                if (arr.length > 1 && arr[arr.length - 1] === vcrpSwipeHandler) {
                     arr.unshift(arr.pop());
                 }
             }
@@ -6359,11 +6728,11 @@ jQuery(async () => {
         });
         let att = 0;
         const int = setInterval(() => {
-            if ($("#kazuma_quick_gen").length > 0) {
+            if ($("#vcrp_quick_gen").length > 0) {
                 clearInterval(int);
                 return;
             }
-            const b = `<div id="kazuma_quick_gen" class="interactable" title="Visualize Last Scene (Manual)" style="cursor: pointer; width: 35px; height: 35px; display: none; align-items: center; justify-content: center; margin-right: 5px; color: var(--gold);"><i class="fa-solid fa-image fa-lg"></i></div>`;
+            const b = `<div id="vcrp_quick_gen" class="interactable" title="Visualize Last Scene (Manual)" style="cursor: pointer; width: 35px; height: 35px; display: none; align-items: center; justify-content: center; margin-right: 5px; color: var(--gold);"><i class="fa-solid fa-image fa-lg"></i></div>`;
             let t = $("#send_but_sheld");
             if (!t.length) t = $("#send_textarea");
             if (t.length) {
@@ -6375,7 +6744,7 @@ jQuery(async () => {
             if (att > 10) clearInterval(int);
         }, 1000);
 
-        $(document).on("click", "#kazuma_quick_gen", function (e) {
+        $(document).on("click", "#vcrp_quick_gen", function (e) {
             e.preventDefault();
             e.stopPropagation();
             igManualGenerate();

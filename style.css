@@ -1911,7 +1911,7 @@
     }
 
     /* Progress overlay: full width on mobile */
-    #kazuma_progress_overlay {
+    #vcrp_progress_overlay {
         left: 10px !important;
         right: 10px !important;
         width: auto !important;
@@ -1961,13 +1961,13 @@
    ================================================================ */
 
 /* Rule B: Visual fading for archived messages in the ST Chat UI */
-.megumin_archived_text {
+.vcrp_archived_text {
     opacity: 0.5 !important;
     font-style: italic !important;
     transition: opacity 0.3s ease-in-out;
 }
 
-.megumin_archived_text:hover {
+.vcrp_archived_text:hover {
     opacity: 0.8 !important; /* Let users peek at it if they hover */
 }
 
@@ -2183,3 +2183,97 @@
     padding-top: 10px;
     border-top: 1px solid var(--border-color);
 }
+
+/* ── STORY PLANNER: Milestone Checklist ── */
+.sp-milestone-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(0,0,0,0.2);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+    margin-bottom: 6px;
+    user-select: none;
+}
+.sp-milestone-item:hover { background: rgba(245,158,11,0.07); border-color: rgba(245,158,11,0.3); }
+.sp-milestone-item.done { opacity: 0.45; }
+.sp-milestone-item.done .sp-milestone-text { text-decoration: line-through; color: var(--text-muted); }
+.sp-milestone-check {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border: 2px solid rgba(245,158,11,0.5);
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    color: #f59e0b;
+    margin-top: 1px;
+    transition: background 0.15s;
+}
+.sp-milestone-item.done .sp-milestone-check {
+    background: rgba(245,158,11,0.25);
+    border-color: #f59e0b;
+}
+.sp-milestone-text { font-size: 0.8rem; color: var(--text-main); line-height: 1.4; flex: 1; }
+
+/* ── STORY PLANNER: Arc Status Panel ── */
+.sp-arc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+/* ── BAN LIST: Category Pill ── */
+.ban-cat-pill {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 8px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+.ban-cat-pill:hover { opacity: 0.75; }
+.ban-cat-pill.cat-both { background: rgba(161,161,170,0.2); color: #a1a1aa; border: 1px solid rgba(161,161,170,0.3); }
+.ban-cat-pill.cat-dialogue { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+.ban-cat-pill.cat-narration { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+
+/* ── BAN LIST: Hit Badge ── */
+.ban-hit-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    background: rgba(245,158,11,0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245,158,11,0.35);
+    flex-shrink: 0;
+}
+
+/* Tab 9 — NPC Role Pills */
+.npc-role-pill { display:inline-flex; align-items:center; padding:1px 7px; border-radius:8px; font-size:0.58rem; font-weight:700; cursor:pointer; text-transform:uppercase; letter-spacing:0.4px; transition:opacity 0.15s; flex-shrink:0; }
+.npc-role-pill.role-unknown { background:rgba(161,161,170,0.15); color:#a1a1aa; border:1px solid rgba(161,161,170,0.25); }
+.npc-role-pill.role-ally { background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3); }
+.npc-role-pill.role-romantic { background:rgba(244,63,94,0.15); color:#f43f5e; border:1px solid rgba(244,63,94,0.3); }
+.npc-role-pill.role-neutral { background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3); }
+.npc-role-pill.role-enemy { background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid rgba(239,68,68,0.3); }
+.npc-inject-btn { background:transparent; border:none; cursor:pointer; font-size:0.75rem; padding:2px 4px; transition:color 0.15s; }
+.npc-inject-btn.injecting { color:#10b981; }
+.npc-inject-btn.excluded { color:#6b7280; }
+.npc-card.inject-excluded { opacity:0.5; }

@@ -1,4 +1,4 @@
-export const KAZUMA_PLACEHOLDERS = [
+export const VCRP_PLACEHOLDERS = [
         { key: '"%prompt%"', desc: "Positive Prompt (Text)" },
         { key: '"%negative_prompt%"', desc: "Negative Prompt (Text)" },
         { key: '"%seed%"', desc: "Seed (Integer)" },
