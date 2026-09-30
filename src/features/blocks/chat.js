@@ -10,7 +10,7 @@
 import { getContext } from "../../st.js";
 import { extensionName } from "../../core/constants.js";
 import { applyBlocksToMessage, clearBlocksFromMessage } from "../../blocks/render.js";
-import { meguminRenderRegistry, meguminBlocksTakenByPanel, meguminStatFieldMap } from "./registry.js";
+import { meguminRenderRegistry, meguminStatFieldMap } from "./registry.js";
 // One directed edge from the blocks feature to the NPC feature. No cycle:
 // nothing under features/npc/ imports the block card.
 import { npcDecorateUpdatePane } from "../npc/updateCard.js";
@@ -124,7 +124,6 @@ function meguminAnimateGate(msgIndex) {
 export function meguminDecorateMessageBody(bodyEl, mesText, msgIndex) {
     try {
         applyBlocksToMessage(bodyEl, mesText, meguminRenderRegistry(), {
-            omit: meguminBlocksTakenByPanel(),
             onChoice: meguminApplyChoice,
             shouldAnimate: meguminAnimateGate(msgIndex),
             statFields: meguminStatFieldMap(),

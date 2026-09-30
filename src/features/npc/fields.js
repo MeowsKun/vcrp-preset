@@ -38,12 +38,9 @@ export const NPC_FIELD_TYPES = [
 //               the card header and every update's addressing all key on it.
 //   "vitals"    age / sex / orientation. They share one header line in the
 //               template and render as a badge rather than as rows.
-//   "imageTags" deliberately withheld from the text sent to the model (it would
-//               start mimicking Booru syntax in its prose) and handed to
-//               ComfyUI instead.
 //
 // Everything else is the reader's to add, remove, relabel and reorder.
-export const NPC_SYSTEM_ROLES = ["name", "vitals", "imageTags"];
+export const NPC_SYSTEM_ROLES = ["name", "vitals"];
 
 // ── The defaults ────────────────────────────────────────────────────────────
 //
@@ -127,14 +124,6 @@ export const NPC_DEFAULT_FIELDS = [
         fixed: true,
         persistent: true, updatable: false,
         placeholder: "2–3 sentences a reader can picture: build, face, hair, distinguishing marks, how they carry themselves"
-    },
-    {
-        id: "imageTags", label: "Image Tags", type: "text", system: "imageTags",
-        icon: "fa-tags", color: "#f472b6",
-        fixed: true,
-        persistent: true, updatable: false,
-        placeholder: "Booru-style appearance tags — see image_tag_rule. Body and face only.",
-        hint: "Sent to ComfyUI, withheld from the model's text so it does not copy the tag syntax into prose."
     },
     {
         id: "voice", label: "Voice", type: "text",

@@ -11,7 +11,6 @@ import { fireRefreshHook, REFRESH } from "../../core/refreshHooks.js";
 import { hardcodedLogic } from "../../../data/database.js";
 import { meguminSlotByTrigger } from "../../../data/slots.js";
 import { hasSharedFragment } from "../../core/sharedFragments.js";
-import { engineUsesRenderLimits } from "../../core/engines.js";
 
 // "You have rewritten this one in Dev Mode."
 //
@@ -35,15 +34,9 @@ export function renderGlobalAndBlocks(c) {
     c.empty();
 
     const addonDescriptions = {
-        "death": "Enables permanent consequences. Characters — including yours — can die for real. No safety net, no plot armor.",
-        "combat": "Activates a grounded, tactical combat layer. Actions have real weight, positioning matters, and you can lose badly.",
-        "direct": "Forces AI to say words like D and P. No dancing around the subject, no polite deflection. you know what i mean. <b>Not needed on V10</b> — that engine already writes this way, so switching it on just repeats the instruction.",
         "color": "Each character's dialogue is color-coded for easy visual parsing.",
-        "npc_events": "Requires all new story events to grow naturally from prior context or environmental cues — no random drama out of nowhere. V6 only.",
         "dn": "Forces dialogue and narration to be wrapped in their respective XML tags. Useful for specific Models for better narration style adherence. <b>Not recommended on V10</b> — the tags fight that engine's own prose rules.",
         "html": "When a character reads something — a phone screen, a letter, a sign — the AI draws the thing itself as HTML instead of describing it. Rare by design: one per reply at most, and most replies have none.",
-        "dice_all": "Same d20 system, but everyone rolls — NPCs included. Any character who tries something that can fail gets a roll, all of them listed before the reply. Use this OR Dice, not both.",
-        "dice": "A d20 decides whether risky attempts land. The AI rolls before it writes the scene, so the story follows the die rather than the die following the story. The roll gets its own tab on the block card.",
         "bold_npcs": "NPCs chase their own goals, never hover or act halfway, and never bend just to please you. Can clash with the V10 engines' subtler rules and with Enhanced Dialogue, so try it before keeping it on."
     };
 
@@ -51,16 +44,10 @@ export function renderGlobalAndBlocks(c) {
     // here. The tracker blocks' descriptions moved onto MEGUMIN_BLOCK_REGISTRY as `desc`
     // when they moved to the BLOCKS tab -- they were sitting here unreachable, because
     // the section below filters to mvu and nothing else ever reached this map.
-    const blockDescriptions = {
-        "mvu": "Add MVU Compatibility still in test read more here: <a href='https://github.com/KritBlade/MVU_Game_Maker' target='_blank' style='color: var(--gold); text-decoration: underline;'>https://github.com/KritBlade/MVU_Game_Maker</a>"
-    };
-
     const activeMode = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
-    const isV6 = activeMode && (activeMode.id.includes("v6") || activeMode.label.includes("V6"));
     // Asked for by behaviour, not by generation: the Lean/Full split is the one thing
     // V10 does not inherit from V9, and naming it that way keeps the next generation
     // from having to be excluded here by hand.
-    const isV9 = engineUsesRenderLimits(activeMode);
 
     // ── UNIFIED HEADER ──
     c.append(`
@@ -84,7 +71,7 @@ export function renderGlobalAndBlocks(c) {
     c.append(`
         <div class="mtab-callout blue" style="margin-bottom: 20px;">
             <i class="fa-solid fa-circle-info"></i>
-            <span><strong>Did you know?</strong> Global Preferences set the language and pronouns every engine reads. Gameplay Add-ons bolt extra systems onto the story — dice, death, combat, HTML props. Output Formats is just MVU, a compatibility contract with another extension. The tracker blocks live in the <b>BLOCKS</b> tab, not here.</span>
+            <span><strong>Did you know?</strong> Global Preferences set the language and pronouns every engine reads. Gameplay Add-ons bolt extra systems onto the story — Bold NPCs, HTML props, dialogue colours. The tracker blocks live in the <b>BLOCKS</b> tab, not here.</span>
         </div>
     `);
 
@@ -95,34 +82,6 @@ export function renderGlobalAndBlocks(c) {
     
     const extraPanel = $(`
         <div class="mtab-panel" style="margin-bottom: 24px;">
-            ${isV9 ? `
-            <div class="mtab-setting-row" style="flex-direction: column; align-items: stretch; gap: 10px;">
-                <div class="set-info">
-                    <div class="set-label" style="color: #f43f5e;"><i class="fa-solid fa-layer-group"></i> V9 Dynamic Render Limits</div>
-                    <div class="set-desc">V9 switches between Lean (quick interactions) and Full (deep scenes). Set the word count ranges for each.</div>
-                </div>
-                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; border: 1px solid var(--border-color);">
-                        <div style="font-size: 0.7rem; font-weight: bold; color: var(--text-muted); margin-bottom: 2px;">LEAN RENDER</div>
-                        <div style="font-size: 0.6rem; color: #a855f7; margin-bottom: 6px; line-height: 1.2;">Triggered by the AI for fast dialogue, back-and-forth arguments, and quick actions.</div>
-                        <div style="display: flex; align-items: center; gap: 5px;">
-                            <input type="number" id="ps_v9_lean_min" class="ps-modern-input" style="width: 100%; text-align: center;" value="${localProfile.v9Limits.leanMin}" />
-                            <span style="color: var(--text-muted);">to</span>
-                            <input type="number" id="ps_v9_lean_max" class="ps-modern-input" style="width: 100%; text-align: center;" value="${localProfile.v9Limits.leanMax}" />
-                        </div>
-                    </div>
-                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; border: 1px solid var(--border-color);">
-                        <div style="font-size: 0.7rem; font-weight: bold; color: var(--text-muted); margin-bottom: 2px;">FULL RENDER</div>
-                        <div style="font-size: 0.6rem; color: #10b981; margin-bottom: 6px; line-height: 1.2;">Triggered by the AI for scene changes, deep immersion, and major plot events.</div>
-                        <div style="display: flex; align-items: center; gap: 5px;">
-                            <input type="number" id="ps_v9_full_min" class="ps-modern-input" style="width: 100%; text-align: center;" value="${localProfile.v9Limits.fullMin}" />
-                            <span style="color: var(--text-muted);">to</span>
-                            <input type="number" id="ps_v9_full_max" class="ps-modern-input" style="width: 100%; text-align: center;" value="${localProfile.v9Limits.fullMax}" />
-                        </div>
-                    </div>
-                </div>
-            </div>
-            ` : ``}
             <div class="mtab-setting-row">
                 <div class="set-info"><div class="set-label">Language Output</div><div class="set-desc">Leave empty for default (English)</div></div>
                 <input type="text" id="ps_input_language" class="ps-modern-input" style="width: 180px;" placeholder="e.g. Arabic, French…" value="${localProfile.userLanguage || ''}" />
@@ -139,10 +98,6 @@ export function renderGlobalAndBlocks(c) {
     `);
     c.append(extraPanel);
 
-    $("#ps_v9_lean_min").on("input", function () { localProfile.v9Limits.leanMin = parseInt($(this).val()) || 300; saveProfileDebounced(); });
-    $("#ps_v9_lean_max").on("input", function () { localProfile.v9Limits.leanMax = parseInt($(this).val()) || 400; saveProfileDebounced(); });
-    $("#ps_v9_full_min").on("input", function () { localProfile.v9Limits.fullMin = parseInt($(this).val()) || 700; saveProfileDebounced(); });
-    $("#ps_v9_full_max").on("input", function () { localProfile.v9Limits.fullMax = parseInt($(this).val()) || 1200; saveProfileDebounced(); });
     $("#ps_input_language").on("input", function () { localProfile.userLanguage = $(this).val(); saveProfileDebounced(); });
     $("#ps_select_pronouns").on("change", function () { localProfile.userPronouns = $(this).val(); saveProfileToMemory(); });
 
@@ -168,14 +123,6 @@ export function renderGlobalAndBlocks(c) {
 
         let extraClass = '';
         let v6BadgeHtml = '';
-        if (a.id === "npc_events") {
-            if (!isV6) {
-                extraClass = 'locked-card';
-                v6BadgeHtml = `<span class="ecard-badge" style="background:rgba(239,68,68,0.12);color:#ef4444;"><i class="fa-solid fa-lock"></i> Requires V6</span>`;
-            } else {
-                v6BadgeHtml = `<span class="ecard-badge v6-active"><i class="fa-solid fa-unlock"></i> V6 Active</span>`;
-            }
-        }
 
         const card = $(`
             <div class="mtab-eng-card ${isSel ? 'active' : ''} ${extraClass}">
@@ -272,36 +219,4 @@ export function renderGlobalAndBlocks(c) {
         }
     }
 
-    // ── OUTPUT FORMATS ──
-    // Everything the reader sees as a block lives in the BLOCKS tab. What stays
-    // here is MVU, which is not a tracker at all but a contract with another
-    // extension, and never enters the envelope.
-    c.append(`<div class="wstyle-section-head green"><i class="fa-solid fa-cubes"></i> Output Formats</div>`);
-    const formatGrid = $(`<div class="mtab-card-grid"></div>`);
-
-    hardcodedLogic.blocks.filter(b => b.id === "mvu").forEach(b => {
-        const isSel = localProfile.blocks.includes(b.id);
-        const isOverridden = activeMode && activeMode[b.id] && activeMode[b.id].trim() !== "";
-        const card = $(`
-            <div class="mtab-eng-card ${isSel ? 'active' : ''}">
-                <div class="ecard-accent"></div>
-                <div class="ecard-body">
-                    <div class="ecard-title">
-                        <span>${b.label}</span>
-                        ${isSel ? `<span class="ecard-badge" style="background:rgba(16,185,129,0.15);color:#10b981;"><i class="fa-solid fa-check"></i> On</span>` : ''}
-                        ${customBadge(b)}
-                    </div>
-                    <p class="ecard-desc">${blockDescriptions[b.id] || ""}</p>
-                    ${isOverridden ? `<div style="margin-top:4px;"><span class="ecard-badge override"><i class="fa-solid fa-code-branch"></i> Engine Override</span></div>` : ''}
-                </div>
-            </div>
-        `);
-        card.on("click", () => {
-            if (isSel) localProfile.blocks = localProfile.blocks.filter(i => i !== b.id);
-            else localProfile.blocks.push(b.id);
-            saveProfileToMemory(); fireRefreshHook(REFRESH.SWITCH_TAB);
-        });
-        formatGrid.append(card);
-    });
-    c.append(formatGrid);
 }

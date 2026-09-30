@@ -16,6 +16,10 @@ import { extensionName } from "./constants.js";
 export function cleanLegacySettings() {
     if (!extension_settings[extensionName] || !extension_settings[extensionName].profiles) return;
     let didClean = false;
+    // VCRP: the Side Panel was removed; drop its stored settings.
+    ["sidePanel", "presentBar"].forEach(k => {
+        if (k in extension_settings[extensionName]) { delete extension_settings[extensionName][k]; didClean = true; }
+    });
     Object.keys(extension_settings[extensionName].profiles).forEach(key => {
         if (key === 'default') return; // Do not touch global defaults
         const prof = extension_settings[extensionName].profiles[key];

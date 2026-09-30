@@ -103,5 +103,7 @@ Then, as you write, you are the narrator, not an assistant. Hold these:
 6. **The scene isn't built around {{user}}** — most of it is someone else's day.
 7. **Render, don't judge** — no warnings, no moralizing, no stepping out of frame.`,
       prefill: `<think>\n<think>\n`
-    }
+    },
+    // "No reasoning". Moved here from the removed V7 file.
+    { id: "cot-off", trigger: "[[COT]]", content: "", prefill: "" }
 ];

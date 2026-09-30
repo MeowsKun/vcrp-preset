@@ -20,13 +20,31 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   Setting: Global Settings → CoT Prefill (Auto / Always on / Always off).
 - **Continue, Impersonate, and other extensions' background requests** get a fitting prompt:
   no fresh thinking block, no tracker blocks, no dice lines, no prefill.
-- **Knowledgebase** tab (from VCRP V8): rule/lore entries, always-on or keyword-triggered.
+- **Knowledgebase** tab (from VCRP V8): rule/lore entries, always-on or keyword-triggered; per-character
+  and shared (all characters) entries; import/export.
 - **Anime Mode** (from VCRP V8): in the Writing Style sidebar under DN Ratio.
 - **Bold NPCs** add-on (from VCRP V8).
+- **Setup Check** (Global Settings): flags a non-VCRP preset, preset regex not allowed/off, or the wrong API type,
+  and puts a red dot on the VCRP button while a problem stands.
+- **Backup & Restore** (Global Settings): all VCRP settings in one file.
+- **Token breakdown** in the Prompt Payload Preview: what each part of the prompt costs.
 - **Merged ban list:** V10's list plus VCRP's rules (stripped articles, pattern descriptions,
   stock phrases; em dashes allowed only inside spoken NPC dialogue).
 - User Consent block without the slur in its example list; Megumin's feedback form and donation
   details removed from the About card (it links to the original project instead).
+- **Trimmed:** Side Panel, Image Generation (ComfyUI, incl. NPC portrait generation and NPC image
+  tags), the Persona tab, the legacy V4–V9 engines and their CoTs, the Co-writer engines, and the
+  Death, Combat, Direct Language, Dice, MVU and Organic NPCs & Events add-ons, and the V9 Lean/Full
+  word limits. Saved settings that used any of them are
+  cleaned up or moved to the V10 equivalent automatically.
+
+## What's included
+
+- **Engines:** V10 Ukiyo and V10 Shura (with Enhanced Dialogue), their CoTs and Thinking Cap variants.
+- **Tabs:** Presets & CoT (with Story Config), Writing Style (+ Anime Mode), Global Toggles & Add-ons,
+  Blocks, Story Director, Dynamic Ban List, NPCs Bank, Memory Core, Knowledgebase, Global Settings,
+  plus Dev Mode.
+- **Add-ons:** Bold NPCs, Immersive HTML, Dialogue Colors, Dialogue & Narration tags.
 
 ## Install
 
@@ -43,6 +61,9 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 
 - `node tools/link_check.mjs`: loads every module against a stubbed SillyTavern (catches broken imports).
 - `node tools/test_fork.mjs`: builds real prompts from both presets and checks the prompt interceptor.
+- `node tools/test_ui.mjs`: renders every tab and clicks every button in a simulated browser
+  (one-time setup: `cd tools && npm install`).
+- `python tools/gen_skeleton.py`: regenerates `data/skeleton.js` (Dev Mode's layout view) after a preset edit.
 
 VCRP-specific code lives in `src/vcrp/`; changes to upstream files are kept small and marked
 `VCRP:` so future Megumin Suite updates can be merged.

@@ -17,7 +17,6 @@ import { npcBodyFields, npcVitalsFields, NPC_FIELD_TYPES, NPC_DEFAULT_FIELDS, np
 import { npcParseUpdateBlocks, npcApplyUpdates } from "./updates.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
 import { escapeHtmlAttr } from "../../utils/html.js";
-import { npcGeneratePfp } from "./pfp.js";
 
 export function renderNpcBank(c) {
     c.empty();
@@ -144,9 +143,6 @@ export function renderNpcBank(c) {
             saveProfileToMemory(); 
         },
         fields: [
-            { key: "systemPrompt", label: "Portrait AI: System Prompt", hint: "AI role definition for image generation." },
-            { key: "userPrompt", label: "Portrait AI: User Task Prompt", hint: "Tokens: <code>{{npcText}}</code>, <code>{{styleStr}}</code>, <code>{{perspStr}}</code>, <code>{{extraStr}}</code>" },
-            { key: "thinkingPrompt", label: "Portrait AI: Thinking Instructions", hint: "Must include output ordering instructions." },
             { key: "dossierRules", label: "Chat AI: Dossier Rules", hint: "When to write a dossier and how to think about each field. The fill-in template itself is built from the field list above and dropped in at <code>{{template}}</code>; <code>{{persistenceRule}}</code> is generated too." }
         ],
         onSave: (val, key) => {
@@ -536,14 +532,6 @@ export function renderNpcList() {
                         <span class="npc_edit_vitals_btn" data-idx="${idx}" style="font-size: 0.6rem; color: var(--text-muted); background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; cursor: pointer;" title="Edit age, sex and orientation">${n.age || "?"} · ${n.sex || "?"} <i class="fa-solid fa-pen" style="font-size: 0.5rem; opacity: 0.6;"></i></span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 12px;">
-                        <!-- New Image Tags Only Toggle -->
-                        <div class="npc_img_only_toggle" data-idx="${idx}" style="display: flex; align-items: center; gap: 6px; cursor: pointer; background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 8px; border: 1px solid ${n.imageOnly ? 'rgba(16,185,129,0.3)' : 'transparent'};" title="If enabled, hides the text dossier from the AI to save tokens, but still sends Image Tags to ComfyUI.">
-                            <span style="font-size: 0.65rem; font-weight: 700; color: ${n.imageOnly ? '#10b981' : 'var(--text-muted)'};">Image Tags Only</span>
-                            <div class="ps-toggle-card ${n.imageOnly ? 'active' : ''}" style="padding: 2px; min-width: 36px; background: transparent; border-color: ${n.imageOnly ? '#10b981' : 'rgba(255,255,255,0.1)'}; border-radius: 8px;">
-                                <div class="ps-switch" style="transform: scale(0.65); ${n.imageOnly ? 'background: #10b981;' : ''}"></div>
-                            </div>
-                        </div>
-
                         <span style="color: var(--text-muted); font-size: 0.6rem;">${dateStr}</span>
                         <button class="npc_force_update" data-idx="${idx}" style="background: transparent; border: none; color: #fbbf24; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Re-read the story and update this NPC's changeable fields now"><i class="fa-solid fa-arrows-rotate"></i></button>
                         <button class="npc_export_btn" data-idx="${idx}" style="background: transparent; border: none; color: #3b82f6; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Export NPC"><i class="fa-solid fa-download"></i></button>
@@ -561,9 +549,6 @@ export function renderNpcList() {
                             <div style="text-align: center; font-size: 0.95rem; font-weight: 800; color: ${accentColor}; margin-top: 2px; margin-bottom: 2px; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">${n.name}</div>
                             <button class="npc_upload_pfp" data-idx="${idx}" style="width: 100%; font-size: 0.65rem; padding: 4px 0; border-radius: 6px; border: 1px solid rgba(${accentRgba},0.3); background: rgba(${accentRgba},0.1); color: ${accentColor}; cursor: pointer; transition: background 0.2s;" title="Upload Image">
                                 <i class="fa-solid fa-upload"></i> Upload
-                            </button>
-                            <button class="npc_gen_pfp" data-idx="${idx}" data-name="${n.name}" style="width: 100%; font-size: 0.65rem; padding: 4px 0; border-radius: 6px; border: 1px solid rgba(168,85,247,0.3); background: rgba(168,85,247,0.1); color: #a855f7; cursor: pointer; transition: background 0.2s;" title="Generate with ComfyUI">
-                                <i class="fa-solid fa-wand-magic-sparkles"></i> Generate
                             </button>
                         </div>
                         <!-- Fields Column -->
@@ -598,22 +583,6 @@ export function renderNpcList() {
             }
         });
 
-        // Image Tags Only Toggle
-        card.find(".npc_img_only_toggle").on("click", function (e) {
-            e.stopPropagation(); // Prevents the accordion from collapsing when clicking the toggle
-            const i = parseInt($(this).attr("data-idx"));
-            if (localProfile.npcBank.npcs[i]) {
-                localProfile.npcBank.npcs[i].imageOnly = !localProfile.npcBank.npcs[i].imageOnly;
-                saveProfileToMemory();
-                renderNpcList();
-                
-                if (localProfile.npcBank.npcs[i].imageOnly) {
-                    toastr.info("Image Tags Only enabled. Text dossier will be hidden from AI.");
-                } else {
-                    toastr.info("Full Sync enabled. Text dossier will be sent to AI.");
-                }
-            }
-        });
 
         // Edit Name
         card.find(".npc_edit_name_btn").on("click", function (e) {
@@ -790,11 +759,6 @@ export function renderNpcList() {
             input.click();
         });
 
-        // Generate PFP via ComfyUI
-        card.find(".npc_gen_pfp").on("click", async function () {
-            const name = $(this).attr("data-name");
-            await npcGeneratePfp(name);
-        });
 
         list.append(card);
     });

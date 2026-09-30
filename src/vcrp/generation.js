@@ -24,11 +24,11 @@ export function vcrpSetGenerationType(type, _params, dryRun) {
 }
 
 // Tags that only make sense in a normal story reply.
-const REPLY_ONLY_TAGS = ["[[THINK]]", "[[COT]]", "[[prefill]]", "[[blocks]]", "[[dice]]", "[[img1]]", "[[img2]]", "[[storytracker]]"];
+const REPLY_ONLY_TAGS = ["[[THINK]]", "[[COT]]", "[[prefill]]", "[[blocks]]", "[[storytracker]]"];
 
 const NOTES = {
     continue: "[Continue your previous reply exactly where it stopped, mid-sentence if needed. Do not start over, do not repeat anything already written, and do not open a new <think> block. If it stopped inside the <Blocks> section, finish that; otherwise add nothing after the prose.]",
-    impersonate: "[For this one message only, the reader asks you to write {{user}}'s next turn: their words and actions, in the voice and style the reader has used for {{user}} so far. The rule against writing for {{user}} is suspended for this message alone. No <think> block, no <Blocks> section, no dice lines, and no narration of how other characters react.]",
+    impersonate: "[For this one message only, the reader asks you to write {{user}}'s next turn: their words and actions, in the voice and style the reader has used for {{user}} so far. The rule against writing for {{user}} is suspended for this message alone. No <think> block, no <Blocks> section, and no narration of how other characters react.]",
 };
 
 // ── Model detection ──────────────────────────────────────────────────────────
@@ -90,5 +90,12 @@ export function vcrpFinalizeMessages(messages, gen, substitute = s => s) {
         const m = messages[i];
         if (typeof m.content === "string" && !m.content.trim()) messages.splice(i, 1);
     }
-    if (NOTES[gen]) messages.push({ role: "system", content: substitute(NOTES[gen]) });
+    if (!NOTES[gen]) return;
+    const note = { role: "system", content: substitute(NOTES[gen]) };
+    // A trailing assistant message is the text the model continues from (Continue with
+    // "Continue prefill" on, or an impersonation prefill). The note must go before it, or
+    // the model would start a fresh turn instead of continuing.
+    const last = messages[messages.length - 1];
+    if (last && last.role === "assistant") messages.splice(messages.length - 1, 0, note);
+    else messages.push(note);
 }

@@ -1,0 +1,9 @@
+{
+  "name": "vcrp-tools",
+  "private": true,
+  "description": "Test helpers for the VCRP extension (only needed for tools/test_ui.mjs).",
+  "devDependencies": {
+    "jquery": "^3.7.1",
+    "jsdom": "^25.0.1"
+  }
+}

@@ -11,7 +11,6 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { localProfile } from "../../core/state.js";
-import { getSidePanelSettings } from "../../sidepanel/panel.js";
 
 // -------------------------------------------------------------
 // BLOCK REGISTRY — one definition per block the <Blocks> envelope can carry
@@ -39,28 +38,6 @@ import { getSidePanelSettings } from "../../sidepanel/panel.js";
 // deciding whether to add it. Distinct from the template, which tells the MODEL what
 // to write. Optional -- a block without one simply shows no tooltip.
 export const MEGUMIN_BLOCK_REGISTRY = [
-    {
-        id: "dice", tag: "Dice", label: "Roll",
-        emoji: "\u{1F3B2}", icon: "fa-dice-d20", color: "#22d3ee",
-        visibility: "open", builtin: true, system: true,
-        // The model writes one <Dice> per roll as often as it writes one tag
-        // holding every line, and a turn where everyone acts has several. Left
-        // non-repeating, extractBlocks took the first and the rest vanished off
-        // the screen. They are captured separately here and merged back into one
-        // pane by the renderer, so either shape draws the same card.
-        repeating: true,
-        // THE ONE BLOCK THAT IS NOT IN THE ENVELOPE. The roll has to be written
-        // before the prose or it is not a roll — a number chosen after the scene
-        // exists is chosen to fit it. So the model writes <Dice> as the FIRST
-        // thing in the reply, and the envelope, which sits at the end, never
-        // carries it. `lead` is what tells the envelope builder to skip it and
-        // the renderer to look for it at the top of the message instead of in
-        // the tail.
-        lead: true,
-        // Owned by the Dice add-on rather than by the block stack: the reader
-        // turns the add-on on and the tab follows. There is nothing to arrange.
-        requires: p => Boolean(p && (p.addons || []).includes("dice"))
-    },
     {
         id: "cyoa", tag: "CYOA", label: "Choices",
         desc: "Choose-Your-Own-Adventure panel with 4 suggested actions for you to pick from each turn.",
@@ -254,29 +231,6 @@ export function meguminRenderRegistry() {
     });
 }
 
-// Which blocks the side panel has taken over. When it is on with inline hiding,
-// a block it is already showing must not also sit in the chat card — that is the
-// whole point of the setting. A block the panel does NOT show (its section is
-// switched off, or nothing over there covers it, like the choices block) stays
-// in the chat, because otherwise it would be nowhere at all.
-export const MEGUMIN_PANEL_SECTION_BY_BLOCK = {
-    world: "worldState",
-    chatter: "innerChatter",
-    newNpc: "newNpcs",
-    tracker: "storyPlan"
-};
-
-export function meguminBlocksTakenByPanel() {
-    let cfg = null;
-    try { cfg = getSidePanelSettings(); } catch (e) { return []; }
-    if (!cfg || !cfg.enabled || !cfg.hideInline) return [];
-
-    const sections = cfg.sections || {};
-    return Object.entries(MEGUMIN_PANEL_SECTION_BY_BLOCK)
-        .filter(([, sec]) => (sections[sec] ? sections[sec].visible !== false : true))
-        .map(([blockId]) => blockId);
-}
-
 // -------------------------------------------------------------
 // STAT BLOCKS — templates generated from their field lists
 // -------------------------------------------------------------
@@ -398,7 +352,7 @@ export function meguminAllBlockTags() {
 // still accepted from profiles written before that and reads as shown.
 export const BLOCK_VISIBILITY_CHOICES = [
     { v: "open", label: "Shown", hint: "Gets a tab in the chat card" },
-    { v: "hidden", label: "Hidden", hint: "No tab. Still sent, still read by the side panel." }
+    { v: "hidden", label: "Hidden", hint: "No tab. Still generated and sent to the AI." }
 ];
 
 // Tag names are what every parser, the cleaner and the renderer key on, so a

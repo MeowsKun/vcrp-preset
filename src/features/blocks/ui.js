@@ -336,7 +336,7 @@ export function renderCustomBlockEditor(c, editId) {
                 <input type="text" id="blk_emoji" class="ps-modern-input" style="width:70px; text-align:center;" value="${escapeHtmlAttr(draft.emoji)}" />
             </div>
             <div class="mtab-setting-row">
-                <div class="set-info"><div class="set-label">Shown as</div><div class="set-desc">Hidden blocks are still sent and still read by the side panel</div></div>
+                <div class="set-info"><div class="set-label">Shown as</div><div class="set-desc">Hidden blocks are still generated and sent to the AI, just not shown</div></div>
                 <select id="blk_vis" class="ps-modern-input" style="width:150px;">
                     ${BLOCK_VISIBILITY_CHOICES.map(o => `<option value="${o.v}" ${draft.visibility === o.v ? "selected" : ""}>${o.label}</option>`).join("")}
                 </select>

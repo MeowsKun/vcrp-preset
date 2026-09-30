@@ -23,13 +23,11 @@ export const TAB_SYNC_KEYS = {
     // the profile you set it on and was off everywhere else, which is what a
     // setting that failed to write looks like to the reader.
     "PRESETS & COT": ["mode", "model", "cotEnabled", "thinkEffort", "customThinkEffort", "thinkingV2", "storyConfig", "enhancedDialogue"],
-    "Persona": ["personality", "toggles"],
     "Writing Style": ["activeStyleId", "aiRule", "customStyles", "dnRatio", "animeMode"],
-    "Global Toggles & Add Ons": ["addons", "blocks", "userLanguage", "userPronouns", "onomatopoeia", "v9Limits"],
+    "Global Toggles & Add Ons": ["addons", "blocks", "userLanguage", "userPronouns", "onomatopoeia"],
     "BLOCKS": ["blockStack", "statBlocks", "blocks"],
     "Story Director": ["storyPlan"],
     "Dynamic Ban List": ["banList", "banListBackend", "banListCustomPromptsEnabled", "banListCustomPrompts"],
-    "Image Generation": ["imageGen"],
     "NPCs Bank": ["npcBank"],
     "Memory Core": ["memoryCore"],
     "Knowledgebase": ["knowledgebase"]
@@ -37,7 +35,7 @@ export const TAB_SYNC_KEYS = {
 
 // These two are stored globally already, so there is nothing per-character to keep
 // in step and the toggle has no meaning on them.
-export const TABS_ALREADY_GLOBAL = ["Side Panel", "Global Settings"];
+export const TABS_ALREADY_GLOBAL = ["Global Settings"];
 
 // ── Story Config's own opt-out ───────────────────────────────────────────────
 //

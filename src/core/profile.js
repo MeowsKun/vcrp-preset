@@ -20,12 +20,12 @@ import { fireRefreshHook, REFRESH } from "./refreshHooks.js";
 import { meguminSparsifyProfilePrompts, meguminRehydrateProfilePrompts } from "../prompts/storage.js";
 import { DEFAULT_PROMPTS } from "../prompts/defaults.js";
 import { hardcodedLogic } from "../../data/database.js";
+import { meguminCotForMode } from "../../data/cot/index.js";
 import { MEGUMIN_BLOCK_REGISTRY, meguminSyncLegacyBlockIds } from "../features/blocks/registry.js";
 import { NPC_DEFAULT_FIELDS, NPC_SYSTEM_ROLES } from "../features/npc/fields.js";
 import { npcRollbackHistoryFrom } from "../features/npc/updates.js";
 import { normalizeStoryConfig, applyStoryConfigDefaults } from "../features/storyconfig/config.js";
 import { escapeRegex } from "../utils/regex.js";
-import { refreshSidePanel, refreshPresentBar } from "../sidepanel/panel.js";
 import { ensureKnowledgebase } from "../vcrp/knowledgebase.js";
 import { ensureAnimeMode } from "../vcrp/anime.js";
 
@@ -76,7 +76,7 @@ export function initProfile() {
     }
 
     const defaults = {
-        mode: "balance",
+        mode: "v10-core",
         // Which engines have Enhanced Dialogue switched on, keyed by engine id.
         //
         // Per engine rather than one flag, because the switch is drawn inside the
@@ -85,9 +85,7 @@ export function initProfile() {
         // entry is ever read, so in practice a reader who never switches engines
         // sees a single on/off.
         enhancedDialogue: {},
-        personality: "engine",
-        v9Limits: { leanMin: 300, leanMax: 400, fullMin: 700, fullMax: 1200 },
-        toggles: { ooc: false, control: false },
+        toggles: {},
         aiTags: [],
         aiGeneratedOptions: [],
         aiRule: "",
@@ -150,7 +148,7 @@ export function initProfile() {
                 ]
             }
         },
-        model: "cot-v1-english",
+        model: "cot-v10-ukiyo-english",
         userNotes: "",
         userLanguage: "",
         userPronouns: "off",
@@ -182,34 +180,6 @@ export function initProfile() {
             unrestrictedContent: false,
             lastTrackerState: "",
             planMessageIndex: null
-        },
-        imageGen: {
-            enabled: false,
-            generatorBackend: "direct",
-            injectMode: "inline",
-            imageCount: 1,
-            comfyUrl: "http://127.0.0.1:8188",
-            currentWorkflowName: "",
-            selectedModel: "",
-            selectedLora: "", selectedLora2: "", selectedLora3: "", selectedLora4: "",
-            selectedLoraWt: 1.0, selectedLoraWt2: 1.0, selectedLoraWt3: 1.0, selectedLoraWt4: 1.0,
-            imgWidth: 1024, imgHeight: 1024,
-            customNegative: "bad quality, blurry, worst quality, low quality",
-            customSeed: -1,
-            selectedSampler: "euler",
-            compressImages: true,
-            steps: 20, cfg: 7.0, denoise: 0.5, clipSkip: 1,
-            promptTemplate: "illus_cinematic",
-            includeExamples: true,
-            directLanguage: false,
-            injectNpcTags: false,
-            promptExtra: "",
-            triggerMode: "always",
-            autoGenFreq: 1,
-            previewPrompt: false,
-            savedWorkflowStates: {},
-            customPrompts: null,
-            customPromptsEnabled: false
         },
         memoryCore: {
             enabled: false,
@@ -324,33 +294,28 @@ export function initProfile() {
         if (localProfile[k] === undefined) localProfile[k] = defaults[k];
     });
     if (!localProfile.toggles) localProfile.toggles = defaults.toggles;
-    if (!localProfile.v9Limits) localProfile.v9Limits = defaults.v9Limits;
-    if (!localProfile.imageGen) localProfile.imageGen = defaults.imageGen;
-    if (localProfile.imageGen.directLanguage === undefined) localProfile.imageGen.directLanguage = false;
-    if (localProfile.imageGen.imageCount === undefined) localProfile.imageGen.imageCount = 1;
-    if (localProfile.imageGen.promptPrefix === undefined) localProfile.imageGen.promptPrefix = "";
-    if (localProfile.imageGen.loraTrigger1 === undefined) localProfile.imageGen.loraTrigger1 = "";
-    if (localProfile.imageGen.loraTrigger2 === undefined) localProfile.imageGen.loraTrigger2 = "";
-    if (localProfile.imageGen.loraTrigger3 === undefined) localProfile.imageGen.loraTrigger3 = "";
-    if (localProfile.imageGen.loraTrigger4 === undefined) localProfile.imageGen.loraTrigger4 = "";
-    if (localProfile.imageGen.loraTriggersMap === undefined) localProfile.imageGen.loraTriggersMap = {};
-    if (localProfile.imageGen.promptStyle !== undefined) {
-        let style = localProfile.imageGen.promptStyle; 
-        let persp = localProfile.imageGen.promptPerspective;
-
-        if (style === "standard") style = "sdxl"; // Fallback standard to sdxl
-
-        if (style === "illustrious" && persp === "pov") localProfile.imageGen.promptTemplate = "illus_pov";
-        else if (style === "illustrious" && persp === "character") localProfile.imageGen.promptTemplate = "illus_portrait";
-        else if (style === "illustrious") localProfile.imageGen.promptTemplate = "illus_cinematic";
-        else if (persp === "pov") localProfile.imageGen.promptTemplate = "sdxl_pov";
-        else if (persp === "character") localProfile.imageGen.promptTemplate = "sdxl_portrait";
-        else localProfile.imageGen.promptTemplate = "sdxl_cinematic";
-
-        delete localProfile.imageGen.promptStyle;
-        delete localProfile.imageGen.promptPerspective;
+    // VCRP: the V4-V9 and Co-writer engines were removed. A profile on one of them moves
+    // to its V10 counterpart (a Co-writer to its base engine, anything else to Ukiyo),
+    // and a CoT that no longer exists falls back to the engine's own.
+    if (typeof localProfile.mode === "string" && localProfile.mode.endsWith("-cw")) localProfile.mode = localProfile.mode.slice(0, -3);
+    const vcrpKnownModes = [...hardcodedLogic.modes, ...(extension_settings[extensionName]?.customModes || [])];
+    if (!vcrpKnownModes.some(m => m.id === localProfile.mode)) localProfile.mode = "v10-core";
+    if (!hardcodedLogic.models.some(m => m.id === localProfile.model)) {
+        localProfile.model = meguminCotForMode(localProfile.mode) || "cot-v10-ukiyo-english";
     }
-    if (localProfile.imageGen.includeExamples === undefined) localProfile.imageGen.includeExamples = true;
+    // VCRP: the Death, Combat, Direct Language, Dice, MVU and Organic NPCs add-ons were removed.
+    if (Array.isArray(localProfile.addons)) {
+        localProfile.addons = localProfile.addons.filter(id => !["death", "combat", "direct", "dice", "dice_all", "npc_events"].includes(id));
+    }
+    if (Array.isArray(localProfile.blocks)) localProfile.blocks = localProfile.blocks.filter(id => id !== "mvu");
+    // VCRP: the Persona tab was removed; drop its stored choices.
+    delete localProfile.personality;
+    delete localProfile.toggles.ooc;
+    delete localProfile.toggles.control;
+    // VCRP: the V9 Lean/Full word limits were removed with the V9 engines.
+    delete localProfile.v9Limits;
+    // VCRP: Image Gen (ComfyUI) was removed; drop its stored settings.
+    if (localProfile.imageGen) delete localProfile.imageGen;
     if (!localProfile.storyPlan) localProfile.storyPlan = defaults.storyPlan;
     // Story Director migration: add new fields to existing profiles
     if (localProfile.storyPlan) {
@@ -368,7 +333,6 @@ export function initProfile() {
     }
     if (localProfile.npcBank && localProfile.npcBank.scanDepth === undefined) localProfile.npcBank.scanDepth = 60;
     if (localProfile.banListCustomPromptsEnabled === undefined) localProfile.banListCustomPromptsEnabled = false;
-    if (localProfile.imageGen.injectNpcTags === undefined) localProfile.imageGen.injectNpcTags = false;
     // Story Config (replaces the old standalone POV dropdown and the legacy word count)
     if (!localProfile.storyConfig) localProfile.storyConfig = JSON.parse(JSON.stringify(defaults.storyConfig));
     Object.keys(defaults.storyConfig).forEach(k => {
@@ -393,7 +357,6 @@ export function initProfile() {
     // The block is always injected now, so its three standing fields ship set rather
     // than blank. Only fills what is empty, so a reader who picked something keeps it.
     applyStoryConfigDefaults(localProfile.storyConfig);
-    if (localProfile.imageGen && localProfile.imageGen.customPromptsEnabled === undefined) localProfile.imageGen.customPromptsEnabled = false;
     if (localProfile.memoryCore && localProfile.memoryCore.customPromptsEnabled === undefined) localProfile.memoryCore.customPromptsEnabled = false;
     if (localProfile.npcBank && localProfile.npcBank.customPromptsEnabled === undefined) localProfile.npcBank.customPromptsEnabled = false;
     if (localProfile.npcBank && localProfile.npcBank.oocTrigger === undefined) localProfile.npcBank.oocTrigger = false;
@@ -431,6 +394,8 @@ export function initProfile() {
         //
         // What the reader owns — label, placeholder, order, persistent,
         // updatable — is never touched here.
+        // VCRP: the ComfyUI "Image Tags" field was removed; drop it from stored field lists.
+        localProfile.npcBank.fields = localProfile.npcBank.fields.filter(f => !(f && (f.id === "imageTags" || f.system === "imageTags")));
         const npcDefaultById = new Map(NPC_DEFAULT_FIELDS.map(f => [f.id, f]));
         localProfile.npcBank.fields.forEach(f => {
             const def = npcDefaultById.get(f && f.id);
@@ -509,7 +474,7 @@ export function initProfile() {
     // A profile written before system blocks were pinned can still be carrying
     // them in the stack, where they would now show up twice.
     const systemIds = MEGUMIN_BLOCK_REGISTRY.filter(b => b.system).map(b => b.id);
-    localProfile.blockStack.order = localProfile.blockStack.order.filter(id => !systemIds.includes(id));
+    localProfile.blockStack.order = localProfile.blockStack.order.filter(id => !systemIds.includes(id) && id !== "dice");
     meguminSyncLegacyBlockIds();
 
     if (localProfile.devOverrides && Object.keys(localProfile.devOverrides).length > 0) {
@@ -622,7 +587,6 @@ export function initProfile() {
     } else {
         $("#ps_char_rule_label").html(`${displayName} <span class="ps-level-badge" style="background:${levelColors[saveLevel]};">${levelIcons[saveLevel]} ${levelLabels[saveLevel]}</span>`);
     }
-    fireRefreshHook(REFRESH.QUICK_GEN_BUTTON);
     fireRefreshHook(REFRESH.TOKEN_COUNT);
     pruneFutureData(); // Automatically prune out-of-bounds future data on load/initialization
     fireRefreshHook(REFRESH.MEMORY_VISUALS);
@@ -635,8 +599,6 @@ export function initProfile() {
 
     // The side panel renders 50ms after CHAT_CHANGED but the profile only lands
     // here at +200ms, so profile-fed sections would still show the previous chat.
-    try { refreshSidePanel(); } catch (e) { /* side panel may not be mounted yet */ }
-    try { refreshPresentBar(); } catch (e) { /* present bar may not be mounted yet */ }
 }
 
 export function pruneFutureData() {
@@ -895,7 +857,6 @@ export function saveProfileToMemory() {
     fireRefreshHook(REFRESH.TAB_PROPAGATE);
 
     fireRefreshHook(REFRESH.TOKEN_COUNT); // NEW: Update the UI whenever settings are saved!
-    try { refreshSidePanel(); } catch (e) { /* side panel may not be mounted yet */ }
 
     const saveInd = $("#ps_save_indicator");
     if (saveInd.length) {

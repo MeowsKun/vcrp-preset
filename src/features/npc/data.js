@@ -32,11 +32,6 @@ export function npcBuildTextFromData(n) {
     if (headerParts.length) lines.push(headerParts.join(" | "));
 
     npcBodyFields().forEach(f => {
-        // DELIBERATELY SKIPPED: the image-tags field.
-        // Image tags are for ComfyUI only. Hiding them saves tokens and prevents
-        // the AI from mimicking Booru formatting in its prose.
-        if (f.system === "imageTags") return;
-
         const val = n[f.id];
         if (!val) return;
         lines.push(f.ownLine ? `**${f.label}:**\n${val}` : `**${f.label}:** ${val}`);
@@ -60,7 +55,6 @@ export function npcCreateRecord({ parsed = {}, name = "", messageIndex = 0 } = {
     npcFields().forEach(f => { record[f.id] = parsed[f.id] || ""; });
     if (nameField) record[nameField.id] = parsed[nameField.id] || name || "";
 
-    record.imageOnly = false;
     record.pfp = "";
     record.timestamp = Date.now();
     record.messageIndex = messageIndex;
@@ -158,42 +152,3 @@ export function npcParseBlock(rawBlock) {
     return data;
 }
 
-// Scans the chat and extracts Image Tags for relevant NPCs
-// OPTIMIZED: Pre-computes NPC text once, uses cached keywords
-export function getRelevantNpcImageTags() {
-    const s = localProfile?.imageGen;
-    if (!s || !s.injectNpcTags) return "";
-    
-    const nb = localProfile?.npcBank;
-    if (!nb || !nb.npcs || nb.npcs.length === 0) return "";
-    
-    const context = typeof getContext === 'function' ? getContext() : null;
-    if (!context || !context.chat) return "";
-
-    // Use cached keywords (shared with other TF-IDF callers in this prompt build)
-    const { keywords } = memGetCachedKeywords(context.chat, 4);
-    if (keywords.length === 0) return "";
-
-    let scoredNpcs = [];
-    // Pre-compute NPC texts ONCE instead of inside each iteration
-    nb.npcs.forEach(n => {
-        if (!n.imageTags || n.imageTags.trim() === "") return; // Skip NPCs with no image tags
-        
-        let score = 0;
-        const contentLower = npcBuildTextFromData(n).toLowerCase();
-        for (const kw of keywords) {
-            if (contentLower.includes(kw)) score++;
-        }
-        
-        if (score >= 1) {
-            scoredNpcs.push({ name: n.name, tags: n.imageTags, score: score });
-        }
-    });
-
-    if (scoredNpcs.length === 0) return "";
-    
-    scoredNpcs.sort((a, b) => b.score - a.score);
-    const topNpcs = scoredNpcs.slice(0, 3); // Grab the top 3 relevant NPCs
-    
-    return "**RELEVANT NPC IMAGE TAGS:**\n" + topNpcs.map(n => `[${n.name}]: ${n.tags}`).join("\n");
-}

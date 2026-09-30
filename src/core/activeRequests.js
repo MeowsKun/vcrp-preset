@@ -23,17 +23,9 @@ export function setActiveStoryPlanRequest(v) { activeStoryPlanRequest = v; }
 export let activeBanListChat = null;
 export function setActiveBanListChat(v) { activeBanListChat = v; }
 
-// Image Gen: { chatText, styleStr, perspStr, extraStr, ... } for the scene prompt.
-export let activeImageGenRequest = null;
-export function setActiveImageGenRequest(v) { activeImageGenRequest = v; }
-
 // NPC Bank scan: { chatText, existingNames }.
 export let activeNpcScanRequest = null;
 export function setActiveNpcScanRequest(v) { activeNpcScanRequest = v; }
-
-// NPC portrait generation: { npcText, styleStr, perspStr, extraStr }.
-export let activeNpcPfpRequest = null;
-export function setActiveNpcPfpRequest(v) { activeNpcPfpRequest = v; }
 
 // Forced dossier refresh for one NPC: { npcName, npcText, chatText, rules }.
 // Fired by the refresh button on an NPC card, not by the story.
@@ -69,8 +61,6 @@ export function isBackgroundGenerationActive() {
     return !!(
         activeStoryPlanRequest ||
         activeBanListChat ||
-        activeImageGenRequest ||
-        activeNpcPfpRequest ||
         activeNpcUpdateRequest ||
         activeMemorySummarizationRequest ||
         activeGenerationOrder

@@ -1,24 +1,11 @@
 // V10 engines.
 //
-// Two engines, each in two versions.
+// Two engines. (VCRP removed the Co-writer variants.)
 //
 //   UKIYO  the floating world -- mood, texture, a scene told for its own sake.
 //   SHURA  every character is the protagonist of their own story, and the narrative
 //          asserts no right or wrong. Conflict comes from incompatible value-frames,
 //          never from a good side and a bad one.
-//
-// Each ships a CO-WRITER version: the same engine with one boundary moved, so the
-// narrator writes {{user}} too -- mimicking how the reader actually writes rather
-// than only what their persona says.
-//
-// The Co-writers are DERIVED, not copied. coWriter() applies the patch tables below,
-// so the diff between the two versions IS the code and a rule added to a base reaches
-// its Co-writer for free. Four hand-maintained copies of a 15 KB prompt would drift
-// the first time one was edited.
-//
-// What the Co-writers do NOT lift: {{user}}'s backstory. Authoring someone's actions
-// is a smaller step than authoring their past, and their history stays the reader's
-// in every version.
 //
 // `isV10` is their own generation flag. They carried `isV9` once, to inherit V9's
 // behaviour, and every screen that turned that flag back into the WORD "V9" started
@@ -253,62 +240,6 @@ This narrative is rated **M (mature)**. It is fiction, not testimony.
     p2: ``, p3: ``, p5: ``,
 };
 
-// ── What co-writing changes, and nothing else ────────────────────────────────
-//
-// Each entry is [find, replace] against the base engine's prompt slots. A patch
-// that stops matching warns in the console rather than failing silently: the
-// engine still loads, with that one rule left in its single-author form, and the
-// warning names which. Silence there would mean an engine that says it co-writes
-// and then refuses to.
-
-const UKIYO_CO_WRITING = [
-    // the core rule
-    [`except {{user}} — their interiority, volition, and speech belong to the reader; their body exists in your world and is subject to it — touched, moved, hurt, ignored — but never driven.`,
-     `including {{user}} — you and the reader co-author them. Play {{user}} as a full character: their actions, their speech, their reactions to what the world does, on every turn and not only when the reader is quiet. MIMICRY: read the reader's own messages for diction, sentence length, profanity, humour, and how fast they commit to a decision, then write {{user}} so their lines cannot be told apart from the reader's. The persona is the floor; how the reader actually writes is the model. PRECEDENCE: anything the reader writes for {{user}} is canon and outranks anything you would have authored — never overwrite it, contradict it, or quietly correct it. Their history is still the reader's: NEVER invent, alter, or extend {{user}}'s backstory.`],
-    // the narration was closed to {{user}}
-    [`It may enter any character but {{user}}, and it carries`,
-     `It may enter any character, {{user}} included, and it carries`],
-    // free indirect discourse was closed to {{user}}
-    [`Never for {{user}} — when they are alone, the narration is what a camera captures: the room, the light, the smell of the air. The character is the only one who knows what they think.`,
-     `{{user}} included — when they are alone the narration goes in with them, the same as it would for anyone else.`],
-    // the turn no longer has to start away from {{user}}
-    [`- opening: never open on {{user}}'s turn. Do not restate it, quote it back, or remark on what they just did — begin where they ended, on the world's answer to it.`,
-     `- opening: vary where the turn begins — the world's answer, someone else's business, or {{user}} already mid-action. Never restate or quote back what the reader just wrote, and never open the same way twice running.`],
-];
-
-const SHURA_CO_WRITING = [
-    // the core rule
-    [`{{user}} is reader-controlled — never author their actions, speech, thoughts, or feelings. {{user}}'s body is part of the world: characters and events may interact with it physically (touch, strike, kiss, restrain, etc.). Describe what reaches {{user}}, not what {{user}} does about it.`,
-     `{{user}} is yours to write as well — you and the reader co-author them. Play {{user}} as a full character: their actions, their speech, their reactions to what the world does, on every turn and not only when the reader is quiet. MIMICRY: read the reader's own messages for diction, sentence length, profanity, humour, and how fast they commit to a decision, then write {{user}} so their lines cannot be told apart from the reader's. The persona is the floor; how the reader actually writes is the model. PRECEDENCE: anything the reader writes for {{user}} is canon and outranks anything you would have authored — never overwrite it, contradict it, or quietly correct it. Their history is still the reader's: NEVER invent, alter, or extend {{user}}'s backstory.`],
-    // free indirect discourse was closed to {{user}}
-    [`Their voice may color the narration once per turn, never more; never for {{user}}.`,
-     `Their voice may color the narration once per turn, never more — {{user}} included.`],
-    // the turn no longer has to start away from {{user}}
-    [`- **opening:** never open on {{user}}'s action. Begin on the world's reply to it.`,
-     `- **opening:** vary where the turn begins — the world's reply, another character's business, or {{user}} already mid-action. NEVER open the same way twice running.`],
-    // decentering SOFTENS -- still the spine, but it no longer forbids composing around a character you now write
-    [`- **decentering:** ≥50% of every scene MUST belong to agents other than {{user}} — material that would transpire were {{user}} absent. When selecting what surfaces, prioritize the thread independent of {{user}} over the thread concerning them. NEVER compose the scene around {{user}}.`,
-     `- **decentering:** a substantial share of every scene belongs to agents other than {{user}} — material that would transpire were {{user}} absent. Writing {{user}} does not make them the centre: keep at least one thread running that has nothing to do with them.`],
-];
-
-function coWriter(base, id, label, color, patches) {
-    // isCoWriter is what [[user]] gates on: the "never write for {{user}}" rule
-    // is the one instruction a Co-writer must NOT receive, since writing {{user}}
-    // is the entire point of the variant. Set here rather than on each entry so a
-    // future Co-writer gets it for free.
-    const out = { ...base, id, label, color, recommended: false, isCoWriter: true };
-    patches.forEach(([find, repl], i) => {
-        let hit = false;
-        ["p1", "p4", "p6"].forEach(k => {
-            if (out[k] && out[k].includes(find)) { out[k] = out[k].replace(find, repl); hit = true; }
-        });
-        if (!hit) console.warn(
-            `[VCRP] ${label}: co-writing patch ${i + 1} no longer matches the base engine. `
-            + `That rule is still in its single-author form.`);
-    });
-    return out;
-}
-
 // -----------------------------------------------------------------------------
 // Enhanced Dialogue.
 //
@@ -398,7 +329,5 @@ export function applyEnhancedDialogue(text) {
 
 export const modes_v10 = [
     UKIYO,
-    coWriter(UKIYO, "v10-core-cw", "V10 Ukiyo Co-writer", "#fb7185", UKIYO_CO_WRITING),
     SHURA,
-    coWriter(SHURA, "v10-shura-cw", "V10 Shura Co-writer", "#c084fc", SHURA_CO_WRITING),
 ];

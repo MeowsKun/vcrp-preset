@@ -21,9 +21,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const npcBankPrompts = {
-        systemPrompt: "You are an expert AI image prompt engineer specializing in character portraits. Your job is to read a character's dossier and convert their visual description into a highly detailed image generation prompt for a portrait. You must adhere to the requested Style Constraint and Camera Perspective. Do not include quotes, conversational text, or explanations. Output ONLY the raw prompt text.",
-        userPrompt: "Write a character portrait image generation prompt based on this NPC's dossier:\n\n<npc_dossier>\n{{npcText}}\n</npc_dossier>\n\nStyle Constraint: {{styleStr}}\nCamera Perspective: {{perspStr}}\nExtra Details: {{extraStr}}\n\nUse the character's appearance, age, sex, occupation, and personality to inform the visual. Output ONLY the raw image prompt text.",
-        thinkingPrompt: "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main response must immediately follow </think>.\n\n<think>\nReflect in approximately 50-100 words on what this character looks like and what visual elements best capture them.\n\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\n    Every response must follow this exact structure in this exact order:\n\n    <think>\n    {Thinking}\n    </think>\n\n    {Main response}",
         dossierRules: `### NPC DOSSIER:
   trigger: >
     Generate EXACTLY ONCE when an NPC meets ALL three conditions in a single scene:
@@ -57,6 +54,5 @@ export const npcBankPrompts = {
       Once written, these facts are fixed. Future scenes must stay consistent
       with them. If a later scene needs a contradiction, surface it as a
       revelation (the earlier info was a lie/misunderstanding), never a silent retcon.
-    image_tags: 12-20 comma-separated Booru tags. PHYSICAL ONLY. NO clothes/accessories/weapons/bg/pose/expression. MUST read as adult. Order: anchor(1girl/1boy/1other) -> hair(len,style,col) -> eyes(col,shape) -> skin tone -> body(type,build) -> age-app -> marks(scars,freckles,moles,tattoos,birthmarks).
 `
 };

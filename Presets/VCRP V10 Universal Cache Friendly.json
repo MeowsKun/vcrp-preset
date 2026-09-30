@@ -28,7 +28,7 @@
             "name": "Main Prompt",
             "system_prompt": true,
             "role": "system",
-            "content": "[[prompt1]] [[main]] [[prompt2]]\n[[pronouns]]\n[[control]]\n[[OOC]]\n\n[[prompt3]]",
+            "content": "[[prompt1]]  [[prompt2]]\n[[pronouns]]\n\n[[prompt3]]",
             "identifier": "main",
             "injection_position": 0,
             "injection_depth": 4,
@@ -58,7 +58,7 @@
             "name": "Output RULES",
             "system_prompt": true,
             "role": "system",
-            "content": "## your thinking steps:\n[[THINK]]\n\n## FORMATTING RULES:\n\n[[DNRATIO]]\n[[COLOR]]\n- FORBIDDEN: Repeating actions, physical descriptors, or internal monologues used in the previous two turns.\n- response_shape: |\n HARD RULE Do NOT open with narration every turn. Rotate your entry point:\n→ Dialogue first: A character speaks before anything is described.\n→ Mid-action: Drop in with something already happening a door swinging, a plate set down, a phone buzzing.\n→ Sound or sensation: A single sensory hit a smell, a noise, a temperature shift then the scene.\n→ Atmosphere-into-dialogue: One line of setting, then straight into speech. No multi-paragraph scene-dressing before anyone talks.\nNarration-first (full environmental description before dialogue) is ONE of these options, not the default. If your last response opened with narration, your next one MUST NOT. Check the chat history.\n[[Direct]]\n[[DN]]\n[[config]] \n\n[[storyplan]]\n\n[[npc_dossier]]\n\n[[npc list]]\n\n[[dice]]\n\n[[img1]]\n\n[[knowledgebase]]\n\n[[ANIMEMODE]]\n\n[[blocks]]\n\n## final reminder:\nBEFORE YOU OUTPUT  READ THIS LAST:\n1. NPCs know ONLY what they have witnessed, been told, or physically observed. Narration is for the reader.\n2. Follow every output rule. Re-read the ban list. If in doubt, cut the line.\n[[Language]]\n[[MVU]]\n",
+            "content": "## your thinking steps:\n[[THINK]]\n\n## FORMATTING RULES:\n\n[[DNRATIO]]\n[[COLOR]]\n- FORBIDDEN: Repeating actions, physical descriptors, or internal monologues used in the previous two turns.\n- response_shape: |\n HARD RULE Do NOT open with narration every turn. Rotate your entry point:\n→ Dialogue first: A character speaks before anything is described.\n→ Mid-action: Drop in with something already happening a door swinging, a plate set down, a phone buzzing.\n→ Sound or sensation: A single sensory hit a smell, a noise, a temperature shift then the scene.\n→ Atmosphere-into-dialogue: One line of setting, then straight into speech. No multi-paragraph scene-dressing before anyone talks.\nNarration-first (full environmental description before dialogue) is ONE of these options, not the default. If your last response opened with narration, your next one MUST NOT. Check the chat history.\n[[DN]]\n[[config]] \n\n[[storyplan]]\n\n[[npc_dossier]]\n\n[[npc list]]\n\n[[knowledgebase]]\n\n[[ANIMEMODE]]\n\n[[blocks]]\n\n## final reminder:\nBEFORE YOU OUTPUT  READ THIS LAST:\n1. NPCs know ONLY what they have witnessed, been told, or physically observed. Narration is for the reader.\n2. Follow every output rule. Re-read the ban list. If in doubt, cut the line.\n[[Language]]\n",
             "identifier": "jailbreak",
             "injection_position": 1,
             "injection_depth": 1,
@@ -192,22 +192,6 @@
             "forbid_overrides": false
         },
         {
-            "identifier": "d3877fa2-5b94-4f25-98f0-32f75746cb98",
-            "system_prompt": false,
-            "enabled": false,
-            "marker": false,
-            "name": "Continue",
-            "role": "user",
-            "content": "<think>",
-            "injection_position": 0,
-            "injection_depth": 4,
-            "injection_order": 100,
-            "injection_trigger": [
-                "quiet"
-            ],
-            "forbid_overrides": false
-        },
-        {
             "identifier": "a5a70637-5396-44bf-9af0-484866e75b7e",
             "system_prompt": false,
             "enabled": false,
@@ -236,27 +220,13 @@
             "forbid_overrides": false
         },
         {
-            "identifier": "853f2bc6-6bda-49d8-bf94-896fc25e0f29",
-            "system_prompt": false,
-            "enabled": false,
-            "marker": false,
-            "name": "AI 1",
-            "role": "assistant",
-            "content": "[[AI1]]",
-            "injection_position": 0,
-            "injection_depth": 4,
-            "injection_order": 100,
-            "injection_trigger": [],
-            "forbid_overrides": false
-        },
-        {
             "identifier": "8fe3941c-a18d-4000-b6f1-695e6fe1136f",
             "system_prompt": false,
             "enabled": false,
             "marker": false,
             "name": "Main 2",
             "role": "system",
-            "content": "[[prompt4]]\n\n[[prompt5]]\n\n[[death]]\n\n[[combat]]\n\n[[npc_events]]\n\n[[boldnpcs]]\n\n[[prompt6]]\n[[aiprompt]]\n[[onomato]]\n\n[[html]]\n\n<banlist>\nNEVER output the following.\n \n*Constructions:*\n- **negation-framing** (antithesis/litotes): \"not X but Y,\" \"it wasn't anger, it was fear.\"\n- **thought-verbs:** felt, realized, knew, understood, sensed.\n- **on-the-nose:** a character naming their own feeling, explaining their behavior, or summarizing the situation.\n- **pathetic-fallacy naming:** \"the air was charged/heavy,\" \"tension was palpable,\" \"silence stretched.\"\n- **unspoken-labeling:** \"nobody said it out loud,\" \"it sat there between them,\" \"unasked.\"\n- **machine-verbs for feeling:** engineered, weaponized, calculated, short-circuited, tactical.\n- **action + its own gloss:** \"he reached for her, as if afraid she'd vanish.\"\n- **object + attached fact:** \"the register, where the money went missing.\"\n- **mask-drop announcement:** \"the composed X was gone, replaced by Y.\"\n- **cliché motions:** \"a breath he didn't know he was holding,\" \"before he could stop himself,\" \"mouth opens, closes.\"\n- **metaphor tics:** \"hit like a [noun],\" \"washed over/flooded,\" \"something inside him broke/cracked,\" \"the weight of [abstract].\"\n- **>1 emotional adjective per noun.**\n- **stripped articles:** every sentence keeps its articles and full grammar. \"Morning light filtered through corridor windows\" is banned; write \"Faint morning light filtered through the corridor's windows.\"\n- **pattern descriptions:** \"the X of someone who Y\", \"the X of Y\" as a description (\"the patience of a saint\"), \"the way X Y\".\n- **stock phrases:** \"a mix of X and Y\", eyes that \"sparkle with mischief\", \"sent shivers down\" anyone's spine.\n- **em dashes:** none in narration, and no hyphens used as dashes. Inside spoken NPC dialogue they are allowed for stammers, cut-offs, and trailing off.\n*Words* (any form): fresh meat, meat, asset, prey, predatory · spine, shivers · breath hitching/catching · husky, throaty, guttural, \"barely above a whisper\" · pupils blown/dilated · ozone, musk · velvet, vise/vice, furnace, structural integrity, deep curve · calloused, slick, unadulterated · jaw clenched · \"a beat\" (time).\n \n*Echo:*\n- NEVER open >2 consecutive sentences with he/she/they/name.\n- NEVER parrot {{user}}'s input; NEVER reuse a detail/gesture/descriptor from the previous 2 turns.\n- NEVER: \"no one had ever said that before\" (or variants); characters losing shoes.\n[[banlist]]\n</banlist>\n",
+            "content": "[[prompt4]]\n\n[[prompt5]]\n\n[[boldnpcs]]\n\n[[prompt6]]\n[[aiprompt]]\n[[onomato]]\n\n[[html]]\n\n<banlist>\nNEVER output the following.\n \n*Constructions:*\n- **negation-framing** (antithesis/litotes): \"not X but Y,\" \"it wasn't anger, it was fear.\"\n- **thought-verbs:** felt, realized, knew, understood, sensed.\n- **on-the-nose:** a character naming their own feeling, explaining their behavior, or summarizing the situation.\n- **pathetic-fallacy naming:** \"the air was charged/heavy,\" \"tension was palpable,\" \"silence stretched.\"\n- **unspoken-labeling:** \"nobody said it out loud,\" \"it sat there between them,\" \"unasked.\"\n- **machine-verbs for feeling:** engineered, weaponized, calculated, short-circuited, tactical.\n- **action + its own gloss:** \"he reached for her, as if afraid she'd vanish.\"\n- **object + attached fact:** \"the register, where the money went missing.\"\n- **mask-drop announcement:** \"the composed X was gone, replaced by Y.\"\n- **cliché motions:** \"a breath he didn't know he was holding,\" \"before he could stop himself,\" \"mouth opens, closes.\"\n- **metaphor tics:** \"hit like a [noun],\" \"washed over/flooded,\" \"something inside him broke/cracked,\" \"the weight of [abstract].\"\n- **>1 emotional adjective per noun.**\n- **stripped articles:** every sentence keeps its articles and full grammar. \"Morning light filtered through corridor windows\" is banned; write \"Faint morning light filtered through the corridor's windows.\"\n- **pattern descriptions:** \"the X of someone who Y\", \"the X of Y\" as a description (\"the patience of a saint\"), \"the way X Y\".\n- **stock phrases:** \"a mix of X and Y\", eyes that \"sparkle with mischief\", \"sent shivers down\" anyone's spine.\n- **em dashes:** none in narration, and no hyphens used as dashes. Inside spoken NPC dialogue they are allowed for stammers, cut-offs, and trailing off.\n*Words* (any form): fresh meat, meat, asset, prey, predatory · spine, shivers · breath hitching/catching · husky, throaty, guttural, \"barely above a whisper\" · pupils blown/dilated · ozone, musk · velvet, vise/vice, furnace, structural integrity, deep curve · calloused, slick, unadulterated · jaw clenched · \"a beat\" (time).\n \n*Echo:*\n- NEVER open >2 consecutive sentences with he/she/they/name.\n- NEVER parrot {{user}}'s input; NEVER reuse a detail/gesture/descriptor from the previous 2 turns.\n- NEVER: \"no one had ever said that before\" (or variants); characters losing shoes.\n[[banlist]]\n</banlist>\n",
             "injection_position": 0,
             "injection_depth": 4,
             "injection_order": 100,
@@ -285,62 +255,6 @@
             "name": "Add Your Custom prompt here",
             "role": "system",
             "content": "",
-            "injection_position": 0,
-            "injection_depth": 4,
-            "injection_order": 100,
-            "injection_trigger": [],
-            "forbid_overrides": false
-        },
-        {
-            "identifier": "7fce9ff3-e6c3-41ca-af3a-5dcb2ec58146",
-            "system_prompt": false,
-            "enabled": false,
-            "marker": false,
-            "name": "Main 3 DS4 + GLM",
-            "role": "user",
-            "content": "<rules>\n[[npc_events]]\n[[Direct]]\n[[onomato]]\n[[COT]]\n[[img2]]\n[[cyoa]]\n[[npc_dossier]]\n[[infoblock]]\n[[npc_inner_chatter]]\n[[summary]]\n[[storytracker]]\n<rules>",
-            "injection_position": 1,
-            "injection_depth": 1,
-            "injection_order": 100,
-            "injection_trigger": [],
-            "forbid_overrides": false
-        },
-        {
-            "identifier": "5f363c58-ccc4-49b0-98ba-379fd573ab26",
-            "system_prompt": false,
-            "enabled": false,
-            "marker": false,
-            "name": "user input",
-            "role": "system",
-            "content": "this is the last message in the chat:\n{{lastMessage}}",
-            "injection_position": 0,
-            "injection_depth": 4,
-            "injection_order": 100,
-            "injection_trigger": [],
-            "forbid_overrides": false
-        },
-        {
-            "identifier": "17d43d8f-c642-4051-90fa-eb834ae6e68d",
-            "system_prompt": false,
-            "enabled": false,
-            "marker": false,
-            "name": "image",
-            "role": "system",
-            "content": "### Image Gen:\nWithin your response, insert two of this image tag: <img prompt=\"[prompt]\"> to illustrate the scene from the user's POV.\n\nBuild the prompt in this EXACT order. Do NOT rearrange sections.\n\n**SECTION 1 — Quality + POV (Booru tags, always first):**\nOpen with: masterpiece, best quality, highly detailed,\nThen camera perspective:\n• Passively observing: \"1st person pov, looking at viewer,\" + environmental foreground anchor (e.g., \"foreground edge of a desk visible,\")\n• Physically interacting: \"1st person pov, pov hands,\" + hand action only (e.g., \"male hands holding silver tray,\")\n• STRICT BAN: Never describe the user's face, clothing, or full body.\n\n**SECTION 2 — Character Count:**\nState the total visible characters as a Booru tag: \"1girl,\", \"3girls,\", \"1boy 1girl,\", etc.\n\n**SECTION 3 — Character Descriptions (CRITICAL — this is where bleeding happens):**\n\nFOR SINGLE CHARACTER (1 person in frame):\nUse a flat comma-separated Booru tag string for appearance + action. Example:\nmature female, pale skin, dark eyes, long black hair, messy ponytail, dark wool coat, white silk blouse, tear-streaked face, anxious expression, sitting sideways, holding blanket, reaching toward viewer,\n\nFOR MULTIPLE CHARACTERS (2+ people in frame):\nYou MUST describe each character in a SEPARATE natural-language sentence/paragraph to prevent feature bleeding. Use Booru tags for appearance and clothing WITHIN each sentence, but separate characters with clear spatial language (\"on the left,\" \"in the center,\" \"behind her\").\n\nFormat per character: \"The [position] is a [gender/species] with [hair tags], [eye tags], [skin tags], wearing [clothing tags]. She has a [expression tag] and is [action/pose].\"\n\nEach character gets their OWN paragraph. Do NOT merge characters into one comma-separated list.\n\n**SECTION 4 — Scene + Lighting (always last):**\nConclude with the background environment, lighting, and atmosphere as natural language.\n\n**STRICT BANS:** Do NOT use \"realistic\" or \"photographic\". Do NOT describe the user's face or body.\n\n**DIRECT LANGUAGE:** Use exact Booru tags, not euphemisms. \"naked\" not \"wearing nothing.\" \"nude\" not \"without clothes.\" \"erection\" not \"visible arousal.\" Always use the most direct, standard Booru tag available.\n\n**NSFW TAG REFERENCE (use when scene is explicit):**\nBody: naked, nude, topless, exposed nipples, small breasts, medium breasts, large breasts, spread legs, ass, erection, veins, veiny penis\nActions: hetero, sex, vaginal, anal, oral, fellatio, after fellatio, paizuri, straddling, riding, missionary, doggystyle, cowgirl position, moaning, open mouth, tongue out, ahegao, clenching teeth\nFluids: cum, cum on body, cum on breasts, cum on face, cum on hair, cum on tongue, cum in mouth, cum inside, ejaculation, facial, saliva, sweat\nState: flushed face, heavy breathing, trembling, crying with eyes open, half-closed eyes, solo focus, pov\n\n---\nEXAMPLE — Single Character:\n<img prompt=\"masterpiece, best quality, highly detailed, 1st person pov, looking at viewer, foreground edge of black leather car seat visible, 1girl, mature female, pale skin, dark eyes, long black hair, messy high ponytail, dark wool coat, white silk blouse, tear-streaked face, anxious expression, sitting sideways, holding blanket, reaching toward viewer, dark luxury SUV interior background, tinted windows, blurred city lights outside, soft amber interior lighting, depth of field\">\n\nEXAMPLE — Multiple Characters:\n<img prompt=\"masterpiece, best quality, highly detailed, 1st person pov, looking at viewer, foreground messy white bedsheets visible, 3girls, The woman on the left is a rabbit girl kemonomimi with long blonde hair, long white rabbit ears, pale skin, blue eyes, wearing short frilly black white french maid outfit, maid headdress. She has a nervous expression and her hands clasped near mouth. The woman in the center is a mature female human with black hair, tight hair bun, brown eyes, wearing strict long black white victorian maid uniform, high collar, long skirt. She has a serious expression and is holding a silver measuring tape. The woman on the right is a demon girl with pale skin, short black hair, red eyes, red oni horns, wearing dark blue maid dress, white apron. She has a stoic expression and is holding red velvet slippers. Lavish bedroom background with ornate furniture and glowing chandelier, warm golden lighting, depth of field\">",
-            "injection_position": 0,
-            "injection_depth": 4,
-            "injection_order": 100,
-            "injection_trigger": [],
-            "forbid_overrides": false
-        },
-        {
-            "identifier": "d516d410-9198-4d4c-a4a4-9d30268557bb",
-            "system_prompt": false,
-            "enabled": false,
-            "marker": false,
-            "name": "Memory management",
-            "role": "system",
-            "content": "[[long-Memory]]\n\n[[Short-memory]]",
             "injection_position": 0,
             "injection_depth": 4,
             "injection_order": 100,
@@ -462,6 +376,10 @@
                     "enabled": true
                 },
                 {
+                    "identifier": "753facc3-4171-4bc5-a005-ab9d1111e469",
+                    "enabled": false
+                },
+                {
                     "identifier": "jailbreak",
                     "enabled": true
                 },
@@ -496,40 +414,6 @@
     "request_image_resolution": "",
     "extensions": {
         "regex_scripts": [
-            {
-                "id": "ae712608-4101-46aa-b274-a57ced4d7cde",
-                "scriptName": "image gen regex",
-                "findRegex": "/<!-- kazuma-inline-start:[^>]*-->[\\s\\S]*?title=\"([^\"]*)\"[\\s\\S]*?<!-- kazuma-inline-end:[^>]*-->/g",
-                "replaceString": "<img prompt=\"$1\">",
-                "trimStrings": [],
-                "placement": [
-                    2
-                ],
-                "disabled": false,
-                "markdownOnly": false,
-                "promptOnly": true,
-                "runOnEdit": true,
-                "substituteRegex": 0,
-                "minDepth": null,
-                "maxDepth": null
-            },
-            {
-                "id": "5b090d84-1552-4da9-b3f3-34b9db567557",
-                "scriptName": "image clean up",
-                "findRegex": "/<div class=\"kazuma-img-placeholder\"[^>]*>[\\s\\S]*?<\\/div>|<img\\s+[^>]*\\/>/g",
-                "replaceString": "",
-                "trimStrings": [],
-                "placement": [
-                    2
-                ],
-                "disabled": false,
-                "markdownOnly": false,
-                "promptOnly": true,
-                "runOnEdit": true,
-                "substituteRegex": 0,
-                "minDepth": null,
-                "maxDepth": null
-            },
             {
                 "id": "fc56bf5f-2775-4471-91d1-17c303f5f081",
                 "scriptName": "narration|dialogue tags cleanup",

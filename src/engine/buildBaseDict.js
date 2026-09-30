@@ -10,7 +10,7 @@
 import { getContext, extension_settings, substituteParams } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
-import { isV7Engine, isV8Engine, isModernEngine, engineUsesRenderLimits, isCoWriterEngine } from "../core/engines.js";
+import { isV7Engine, isModernEngine, isCoWriterEngine } from "../core/engines.js";
 import {
     activeNpcImages, pushActiveNpcImage, clearActiveNpcImages,
 } from "../core/activeRequests.js";
@@ -19,11 +19,10 @@ import { hardcodedLogic } from "../../data/database.js";
 import { applyEnhancedDialogue } from "../../data/modes/v10.js";
 import { buildBlocksEnvelope } from "../features/blocks/registry.js";
 import { buildConfigBlock } from "../features/storyconfig/config.js";
-import { npcBuildTextFromData, getRelevantNpcImageTags } from "../features/npc/data.js";
+import { npcBuildTextFromData } from "../features/npc/data.js";
 import { npcBuildDossierPrompt, npcBuildUpdatePrompt } from "../features/npc/fields.js";
 import { memGetCachedKeywords } from "../features/memory/keywords.js";
 import { memGetRelevantVaultEntries } from "../features/memory/index.js";
-import { meguminRollD20s } from "../utils/dice.js";
 import { meguminOverridableSlots, meguminSlotIsLive, meguminModuleTrigger } from "../../data/slots.js";
 import { resolveSlot } from "../core/sharedFragments.js";
 import { buildKnowledgebase } from "../vcrp/knowledgebase.js";
@@ -36,26 +35,7 @@ export function buildBaseDict(isTokenCount = false) {
     const allAvailableModes = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])];
     const activeEngine = allAvailableModes.find(m => m.id === localProfile.mode);
     const isV7 = isV7Engine(activeEngine);
-    const isV8 = isV8Engine(activeEngine);
-    // Everything V8/V9 does, V10 does too. The one exception is the Lean/Full render
-    // split below, which asks engineUsesRenderLimits() instead.
     const isModern = isModernEngine(activeEngine);
-
-    if (engineUsesRenderLimits(activeEngine)) {
-        const v9l = localProfile.v9Limits || {};
-        dict["[[v9_lean_min]]"] = String(v9l.leanMin || 300);
-        dict["[[v9_lean_max]]"] = String(v9l.leanMax || 400);
-        dict["[[v9_full_min]]"] = String(v9l.fullMin || 700);
-        dict["[[v9_full_max]]"] = String(v9l.fullMax || 1200);
-        
-        // Strip normal count entirely just in case
-        dict["[[count]]"] = "";
-    } else {
-        dict["[[v9_lean_min]]"] = "";
-        dict["[[v9_lean_max]]"] = "";
-        dict["[[v9_full_min]]"] = "";
-        dict["[[v9_full_max]]"] = "";
-    }
 
     // 1. GLOBAL DEFAULTS (Language, Pronouns, Word Count)
     const targetLang = (localProfile.userLanguage && localProfile.userLanguage.trim() !== "")
@@ -75,20 +55,10 @@ export function buildBaseDict(isTokenCount = false) {
 
     // 2. STANDARD STAGE SELECTIONS (Stage 2, 4, 5, 6)
 
-    // Personality (Stage 2) - Will be overwritten later if Custom Engine is active
-    const pData = hardcodedLogic.personalities.find(p => p.id === localProfile.personality);
-    dict["[[main]]"] = pData ? pData.content : "";
+    // VCRP: the Persona tab (narrator personalities, OOC/control protocols) was removed.
     dict["[[AI1]]"] = "Understood."; // Default
     dict["[[AI2]]"] = "Understood."; // Default
 
-    if (localProfile.personality === "rebel") {
-        dict["[[AI1]]"] = "Fine i read the rules.";
-        dict["[[AI2]]"] = "OK i Understnd it.";
-    }
-
-    // Standard Toggles & Addons
-    if (localProfile.toggles.ooc) dict["[[OOC]]"] = hardcodedLogic.toggles.ooc.content;
-    if (localProfile.toggles.control) dict["[[control]]"] = hardcodedLogic.toggles.control.content;
     // POV moved out of the style library and into the Story Config block.
     const povInjectionStr = "";
 
@@ -148,18 +118,8 @@ export function buildBaseDict(isTokenCount = false) {
         dict["[[onomato]]"] = "";
     }
 
-    // MVU Logic
-    if (localProfile.blocks.includes("mvu")) {
-        let baseMvu = hardcodedLogic.blocks.find(b => b.id === "mvu").content;
-        // Length is a Story Config field now, so the MVU block never carries a word count of its own.
-        dict["[[MVU]]"] = baseMvu.replace("[[count]]", "");
-    } else {
-        dict["[[MVU]]"] = "";
-    }
-
     // 3. ENGINE OVERRIDES (The "Superior" Layer)
     // This part runs last so it can overwrite standard Stage choices
-    const isCustom = activeEngine && !hardcodedLogic.modes.find(x => x.id === activeEngine.id);
 
     if (activeEngine) {
         // Map p1-p6
@@ -179,11 +139,6 @@ export function buildBaseDict(isTokenCount = false) {
             if (enhanced) val = applyEnhancedDialogue(val);
             dict[`[[prompt${i}]]`] = val;
             dict[`[prompt${i}]`] = val;
-        }
-
-        // Custom Engines kill [[main]] personality ONLY if they are truly built from scratch
-        if (isCustom && activeEngine.isCoreClone !== true) {
-            dict["[[main]]"] = "";
         }
 
         // Engine-specific AI Prefills (If defined in the engine)
@@ -276,41 +231,8 @@ export function buildBaseDict(isTokenCount = false) {
         }
     }
 
-    // Dice numbers are filled in AFTER the override pass, not before.
-    // [[dice]] is an editable add-on now, so a reader can rewrite the dice
-    // rules and keep the [[dice_rolls]] marker. Rolling first and
-    // overriding second would replace the filled text with their unfilled
-    // copy, and the marker would then be stripped by the injector's leak
-    // guard -- the rules would arrive with the numbers silently missing.
-    // The dice add-on ships with a marker where this turn's numbers go, and it
-    // is filled in HERE rather than by a second dict entry. A nested trigger
-    // would work only because Object.entries walks the dict in insertion order,
-    // so [[dice]] happens to expand before [[dice_rolls]] is searched for — a
-    // correctness that depends on the order two unrelated lines were written in.
-    // One explicit replacement cannot be broken by reordering anything.
-    //
-    // Fresh numbers every build, so a swipe re-rolls the turn rather than
-    // rewriting the prose around a die that already landed.
-    // Any add-on that declares a roll count gets this turn's numbers. Written as
-    // a loop over what the add-ons ask for rather than a branch per add-on: the
-    // player-only and everyone variants want three and six, and a third variant
-    // would otherwise mean editing the engine to add a number.
-    (localProfile.addons || []).forEach(aId => {
-        const item = hardcodedLogic.addons.find(a => a.id === aId);
-        if (!item || !item.rolls || !dict[item.trigger]) return;
-        dict[item.trigger] = dict[item.trigger]
-            .replace("[[dice_rolls]]", meguminRollD20s(item.rolls).join(", "));
-    });
-
-    // Wipe main persona for V6, V7, V8, and V9
-    if (localProfile.mode.includes("v6-dream-team") || isV7 || isModern) {
-        dict["[[main]]"] = "";
-    }
-
-    // Wipe Persona & Toggle tags entirely for V8, V9 and V10
+    // Modern engines carry no model acknowledgements.
     if (isModern) {
-        dict["[[OOC]]"] = "";
-        dict["[[control]]"] = "";
         dict["[[AI1]]"] = "";
         dict["[[AI2]]"] = "";
     }
@@ -399,71 +321,6 @@ export function buildBaseDict(isTokenCount = false) {
         dict["[[banlist]]"] = "";
     }
 
-    if (localProfile.imageGen && localProfile.imageGen.enabled) {
-        const ig = localProfile.imageGen;
-        let shouldInject = false;
-        let conditionalText = "";
-        const mode = ig.triggerMode || "always";
-
-        if (mode === "always") shouldInject = true;
-        else if (mode === "frequency") {
-            const chat = getContext().chat || [];
-            const aiMsgCount = chat.filter(m => !m.is_user && !m.is_system).length;
-            const freq = parseInt(ig.autoGenFreq) || 1;
-            if ((aiMsgCount + 1) % freq === 0) shouldInject = true;
-        } else if (mode === "conditional") {
-            shouldInject = true;
-            conditionalText = "CRITICAL INSTRUCTION: ONLY output the <img prompt=\"...\"> tag if the character is explicitly taking a photo, sending a picture, or sharing an image in this exact moment. If not, do NOT output the image tags at all.\n\n";
-        }
-
-        if (shouldInject) {
-            const customIg = localProfile.imageGen.customPromptsEnabled ? (localProfile.imageGen.customPrompts || {}) : {};
-            const defIg = DEFAULT_PROMPTS.imageGen;
-            
-            const tmpl = ig.promptTemplate || "illus_cinematic";
-            const map = {
-                "illus_pov": ["rulesIllusPov", "examplesIllusPov"],
-                "sdxl_pov": ["rulesSdxlPov", "examplesSdxlPov"],
-                "illus_cinematic": ["rulesIllusCinematic", "examplesIllusCinematic"],
-                "sdxl_cinematic": ["rulesSdxlCinematic", "examplesSdxlCinematic"],
-                "illus_portrait": ["rulesIllusPortrait", "examplesIllusPortrait"],
-                "sdxl_portrait": ["rulesSdxlPortrait", "examplesSdxlPortrait"]
-            };
-
-            let rules = "", examples = "";
-            const keys = map[tmpl];
-            if (keys) {
-                rules = customIg[keys[0]] || defIg[keys[0]];
-                examples = customIg[keys[1]] || defIg[keys[1]];
-            }
-
-            if (!ig.includeExamples) examples = "";
-
-            const template = customIg.injectionTemplate || defIg.injectionTemplate;
-            let extraSection = ig.promptExtra ? `Extra Instructions: ${ig.promptExtra}` : "";
-            let directLangStr = ig.directLanguage ? "**DIRECT LANGUAGE:** Use exact Booru tags only. \"naked\" not \"wearing nothing.\" \"erection\" not \"visible arousal.\"\n\n**NSFW TAG REFERENCE (use when scene is explicit):**\nBody: naked, nude, topless, exposed nipples, small breasts, medium breasts, large breasts, spread legs, ass, erection, veins, veiny penis\nActions: hetero, sex, vaginal, anal, oral, fellatio, after fellatio, paizuri, straddling, riding, missionary, doggystyle, cowgirl position, moaning, open mouth, tongue out, ahegao, clenching teeth\nFluids: cum, cum on body, cum on breasts, cum on face, cum on hair, cum on tongue, cum in mouth, cum inside, ejaculation, facial, saliva, sweat\nState: flushed face, heavy breathing, trembling, crying with eyes open, half-closed eyes, solo focus" : "";
-            let npcTagsStr = getRelevantNpcImageTags(); // <-- GET THE TAGS
-            const imageCountStr = ig.imageCount || 1; 
-
-            dict["[[img1]]"] = template
-                .replace('{{conditionalText}}', conditionalText)
-                .replace('{{imageCount}}', imageCountStr)
-                .replace('{{templateRules}}', rules)
-                .replace('{{promptExtra}}', extraSection)
-                .replace('{{directLanguage}}', directLangStr)
-                .replace('{{npcImageTags}}', npcTagsStr) // <-- INJECT THEM
-                .replace('{{templateExamples}}', examples);
-            
-            // Set the new value for img2 dynamically based on the count!
-            dict["[[img2]]"] = ` and the ${imageCountStr} image tag`;
-        } else {
-            dict["[[img1]]"] = "";
-            dict["[[img2]]"] = "";
-        }
-    } else {
-        dict["[[img1]]"] = ""; dict["[[img2]]"] = "";
-    }
-
     if (localProfile.thinkingV2 && dict["[[prefill]]"]) {
         dict["[[prefill]]"] = dict["[[prefill]]"].replace(/\n<think>[\s\S]*/, "\n<think>\n<think>");
     }
@@ -474,7 +331,7 @@ export function buildBaseDict(isTokenCount = false) {
     if (dict["[[npc_inner_chatter]]"]) dict["[[npc_inner_chatter2]]"] = "[Npc inner chatter here]"; else dict["[[npc_inner_chatter2]]"] = "";
 
     // Resolve early-evaluated tokens inside all other strings to prevent them from being missed and then cleaned up
-    const earlyTokens = ["[[count]]", "[[Language]]", "[[pronouns]]", "[[DNRATIO]]", "[[img2]]", "[[v9_lean_min]]", "[[v9_lean_max]]", "[[v9_full_min]]", "[[v9_full_max]]"];
+    const earlyTokens = ["[[count]]", "[[Language]]", "[[pronouns]]", "[[DNRATIO]]"];
     earlyTokens.forEach(et => {
         if (dict[et] !== undefined) {
             const val = dict[et];
@@ -675,7 +532,6 @@ export function buildBaseDict(isTokenCount = false) {
 
                     let scoredNpcs = [];
                     npcs.forEach((n, idx) => {
-                        if (n.imageOnly) return; // Skip if "Image Tags Only" is toggled
                         
                         let score = 0;
                         let matchedWords = [];

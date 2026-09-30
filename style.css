@@ -32,6 +32,20 @@
     user-select: none;
 }
 
+/* VCRP: setup-problem dot (see src/vcrp/health.js). */
+#prompt-slot-fixed-btn .vcrp-health-dot {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ef4444;
+    border: 2px solid var(--bg-panel, #111);
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.7);
+    pointer-events: auto;
+}
+
 #prompt-slot-fixed-btn.ps-btn-transition {
     transition: left 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275),
                 right 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275),
@@ -313,17 +327,6 @@
     margin-top: 4px;
 }
 
-.ps-rec-text {
-    font-size: 0.65rem;
-    font-weight: 800;
-    color: var(--gold);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    text-transform: uppercase;
-    margin: 0;
-}
-
 .ps-toggle-card {
     display: flex;
     justify-content: space-between;
@@ -568,16 +571,6 @@
 }
 
 /* — Filter Pills — */
-.wstyle-filters {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-    padding: 4px;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 12px;
-    border: 1px solid var(--border-color);
-}
 
 .wstyle-filter-pill {
     padding: 8px 18px;
@@ -604,20 +597,6 @@
     color: #fff;
     background: rgba(255, 255, 255, 0.1);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-.wstyle-filter-pill .pill-count {
-    font-size: 0.65rem;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--text-muted);
-    font-weight: 700;
-}
-
-.wstyle-filter-pill.active .pill-count {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
 }
 
 /* — Section Headers — */
@@ -665,312 +644,14 @@
 }
 
 /* — Style Cards (Precooked & Custom) — */
-.wstyle-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-main);
-    border: 1px solid var(--border-color);
-    border-radius: 14px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.wstyle-card:hover {
-    border-color: #52525b;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
-}
-
-.wstyle-card .card-accent {
-    height: 3px;
-    width: 100%;
-    background: linear-gradient(90deg, var(--border-color), transparent);
-    transition: background 0.3s ease;
-}
-
-.wstyle-card:hover .card-accent {
-    background: linear-gradient(90deg, #a855f7, #6366f1, transparent);
-}
-
-.wstyle-card.active .card-accent {
-    background: linear-gradient(90deg, #10b981, #059669) !important;
-}
-
-.wstyle-card .card-body {
-    padding: 16px 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.wstyle-card .card-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-}
-
-.wstyle-card .card-title {
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: var(--text-main);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.wstyle-card .card-desc {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-    line-height: 1.5;
-    margin: 0;
-}
-
-.wstyle-card .card-rule {
-    font-size: 0.73rem;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.04);
-    color: var(--text-muted);
-    max-height: 52px;
-    overflow: hidden;
-    line-height: 1.5;
-    -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent);
-    mask-image: linear-gradient(to bottom, #000 60%, transparent);
-}
-
-.wstyle-card .card-status {
-    font-size: 0.68rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 8px;
-    white-space: nowrap;
-}
-
-.wstyle-card .card-status.active-status {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-}
-
-.wstyle-card .card-actions {
-    display: flex;
-    gap: 6px;
-    margin-top: 4px;
-    flex-wrap: wrap;
-}
-
-.wstyle-card .card-actions button {
-    padding: 5px 12px;
-    font-size: 0.7rem;
-    border-radius: 8px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    border: 1px solid var(--border-color);
-    background: transparent;
-    color: var(--text-muted);
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.wstyle-card .card-actions button:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: #52525b;
-    color: var(--text-main);
-}
-
-.wstyle-card .card-actions button.act-delete:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.3);
-    color: #ef4444;
-}
-
-.wstyle-card .card-actions button.act-regen:hover {
-    background: rgba(245, 158, 11, 0.1);
-    border-color: rgba(245, 158, 11, 0.3);
-    color: var(--gold);
-}
 
 /* Active card state */
-.wstyle-card.active {
-    border-color: #10b981;
-    background: rgba(16, 185, 129, 0.04);
-}
-
-.wstyle-card.active .card-title {
-    color: #10b981;
-}
 
 /* — Off Card — */
-.wstyle-off-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--bg-main);
-    border: 1px solid var(--border-color);
-    border-radius: 14px;
-    padding: 16px 20px;
-    cursor: pointer;
-    transition: all 0.25s ease;
-    margin-bottom: 8px;
-}
-
-.wstyle-off-card:hover {
-    border-color: #52525b;
-}
-
-.wstyle-off-card.active {
-    border-color: var(--text-muted);
-    background: rgba(255, 255, 255, 0.04);
-}
-
-.wstyle-off-card .off-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.wstyle-off-card .off-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.06);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    font-size: 0.95rem;
-}
-
-.wstyle-off-card.active .off-icon {
-    color: var(--text-main);
-    background: rgba(255, 255, 255, 0.1);
-}
 
 /* — DN Ratio Panel — */
-.wstyle-dnr-panel {
-    background: var(--bg-main);
-    border: 1px solid var(--border-color);
-    border-radius: 14px;
-    overflow: hidden;
-    margin-bottom: 8px;
-}
-
-.wstyle-dnr-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    cursor: pointer;
-    transition: background 0.2s;
-}
-
-.wstyle-dnr-header:hover {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-.wstyle-dnr-header .dnr-info {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.wstyle-dnr-header .dnr-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--gold);
-    font-size: 0.95rem;
-}
-
-.wstyle-dnr-body {
-    padding: 0 20px 20px;
-    display: none;
-}
-
-.wstyle-dnr-body.open {
-    display: block;
-}
-
-.wstyle-dnr-slider-track {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    background: rgba(0, 0, 0, 0.25);
-    padding: 14px 16px;
-    border-radius: 10px;
-    border: 1px solid var(--border-color);
-}
-
-.wstyle-dnr-slider-track input[type="range"] {
-    flex: 1;
-    accent-color: var(--gold);
-    cursor: pointer;
-}
-
-.wstyle-dnr-label {
-    font-size: 0.78rem;
-    font-weight: 700;
-    white-space: nowrap;
-    min-width: 100px;
-}
-
-.wstyle-dnr-label.narr {
-    color: #a855f7;
-    text-align: right;
-}
-
-.wstyle-dnr-label.dial {
-    color: #10b981;
-}
 
 /* — Generator Card — */
-.wstyle-gen-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--bg-main);
-    border: 1px dashed rgba(168, 85, 247, 0.3);
-    border-radius: 14px;
-    padding: 18px 20px;
-    gap: 16px;
-    transition: all 0.25s ease;
-}
-
-.wstyle-gen-card:hover {
-    border-color: rgba(168, 85, 247, 0.5);
-    background: rgba(168, 85, 247, 0.03);
-}
-
-.wstyle-gen-card .gen-info {
-    flex: 1;
-}
-
-.wstyle-gen-card .gen-title {
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: var(--text-main);
-    margin-bottom: 4px;
-}
-
-.wstyle-gen-card .gen-desc {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    line-height: 1.4;
-}
 
 .wstyle-gen-btn {
     padding: 10px 20px;
@@ -1002,27 +683,6 @@
 }
 
 /* — Create Card — */
-.wstyle-create-card {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 20px;
-    border: 1px dashed rgba(16, 185, 129, 0.3);
-    border-radius: 14px;
-    background: transparent;
-    cursor: pointer;
-    transition: all 0.25s;
-    color: var(--text-muted);
-    font-weight: 700;
-    font-size: 0.85rem;
-}
-
-.wstyle-create-card:hover {
-    border-color: rgba(16, 185, 129, 0.5);
-    color: #10b981;
-    background: rgba(16, 185, 129, 0.04);
-}
 
 /* — Style Editor — */
 .wstyle-editor-bar {
@@ -1409,11 +1069,6 @@
     color: #71717a;
 }
 
-.mtab-eng-card .ecard-badge.v6-active {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-}
-
 .mtab-eng-card .ecard-badge.override {
     background: rgba(16, 185, 129, 0.12);
     color: #10b981;
@@ -1635,36 +1290,6 @@
 }
 
 /* — Locked Overlay — */
-.mtab-locked-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 40px 20px;
-    text-align: center;
-    background: var(--bg-main);
-    border: 1px dashed rgba(168, 85, 247, 0.3);
-    border-radius: 14px;
-    margin-bottom: 20px;
-}
-
-.mtab-locked-state i {
-    font-size: 2.5rem;
-    margin-bottom: 15px;
-}
-
-.mtab-locked-state h3 {
-    margin: 0 0 10px;
-    color: var(--text-main);
-    font-weight: 800;
-}
-
-.mtab-locked-state p {
-    color: var(--text-muted);
-    max-width: 500px;
-    font-size: 0.82rem;
-    line-height: 1.5;
-}
 
 /* — Info Callout — */
 .mtab-callout {
@@ -2186,9 +1811,6 @@
     }
 
     /* Workflow editor: sidebar placeholders panel hidden on mobile */
-    .wf-textarea {
-        min-height: 300px !important;
-    }
 
     div[style*="width: 250px"][style*="flex-shrink: 0"] {
         display: none !important;
@@ -2269,15 +1891,6 @@
    ================================================================ */
 
 /* Rule B: Visual fading for archived messages in the ST Chat UI */
-.megumin_archived_text {
-    opacity: 0.5 !important;
-    font-style: italic !important;
-    transition: opacity 0.3s ease-in-out;
-}
-
-.megumin_archived_text:hover {
-    opacity: 0.8 !important; /* Let users peek at it if they hover */
-}
 
 /* Memory Tab: Dashboard Progress Bar */
 .mem-progress-container {
@@ -2290,10 +1903,6 @@
     margin-top: 10px;
     border: 1px solid var(--border-color);
 }
-
-.mem-prog-working { background: #10b981; transition: width 0.4s ease; }
-.mem-prog-short { background: #f59e0b; transition: width 0.4s ease; }
-.mem-prog-long { background: #3b82f6; transition: width 0.4s ease; }
 
 /* Memory Tab: Short-Term Accordion */
 .mem-accordion {
@@ -2992,30 +2601,34 @@
    on hover — this is what makes the gloss read as a product. */
 .ps-modern-modal.app-container,
 .dock,
-.ps-card, .mtab-eng-card, .ws-card, .wstyle-card,
-.mtab-panel, .mtab-toggle-row, .wstyle-dnr-panel, .wstyle-tag-section,
-.wstyle-insights-panel, .wstyle-rule-panel,
+.ps-card,
+.mtab-eng-card,
+.ws-card,
+.mtab-panel,
+.mtab-toggle-row,
+.wstyle-tag-section,
+.wstyle-insights-panel,
+.wstyle-rule-panel,
 #ps-global-tooltip {
   box-shadow: var(--spec), 0 18px 40px -22px rgba(0,0,0,.8);
 }
 .ps-modern-modal.app-container { background: var(--glass); }
 .dock { background: rgba(18,18,20,.62); }
 
-.ps-card, .mtab-eng-card, .ws-card, .wstyle-card {
+.ps-card, .mtab-eng-card, .ws-card {
   position: relative; overflow: hidden;
   background: var(--glass);
   border-color: var(--glass-line);
   transition: transform .28s var(--ease), border-color .28s var(--ease),
               background .28s var(--ease), box-shadow .28s var(--ease);
 }
-.ps-card::after, .mtab-eng-card::after, .ws-card::after, .wstyle-card::after {
+.ps-card::after, .mtab-eng-card::after, .ws-card::after {
   content: ""; position: absolute; top: 0; left: -120%; width: 60%; height: 100%;
   background: linear-gradient(105deg, transparent, rgba(255,255,255,.10), transparent);
   transform: skewX(-18deg); transition: left .6s var(--ease); pointer-events: none;
 }
-.ps-card:hover::after, .mtab-eng-card:hover::after,
-.ws-card:hover::after, .wstyle-card:hover::after { left: 130%; }
-.ps-card:hover, .mtab-eng-card:hover, .ws-card:hover, .wstyle-card:hover {
+.ps-card:hover::after, .mtab-eng-card:hover::after, .ws-card:hover::after { left: 130%; }
+.ps-card:hover, .mtab-eng-card:hover, .ws-card:hover {
   transform: translateY(-3px);
   border-color: var(--glass-line-hi);
   background: var(--glass-lit);
@@ -3025,8 +2638,7 @@
 /* ---- 4. ONE "SELECTED" STATE (lit glass, not flat white) ---- */
 .ps-card.selected,
 .mtab-eng-card.active,
-.ws-card.active,
-.wstyle-card.active {
+.ws-card.active {
   background: var(--glass-lit) !important;
   border-color: rgba(245,158,11,.55) !important;
   color: var(--text-main) !important;
@@ -3038,11 +2650,9 @@
 .ps-card.selected .ps-card-desc,
 .ps-card.selected div { color: inherit !important; }
 .mtab-eng-card.active .ecard-title,
-.ws-card.active .ws-card-title,
-.wstyle-card.active .card-title { color: var(--text-main) !important; }
+.ws-card.active .ws-card-title { color: var(--text-main) !important; }
 .mtab-eng-card.active .ecard-accent,
-.ws-card.active .card-accent,
-.wstyle-card.active .card-accent {
+.ws-card.active .card-accent {
   background: linear-gradient(90deg, var(--c-brand), transparent) !important;
 }
 
@@ -3102,7 +2712,6 @@
 .ecard-badge.rec   { background: rgba(245,158,11,.14); color: var(--c-brand); }
 .ecard-badge.new   { background: rgba(59,130,246,.14); color: var(--c-info); }
 .ecard-badge.locked{ background: rgba(113,113,122,.18); color: #a1a1aa; }
-.ecard-badge.v6-active,
 .ecard-badge.override { background: rgba(16,185,129,.14); color: var(--c-live); }
 
 /* ---- 10. PURPLE = AI-AUTHORED (glossy, not flat) ---- */
@@ -3131,7 +2740,6 @@
   background: var(--glass-lit); color: var(--text-main);
   box-shadow: var(--spec-hi), inset 0 -2px 0 var(--c-brand);
 }
-.wstyle-filter-pill.active .pill-count { background: rgba(245,158,11,.22); color: var(--c-brand); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -3145,8 +2753,6 @@
   transition: border-color .18s ease, background .18s ease;
 }
 .cfg-master.active { border-color: rgba(16,185,129,.45); background: rgba(16,185,129,.06); }
-.cfg-master-title { font-size: .85rem; font-weight: 700; color: var(--text-main); }
-.cfg-master-title i { color: var(--gold); margin-right: 6px; }
 /* Story Config's own global-sync opt-out. Sits above the preset bar. */
 .cfg-sync-row {
     display: flex;
@@ -3415,40 +3021,9 @@
    without three separate rules per outcome. */
 /* A turn can carry several rolls when everyone is rolling, so the pane is a
    stack rather than a single readout. */
-.meg-dice-pane { display: flex; flex-direction: column; gap: 8px; }
-
-.meg-dice {
-  display: flex; align-items: center; gap: 13px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--meg-d-line, rgba(255,255,255,.12));
-  background: var(--meg-d-bg, rgba(255,255,255,.03));
-}
-.meg-dice-success  { --meg-d-line: rgba(16,185,129,.34); --meg-d-bg: rgba(16,185,129,.06);  --meg-d-ink: #6ee7b7; }
-.meg-dice-cost     { --meg-d-line: rgba(245,158,11,.34); --meg-d-bg: rgba(245,158,11,.06);  --meg-d-ink: #fcd34d; }
-.meg-dice-fail     { --meg-d-line: rgba(148,163,184,.3); --meg-d-bg: rgba(148,163,184,.05); --meg-d-ink: #cbd5e1; }
-.meg-dice-crit     { --meg-d-line: rgba(34,211,238,.45); --meg-d-bg: rgba(34,211,238,.09);  --meg-d-ink: #67e8f9; }
-.meg-dice-critfail { --meg-d-line: rgba(239,68,68,.4);   --meg-d-bg: rgba(239,68,68,.07);   --meg-d-ink: #fca5a5; }
 
 /* The raw die, before any modifier - the only number that was actually rolled,
    so it gets the weight. */
-.meg-dice-face {
-  flex: 0 0 auto;
-  width: 46px; height: 46px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  border-radius: 10px;
-  border: 1px solid var(--meg-d-line, rgba(255,255,255,.14));
-  background: rgba(0,0,0,.28);
-}
-.meg-dice-roll {
-  font-size: 1.15rem; font-weight: 800; line-height: 1;
-  color: var(--meg-d-ink, #e8e8e8);
-  font-variant-numeric: tabular-nums;
-}
-.meg-dice-die {
-  font-size: .5rem; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--text-muted, #9aa0a6); margin-top: 2px;
-}
 
 /* The reel: the number spins past a few decoys once, on arrival.
    ---------------------------------------------------------------------------
@@ -3461,73 +3036,13 @@
 
    Whether it plays is decided in chat.js, not here. A rebuilt card gets the
    resting markup, so the die never re-rolls while the reader is looking at it. */
-.meg-dice-reel {
-  height: var(--meg-reel-row, 22px);
-  overflow: hidden;
-}
-.meg-dice-strip {
-  display: flex; flex-direction: column;
-  transform: translateY(calc(-1 * var(--meg-reel-row, 22px) * var(--meg-decoys, 5)));
-}
-.meg-dice-strip span {
-  height: var(--meg-reel-row, 22px);
-  line-height: var(--meg-reel-row, 22px);
-  font-size: 1.15rem; font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: var(--meg-d-ink, #e8e8e8);
-}
 /* The decoys never were the result, so they never read as it. */
-.meg-dice-strip span:not(:last-child) { color: var(--text-muted, #9aa0a6); opacity: .6; }
-
-.meg-dice-animate .meg-dice-strip {
-  animation: meg-dice-reel 900ms cubic-bezier(.16,.86,.24,1);
-}
-@keyframes meg-dice-reel { from { transform: translateY(0); } }
-
-@media (prefers-reduced-motion: reduce) {
-  .meg-dice-animate .meg-dice-strip { animation: none; }
-}
 /* A natural 20 or a natural 1 is the whole story of the roll, so the face says
    so rather than leaving it to the verdict alone. */
-.meg-dice-crit .meg-dice-face     { box-shadow: 0 0 0 1px rgba(34,211,238,.35), 0 0 14px rgba(34,211,238,.3); }
-.meg-dice-critfail .meg-dice-face { box-shadow: 0 0 0 1px rgba(239,68,68,.32), 0 0 14px rgba(239,68,68,.25); }
-
-.meg-dice-body { flex: 1 1 auto; min-width: 0; }
-.meg-dice-attempt {
-  font-size: .8rem; line-height: 1.4; color: var(--text-main, #e8e8e8);
-  margin-bottom: 4px;
-}
-.meg-dice-sum {
-  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
-  font-variant-numeric: tabular-nums;
-}
-.meg-dice-total { font-size: .9rem; font-weight: 700; color: var(--meg-d-ink, #e8e8e8); }
-.meg-dice-mod   { font-size: .64rem; color: var(--text-muted, #9aa0a6); }
-.meg-dice-vs    { font-size: .6rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted, #9aa0a6); }
-.meg-dice-dc    { font-size: .82rem; font-weight: 650; color: var(--text-main, #e8e8e8); opacity: .8; }
 
 /* What the model wrote past the bare outcome word - "fail, the screen wakes at
    maximum brightness". The pill keeps the outcome so the five verdicts always
    read the same width; the consequence gets its own line. */
-.meg-dice-note {
-  font-size: .68rem; line-height: 1.45; margin-top: 4px;
-  color: var(--text-muted, #9aa0a6);
-}
-
-.meg-dice-verdict {
-  flex: 0 0 auto;
-  font-size: .6rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-  padding: 4px 9px; border-radius: 999px;
-  border: 1px solid var(--meg-d-line, rgba(255,255,255,.14));
-  background: rgba(0,0,0,.22);
-  color: var(--meg-d-ink, #e8e8e8);
-  text-align: center;
-}
-
-@media (max-width: 560px) {
-  .meg-dice { flex-wrap: wrap; gap: 10px; }
-  .meg-dice-verdict { order: 3; width: 100%; }
-}
 
 /* ---- WORLD STATE - Scene Board ---- */
 /* Treatment classes are only put on the pane when the treatment actually
@@ -3846,12 +3361,6 @@
 .blk-sub-desc { font-size: .62rem; color: var(--text-muted); margin-top: 2px; line-height: 1.35; }
 
 /* System blocks in the BLOCKS tab: shown, never arranged */
-.blk-row-system { background: rgba(59,130,246,.05); border-style: dashed; }
-.blk-sys-flag {
-  font-size: .58rem; font-weight: 800; letter-spacing: .04em;
-  padding: 3px 9px; border-radius: 999px;
-  background: rgba(59,130,246,.14); color: #60a5fa; border: 1px solid rgba(59,130,246,.3);
-}
 
 /* ---- STAT LINES (Bonds, Character Sheet) ---- */
 .meg-stat-row { margin-bottom: 12px; }
@@ -4130,7 +3639,6 @@
 .dev-slot.scope-engine { border-left-color: var(--gold); }
 .dev-slot.scope-shared { border-left-color: #10b981; }
 .dev-slot.scope-auto { border-left-color: #60a5fa; }
-.dev-slot.dev-slot-unknown { border-left-color: #ef4444; }
 
 .dev-slot.is-off { opacity: 0.5; }
 .dev-slot.is-open { background: rgba(255, 255, 255, 0.03); }
@@ -4238,32 +3746,6 @@
 .dev-note-warn { color: #fcd34d; border-color: rgba(245, 158, 11, 0.38); background: rgba(245, 158, 11, 0.08); }
 
 .dev-note .ps-modern-btn { padding: 4px 10px; font-size: 0.7rem; border-radius: 6px; }
-
-.dev-builtin { margin-top: 10px; }
-
-.dev-builtin summary {
-    cursor: pointer;
-    font-size: 0.73rem;
-    color: var(--text-muted);
-    padding: 4px 0;
-}
-
-.dev-builtin summary:hover { color: var(--text-main); }
-
-.dev-builtin pre {
-    margin: 8px 0 0 0;
-    padding: 10px 12px;
-    font-family: ui-monospace, Menlo, Consolas, monospace;
-    font-size: 0.71rem;
-    line-height: 1.55;
-    color: #71717a;
-    white-space: pre-wrap;
-    word-break: break-word;
-    background: rgba(0, 0, 0, 0.32);
-    border-radius: 6px;
-    max-height: 260px;
-    overflow-y: auto;
-}
 
 /* ── Simple view ───────────────────────────────────────────────────────── */
 
@@ -4768,8 +4250,6 @@
 }
 
 .gs-link:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.18); }
-.gs-link-static { cursor: default; }
-.gs-link-static:hover { background: rgba(255,255,255,0.04); border-color: var(--border-color); }
 
 .gs-link i { font-size: 0.95rem; flex: 0 0 auto; width: 18px; text-align: center; }
 .gs-link span { display: flex; flex-direction: column; min-width: 0; }

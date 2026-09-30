@@ -510,8 +510,8 @@ function renderLanding(c) {
                 <div class="dev-door-icon"><i class="fa-solid fa-puzzle-piece"></i></div>
                 <div class="dev-door-title">Add-ons</div>
                 <div class="dev-door-desc">
-                    The pieces every engine shares — thinking steps, MVU, the ban list,
-                    death and combat, the output blocks.
+                    The pieces every engine shares — thinking steps, the ban list,
+                    the add-ons, the output blocks.
                     <b>Change one here and every engine uses it.</b>
                 </div>
                 <div class="dev-door-meta">${changed

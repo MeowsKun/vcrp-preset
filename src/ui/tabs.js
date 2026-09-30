@@ -13,14 +13,11 @@ import { TAB_SYNC_KEYS, TABS_ALREADY_GLOBAL, meguminGlobalSyncMap, meguminIsTabS
 import { saveSettingsDebounced } from "../st.js";
 import { updateLiveTokenCount } from "../core/tokens.js";
 import { renderCoreAndCot } from "./tabs/coreAndCot.js";
-import { renderPersonality } from "./tabs/personality.js";
 import { renderGlobalAndBlocks } from "./tabs/globalAndBlocks.js";
-import { renderSidePanelTab } from "./tabs/sidePanelTab.js";
 import { renderGlobalSettings, hasUnseenSettingsNotice } from "./tabs/globalSettings.js";
 import { renderStoryConfig } from "../features/storyconfig/ui.js";
 import { renderStoryPlanner } from "../features/storyplan/ui.js";
 import { renderBanList } from "../features/banlist/ui.js";
-import { renderImageGen } from "../features/imagegen/index.js";
 import { renderNpcBank } from "../features/npc/ui.js";
 import { renderMemoryCore } from "../features/memory/index.js";
 import { renderBlocksTab } from "../features/blocks/ui.js";
@@ -28,17 +25,14 @@ import { renderKnowledgebase } from "../vcrp/knowledgebase.js";
 
 export const tabsUI = [
     { title: "PRESETS & COT", sub: "Choose the core preset and COT, and set the standing rules of the story.", icon: "fa-server", render: renderCoreAndCot },
-    { title: "Persona", sub: "Define the personality.", icon: "fa-user-astronaut", render: renderPersonality },
     { title: "Writing Style", sub: "Pick the prose voice the story is told in.", icon: "fa-pen-nib", render: renderStoryConfig },
     { title: "Global Toggles & Add Ons", sub: "Language, pronouns, and the gameplay systems bolted onto the story.", icon: "fa-earth-americas", render: renderGlobalAndBlocks },
     { title: "BLOCKS", sub: "What goes inside the master block, in what order, and how it looks.", icon: "fa-cubes", render: renderBlocksTab },
     { title: "Story Director", sub: "Direct the narrative. Shape what happens next.", icon: "fa-clapperboard", render: renderStoryPlanner },
     { title: "Dynamic Ban List", sub: "Scan and ban repetitive AI phrases.", icon: "fa-ban", render: renderBanList },
-    { title: "Image Generation", sub: "Wire up ComfyUI to auto-generate scene images during roleplay.", icon: "fa-image", render: renderImageGen },
     { title: "NPCs Bank", sub: "Automatically extract and track significant NPCs in the story.", icon: "fa-address-book", render: renderNpcBank },
     { title: "Memory Core", sub: "Advanced 3-Tier Context & History Management.", icon: "fa-memory", render: renderMemoryCore },
     { title: "Knowledgebase", sub: "Core world rules, lore, and trope guidance the AI always remembers.", icon: "fa-book-open", render: renderKnowledgebase },
-    { title: "Side Panel", sub: "Pop the tracker blocks out of the chat into a fixed side panel.", icon: "fa-table-columns", render: renderSidePanelTab },
     { title: "Global Settings", sub: "Extension preferences and about info.", icon: "fa-gear", render: renderGlobalSettings }
 ];
 

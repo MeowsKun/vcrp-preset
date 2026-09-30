@@ -5,16 +5,9 @@
 // here and one line below; adding a preset to an existing generation means
 // editing only that generation's file.
 
+// VCRP: only the V10 engines ship; the V4-V9 generations were removed.
 import { modes_v10 } from "./v10.js";
-import { modes_v9 } from "./v9.js";
-import { modes_v8 } from "./v8.js";
-import { modes_v7 } from "./v7.js";
-import { modes_legacy } from "./legacy.js";
 
 export const modes = [
     ...modes_v10,
-    ...modes_v9,
-    ...modes_v8,
-    ...modes_v7,
-    ...modes_legacy,
 ];

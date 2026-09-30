@@ -125,7 +125,15 @@ for (const preset of ["VCRP V10 Universal.json", "VCRP V10 Universal Cache Frien
         assert(!(msgs.at(-1).role === "assistant" && msgs.at(-1).content.includes("<think>")), `${tag} ${type}: prefill leaked`);
         if (type !== "quiet") assert(t4full.includes(type === "continue" ? "Continue your previous reply exactly" : "write Bob's next turn"), `${tag} ${type}: note missing`);
     }
-    console.log(`4 ok  ${tag} continue / impersonate / quiet`);
+    // Continue with SillyTavern's "Continue prefill": the partial reply is the LAST message and
+    // the model continues from it, so the mode note must sit before it, never after.
+    vcrpSetGenerationType("continue", {}, false);
+    msgs = buildPrompt(preset);
+    msgs.push({ role: "assistant", content: "Alice turned toward the door and" });
+    await handlePromptInjection({ chat: msgs, dryRun: false });
+    assert.equal(msgs.at(-1).content, "Alice turned toward the door and", `${tag}: continued text must stay last`);
+    assert(msgs.at(-2).content.startsWith("[Continue your previous reply exactly"), `${tag}: continue note must sit right before it`);
+    console.log(`4 ok  ${tag} continue / impersonate / quiet (+ continue-prefill ordering)`);
     p.knowledgebase.enabled = false; p.animeMode.enabled = false; p.addons = [];
 }
 
@@ -144,5 +152,79 @@ assert(sent.some(m => m.content.includes("Write a writing style rule based on: n
 assert(sent.some(m => m.content.includes("Alice is a barista.")), "character description not sent");
 assert(!sent.some(m => m.content.includes("___PS_DUMMY___") || m.content === "main preset"), "main preset leaked into the task");
 console.log("6 ok  Story Config AI tasks build their own prompt (no Engine preset)");
+
+// 7. Setup health check.
+const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+const presetJson = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+ctx.mainApi = "openai";
+Object.assign(chatCompletionSettings, {
+    preset_settings_openai: "VCRP V10 Universal", prompts: presetJson.prompts, prompt_order: presetJson.prompt_order,
+    extensions: presetJson.extensions,
+});
+let hc = vcrpHealthCheck();
+assert(hc.items.some(i => i.level === "error" && /not allowed/.test(i.title)), "health: regex not yet allowed should be an error");
+extension_settings.preset_allowed_regex = { openai: ["VCRP V10 Universal"] };
+hc = vcrpHealthCheck();
+assert.equal(hc.errors, 0, `health: no errors expected once allowed: ${JSON.stringify(hc.items)}`);
+presetJson.extensions.regex_scripts.find(r => r.scriptName === "Blocks cleanup").disabled = true;
+hc = vcrpHealthCheck();
+assert(hc.items.some(i => i.level === "error" && /Blocks cleanup/.test(i.title)), "health: disabled essential regex should be an error");
+chatCompletionSettings.prompts = [{ identifier: "main", content: "some other preset" }];
+chatCompletionSettings.preset_settings_openai = "Default";
+hc = vcrpHealthCheck();
+assert(hc.items.some(i => i.level === "error" && /not a VCRP preset/.test(i.title)), "health: non-VCRP preset should be an error");
+ctx.mainApi = "textgenerationwebui";
+hc = vcrpHealthCheck();
+assert(hc.items.some(i => /Chat Completion/.test(i.title) && i.level === "error"), "health: text completion should be an error");
+console.log("7 ok  setup health check (preset, regex allowed/disabled, API type)");
+
+// 8. Knowledgebase: shared entries + import.
+const kbMod = await imp("src/vcrp/knowledgebase.js");
+p.knowledgebase.enabled = true;
+p.knowledgebase.entries = [{ id: "a", title: "Own Rule", content: "own content", active: true, triggers: "" }];
+kbMod.getSharedKnowledgebase().entries = [{ id: "b", title: "Shared Rule", content: "shared content", active: true, triggers: "" }];
+let kbText = kbMod.buildKnowledgebase(p).block;
+assert(kbText.includes("own content") && kbText.includes("shared content"), "kb: own + shared entries both injected");
+p.knowledgebase.enabled = false;
+assert.equal(kbMod.buildKnowledgebase(p).block, "", "kb: nothing injected when the knowledgebase is off");
+p.knowledgebase.enabled = true;
+const res = kbMod.importKnowledgebaseData({ format: "vcrp-knowledgebase", entries: [
+    { title: "Own Rule", content: "own content" },                 // duplicate of an own entry -> skipped
+    { title: "New Own", content: "x", triggers: "magic" },          // -> own list
+    { title: "New Shared", content: "y", shared: true },            // -> shared list
+    { title: "Empty", content: "   " },                             // empty -> skipped
+] }, p);
+assert.deepEqual(res, { added: 2, skipped: 2 }, "kb import counts");
+assert(p.knowledgebase.entries.some(e => e.title === "New Own") && kbMod.getSharedKnowledgebase().entries.some(e => e.title === "New Shared"), "kb import targets");
+assert.throws(() => kbMod.importKnowledgebaseData({ nope: 1 }, p), /not a VCRP knowledgebase export/);
+console.log("8 ok  knowledgebase shared entries + import (dedupe, targets, bad file)");
+
+// 9. Settings backup/restore.
+const backup = await imp("src/vcrp/settingsBackup.js");
+const snapshot = JSON.parse(JSON.stringify(extension_settings.VCRP));
+snapshot.globalSettings = { ...(snapshot.globalSettings || {}), cotPrefillMode: "off" };
+snapshot.profiles.default.language_marker = "restored";
+extension_settings.VCRP.globalSettings.cotPrefillMode = "on";
+backup.applySettingsImport({ format: "vcrp-settings", version: 1, settings: snapshot });
+assert.equal(extension_settings.VCRP.globalSettings.cotPrefillMode, "off", "import replaced global settings");
+assert.equal(extension_settings.VCRP.profiles.default.language_marker, "restored", "import replaced profiles");
+assert.throws(() => backup.applySettingsImport({ format: "vcrp-knowledgebase", entries: [] }), /knowledgebase export/);
+assert.throws(() => backup.applySettingsImport({ format: "vcrp-settings", settings: {} }), /no profiles/);
+assert.throws(() => backup.applySettingsImport({ random: true }), /not a VCRP settings export/);
+console.log("9 ok  settings backup/restore (replace, wrong file types rejected)");
+
+// 10. Token breakdown rows.
+const { groupPromptRows, buildTokenBreakdown } = await imp("src/vcrp/tokenBreakdown.js");
+const rows = groupPromptRows([
+    { role: "system", content: "Engine rules\nmore" },
+    { role: "user", content: "hi" }, { role: "assistant", content: "hello" }, { role: "user", content: "next" },
+    { role: "system", content: "Output RULES" },
+    { role: "assistant", content: [{ type: "text", text: "<think>" }, { type: "image_url", image_url: {} }] },
+]);
+assert.deepEqual(rows.map(r => r.label), ["SYSTEM: Engine rules", "Chat history (3 messages)", "SYSTEM: Output RULES", "ASSISTANT: <think>"], "breakdown rows");
+assert.equal(rows[3].images, 1, "breakdown counts images");
+const html = await buildTokenBreakdown([{ role: "system", content: "x".repeat(380) }, { role: "user", content: "<b>tag</b>" }]);
+assert(html.includes("Token breakdown") && html.includes("&lt;b&gt;tag&lt;/b&gt;") && !html.includes("<b>tag</b>"), "breakdown renders and escapes labels");
+console.log("10 ok token breakdown (grouping, images, escaping)");
 
 console.log("\nALL FORK CHECKS PASSED");

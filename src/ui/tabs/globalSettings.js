@@ -10,6 +10,8 @@ import { flushProfileSettingsToLoadedKey, _saveProfileDebouncedInner } from "../
 import { cancelDebounce } from "../../st.js";
 import { escapeHtmlAttr } from "../../utils/html.js";
 import { vcrpDetectPrefill, vcrpActiveModel } from "../../vcrp/generation.js";
+import { buildHealthCard, vcrpRefreshHealthBadge } from "../../vcrp/health.js";
+import { exportAllSettings, pickAndImportSettings } from "../../vcrp/settingsBackup.js";
 
 // The version on the about card. One place, so it cannot fall out of step with
 // itself the way "v9" did once V10 shipped.
@@ -68,6 +70,10 @@ export function renderGlobalSettings(c) {
 
     const $content = $(`<div style="display:flex; flex-direction:column; gap:10px;"></div>`);
 
+    // ── SETUP CHECK (VCRP) ──────────────────────────────────────────────────
+    $content.append(`<div class="wstyle-section-head green"><i class="fa-solid fa-stethoscope"></i> Setup Check</div>`);
+    $content.append(buildHealthCard(() => renderGlobalSettings(c)));
+
     // ── BEHAVIOUR ───────────────────────────────────────────────────────────
     $content.append(`<div class="wstyle-section-head blue"><i class="fa-solid fa-sliders"></i> Behaviour</div>`);
     $content.append(`
@@ -83,7 +89,7 @@ export function renderGlobalSettings(c) {
         <div class="mtab-toggle-row ${gs.enableUtilityPrefill ? 'active' : ''}" id="gs_toggle_utility_prefill" style="cursor: pointer;">
             <div class="toggle-info">
                 <div class="toggle-label"><i class="fa-solid fa-wand-sparkles" style="color: #10b981;"></i> Utility Prefills</div>
-                <div class="toggle-desc">Puts an opening &lt;think&gt; into the AI's mouth for background jobs — Image Gen, the Ban List, the Story Director, NPC scans. <b>Off by default:</b> Claude and several other APIs reject a prefill outright. Turn it on only if yours accepts one.</div>
+                <div class="toggle-desc">Puts an opening &lt;think&gt; into the AI's mouth for background jobs — the Ban List, the Story Director, NPC scans. <b>Off by default:</b> Claude and several other APIs reject a prefill outright. Turn it on only if yours accepts one.</div>
             </div>
             <div class="ps-switch" style="${gs.enableUtilityPrefill ? 'background: #10b981;' : ''}"></div>
         </div>
@@ -122,6 +128,16 @@ export function renderGlobalSettings(c) {
                     <option value="character" ${gs.saveMode === 'character' ? 'selected' : ''}>Per Character (Default)</option>
                     <option value="chat" ${gs.saveMode === 'chat' ? 'selected' : ''}>Per Chat</option>
                 </select>
+            </div>
+            <div class="mtab-setting-row" style="padding: 12px 0 0; border: none; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 12px;">
+                <div class="set-info">
+                    <div class="set-label"><i class="fa-solid fa-box-archive" style="color: var(--gold);"></i> Backup &amp; Restore</div>
+                    <div class="set-desc">All VCRP settings in one file: every character's profile, global settings, custom engines and the shared knowledgebase. NPC banks and memories are saved inside each chat (export those from their own tabs).</div>
+                </div>
+                <div style="display:flex; gap:8px; flex-shrink:0;">
+                    <button id="gs_export_all" class="ps-modern-btn secondary" style="padding: 5px 12px; font-size: 0.75rem;"><i class="fa-solid fa-file-export"></i> Export</button>
+                    <button id="gs_import_all" class="ps-modern-btn secondary" style="padding: 5px 12px; font-size: 0.75rem;"><i class="fa-solid fa-file-import"></i> Import</button>
+                </div>
             </div>
         </div>
     `);
@@ -188,7 +204,11 @@ export function renderGlobalSettings(c) {
     $content.find("#gs_cot_prefill_mode").on("change", function () {
         gs.cotPrefillMode = $(this).val();
         saveSettingsDebounced();
+        vcrpRefreshHealthBadge();
     });
+
+    $content.find("#gs_export_all").on("click", () => exportAllSettings());
+    $content.find("#gs_import_all").on("click", () => pickAndImportSettings(() => renderGlobalSettings(c)));
 
     $content.find("#gs_save_mode").on("change", function () {
         // getCharacterKey() reads saveMode, so changing it moves where a save lands. Get any

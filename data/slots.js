@@ -58,8 +58,6 @@ const GATE = {
     plan:    gate(p => !!(p.storyPlan && p.storyPlan.enabled), "Story Director", "Story Plan"),
     dnratio: gate(p => !!(p.dnRatio && p.dnRatio.enabled), "Dialogue/Narration ratio", "Global"),
     onomato: gate(p => !!(p.onomatopoeia && p.onomatopoeia.enabled), "Onomatopoeia", "Global"),
-    dice:    gate(p => (p.addons || []).includes("dice")
-                    || (p.addons || []).includes("dice_all"), "Dice", "Add-ons"),
 
     // The one gate keyed on the ENGINE rather than a switch the reader flips.
     // Every engine gets the "never write for {{user}}" rule except the Co-writer
@@ -113,9 +111,6 @@ export const MEGUMIN_SLOT_REGISTRY = [
       hint: "How characters act and what the model may decide on its own." },
     { key: "p6", trigger: "[[prompt6]]", structural: true, label: "Prompt 6", scope: "engine", group: "engine",
       hint: "The last of the engine's own instructions." },
-    { key: "main", trigger: "[[main]]", hidden: true, label: "Personality", scope: "auto", group: "engine",
-      where: "Personality",
-      hint: "Comes from the Personality tab. Blanked entirely on V6 and newer engines." },
     { key: "A1", trigger: "[[AI1]]", structural: true, hidden: true, label: "Model Acknowledgement 1", scope: "engine", group: "engine",
       advanced: true, hint: "A fake reply from the model, agreeing that it read the rules." },
     { key: "A2", trigger: "[[AI2]]", structural: true, hidden: true, label: "Model Acknowledgement 2", scope: "engine", group: "engine",
@@ -135,37 +130,17 @@ export const MEGUMIN_SLOT_REGISTRY = [
       fallback: () => "<think>\n<think>\n<think>\n{Thinking}\n</think>" },
 
     // ── Shared fragments: one value, every engine ────────────────────────────
-    { key: "death", trigger: "[[death]]", label: "Death System", scope: "shared", group: "systems",
-      gate: GATE.addon("death"), hint: "What happens when a character should die.",
-      fallback: () => addonText("death") },
-    { key: "combat", trigger: "[[combat]]", label: "Combat System", scope: "shared", group: "systems",
-      gate: GATE.addon("combat"), hint: "How fights are resolved.",
-      fallback: () => addonText("combat") },
     { key: "html", trigger: "[[html]]", label: "Immersive HTML", scope: "shared", group: "systems",
       gate: GATE.addon("html"),
       hint: "Lets the model draw a screen, letter or sign as real HTML instead of describing it.",
       fallback: () => addonText("html") },
-    { key: "dice", trigger: "[[dice]]", label: "Dice", scope: "shared", group: "systems",
-      gate: GATE.dice,
-      hint: "How the model must use the d20 rolls it is handed each turn. Keep the [[dice_rolls]] marker — this turn's numbers are dropped in there.",
-      // Two add-ons share the [[dice]] anchor and are mutually exclusive, so the
-      // default shown depends on which variant is switched on. That is why the
-      // fallback takes the profile.
-      fallback: p => addonText((p && (p.addons || []).includes("dice_all")) ? "dice_all" : "dice"),
-      presets: [
-          { label: "Player only (3 rolls)", value: () => addonText("dice") },
-          { label: "Everyone (6 rolls)", value: () => addonText("dice_all") },
-      ] },
     { key: "userControl", trigger: "[[user]]", label: "Never Write For {{user}}", scope: "shared", group: "systems",
       gate: GATE.notCoWriter,
-      hint: "Sent on every engine except the Co-writer variants, which are built to write {{user}}. It lands as item 4 of the preset's final reminder list, so keep it written as a numbered line.",
+      hint: "Sent on every engine. It lands as item 4 of the preset's final reminder list, so keep it written as a numbered line.",
       fallback: () => "4. NEVER write for or Control {{user}}" },
     { key: "boldnpcs", trigger: "[[boldnpcs]]", label: "Bold NPCs", scope: "shared", group: "systems",
       gate: GATE.addon("bold_npcs"), hint: "VCRP: NPCs chase their own goals and never act halfway.",
       fallback: () => addonText("bold_npcs") },
-    { key: "direct", trigger: "[[Direct]]", label: "Direct Language", scope: "shared", group: "systems",
-      gate: GATE.addon("direct"), hint: "Blunt anatomical wording instead of euphemism.",
-      fallback: () => addonText("direct") },
     { key: "dn", trigger: "[[DN]]", label: "Dialogue / Narration Tags", scope: "shared", group: "format",
       gate: GATE.addon("dn"), hint: "Wraps speech and narration in tags so the chat can style them.",
       fallback: () => addonText("dn") },
@@ -189,9 +164,6 @@ export const MEGUMIN_SLOT_REGISTRY = [
     { key: "cyoa", trigger: "[[cyoa]]", carrier: "blocks", label: "Choice Block", scope: "shared", group: "blocks",
       gate: GATE.block("cyoa"), hint: "The numbered options offered at the end of a reply.",
       fallback: () => blockText("cyoa") },
-    { key: "mvu", trigger: "[[MVU]]", label: "MVU Variables", scope: "shared", group: "blocks",
-      gate: GATE.block("mvu"), hint: "The contract with the MVU extension.",
-      fallback: () => blockText("mvu") },
     { key: "npc_inner_chatter", trigger: "[[npc_inner_chatter]]", carrier: "blocks", label: "NPC Inner Chatter",
       scope: "shared", group: "blocks", gate: GATE.chatter,
       hint: "What the NPCs are privately thinking.",
@@ -228,13 +200,8 @@ export const MEGUMIN_SLOT_REGISTRY = [
       hint: "The NPCs judged relevant to the current scene." },
     { key: null, trigger: "[[npc_dossier]]", label: "NPC Dossier Rules", scope: "auto", group: "live", where: "NPC",
       hint: "Instructions for keeping dossiers up to date. Not the dossiers themselves." },
-    { key: null, trigger: "[[npc_events]]", label: "Organic NPCs & Events", scope: "auto", group: "live",
-      where: "Add-ons", gate: GATE.addon("npc_events"),
-      hint: "Stops new characters appearing out of nowhere." },
     { key: null, trigger: "[[storyplan]]", label: "Story Plan", scope: "auto", group: "live", where: "Story Plan",
       gate: GATE.plan, hint: "The current directive from the Story Director." },
-    { key: null, trigger: "[[img1]]", label: "Image Rules", scope: "auto", group: "live", where: "Image Gen",
-      hint: "Instructions for emitting image prompts." },
     { key: null, trigger: "[[aiprompt]]", label: "Narration Style", scope: "auto", group: "live",
       where: "Writing Style",
       hint: "Your writing style, wrapped differently depending on the engine generation." },
@@ -242,10 +209,6 @@ export const MEGUMIN_SLOT_REGISTRY = [
       hint: "VCRP: the active knowledgebase entries for this turn." },
     { key: null, trigger: "[[ANIMEMODE]]", label: "Anime Mode", scope: "auto", group: "live", where: "Writing Style",
       hint: "VCRP: the anime/manga style rules, when Anime Mode is on." },
-    { key: null, trigger: "[[OOC]]", label: "OOC Protocol", scope: "auto", group: "live", where: "Global",
-      hint: "Out-of-character directives. Blanked on V8 and V9." },
-    { key: null, trigger: "[[control]]", label: "Control Protocol", scope: "auto", group: "live", where: "Global",
-      hint: "Who may act for whom. Blanked on V8 and V9." },
 ];
 
 // ── Derived views. Never hand-maintain these ────────────────────────────────
@@ -259,8 +222,7 @@ export function meguminAllSlotTriggers() {
     MEGUMIN_SLOT_REGISTRY.forEach(s => out.add(s.trigger));
     // Numbered twins: some presets emit a block a second time further down.
     ["[[infoblock2]]", "[[cyoa2]]", "[[storytracker2]]", "[[npc_inner_chatter2]]",
-        "[[npc_dossier2]]", "[[img2]]", "[[dice_rolls]]", "[[npc_updates]]", "[[order]]",
-        "[[v9_lean_min]]", "[[v9_lean_max]]", "[[v9_full_min]]", "[[v9_full_max]]"]
+        "[[npc_dossier2]]", "[[npc_updates]]", "[[order]]"]
         .forEach(t => out.add(t));
     // The bare-bracket spellings an older preset generation used.
     for (let i = 1; i <= 6; i++) out.add(`[prompt${i}]`);
