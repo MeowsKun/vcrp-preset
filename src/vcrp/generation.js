@@ -26,6 +26,8 @@ export function vcrpSetGenerationType(type, _params, dryRun) {
 // Tags that only make sense in a normal story reply.
 const REPLY_ONLY_TAGS = ["[[THINK]]", "[[COT]]", "[[prefill]]", "[[blocks]]", "[[storytracker]]"];
 
+const EMPTY_VOICE = /^[ \t]*- (?:\*\*)?voice:(?:\*\*)?[ \t]*(?:\r?\n|$)/gm;
+
 const NOTES = {
     continue: "[Continue your previous reply exactly where it stopped, mid-sentence if needed. Do not start over, do not repeat anything already written, and do not open a new <think> block. If it stopped inside the <Blocks> section, finish that; otherwise add nothing after the prose.]",
     impersonate: "[For this one message only, the reader asks you to write {{user}}'s next turn: their words and actions, in the voice and style the reader has used for {{user}} so far. The rule against writing for {{user}} is suspended for this message alone. No <think> block, no <Blocks> section, and no narration of how other characters react.]",
@@ -81,6 +83,9 @@ export function vcrpApplyGenerationToDict(dict, dryRun) {
     const gen = dryRun ? "reply" : currentGen;
     if (gen !== "reply") REPLY_ONLY_TAGS.forEach(t => { if (t in dict) dict[t] = ""; });
     else if (!vcrpShouldPrefill()) dict["[[prefill]]"] = "";
+    // Impersonate writes AS {{user}}: the final reminder's "never write for {{user}}" would
+    // contradict the request itself.
+    if (gen === "impersonate" && "[[user]]" in dict) dict["[[user]]"] = "";
     return gen;
 }
 
@@ -88,7 +93,11 @@ export function vcrpApplyGenerationToDict(dict, dryRun) {
 export function vcrpFinalizeMessages(messages, gen, substitute = s => s) {
     for (let i = messages.length - 1; i >= 0; i--) {
         const m = messages[i];
-        if (typeof m.content === "string" && !m.content.trim()) messages.splice(i, 1);
+        if (typeof m.content !== "string") continue;
+        // The engines carry "- voice: [[aiprompt]]"; with no writing style picked that
+        // is a label with nothing after it, so drop the whole line.
+        m.content = m.content.replace(EMPTY_VOICE, "");
+        if (!m.content.trim()) messages.splice(i, 1);
     }
     if (!NOTES[gen]) return;
     const note = { role: "system", content: substitute(NOTES[gen]) };

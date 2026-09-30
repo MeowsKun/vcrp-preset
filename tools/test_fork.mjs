@@ -91,7 +91,21 @@ for (const preset of ["VCRP V10 Universal.json", "VCRP V10 Universal Cache Frien
     assert.notEqual(msgs.at(-1).role, "assistant", `${tag}: prefill must be dropped for Claude 5`);
     assert(!msgs.some(m => typeof m.content === "string" && !m.content.trim()), `${tag}: empty message left`);
     assert(!text(msgs).includes("<bold_npcs>") && !text(msgs).includes("<knowledgebase>") && !text(msgs).includes("<anime_mode>"), `${tag}: off features leaked`);
-    console.log(`1 ok  ${tag} Ukiyo on Claude 5: clean, no prefill`);
+    // No writing style picked: the engine's "voice:" line has nothing to say and goes.
+    for (const mode of [["v10-core", "cot-v10-ukiyo-english"], ["v10-shura", "cot-v10-shura-english"]]) {
+        const keep = [p.mode, p.model, p.aiRule];
+        [p.mode, p.model, p.aiRule] = [...mode, ""];
+        msgs = await run(preset);
+        assert(!/^\s*- (\*\*)?voice:(\*\*)?\s*$/m.test(text(msgs)), `${tag}: empty voice line left (${mode[0]})`);
+        p.aiRule = "Dry and patient.";
+        msgs = await run(preset);
+        assert(text(msgs).includes("Dry and patient."), `${tag}: writing style lost (${mode[0]})`);
+        [p.mode, p.model, p.aiRule] = keep;
+    }
+    msgs = await run(preset);
+    assert(text(msgs).includes("Open every reply with your own <think> block"), `${tag}: think instruction missing`);
+    assert(text(msgs).includes("3. NEVER write Bob's actions, speech, thoughts, or feelings."), `${tag}: never-write-for-user reminder missing`);
+    console.log(`1 ok  ${tag} Ukiyo on Claude 5: clean, no prefill, no empty voice line`);
 
     // 2. Gemini Pro keeps the prefill.
     chatCompletionSettings.chat_completion_source = "makersuite"; chatCompletionSettings.google_model = "gemini-2.5-pro";
@@ -124,6 +138,8 @@ for (const preset of ["VCRP V10 Universal.json", "VCRP V10 Universal Cache Frien
         for (const bad of ["Writer's Mind", "<Blocks>", "<dice_rules>"]) assert(!t4.includes(bad), `${tag} ${type}: reply format leaked (${bad}): ...${t4.slice(Math.max(0, t4.indexOf(bad) - 300), t4.indexOf(bad) + 100)}`);
         assert(!(msgs.at(-1).role === "assistant" && msgs.at(-1).content.includes("<think>")), `${tag} ${type}: prefill leaked`);
         if (type !== "quiet") assert(t4full.includes(type === "continue" ? "Continue your previous reply exactly" : "write Bob's next turn"), `${tag} ${type}: note missing`);
+        assert(!t4.includes("Open every reply with your own <think>"), `${tag} ${type}: think instruction leaked`);
+        if (type === "impersonate") assert(!t4.includes("NEVER write Bob's actions"), `${tag}: never-write-for-user reminder must go on impersonate`);
     }
     // Continue with SillyTavern's "Continue prefill": the partial reply is the LAST message and
     // the model continues from it, so the mode note must sit before it, never after.

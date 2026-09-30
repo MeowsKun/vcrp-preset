@@ -38,7 +38,7 @@ export const storyConfigFields = [
     {
         key: "culture", tag: "culture", label: "Culture & Setting", icon: "fa-globe", color: "#22c55e", type: "text",
         placeholder: "e.g. Japanese, Western",
-        aiNote: "the cultural world — names, honorifics, food, manners, idiom",
+        aiNote: "the cultural world: names, honorifics, food, manners, idiom",
         hint: "The cultural world the story runs on — names, honorifics, food, manners, social rules and the idiom people speak in. Works with era to place the story.",
         chips: [
             "Japanese", "Korean", "Chinese", "wuxia / xianxia", "Southeast Asian", "Indian",
@@ -60,18 +60,18 @@ export const storyConfigFields = [
         hint: "Narrative person and where the camera sits. Never loosens the {{user}} boundary.",
         customPlaceholder: "e.g. third limited, sitting behind Maya's eyes",
         options: [
-            { label: "second person on {{user}}", legacy: ["second person on {{user}}"],
-              value: `second person — the narration addresses {{user}} as "you". Narrate what reaches {{user}}; NEVER what {{user}} decides, says, or feels about it` },
-            { label: "third limited", legacy: ["third limited"],
-              value: "third person limited — one focal consciousness per scene. The reader learns only what the focal character perceives, and the gaps in their knowledge stand" },
-            { label: "third limited following one character", legacy: ["third limited following one NPC"],
-              value: "third person limited, locked to a single character for the whole scene — their perception is the boundary of the narration. Changing heads mid-scene is PROHIBITED; change only at a scene break" },
-            { label: "third omniscient", legacy: ["third omniscient"],
-              value: "third person omniscient — access to every interior. The narration MAY move between minds, but each shift MUST be legible rather than slid into" },
-            { label: "first person", legacy: ["first person"],
-              value: `first person — the focal character's "I", never {{user}}'s. Their bias colors every observation; they MAY be wrong about what they report` },
-            { label: "roving", legacy: ["roving"],
-              value: "third person limited, roving — the focal character MAY change between scenes, NEVER within one. Each scene commits to a vantage and holds it to the end" }
+            { label: "second person on {{user}}", legacy: ["second person on {{user}}", "second person — the narration addresses {{user}} as \"you\". Narrate what reaches {{user}}; NEVER what {{user}} decides, says, or feels about it"],
+              value: `second person. The narration addresses {{user}} as "you". Narrate what reaches {{user}}; NEVER what {{user}} decides, says, or feels about it` },
+            { label: "third limited", legacy: ["third limited", "third person limited — one focal consciousness per scene. The reader learns only what the focal character perceives, and the gaps in their knowledge stand"],
+              value: "third person limited. One focal consciousness per scene. The reader learns only what the focal character perceives, and the gaps in their knowledge stand" },
+            { label: "third limited following one character", legacy: ["third limited following one NPC", "third person limited, locked to a single character for the whole scene — their perception is the boundary of the narration. Changing heads mid-scene is PROHIBITED; change only at a scene break"],
+              value: "third person limited, locked to a single character for the whole scene; their perception is the boundary of the narration. Changing heads mid-scene is PROHIBITED; change only at a scene break" },
+            { label: "third omniscient", legacy: ["third omniscient", "third person omniscient — access to every interior. The narration MAY move between minds, but each shift MUST be legible rather than slid into"],
+              value: "third person omniscient. Access to every interior. The narration MAY move between minds, but each shift MUST be legible rather than slid into" },
+            { label: "first person", legacy: ["first person", "first person — the focal character's \"I\", never {{user}}'s. Their bias colors every observation; they MAY be wrong about what they report"],
+              value: `first person. The focal character's "I", never {{user}}'s. Their bias colors every observation; they MAY be wrong about what they report` },
+            { label: "roving", legacy: ["roving", "third person limited, roving — the focal character MAY change between scenes, NEVER within one. Each scene commits to a vantage and holds it to the end"],
+              value: "third person limited, roving. The focal character MAY change between scenes, NEVER within one. Each scene commits to a vantage and holds it to the end" }
         ]
     },
     {
@@ -99,10 +99,10 @@ export const storyConfigFields = [
         defaultLabel: "light",
         defaultAliases: ["light", "light (one beat per response)", "light (default: one beat per response)"],
         options: [
-            { label: "invisible", legacy: ["invisible (report only, no coloring)"],
-              value: "report only — the narration carries no attitude toward what it describes and never editorialises" },
-            { label: "heavy", legacy: ["heavy (commentary throughout)"],
-              value: "the narrator's attitude is present throughout — dry, judging, or amused, and permitted to comment. The voice NEVER bleeds into any character's dialogue" }
+            { label: "invisible", legacy: ["invisible (report only, no coloring)", "report only — the narration carries no attitude toward what it describes and never editorialises"],
+              value: "report only. The narration carries no attitude toward what it describes and never editorialises" },
+            { label: "heavy", legacy: ["heavy (commentary throughout)", "the narrator's attitude is present throughout — dry, judging, or amused, and permitted to comment. The voice NEVER bleeds into any character's dialogue"],
+              value: "the narrator's attitude is present throughout (dry, judging, or amused) and permitted to comment. The voice NEVER bleeds into any character's dialogue" }
         ]
     },
     {
@@ -120,14 +120,14 @@ export const storyConfigFields = [
         defaultLabel: "ordinary",
         defaultAliases: ["ordinary"],
         options: [
-            { label: "warm", legacy: ["warm"],
-              value: "the cast likes {{user}} and shows it — seeking {{user}} out, taking {{user}}'s side, and giving warmth, trust and attention freely. This is the ground state, not something {{user}} has to earn" },
-            { label: "wary", legacy: ["wary"],
-              value: "the cast is polite but reserved with {{user}} — friendly on the surface, holding back what matters until they know {{user}} better. The warmth is close to the surface and comes with time" },
-            { label: "cold", legacy: ["cold"],
-              value: "the cast is indifferent to {{user}} — {{user}}'s presence does not interest them and their own business outranks it. Attention has to be taken, not given" },
-            { label: "hostile", legacy: ["hostile"],
-              value: "the cast is against {{user}} — obstructing, needling, or freezing {{user}} out, and needing a real reason to stop" }
+            { label: "warm", legacy: ["warm", "the cast likes {{user}} and shows it — seeking {{user}} out, taking {{user}}'s side, and giving warmth, trust and attention freely. This is the ground state, not something {{user}} has to earn"],
+              value: "the cast likes {{user}} and shows it: seeking {{user}} out, taking {{user}}'s side, and giving warmth, trust and attention freely. This is the ground state, not something {{user}} has to earn" },
+            { label: "wary", legacy: ["wary", "the cast is polite but reserved with {{user}} — friendly on the surface, holding back what matters until they know {{user}} better. The warmth is close to the surface and comes with time"],
+              value: "the cast is polite but reserved with {{user}}: friendly on the surface, holding back what matters until they know {{user}} better. The warmth is close to the surface and comes with time" },
+            { label: "cold", legacy: ["cold", "the cast is indifferent to {{user}} — {{user}}'s presence does not interest them and their own business outranks it. Attention has to be taken, not given"],
+              value: "the cast is indifferent to {{user}}; {{user}}'s presence does not interest them and their own business outranks it. Attention has to be taken, not given" },
+            { label: "hostile", legacy: ["hostile", "the cast is against {{user}} — obstructing, needling, or freezing {{user}} out, and needing a real reason to stop"],
+              value: "the cast is against {{user}}: obstructing, needling, or freezing {{user}} out, and needing a real reason to stop" }
         ]
     },
     {
@@ -150,10 +150,10 @@ export const storyConfigFields = [
         defaultLabel: "normal",
         defaultAliases: ["normal", "normal (the preset's own curve)"],
         options: [
-            { label: "low", legacy: ["low (only ever as earned consequence)"],
-              value: "complications arrive only as earned consequence of something already in motion — never introduced to keep a scene busy" },
-            { label: "high", legacy: ["high (complications every scene, pressure never fully releasing)"],
-              value: "a complication lands every scene and pressure NEVER fully releases — one thing resolving uncovers the next" }
+            { label: "low", legacy: ["low (only ever as earned consequence)", "complications arrive only as earned consequence of something already in motion — never introduced to keep a scene busy"],
+              value: "complications arrive only as earned consequence of something already in motion, never introduced to keep a scene busy" },
+            { label: "high", legacy: ["high (complications every scene, pressure never fully releasing)", "a complication lands every scene and pressure NEVER fully releases — one thing resolving uncovers the next"],
+              value: "a complication lands every scene and pressure NEVER fully releases; one thing resolving uncovers the next" }
         ]
     },
     {
@@ -161,12 +161,12 @@ export const storyConfigFields = [
         customPlaceholder: "e.g. graphic. give details",
         hint: "How far scenes go and how directly they are written.",
         options: [
-            { label: "fade to black", legacy: ["fade to black"],
-              value: "fade to black — cut at the threshold of a sexual act and resume after it. The act MAY be acknowledged as having happened; it is NEVER depicted" },
-            { label: "plain", legacy: ["plain"],
-              value: "plain — depict intimacy and violence directly but without anatomical detail. State what happens; do not linger on it" },
-            { label: "graphic", legacy: ["graphic"],
-              value: "graphic — depict sex and violence in full physical detail, using direct words for bodies and acts. NEVER cut away, NEVER euphemise" }
+            { label: "fade to black", legacy: ["fade to black", "fade to black — cut at the threshold of a sexual act and resume after it. The act MAY be acknowledged as having happened; it is NEVER depicted"],
+              value: "fade to black. Cut at the threshold of a sexual act and resume after it. The act MAY be acknowledged as having happened; it is NEVER depicted" },
+            { label: "plain", legacy: ["plain", "plain — depict intimacy and violence directly but without anatomical detail. State what happens; do not linger on it"],
+              value: "plain. Depict intimacy and violence directly but without anatomical detail. State what happens; do not linger on it" },
+            { label: "graphic", legacy: ["graphic", "graphic — depict sex and violence in full physical detail, using direct words for bodies and acts. NEVER cut away, NEVER euphemise"],
+              value: "graphic. Depict sex and violence in full physical detail, using direct words for bodies and acts. NEVER cut away, NEVER euphemise" }
         ]
     },
     {
@@ -175,12 +175,12 @@ export const storyConfigFields = [
         customPlaceholder: "e.g. steady, but skip anything that isn't a real beat",
         hint: "How fast story time moves.",
         options: [
-            { label: "slow burn", legacy: ["slow burn"],
-              value: "slow burn — the story moves slowly. Story time advances in minutes rather than days, and a situation is allowed to keep unfolding instead of being hurried toward its conclusion" },
-            { label: "steady", legacy: ["steady"],
-              value: "steady — the story keeps moving without rushing. Scenes get the time they need and no more: do not linger on a moment past its use, and do not rush ahead before it has played out" },
-            { label: "fast", legacy: ["fast"],
-              value: "fast — the story moves quickly. Cut through any interval that changed nothing and keep landing on live moments; time jumps and changes of location come easily" }
+            { label: "slow burn", legacy: ["slow burn", "slow burn — the story moves slowly. Story time advances in minutes rather than days, and a situation is allowed to keep unfolding instead of being hurried toward its conclusion"],
+              value: "slow burn. The story moves slowly. Story time advances in minutes rather than days, and a situation is allowed to keep unfolding instead of being hurried toward its conclusion" },
+            { label: "steady", legacy: ["steady", "steady — the story keeps moving without rushing. Scenes get the time they need and no more: do not linger on a moment past its use, and do not rush ahead before it has played out"],
+              value: "steady. The story keeps moving without rushing. Scenes get the time they need and no more: do not linger on a moment past its use, and do not rush ahead before it has played out" },
+            { label: "fast", legacy: ["fast", "fast — the story moves quickly. Cut through any interval that changed nothing and keep landing on live moments; time jumps and changes of location come easily"],
+              value: "fast. The story moves quickly. Cut through any interval that changed nothing and keep landing on live moments; time jumps and changes of location come easily" }
         ]
     },
     {
@@ -188,14 +188,14 @@ export const storyConfigFields = [
         customPlaceholder: "e.g. around 300 words, longer when a scene earns it",
         hint: "How long each reply should run.",
         options: [
-            { label: "flexible", legacy: ["flexible"],
-              value: "flexible — as short as 50 words for a quick one-on-one exchange, up to 700 when a scene earns the space. Match the length to what the moment actually needs; never pad to reach a number" },
+            { label: "flexible", legacy: ["flexible", "flexible — as short as 50 words for a quick one-on-one exchange, up to 700 when a scene earns the space. Match the length to what the moment actually needs; never pad to reach a number"],
+              value: "flexible. As short as 50 words for a quick one-on-one exchange, up to 700 when a scene earns the space. Match the length to what the moment actually needs; never pad to reach a number" },
             { label: "250–350 words", legacy: ["250–350 words"],
               value: "250–350 words per response. When trimming to fit, cut description before dialogue" },
             { label: "450–550 words", legacy: ["450–550 words"],
               value: "450–550 words per response. When trimming to fit, cut description before dialogue" },
-            { label: "minimum 900 words", legacy: ["minimum 900 words"],
-              value: "at least 900 words per response — earn the length with new material. NEVER pad by restating what the scene has already established" }
+            { label: "minimum 900 words", legacy: ["minimum 900 words", "at least 900 words per response — earn the length with new material. NEVER pad by restating what the scene has already established"],
+              value: "at least 900 words per response. Earn the length with new material. NEVER pad by restating what the scene has already established" }
         ]
     },
     {

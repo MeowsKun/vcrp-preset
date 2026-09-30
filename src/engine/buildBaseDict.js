@@ -158,7 +158,7 @@ export function buildBaseDict(isTokenCount = false) {
         // shared fragment still wins, exactly like every other shared slot.
         dict["[[user]]"] = isCoWriterEngine(activeEngine)
             ? ""
-            : "4. NEVER write for or Control {{user}}";
+            : "3. NEVER write {{user}}'s actions, speech, thoughts, or feelings.";
 
         // Slot overrides, driven by MEGUMIN_SLOT_REGISTRY.
         //
@@ -279,7 +279,12 @@ export function buildBaseDict(isTokenCount = false) {
         // would look exactly like the CoT setting having no effect.
         if (!wrapper.includes("{Thinking}")) wrapper += "\n{Thinking}";
 
-        dict["[[THINK]]"] = wrapper.split("{Thinking}").join(dict["[[COT]]"]);
+        // Said outright, because a model that cannot be prefilled only ever sees the
+        // block sitting in the rules and has to guess that it should write its own.
+        // Lives here, not in the preset, so it goes wherever the block goes: a
+        // Continue or Impersonate drops [[THINK]] and must not be told to think.
+        dict["[[THINK]]"] = "Open every reply with your own <think> block: work through what follows for this scene, close it with </think>, then write the reply.\n"
+            + wrapper.split("{Thinking}").join(dict["[[COT]]"]);
         dict["[[COT]]"] = "";
     } else {
         dict["[[THINK]]"] = "";

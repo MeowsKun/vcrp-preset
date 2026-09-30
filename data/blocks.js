@@ -11,8 +11,8 @@ export const blocks = [
 **🧍 [PC Name]:**
 * *Outfit:* [Current clothing, accessories, state of dress]
 * *Position:* [Physical posture, where in the space]
-* *Visible Condition:* [Injuries, exhaustion, intoxication, sweat what a camera would catch]
-* *Carrying:* [What's in their hands, pockets, bag if known]
+* *Visible Condition:* [Injuries, exhaustion, intoxication, sweat: what a camera would catch]
+* *Carrying:* [What's in their hands, pockets, bag, if known]
 
 ---
 
@@ -20,22 +20,22 @@ export const blocks = [
 **[NPC Name]:**
 * *Outfit:* [Current clothing]
 * *Position:* [Where in the space, posture, what they're doing]
-* *Mood:* [Current emotional surface what's visible]
+* *Mood:* [Current emotional surface: what's visible]
 * *Agenda:* [What they want right now in this scene]
 * *Secret:* [What they know or want that the PC doesn't know about]
 
 *[Repeat for each NPC currently in the scene]*
  ---
 **📡 Off-Screen:**
-* [NPC Name] [What they're plausibly doing right now, where they are]
-* [NPC Name] [Same keep it to NPCs the story has established]
+* [NPC Name]: [What they're plausibly doing right now, where they are]
+* [NPC Name]: [Same; keep it to NPCs the story has established]
 
 ---
 **🔥 Unresolved Threads:**
-* [Active tension, unanswered question, or simmering conflict one line each]
+* [Active tension, unanswered question, or simmering conflict, one line each]
 * [Keep to 3–5 max. Drop resolved ones, add new ones as they emerge]
-**🌱 Planted Seeds:** [Foreshadow or setup element what it hints at turns since planted]
-**⏳ Consequence Timers:** [PC action/inaction expected ripple turns remaining]
+**🌱 Planted Seeds:** [Foreshadow or setup element | what it hints at | turns since planted]
+**⏳ Consequence Timers:** [PC action/inaction | expected ripple | turns remaining]
 **🎯 Arc Phase:** [Setup / Escalation / Complication / Crisis / Resolution]
 **🎬 Scene Phase:** [Early Simmer / Building / Midpoint Tension / Climax / Breather]
 </World_State>` },
