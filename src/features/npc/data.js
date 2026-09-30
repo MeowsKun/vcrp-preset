@@ -28,7 +28,8 @@ export function npcBuildTextFromData(n) {
     const nameField = npcFieldByRole("name");
     const headerParts = [];
     if (nameField) headerParts.push(`**${nameField.label}:** ${n[nameField.id] || "Unknown"}`);
-    npcVitalsFields().forEach(f => headerParts.push(`**${f.label}:** ${n[f.id] || "?"}`));
+    // Unknown vitals are left out: a "?" is noise, and it invites a guess.
+    npcVitalsFields().forEach(f => { if (n[f.id]) headerParts.push(`**${f.label}:** ${n[f.id]}`); });
     if (headerParts.length) lines.push(headerParts.join(" | "));
 
     npcBodyFields().forEach(f => {

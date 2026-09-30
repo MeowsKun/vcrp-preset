@@ -115,7 +115,7 @@ export const NPC_DEFAULT_FIELDS = [
         // the PC's bed" phrasing. Naming the failure made it available; asking
         // for an ordinary future weekday makes the current scene structurally
         // the wrong answer instead of a forbidden one.
-        placeholder: "A home district, a workplace, a regular haunt — somewhere they could still be found at 2pm on an ordinary Tuesday months from now",
+        placeholder: "A home district, a workplace, a regular haunt: somewhere they could still be found at 2pm on an ordinary Tuesday months from now",
         hint: "Where they live and work, not where the current scene put them."
     },
     {
@@ -130,7 +130,7 @@ export const NPC_DEFAULT_FIELDS = [
         icon: "fa-comment-dots", color: "#fbbf24",
         fixed: true,
         persistent: true, updatable: false,
-        placeholder: "How they speak — cadence, accent, verbal tics, topics they dodge"
+        placeholder: "How they speak: cadence, accent, verbal tics, topics they dodge"
     },
     {
         id: "background", label: "Background", type: "longtext",
@@ -146,8 +146,8 @@ export const NPC_DEFAULT_FIELDS = [
         ownLine: true,
         fixed: true,
         persistent: true, updatable: false,
-        itemFormat: "[Name] — [Relationship] | [Age, status, current dynamic in one line]",
-        placeholder: "2–5 people. At least one must be off-screen and unknown to the story — a mother, an ex, a childhood friend, a rival. These are plot seeds, not flavour."
+        itemFormat: "[Name]: [Relationship] | [Age, status, current dynamic in one line]",
+        placeholder: "2–5 people. At least one must be off-screen and unknown to the story (a mother, an ex, a childhood friend, a rival). These are plot seeds, not flavour."
     },
     {
         id: "personality", label: "Personality", type: "list",
@@ -186,10 +186,20 @@ export const NPC_DEFAULT_FIELDS = [
         icon: "fa-lock", color: "#a855f7",
         ownLine: true,
         persistent: true, updatable: false,
-        placeholder: "3–5 immutable facts that must never change across appearances — name, key relationships, defining marks, the buried secret",
+        placeholder: "3–5 immutable facts that must never change across appearances: name, key relationships, defining marks, the buried secret",
         hint: "Never updatable. A fact that can be revised is not a canon lock."
     }
 ];
+
+// Earlier wording of the default hints. A saved field whose text still matches
+// one of these was never edited by the reader, so the loader moves it to the
+// current default. Anything else is the reader's own and stays.
+export const NPC_LEGACY_FIELD_TEXT = {
+    whereToFind: { placeholder: ["A home district, a workplace, a regular haunt — somewhere they could still be found at 2pm on an ordinary Tuesday months from now"] },
+    voice: { placeholder: ["How they speak — cadence, accent, verbal tics, topics they dodge"] },
+    innerCircle: { itemFormat: ["[Name] — [Relationship] | [Age, status, current dynamic in one line]"], placeholder: ["2–5 people. At least one must be off-screen and unknown to the story — a mother, an ex, a childhood friend, a rival. These are plot seeds, not flavour."] },
+    canonLock: { placeholder: ["3–5 immutable facts that must never change across appearances — name, key relationships, defining marks, the buried secret"] }
+};
 
 // ── Reading the list ────────────────────────────────────────────────────────
 
@@ -291,8 +301,8 @@ export function npcPersistenceRule() {
         `  ${names} describe this person's ongoing life, not this scene.`,
         `  Write each one as it would still be true at 2pm on an ordinary Tuesday,`,
         `  months from now, with the current scene long over. A fact that only holds`,
-        `  inside this scene — where they are standing, what they are doing, who they`,
-        `  are with right now — belongs in none of them.`
+        `  inside this scene (where they are standing, what they are doing, who they`,
+        `  are with right now) belongs in none of them.`
     ].join("\n");
 }
 

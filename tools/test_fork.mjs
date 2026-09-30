@@ -123,7 +123,7 @@ for (const preset of ["VCRP V10 Universal.json", "VCRP V10 Universal Cache Frien
     msgs = await run(preset);
     const t3 = text(msgs);
     assert.deepEqual(leftovers(msgs), [], `${tag}: tags left over with features on: ${leftovers(msgs)}`);
-    for (const s of ["<knowledgebase>", "Writing Quality Baseline", "<anime_mode>", "overrides the engine's dialogue restrictions", "<bold_npcs>", "Also keep in mind the knowledgebase entries", "should read distinctly anime"])
+    for (const s of ["<knowledgebase>", "Character Trope Guidance", "<anime_mode>", "overrides the engine's dialogue restrictions", "<bold_npcs>", "Also keep in mind the knowledgebase entries", "should read distinctly anime"])
         assert(t3.includes(s), `${tag}: missing ${s}`);
     assert(t3.includes("allowed for stammers, cut-offs") && t3.includes("stripped articles"), `${tag}: merged ban list`);
     console.log(`3 ok  ${tag} knowledgebase + anime + bold NPCs + merged ban list`);
@@ -242,5 +242,108 @@ assert.equal(rows[3].images, 1, "breakdown counts images");
 const html = await buildTokenBreakdown([{ role: "system", content: "x".repeat(380) }, { role: "user", content: "<b>tag</b>" }]);
 assert(html.includes("Token breakdown") && html.includes("&lt;b&gt;tag&lt;/b&gt;") && !html.includes("<b>tag</b>"), "breakdown renders and escapes labels");
 console.log("10 ok token breakdown (grouping, images, escaping)");
+
+// 11. NPC Bank: saved field hints upgrade only when unedited; retrieved NPCs and the ignore list.
+{
+    const stored = Object.values(extension_settings.VCRP.profiles).find(x => x && x.npcBank);
+    const field = id => stored.npcBank.fields.find(f => f.id === id);
+    field("voice").placeholder = "How they speak — cadence, accent, verbal tics, topics they dodge";   // old default
+    field("whereToFind").placeholder = "My own hint, keep it";                                              // reader's edit
+    initProfile();
+    const q = state.localProfile;
+    const now = id => q.npcBank.fields.find(f => f.id === id).placeholder;
+    assert.equal(now("voice"), "How they speak: cadence, accent, verbal tics, topics they dodge", "unedited old hint upgrades");
+    assert.equal(now("whereToFind"), "My own hint, keep it", "a hint the reader wrote is left alone");
+
+    Object.assign(q, { mode: "v10-shura", model: "cot-v10-shura-english" });
+    q.npcBank.enabled = true;
+    q.npcBank.npcs = [{ name: "Mara Voss", appearance: "tall, red hair" }];
+    chat.push({ is_user: true, mes: "I ask Mara Voss for a drink.", name: "Bob" });
+    const t11 = text(await run("VCRP V10 Universal.json"));
+    chat.pop();
+    assert(t11.includes('<npc name="Mara Voss">') && t11.includes("</npc>"), "retrieved NPC uses an attribute tag");
+    assert(!/\*\*(Age|Sex|Orientation):\*\* \?/.test(t11), "unknown vitals are left out");
+    assert(/already-known or ignored characters: [^\]]*Alice[^\]]*Bob/.test(t11), "the card character and the user are on the ignore list");
+    assert(t11.includes("A job never disqualifies anyone") && !t11.includes("inner_circle_rule"), "dossier rules updated");
+    const dossier = t11.slice(t11.indexOf("### NPC DOSSIER"), t11.indexOf("### NPC UPDATES"));
+    assert(!dossier.includes("—"), "em dash in the dossier rules: " + dossier.split("\n").filter(l => l.includes("—")).join(" / "));
+    q.npcBank.enabled = false; q.npcBank.npcs = [];
+}
+console.log("11 ok NPC Bank (hint upgrade, attribute tags, no '?' vitals, ignore list, rules)");
+
+// 12. Blocks: Choices guidance, sidebar rule, per-block stat example, chatter cap untouched.
+{
+    const q = state.localProfile;
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const keep = JSON.stringify(q.blockStack.order);
+    q.blockStack.order = ["cyoa", "chatter", "bonds", "sheet"]; meguminSyncLegacyBlockIds();
+    const t12 = text(await run("VCRP V10 Universal.json"));
+    assert(t12.includes("each written as Bob's next message"), "Choices guidance present");
+    assert(t12.includes("The blocks are a sidebar for the reader"), "sidebar rule in the <Blocks> header");
+    const sheet = t12.slice(t12.indexOf("<Character_Sheet>"), t12.indexOf("</Character_Sheet>"));
+    const bonds = t12.slice(t12.indexOf("<Bonds>"), t12.indexOf("</Bonds>"));
+    assert(sheet.includes("(-12 a knife across the forearm)") && !sheet.includes("heard pity"), "sheet has its own example");
+    assert(bonds.includes("(-6 he apologised and she heard pity)"), "bonds keeps the feeling example");
+    assert(t12.includes("max Length is 30 words.") && t12.includes("inside that character's head: stray feelings"), "chatter cap as V10, damage repaired");
+    const { parseChoices } = await imp("src/blocks/render.js");
+    const parsed = parseChoices("[Four things Bob could do next.]\n1. Ask Mara about the debt\n2. Leave\n3. Order a drink\n4. Wait");
+    assert(parsed && parsed.choices.length === 4, "a Choices body with the guidance line still parses as four choices");
+    q.blockStack.order = JSON.parse(keep); meguminSyncLegacyBlockIds();
+}
+console.log("12 ok blocks (choices guidance, sidebar rule, stat examples, chatter cap)");
+
+// 13. Features round: KB upgrade of untouched defaults, wording, conflicts.
+{
+    // Plant the old built-in KB entries in the saved profile, one of them edited, and reload.
+    const stored = Object.values(extension_settings.VCRP.profiles).find(x => x && x.npcBank);
+    const oldHyp = "Use this framework whenever hypnosis, trance, or conditioning appears in the story. Adjust or delete if your setting works differently.\n\n- Induction: x";
+    stored.knowledgebase = { enabled: true, seeded: true, entries: [] };
+    stored.knowledgebase.entries = [
+        { id: "kb_default_writing", title: "Writing Quality Baseline", content: "Always show through concrete action, sensation, and behavior rather than naming emotions outright. Avoid abstract summary (\"she felt nervous\") in favor of physical evidence (\"her thumb worried the hem of her sleeve\"). Keep prose grounded and specific: real textures, weights, temperatures, sounds. No purple prose, no recycled clichés, no melodrama. Every paragraph should advance the scene, reveal character, or deepen sensation, never tread water.", active: true },
+        { id: "kb_default_hypnosis", title: "Hypnosis Mechanics (example)", content: oldHyp, active: true },
+    ];
+    initProfile();
+    let q = state.localProfile;
+    assert(!q.knowledgebase.entries.some(e => e.id === "kb_default_writing"), "untouched writing baseline is removed");
+    assert.equal(q.knowledgebase.entries[0].content, oldHyp, "an edited hypnosis entry is left alone");
+    const { ensureKnowledgebase } = await imp("src/vcrp/knowledgebase.js");
+    const fresh = ensureKnowledgebase({});
+    assert(fresh.entries.length === 2 && !fresh.entries.some(e => /Adjust or delete/.test(e.content)), "new profiles get the trimmed defaults");
+
+    Object.assign(q, { mode: "v10-shura", model: "cot-v10-shura-english" });
+    q.addons = ["bold_npcs", "dn", "html"];
+    q.animeMode.enabled = true;
+    q.onomatopoeia = { enabled: true, useStyling: true };
+    q.enhancedDialogue = { "v10-shura": true };
+    q.storyPlan.enabled = true; q.storyPlan.currentPlan = "Mara's brother arrives.";
+    const t13 = text(await run("VCRP V10 Universal.json"));
+    for (const s of ["the action lands", "interleave them freely", "must be animated and colored", "freezes the world for a moment",
+                     "flows like real talk", "Ban chained clauses", "compass, not a script: weave"])
+        assert(t13.includes(s), `missing: ${s}`);
+    assert(!/\ba beat\b(?! late)/.test(t13.slice(t13.indexOf("<anime_mode>"), t13.indexOf("</anime_mode>"))), "anime mode no longer says 'a beat'");
+    const enh = t13.slice(t13.indexOf("*ALL rules in this tag ONLY apply"), t13.indexOf("Reference Examples"));
+    assert(!enh.replace(/"[^"]*"/g, "").includes("—"), "no em dashes in Enhanced Dialogue's instruction text");
+    q.addons = []; q.animeMode.enabled = false; q.onomatopoeia = { enabled: false }; q.enhancedDialogue = {}; q.storyPlan.enabled = false;
+}
+console.log("13 ok features (KB upgrade, add-ons, anime, enhanced dialogue, director)");
+
+// 14. Ukiyo pass: conflicts fixed, duplicates trimmed, no em dashes outside example speech.
+{
+    const q = state.localProfile;
+    for (const model of ["cot-v10-ukiyo-english", "cot-v10-ukiyo-cap-english"]) {
+        Object.assign(q, { mode: "v10-core", model });
+        const msgs = await run("VCRP V10 Universal.json");
+        const own = msgs.filter(m => typeof m.content === "string" && !/^(user|Scene prose|<think>plan)/.test(m.content)).map(m => m.content).join("\n");
+        for (const s of ["if it stays, it stays because the scene asked for it", "only place for choices", "never a menu in the prose",
+                         "the woman in the green coat", "a correction that arrives a moment too late", "not the same pronoun twice running"])
+            assert(own.includes(s), `Ukiyo (${model}) missing: ${s}`);
+        assert(!own.includes("Do not repeat last turn's temperature"), "old temperature rule gone");
+        assert(!own.includes("invention fills only what the sheet leaves silent"), "people canon trimmed");
+        assert(!own.includes("bereavement, betrayal, and humiliation"), "grief not said twice");
+        const dashes = own.replace(/"[^"\n]*"/g, "").match(/—/g) || [];
+        assert.equal(dashes.length, 0, `Ukiyo (${model}): em dashes outside quoted speech`);
+    }
+}
+console.log("14 ok Ukiyo (temperature, menu, strangers, trims, no em dashes)");
 
 console.log("\nALL FORK CHECKS PASSED");

@@ -211,7 +211,8 @@ export function buildBlocksEnvelope(dict) {
 
     const header = [
         "## At the end of your response, output exactly one <Blocks> section.",
-        "Put every block inside it, in this order, each in its own tag. Do not add tags that are not listed. Do not nest blocks inside each other. Close every tag you open. Never wrap a block in <details> or <summary> — the interface draws the header and the fold itself."
+        "Put every block inside it, in this order, each in its own tag. Do not add tags that are not listed. Do not nest blocks inside each other. Close every tag you open. Never wrap a block in <details> or <summary>; the interface draws the header and the fold itself.",
+        "The blocks are a sidebar for the reader, outside the story: nothing in them counts as revealed in the prose, and no character knows it."
     ].join("\n");
 
     return `${header}\n\n<Blocks>\n${parts.join("\n")}\n</Blocks>`;
@@ -285,9 +286,11 @@ export function meguminStatRules(fields, subject, opts = {}) {
     const meters = fields.filter(f => f.type === "meter");
     const seeds = tracked.map(f => `${f.label} ${f.start !== undefined ? f.start : 0}`).join(", ");
 
+    // The example has to fit the block: a feeling for a per-person block, a body for the rest.
+    const example = opts.perSubject ? "(-6 he apologised and she heard pity)" : "(-12 a knife across the forearm)";
     const lines = [
         `- Carry every number forward from the previous ${subject} block. Never reset one, and never invent a value that already exists.`,
-        `- A number moves only when something in THIS scene moved it. Write the change and the reason in brackets, e.g. (-6 he apologised and she heard pity). When nothing moved it, write (=).`
+        `- A number moves only when something in THIS scene moved it. Write the change and the reason in brackets, e.g. ${example}. When nothing moved it, write (=).`
     ];
     // The cap is for meters only. A counted field like Gold legitimately jumps by
     // hundreds, and a rule that forbids it would either be broken every time it

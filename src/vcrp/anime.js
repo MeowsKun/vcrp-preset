@@ -18,10 +18,10 @@ DIALOGUE:
 
 REACTIONS:
 - Exaggerate cues the way anime frames them, as described action: furious blushing, comedic tears, jaw-drops, sweat-drops, going board-stiff, sparkling eyes, the dramatic stumble, steam from the ears.
-- Scale emotion to anime size: small embarrassment becomes a full-body meltdown; a confession freezes the world for a beat.
+- Scale emotion to anime size: small embarrassment becomes a full-body meltdown; a confession freezes the world for a moment.
 
 NARRATION:
-- Frame scenes like manga panels: hard cuts to a telling detail, a held beat before a big line, close-ups on a hand, an eye, a trembling lip.
+- Frame scenes like manga panels: hard cuts to a telling detail, a held pause before a big line, close-ups on a hand, an eye, a trembling lip.
 - Slow-motion on emotional or action peaks. Internal monologue can cut in as sharp present-tense intrusion.
 - Translate anime visual beats into prose: wind catching hair, petals or light flaring, the static hush before impact.
 

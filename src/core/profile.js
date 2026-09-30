@@ -22,7 +22,7 @@ import { DEFAULT_PROMPTS } from "../prompts/defaults.js";
 import { hardcodedLogic } from "../../data/database.js";
 import { meguminCotForMode } from "../../data/cot/index.js";
 import { MEGUMIN_BLOCK_REGISTRY, meguminSyncLegacyBlockIds } from "../features/blocks/registry.js";
-import { NPC_DEFAULT_FIELDS, NPC_SYSTEM_ROLES } from "../features/npc/fields.js";
+import { NPC_DEFAULT_FIELDS, NPC_SYSTEM_ROLES, NPC_LEGACY_FIELD_TEXT } from "../features/npc/fields.js";
 import { npcRollbackHistoryFrom } from "../features/npc/updates.js";
 import { normalizeStoryConfig, applyStoryConfigDefaults } from "../features/storyconfig/config.js";
 import { escapeRegex } from "../utils/regex.js";
@@ -404,6 +404,8 @@ export function initProfile() {
             if (def.system) f.system = def.system; else delete f.system;
             if (def.ownLine) f.ownLine = true;
             if (def.itemFormat && !f.itemFormat) f.itemFormat = def.itemFormat;
+            const legacy = NPC_LEGACY_FIELD_TEXT[f.id] || {};
+            Object.keys(legacy).forEach(k => { if (legacy[k].includes(f[k])) f[k] = def[k]; });
             if (!f.icon) f.icon = def.icon;
             if (!f.color) f.color = def.color;
         });

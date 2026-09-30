@@ -22,20 +22,24 @@ import { downloadJsonFile } from "../utils/download.js";
 
 const EXPORT_FORMAT = "vcrp-knowledgebase";
 
+// The hypnosis entry's text, shared by the seed and the upgrade below.
+const HYPNOSIS_CONTENT = "Use this framework whenever hypnosis, trance, or conditioning appears in the story.\n\n- Induction: Trance is reached gradually through focus (a fixed point, a voice, repetition, rhythm), not instantly. Resistance, distraction, or disbelief slows or breaks it.\n- Depth: Track a rough depth, from light (relaxed, suggestible but aware), to medium (compliant, fuzzy, fewer inhibitions), to deep (highly pliable, narrowed awareness). Deeper states take longer to reach and to leave.\n- Suggestibility: Subjects accept suggestions that don't violate their core values easily; suggestions that do are resisted, cause distress, or fail. Repetition and depth increase what holds.\n- Triggers: Post-hypnotic triggers (a word, gesture, sound) can be installed and later fire, but only ones that were actually established earlier in the story.\n- Aftereffects: Coming out is groggy and disoriented. Memory of trance may be hazy or absent depending on what was suggested. Effects fade over time unless reinforced.\n\nKeep it internally consistent: never have hypnosis do something it hasn't been set up to do.";
+
+// Earlier built-in text. A saved entry still word-for-word equal to one of these
+// was never edited, so it follows the current default; an edited one is left alone.
+const LEGACY_KB = {
+    writing: "Always show through concrete action, sensation, and behavior rather than naming emotions outright. Avoid abstract summary (\"she felt nervous\") in favor of physical evidence (\"her thumb worried the hem of her sleeve\"). Keep prose grounded and specific: real textures, weights, temperatures, sounds. No purple prose, no recycled clichés, no melodrama. Every paragraph should advance the scene, reveal character, or deepen sensation, never tread water.",
+    hypnosis: "Use this framework whenever hypnosis, trance, or conditioning appears in the story. Adjust or delete if your setting works differently.\n\n- Induction: Trance is reached gradually through focus (a fixed point, a voice, repetition, rhythm), not instantly. Resistance, distraction, or disbelief slows or breaks it.\n- Depth: Track a rough depth, from light (relaxed, suggestible but aware), to medium (compliant, fuzzy, fewer inhibitions), to deep (highly pliable, narrowed awareness). Deeper states take longer to reach and to leave.\n- Suggestibility: Subjects accept suggestions that don't violate their core values easily; suggestions that do are resisted, cause distress, or fail. Repetition and depth increase what holds.\n- Triggers: Post-hypnotic triggers (a word, gesture, sound) can be installed and later fire, but only ones that were actually established earlier in the story.\n- Aftereffects: Coming out is groggy and disoriented. Memory of trance may be hazy or absent depending on what was suggested. Effects fade over time unless reinforced.\n\nKeep it internally consistent: never have hypnosis do something it hasn't been set up to do.",
+};
+
 // Built-in entries, seeded once. Deleting them sticks (see ensureKnowledgebase).
 function makeDefaultKbEntries() {
     const t = Date.now();
     return [
         {
-            id: "kb_default_writing",
-            title: "Writing Quality Baseline",
-            content: "Always show through concrete action, sensation, and behavior rather than naming emotions outright. Avoid abstract summary (\"she felt nervous\") in favor of physical evidence (\"her thumb worried the hem of her sleeve\"). Keep prose grounded and specific: real textures, weights, temperatures, sounds. No purple prose, no recycled clichés, no melodrama. Every paragraph should advance the scene, reveal character, or deepen sensation, never tread water.",
-            active: true, triggers: "", timestamp: t,
-        },
-        {
             id: "kb_default_hypnosis",
             title: "Hypnosis Mechanics (example)",
-            content: "Use this framework whenever hypnosis, trance, or conditioning appears in the story. Adjust or delete if your setting works differently.\n\n- Induction: Trance is reached gradually through focus (a fixed point, a voice, repetition, rhythm), not instantly. Resistance, distraction, or disbelief slows or breaks it.\n- Depth: Track a rough depth, from light (relaxed, suggestible but aware), to medium (compliant, fuzzy, fewer inhibitions), to deep (highly pliable, narrowed awareness). Deeper states take longer to reach and to leave.\n- Suggestibility: Subjects accept suggestions that don't violate their core values easily; suggestions that do are resisted, cause distress, or fail. Repetition and depth increase what holds.\n- Triggers: Post-hypnotic triggers (a word, gesture, sound) can be installed and later fire, but only ones that were actually established earlier in the story.\n- Aftereffects: Coming out is groggy and disoriented. Memory of trance may be hazy or absent depending on what was suggested. Effects fade over time unless reinforced.\n\nKeep it internally consistent: never have hypnosis do something it hasn't been set up to do.",
+            content: HYPNOSIS_CONTENT,
             active: true, triggers: "", timestamp: t,
         },
         {
@@ -56,6 +60,10 @@ export function ensureKnowledgebase(profile) {
         if (kb.entries.length === 0) kb.entries = makeDefaultKbEntries();
         kb.seeded = true;
     }
+    // The writing baseline repeated the engines' own rules; the hypnosis entry
+    // carried a note meant for the reader. Upgrade untouched copies only.
+    kb.entries = kb.entries.filter(e => !(e && e.id === "kb_default_writing" && e.content === LEGACY_KB.writing));
+    kb.entries.forEach(e => { if (e && e.id === "kb_default_hypnosis" && e.content === LEGACY_KB.hypnosis) e.content = HYPNOSIS_CONTENT; });
     return kb;
 }
 

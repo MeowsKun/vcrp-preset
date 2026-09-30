@@ -25,7 +25,7 @@ export const blocks = [
 * *Secret:* [What they know or want that the PC doesn't know about]
 
 *[Repeat for each NPC currently in the scene]*
- ---
+---
 **📡 Off-Screen:**
 * [NPC Name]: [What they're plausibly doing right now, where they are]
 * [NPC Name]: [Same; keep it to NPCs the story has established]
@@ -44,6 +44,7 @@ export const blocks = [
       label: "CYOA Block",
       trigger: "[[cyoa]]",
       content: `<CYOA>
+[Four things {{user}} could do next, each written as {{user}}'s next message, under 12 words (e.g. Ask Mara about the debt). Make them genuinely different: one bold, one cautious, one unexpected. Don't repeat last turn's choices.]
 1. [Short suggestion]
 2. [Short suggestion]
 3. [Short suggestion]
@@ -57,7 +58,7 @@ export const blocks = [
       content: `<NPC_Inner_Chatter>
 [Unfiltered internal layer hidden from the PC. Reveals what NPCs truly think, feel, and say when the player isn't meant to hear.
 - If multiple NPCs are present: render this as private dialogue between them, spoken behind the PC's back. They drop their public masks and reveal their real opinions, motives, alliances, and grudges.
-- If only one NPC is present: render this as raw, unspoken thought inside that character's head stray feelings, regrets, judgments, and memories.
+- If only one NPC is present: render this as raw, unspoken thought inside that character's head: stray feelings, regrets, judgments, and memories.
 - max Length is 30 words.
 Tone is honest and unguarded, contrasting with whatever the character shows on the surface.
 Example (single NPC – the father):

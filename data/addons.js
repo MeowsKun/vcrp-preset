@@ -13,7 +13,7 @@ RULES
 - Render only what a character is reading right now, and only when the exact wording or layout matters. One per response at most. Most responses have none.
 - Never render summaries, stat panels, status bars, recaps or choice menus. If it exists only for the reader, it does not exist.
 - Give it a maker and a moment: era, device, handwriting, spelling, the author's voice. A 2007 phone is not an iPhone. A hospital terminal is not an app.
-- Put one wrong detail in it — an unread count, a crossed-out word, 4% battery, a blank date, a signature that does not match. Never point at it.
+- Put one wrong detail in it (an unread count, a crossed-out word, 4% battery, a blank date, a signature that does not match). Never point at it.
 - Place it mid-response, where a hand or a page turn presents it. Never open or close a response with it. Prose continues on the other side.
 
 BUILD
@@ -32,7 +32,7 @@ BUILD
       content: `<bold_npcs>
 - Free Will: NPCs chase their own goals and ignore what {{user}} or anyone else wants, unless going along serves them.
 - Selfish Pursuit: Every NPC action comes from that NPC's own motives, personality, and goals in the scene. Never from narrative convenience, and never to please the PC.
-- Full Commitment: NPCs never do anything halfway. No hesitant, partial, or aborted actions. If they act, they finish the move.
+- Full Commitment: Once an NPC decides to act, the action lands: no hovering, no half-gestures. Hesitation is allowed only when it is the character's own (a coward freezing), never the narration stalling.
 - No Hovering: NPCs never "reach for" something or let a hand "hover near" it. They grab, take, touch, and commit.
   BAD: "His hand hovers near the gold."
   GOOD: "He snatches the gold and pockets it."
@@ -46,5 +46,5 @@ BUILD
       recommended: true,
       content: `- Dialogue Colors: Assign a distinct, readable hex color to every character using: <font color="#HEXCODE">"Dialogue here"</font>. Once assigned, a character's color is LOCKED for the entire story.`
     },
-    { id: "dn", label: "Dialogue & Narration Format", trigger: "[[DN]]", content: "- Narration must be between <narration>.........</narration>. and dialogue must be between <dialogue >.........</dialogue > and you can interwoven them throughout the response." }
+    { id: "dn", label: "Dialogue & Narration Format", trigger: "[[DN]]", content: "- Wrap all narration in <narration>...</narration> and every spoken line in <dialogue >...</dialogue >; interleave them freely." }
 ];

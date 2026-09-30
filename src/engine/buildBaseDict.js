@@ -111,7 +111,7 @@ export function buildBaseDict(isTokenCount = false) {
     if (localProfile.onomatopoeia && localProfile.onomatopoeia.enabled) {
         let onoRule = `- Narration must utilize onomatopoeia. Use precise, context-specific phonetic representations for physical interactions (e.g., the click of a latch, the thud of a heavy object, the soughing of wind) rather than abstract descriptions of sound.`;
         if (localProfile.onomatopoeia.useStyling) {
-            onoRule += `\nAll onomatopoeic words must animated and colored using HTML and CSS. The selected style tag and color must objectively correspond to the physical nature or movement of the sound produced; for example, a repetitive friction sound such as "shush-shush" must utilize a sliding animation tag to represent the physical action.`;
+            onoRule += `\nAll onomatopoeic words must be animated and colored using HTML tags and inline CSS. The selected style tag and color must objectively correspond to the physical nature or movement of the sound produced; for example, a repetitive friction sound such as "shush-shush" must utilize a sliding animation tag to represent the physical action.`;
         }
         dict["[[onomato]]"] = onoRule;
     } else {
@@ -464,6 +464,18 @@ export function buildBaseDict(isTokenCount = false) {
         if (localProfile.npcBank.ignoredNames) {
             ignoredArr.push(...localProfile.npcBank.ignoredNames.split(',').map(s => s.trim()).filter(s => s));
         }
+        // The card's own character (every member, in a group) and the user are never NPCs.
+        const nameCtx = typeof getContext === "function" ? getContext() : null;
+        if (nameCtx) {
+            const group = nameCtx.groupId && (nameCtx.groups || []).find(g => g.id === nameCtx.groupId);
+            if (group) {
+                (group.members || []).forEach(av => {
+                    const ch = (nameCtx.characters || []).find(c => c.avatar === av);
+                    if (ch && ch.name) ignoredArr.push(ch.name);
+                });
+            } else if (nameCtx.name2) ignoredArr.push(nameCtx.name2);
+            if (nameCtx.name1) ignoredArr.push(nameCtx.name1);
+        }
         ignoredArr = [...new Set(ignoredArr)];
         
         if (ignoredArr.length > 0) {
@@ -572,7 +584,8 @@ export function buildBaseDict(isTokenCount = false) {
                         const topNpcs = scoredNpcs.slice(0, limit);
                         
                         let npcXML = "<retrieved_npcs>\n";
-                        topNpcs.forEach(n => { npcXML += `<${n.name}>\n${npcBuildTextFromData(n)}\n</${n.name}>\n\n`; });
+                        // A name is not a tag name: "Mara Voss" or "O'Neil" would break <${name}>.
+                        topNpcs.forEach(n => { npcXML += `<npc name="${String(n.name).replace(/"/g, "'")}">\n${npcBuildTextFromData(n)}\n</npc>\n\n`; });
                         npcXML += "</retrieved_npcs>";
                         
                         dict["[[npc list]]"] = `[RELEVANT NPCs]\nThe following are details of known NPCs relevant to the current context:\n${npcXML}`;
