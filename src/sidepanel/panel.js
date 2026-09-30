@@ -22,6 +22,7 @@ import {
 
 import { findLastAssistantMessage, getParsedBlockCounts, getParsedBlockTypes, parseMessage, parseStoryTracker } from "./parsers.js";
 import { el } from "./dom.js";
+import { extensionName, extensionFolderPath } from "../core/constants.js";
 import { SECTION_REGISTRY } from "./sections.js";
 import {
     initPanelChrome,
@@ -37,7 +38,7 @@ import {
     applyPresentBarChange,
 } from "./presentBar.js";
 
-const EXT_NAME = "Megumin-Suite";
+const EXT_NAME = extensionName;
 const PANEL_ID = "meg-sp-panel";
 const FAB_ID = "meg-sp-fab";
 const BODY_HIDE_CLASS = "meg-sp-hide-inline";
@@ -51,7 +52,7 @@ const SETTINGS_KEY = "sidePanel";
 // deploy; if the console shows an older tag than the deploy notes, the
 // browser needs a cache-clearing reload before anything else is worth doing.
 const BUILD_TAG = "2026-08-02g";
-try { console.debug(`[Megumin Side Panel] sidepanel build ${BUILD_TAG}`); } catch (e) { /* */ }
+try { console.debug(`[VCRP Side Panel] sidepanel build ${BUILD_TAG}`); } catch (e) { /* */ }
 
 const DEFAULTS = Object.freeze({
     schemaVersion: 2,
@@ -141,7 +142,7 @@ function buildPanelSkeleton() {
     const fab = el("button", {
         id: FAB_ID,
         class: "meg-sp-fab",
-        title: "Megumin Suite Trackers",
+        title: "VCRP Trackers",
     }, el("i", { class: "fa-solid fa-clipboard-list" }));
     fab.addEventListener("click", () => togglePanel());
 
@@ -155,7 +156,7 @@ function buildPanelSkeleton() {
         el("div", { class: "meg-sp-header-overlay" }),
         el("div", { class: "meg-sp-title" },
             el("i", { class: "fa-solid fa-wand-magic-sparkles" }),
-            " Megumin Trackers"),
+            " VCRP Trackers"),
         el("div", { class: "meg-sp-header-actions" },
             el("button", {
                 class: "meg-sp-icon-btn",
@@ -212,7 +213,7 @@ function clickNpcBankDot() {
 function openNpcBook(focusIdx) {
     const $overlay = window.jQuery ? window.jQuery("#prompt-slot-modal-overlay") : null;
     if (!$overlay || !$overlay.length) {
-        try { (window.toastr || console).info("Open Megumin Suite (wand icon) at least once first.", "NPC Book"); } catch (e) { /* */ }
+        try { (window.toastr || console).info("Open VCRP (wand icon) at least once first.", "NPC Book"); } catch (e) { /* */ }
         return;
     }
 
@@ -299,7 +300,7 @@ function buildSectionCtx() {
         const found = findLastAssistantMessage(ctx?.chat);
         if (found) parsed = parseMessage(found.msg.mes);
     } catch (e) {
-        console.warn("[Megumin Side Panel] parse failure", e);
+        console.warn("[VCRP Side Panel] parse failure", e);
     }
     return {
         parsed,
@@ -448,7 +449,7 @@ function render() {
     // same message would otherwise print the same line over and over.
     const unreadable = findUnreadableBlockTypes(ctx.parsed?.rawText);
     if (unreadableNoticeChanged(unreadable)) {
-        console.debug("[Megumin Side Panel] block found in the last message but could not be read:", unreadable.join(", "));
+        console.debug("[VCRP Side Panel] block found in the last message but could not be read:", unreadable.join(", "));
     }
 
     host.innerHTML = "";
@@ -461,7 +462,7 @@ function render() {
         try {
             content = def.render(ctx);
         } catch (e) {
-            console.warn(`[Megumin Side Panel] section ${def.id} render failed`, e);
+            console.warn(`[VCRP Side Panel] section ${def.id} render failed`, e);
         }
 
         if (!content) {
@@ -976,7 +977,7 @@ function reportTrackerDecline(root, detail) {
     const line = `message ${mesIndexOf(root)}: ${detail}`;
     if (line === lastTrackerDecline) return;
     lastTrackerDecline = line;
-    console.debug("[Megumin Side Panel] tracker left visible - " + line);
+    console.debug("[VCRP Side Panel] tracker left visible - " + line);
 }
 
 // Which body line could not be found on screen, and what the screen had in
@@ -1297,7 +1298,7 @@ let hidingSuspended = false;
 function suspendInlineHiding() {
     if (hidingSuspended) return;
     hidingSuspended = true;
-    console.debug("[Megumin Side Panel] hiding suspended (generation started)");
+    console.debug("[VCRP Side Panel] hiding suspended (generation started)");
 }
 
 // Drop the flag and run the one settled pass. Called from both end events and
@@ -1306,7 +1307,7 @@ function suspendInlineHiding() {
 function resumeInlineHiding(why) {
     if (!hidingSuspended) return false;
     hidingSuspended = false;
-    console.debug(`[Megumin Side Panel] hiding resumed (${why})`);
+    console.debug(`[VCRP Side Panel] hiding resumed (${why})`);
     setTimeout(() => applyInlineHidingPass("post-generation"), 0);
     return true;
 }
@@ -1346,14 +1347,14 @@ function applyInlineHidingPass(marker) {
     // engages is otherwise exactly as silent as no pass at all, and that
     // silence has already cost an investigation.
     if (!hide) {
-        console.debug("[Megumin Side Panel] hiding pass: hiding is off, everything left on show");
+        console.debug("[VCRP Side Panel] hiding pass: hiding is off, everything left on show");
     } else if (latest < 0) {
-        console.debug(`[Megumin Side Panel] hiding pass: no AI reply found (chat has ${chatLen} messages)`);
+        console.debug(`[VCRP Side Panel] hiding pass: no AI reply found (chat has ${chatLen} messages)`);
     } else if (!latestSeen) {
-        console.debug(`[Megumin Side Panel] hiding pass: latest AI reply is message ${latest} of ${chatLen}, but its body is not on screen`);
+        console.debug(`[VCRP Side Panel] hiding pass: latest AI reply is message ${latest} of ${chatLen}, but its body is not on screen`);
     } else {
         const s = summary || { folds: 0, foldsHidden: 0, frames: 0, tracker: "nothing to do" };
-        console.debug(`[Megumin Side Panel] hiding pass${marker ? ` (${marker})` : ""}: latest AI reply is message ${latest} of ${chatLen}; folds found ${s.folds}, hidden ${s.foldsHidden}; frames ${s.frames}; tracker: ${s.tracker}`);
+        console.debug(`[VCRP Side Panel] hiding pass${marker ? ` (${marker})` : ""}: latest AI reply is message ${latest} of ${chatLen}; folds found ${s.folds}, hidden ${s.foldsHidden}; frames ${s.frames}; tracker: ${s.tracker}`);
     }
     // A frame can finish loading after the pass that looked into it, and its
     // loading changes nothing this document's watcher can see - so a pass
@@ -1403,7 +1404,7 @@ function reapplyInlineHiding(root, label, noRetry) {
     const res = applyInlineHiding(root, isLatest);
     if (isLatest) {
         const s = res || { folds: 0, foldsHidden: 0, frames: 0, tracker: "nothing to do" };
-        console.debug(`[Megumin Side Panel] hiding pass (${label}): message ${latest}; folds found ${s.folds}, hidden ${s.foldsHidden}; frames ${s.frames}; tracker: ${s.tracker}`);
+        console.debug(`[VCRP Side Panel] hiding pass (${label}): message ${latest}; folds found ${s.folds}, hidden ${s.foldsHidden}; frames ${s.frames}; tracker: ${s.tracker}`);
         if (!noRetry && s.frames > 0 && /^left visible/.test(s.tracker || "") && !pendingRehide.has(root)) {
             pendingRehide.add(root);
             setTimeout(() => {
@@ -1412,7 +1413,7 @@ function reapplyInlineHiding(root, label, noRetry) {
             }, 600);
         }
     } else if (hide) {
-        console.debug(`[Megumin Side Panel] hiding pass (${label}): message ${mesIndexOf(root)} is not the latest AI reply, left on show`);
+        console.debug(`[VCRP Side Panel] hiding pass (${label}): message ${mesIndexOf(root)} is not the latest AI reply, left on show`);
     }
 }
 
@@ -1468,7 +1469,7 @@ function injectStylesheet() {
     try {
         link.href = new URL("./styles.css", import.meta.url).toString();
     } catch (e) {
-        link.href = "scripts/extensions/third-party/Megumin-Suite/src/sidepanel/styles.css";
+        link.href = `${extensionFolderPath}/src/sidepanel/styles.css`;
     }
     document.head.appendChild(link);
 }
@@ -1509,7 +1510,7 @@ function updateHeaderImage() {
     const ctx = getContext();
     let imgUrl = "";
     if (ctx.groupId !== undefined && ctx.groupId !== null) {
-        imgUrl = `/scripts/extensions/third-party/Megumin-Suite/img/group.png`;
+        imgUrl = `/${extensionFolderPath}/img/group.png`;
     } else if (ctx.characterId !== undefined && ctx.characterId !== null && ctx.characters && ctx.characters[ctx.characterId]) {
         imgUrl = `/characters/${ctx.characters[ctx.characterId].avatar}`;
     }

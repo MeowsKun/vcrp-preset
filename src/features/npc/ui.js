@@ -673,7 +673,7 @@ export function renderNpcList() {
 
             const rules = npcBuildUpdatePrompt();
             if (!rules) {
-                toastr.info("No field is marked Updatable, so there is nothing an update could change.", "Megumin Suite");
+                toastr.info("No field is marked Updatable, so there is nothing an update could change.", "VCRP");
                 return;
             }
 
@@ -695,13 +695,13 @@ export function renderNpcList() {
                 const cleaned = String(raw || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
                 if (meguminActiveDataIdentity() !== identity) {
-                    console.debug(`[Megumin-Suite] Forced NPC update discarded: it was requested in "${identity}" but "${meguminActiveDataIdentity()}" is active now.`);
+                    console.debug(`[VCRP] Forced NPC update discarded: it was requested in "${identity}" but "${meguminActiveDataIdentity()}" is active now.`);
                     return;
                 }
 
                 const parsedUpdates = npcParseUpdateBlocks(cleaned);
                 if (!parsedUpdates.length) {
-                    toastr.info(`Nothing on ${target.name}'s record has changed.`, "Megumin Suite");
+                    toastr.info(`Nothing on ${target.name}'s record has changed.`, "VCRP");
                     return;
                 }
 
@@ -713,20 +713,20 @@ export function renderNpcList() {
                 const { applied, refused } = npcApplyUpdates(parsedUpdates, {
                     messageIndex: (chat && chat.length > 0) ? chat.length - 1 : 0
                 });
-                refused.forEach(r => console.debug(`[Megumin-Suite] Forced NPC update declined: ${r.reason}.`));
+                refused.forEach(r => console.debug(`[VCRP] Forced NPC update declined: ${r.reason}.`));
 
                 if (applied.length) {
                     saveProfileToMemory();
                     renderNpcList();
                     toastr.success(
                         applied.map(a => `${a.label}: ${a.op === "+" ? "added" : a.op === "-" ? "removed" : "replaced"}`).join(" · "),
-                        `Megumin Suite — ${target.name} updated`
+                        `VCRP — ${target.name} updated`
                     );
                 } else {
-                    toastr.info(`Nothing on ${target.name}'s record has changed.`, "Megumin Suite");
+                    toastr.info(`Nothing on ${target.name}'s record has changed.`, "VCRP");
                 }
             } catch (err) {
-                console.error("[Megumin Suite] Forced NPC update failed", err);
+                console.error("[VCRP] Forced NPC update failed", err);
                 toastr.error(`Could not update ${target.name}.`);
             } finally {
                 setActiveNpcUpdateRequest(null);

@@ -26,6 +26,8 @@ import { npcRollbackHistoryFrom } from "../features/npc/updates.js";
 import { normalizeStoryConfig, applyStoryConfigDefaults } from "../features/storyconfig/config.js";
 import { escapeRegex } from "../utils/regex.js";
 import { refreshSidePanel, refreshPresentBar } from "../sidepanel/panel.js";
+import { ensureKnowledgebase } from "../vcrp/knowledgebase.js";
+import { ensureAnimeMode } from "../vcrp/anime.js";
 
 // Last chat_metadata stamp written, so an unchanged profile doesn't re-save.
 export let _lastSavedMetaStamp = "";
@@ -415,7 +417,7 @@ export function initProfile() {
                 // Restored at the front so name and vitals stay ahead of the body
                 // rows, which is the order the template's header line needs.
                 localProfile.npcBank.fields.unshift(...JSON.parse(JSON.stringify(restored)));
-                console.debug(`[Megumin-Suite] NPC field list was missing its "${role}" field; the default was restored.`);
+                console.debug(`[VCRP] NPC field list was missing its "${role}" field; the default was restored.`);
             });
         }
 
@@ -448,6 +450,9 @@ export function initProfile() {
     }
     if (!localProfile.dnRatio) localProfile.dnRatio = defaults.dnRatio;
     if (!localProfile.onomatopoeia) localProfile.onomatopoeia = defaults.onomatopoeia;
+    // VCRP: Knowledgebase (seeds its built-in entries once) and Anime mode.
+    ensureKnowledgebase(localProfile);
+    ensureAnimeMode(localProfile);
     if (!localProfile.worldState) localProfile.worldState = { compactEnabled: false, fullFreq: 5 };
     // Prompt blocks are stored as a diff against DEFAULT_PROMPTS. Put the untouched keys
     // back before anything reads them. Runs after the patching above has guaranteed each
@@ -464,11 +469,11 @@ export function initProfile() {
         && !extension_settings[extensionName].globalSettings.npcTemplateNoticeShown) {
         extension_settings[extensionName].globalSettings.npcTemplateNoticeShown = true;
         saveSettingsDebounced();
-        console.log("[Megumin Suite] A hand-edited NPC dossier template was found. The template is generated from the NPC Bank's field list now, so that edit is no longer applied — rebuild it as fields in the NPCs Bank tab.");
+        console.log("[VCRP] A hand-edited NPC dossier template was found. The template is generated from the NPC Bank's field list now, so that edit is no longer applied — rebuild it as fields in the NPCs Bank tab.");
         if (typeof toastr !== "undefined") {
             toastr.info(
                 "Your edited NPC dossier template is no longer used — the dossier is built from the field list in the NPCs Bank tab now. Your old text is still stored, nothing was deleted.",
-                "Megumin Suite — NPC template moved",
+                "VCRP — NPC template moved",
                 { timeOut: 12000 }
             );
         }
@@ -726,7 +731,7 @@ export function pruneFutureData() {
         if (removedNpcNames.length > 0) {
             toastr.info(
                 removedNpcNames.join(", "),
-                `Megumin Suite — ${removedNpcNames.length} NPC${removedNpcNames.length === 1 ? "" : "s"} removed by rewind`
+                `VCRP — ${removedNpcNames.length} NPC${removedNpcNames.length === 1 ? "" : "s"} removed by rewind`
             );
         }
     }
@@ -770,7 +775,7 @@ export function pruneFutureData() {
 
     if (changesMade) {
         saveProfileToMemory();
-        console.log(`[Megumin Suite] Pruned/Adjusted out-of-bounds future data (chat length: ${chatLength})`);
+        console.log(`[VCRP] Pruned/Adjusted out-of-bounds future data (chat length: ${chatLength})`);
         
         fireRefreshHook(REFRESH.MEMORY_ACCORDION);
         fireRefreshHook(REFRESH.MEMORY_VAULT, $("#mem_vault_search").val() || "");
@@ -794,7 +799,7 @@ export function saveProfileToMemory() {
     // the data actually belongs to; initProfile clears the flag when the next profile
     // loads, so it cannot leak into an untouched chat.
     if (_loadedProfileKey && key !== _loadedProfileKey) {
-        console.debug(`[Megumin-Suite] saveProfileToMemory declined: the profile in memory belongs to "${_loadedProfileKey}" but the active chat is now "${key}". Skipping the chat_metadata blocks and the settings write so this chat's data is not saved into another chat.`);
+        console.debug(`[VCRP] saveProfileToMemory declined: the profile in memory belongs to "${_loadedProfileKey}" but the active chat is now "${key}". Skipping the chat_metadata blocks and the settings write so this chat's data is not saved into another chat.`);
         return;
     }
 

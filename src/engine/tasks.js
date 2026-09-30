@@ -2,13 +2,17 @@
 // Running a one-off generation through SillyTavern.
 //
 // The pattern throughout: park a payload in activeRequests, fire a quiet prompt
-// that the injection handler recognises, clear the payload in a finally.
-// useMeguminEngine additionally swaps the OpenAI preset for the duration and puts
-// it back, so a background task can use a different preset than the roleplay.
+// that the injection handler recognises, clear the payload in a finally. The
+// handler throws away the preset's messages and builds the task's own, so no
+// task depends on which preset is active.
+//
+// VCRP: Megumin V10 also switched the active preset to a separate "Engine" preset
+// for some tasks. VCRP ships no Engine preset, so useMeguminEngine just runs the
+// task; it is kept so every call site stays identical to upstream.
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { generateQuietPrompt } from "../st.js";
-import { extensionName, TARGET_PRESET_NAME } from "../core/constants.js";
+import { extensionName } from "../core/constants.js";
 import { setActiveBanListChat, setActiveGenerationOrder } from "../core/activeRequests.js";
 
 export async function analyzeSlopDirectly(chatText) {
@@ -33,31 +37,17 @@ export async function analyzeSlopWithPreset(chatText) {
     return result;
 }
 
-export async function useMeguminEngine(task, targetPreset = TARGET_PRESET_NAME) { // Added parameter with default value
-    const selector = $("#settings_preset_openai");
-    const option = selector.find(`option`).filter(function () { return $(this).text().trim() === targetPreset; }); // Use the new parameter
-    let originalValue = null;
-
-    if (option.length) {
-        originalValue = selector.val();
-        selector.val(option.val()).trigger("change");
-        toastr.info(`Switched to ${targetPreset} preset... Please wait.`);
-        await new Promise(r => setTimeout(r, 3000));
-    } else {
-        toastr.error(`"${targetPreset}" not found in OpenAI presets.`);
-        return;
-    }
-
+// Runs a background task. (Upstream: switched to the Engine preset first, then back.)
+export async function useMeguminEngine(task, _targetPreset) {
     try {
         await task();
     } catch (e) {
         console.error(`[${extensionName}] AI Error:`, e);
-    } finally {
-        await new Promise(r => setTimeout(r, 500));
-        selector.val(originalValue).trigger("change");
     }
 }
 
+// A free-form "order" for the AI (style generators etc.). The injection handler
+// replaces the whole prompt with the task prompt built in buildOrderTaskMessages().
 export async function runMeguminTask(orderText) {
     setActiveGenerationOrder(orderText);
     try {

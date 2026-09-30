@@ -61,7 +61,7 @@ export function openComfyProgressSocket(comfyUrl, clientId, { onProgress, onNode
         // more, and ComfyUI setups behind proxies that block websockets are common.
         ws.onerror = () => { };
     } catch (e) {
-        console.debug("[Megumin Suite] ComfyUI progress socket unavailable; using the indeterminate bar.", e);
+        console.debug("[VCRP] ComfyUI progress socket unavailable; using the indeterminate bar.", e);
         ws = null;
     }
 

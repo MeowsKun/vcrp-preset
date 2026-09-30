@@ -28,7 +28,6 @@ export function renderBanList(c) {
                 </div>
                 <select id="ban_list_backend" class="ps-modern-input" style="width: 200px; cursor: pointer;">
                 <option value="direct" ${localProfile.banListBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                <option value="preset" ${localProfile.banListBackend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
             </select>
         </div>
 

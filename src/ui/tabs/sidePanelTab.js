@@ -4,6 +4,7 @@
 
 import { localProfile } from "../../core/state.js";
 import { extension_settings, saveSettingsDebounced } from "../../st.js";
+import { extensionName } from "../../core/constants.js";
 import { meguminScheduleBlocksRefresh } from "../../features/blocks/chat.js";
 import { saveProfileToMemory, saveProfileDebounced } from "../../core/profile.js";
 import {
@@ -50,8 +51,7 @@ export function renderSidePanelTab(c) {
         <div class="mtab-callout red" style="margin-bottom: 16px;">
             <i class="fa-solid fa-triangle-exclamation"></i>
             <span><strong>Discontinued.</strong> Blocks do this better &mdash; a nicer card, far more
-            you can change about it, and it keeps up with new blocks as they land. And frankly,
-            Kazuma doesn't like the side panel.
+            you can change about it, and it keeps up with new blocks as they land.
             <br><br>So it is no longer being developed and has not kept up: newer blocks, custom
             blocks and the stat blocks may not appear in it, or may appear wrong. It still works for
             what it already knew about, and everything it shows is drawn in the chat card
@@ -266,7 +266,7 @@ export function renderSidePanelTab(c) {
         cfg.float = { x: null, y: null, w: 620, h: 720 };
         saveSettingsDebounced();
         applyModeChange();
-        toastr.success("Floating position reset", "Megumin Suite");
+        toastr.success("Floating position reset", "VCRP");
     });
 
     // ── Sections group ──
@@ -287,7 +287,7 @@ export function renderSidePanelTab(c) {
     c.find("#megsp_sections_reset").on("click", function () {
         resetSectionLayout();
         renderSidePanelTab(c);
-        toastr.success("Section layout reset", "Megumin Suite");
+        toastr.success("Section layout reset", "VCRP");
     });
 
     // ── Present Characters Bar group ──
@@ -326,18 +326,18 @@ export function renderSidePanelTab(c) {
     c.find("#megsp_refresh").on("click", function () {
         refreshSidePanel();
         refreshPresentBar();
-        toastr.success("Side panel refreshed", "Megumin Suite");
+        toastr.success("Side panel refreshed", "VCRP");
     });
     c.find("#megsp_reset_all").on("click", function () {
         if (!confirm("Reset ALL side-panel settings to defaults?")) return;
-        delete extension_settings["Megumin-Suite"].sidePanel;
-        delete extension_settings["Megumin-Suite"].presentBar;
+        delete extension_settings[extensionName].sidePanel;
+        delete extension_settings[extensionName].presentBar;
         saveSettingsDebounced();
         applyEnabledChange();
         applyPresentBarChange();
         refreshSidePanel();
         meguminScheduleBlocksRefresh();
         renderSidePanelTab(c);
-        toastr.success("Side-panel settings reset", "Megumin Suite");
+        toastr.success("Side-panel settings reset", "VCRP");
     });
 }

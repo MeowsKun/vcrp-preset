@@ -75,11 +75,10 @@ export function renderImageGen(c) {
             <div class="mtab-setting-row">
                 <div class="set-info">
                     <div class="set-label">Generation Method</div>
-                    <div class="set-desc">"Direct" is faster. "Megumin Image" is more creative.</div>
+                    <div class="set-desc">Image prompts are written with a direct API call using your current connection.</div>
                 </div>
                 <select id="img_gen_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
                     <option value="direct" ${s.generatorBackend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                    <option value="preset" ${s.generatorBackend === 'preset' ? 'selected' : ''}>Megumin Image Preset</option>
                 </select>
             </div>
         </div>
@@ -528,7 +527,7 @@ export async function igFetchComfyLists() {
                 if (val) sel.val(val);
             }
         }
-    } catch (e) { console.warn(`[Megumin-Suite] ComfyLists failed`, e); }
+    } catch (e) { console.warn(`[VCRP] ComfyLists failed`, e); }
 }
 
 export function toggleQuickGenButton() {
@@ -674,7 +673,7 @@ export async function igManualGenerate() {
         const match = promptText.match(imgRegex);
         if (match) promptText = match[2];
 
-        toastr.info("Sending to ComfyUI...", "Megumin Suite");
+        toastr.info("Sending to ComfyUI...", "VCRP");
         igGenerateWithComfy(promptText, null);
 
     } catch (e) {
@@ -883,7 +882,7 @@ export async function igGenerateWithComfy(positivePrompt, target = null) {
         return false;
     };
     const igDeclineWrite = (what) => {
-        console.debug(`[Megumin-Suite] Image gen ${what} declined: it was started for chat "${igChatId}" message ${target?.index}, which is no longer reachable in the open chat. Nothing was written, so no unrelated message was edited. Any leftover "[Generating Image...]" placeholder in the original chat is cosmetic and clears on the next edit of that message.`);
+        console.debug(`[VCRP] Image gen ${what} declined: it was started for chat "${igChatId}" message ${target?.index}, which is no longer reachable in the open chat. Nothing was written, so no unrelated message was edited. Any leftover "[Generating Image...]" placeholder in the original chat is cosmetic and clears on the next edit of that message.`);
     };
 
     // --- INJECT LORA TRIGGER WORDS ---
@@ -1072,7 +1071,7 @@ export async function igGenerateWithComfy(positivePrompt, target = null) {
                             if (typeof appendMediaToMessage === "function") appendMediaToMessage(target.message, target.element);
                             await saveChat(); toastr.success("Gallery updated!");
                         } else {
-                            const newMsg = { name: "Image Gen Kazuma", is_user: false, is_system: true, send_date: Date.now(), mes: "", extra: { media: [mediaAttach], media_display: "gallery", media_index: 0 }, force_avatar: "img/five.png" };
+                            const newMsg = { name: "VCRP Image Gen", is_user: false, is_system: true, send_date: Date.now(), mes: "", extra: { media: [mediaAttach], media_display: "gallery", media_index: 0 }, force_avatar: "img/five.png" };
                             getContext().chat.push(newMsg); await saveChat();
                             if (typeof addOneMessage === "function") addOneMessage(newMsg); else await reloadCurrentChat();
                             toastr.success("Image inserted!");

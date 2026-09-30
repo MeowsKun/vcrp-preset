@@ -8,6 +8,8 @@ import { localProfile } from "../../core/state.js";
 import { initProfile, saveProfileToMemory } from "../../core/profile.js";
 import { flushProfileSettingsToLoadedKey, _saveProfileDebouncedInner } from "../../core/profile.js";
 import { cancelDebounce } from "../../st.js";
+import { escapeHtmlAttr } from "../../utils/html.js";
+import { vcrpDetectPrefill, vcrpActiveModel } from "../../vcrp/generation.js";
 
 // The version on the about card. One place, so it cannot fall out of step with
 // itself the way "v9" did once V10 shipped.
@@ -18,7 +20,7 @@ const SUITE_VERSION = "V10";
 // address, which would quietly undo the word "anonymous" two lines down in the card.
 //
 // Blank it to remove the whole section -- it is skipped rather than drawn dead.
-const SUBMIT_FORM_URL = "https://tally.so/r/D46yNq";
+const SUBMIT_FORM_URL = "";
 
 // The dot on the gear in the dock. Named rather than a bare boolean so a future
 // notice is one string change here: bump the id and every install shows the dot
@@ -86,6 +88,26 @@ export function renderGlobalSettings(c) {
             <div class="ps-switch" style="${gs.enableUtilityPrefill ? 'background: #10b981;' : ''}"></div>
         </div>
     `);
+    // VCRP: whether story replies keep the preset's CoT Prefill slot.
+    const det = vcrpDetectPrefill();
+    const { source, model } = vcrpActiveModel();
+    const prefillMode = gs.cotPrefillMode || "auto";
+    $content.append(`
+        <div class="mtab-panel" style="margin: 0; padding: 12px 16px;">
+            <div class="mtab-setting-row" style="padding: 0; border: none;">
+                <div class="set-info">
+                    <div class="set-label"><i class="fa-solid fa-brain" style="color: #a855f7;"></i> CoT Prefill (story replies)</div>
+                    <div class="set-desc">Starts each reply inside the &lt;think&gt; block via the preset's prefill slot. Newer Claude (Opus/Sonnet 4.6+, Claude 5) and the newest Gemini Flash reject prefills, so <b>Auto</b> leaves it out for them.<br>
+                    Detected: <b>${escapeHtmlAttr(source || "no chat completion API")}${model ? ` · ${escapeHtmlAttr(model)}` : ""}</b> → Auto would ${det.prefill ? "prefill" : "not prefill"} (${det.reason}).</div>
+                </div>
+                <select id="gs_cot_prefill_mode" class="ps-modern-input" style="width: 180px; cursor: pointer;">
+                    <option value="auto" ${prefillMode === 'auto' ? 'selected' : ''}>Auto (Recommended)</option>
+                    <option value="on" ${prefillMode === 'on' ? 'selected' : ''}>Always on</option>
+                    <option value="off" ${prefillMode === 'off' ? 'selected' : ''}>Always off</option>
+                </select>
+            </div>
+        </div>
+    `);
 
     // ── DATA ────────────────────────────────────────────────────────────────
     $content.append(`<div class="wstyle-section-head gold" style="margin-top:8px;"><i class="fa-solid fa-floppy-disk"></i> Data</div>`);
@@ -130,22 +152,18 @@ export function renderGlobalSettings(c) {
     $content.append(`<div class="wstyle-section-head green" style="margin-top:8px;"><i class="fa-solid fa-circle-info"></i> About</div>`);
     $content.append(`
         <div class="mtab-panel gs-about" style="margin: 0;">
-            <div class="gs-about-title">Megumin Suite ${SUITE_VERSION}</div>
-            <div class="gs-about-by">Made by KazumaONIISAN</div>
+            <div class="gs-about-title">VCRP ${SUITE_VERSION}</div>
+            <div class="gs-about-by">By MeowsKun · based on Megumin Suite by KazumaONIISAN (CC BY-NC 4.0)</div>
 
             <div class="gs-link-grid">
-                <a class="gs-link" href="https://github.com/Arif-salah/Megumin-Suite" target="_blank" rel="noopener noreferrer">
+                <a class="gs-link" href="https://github.com/MeowsKun/vcrp-preset" target="_blank" rel="noopener noreferrer">
                     <i class="fa-brands fa-github"></i>
-                    <span><b>GitHub</b><small>Source, issues and releases</small></span>
+                    <span><b>GitHub</b><small>VCRP source, issues and releases</small></span>
                 </a>
-                <div class="gs-link gs-link-static">
-                    <i class="fa-brands fa-paypal" style="color:#3b82f6;"></i>
-                    <span><b>PayPal</b><small>arifsalah10@gmail.com</small></span>
-                </div>
-                <div class="gs-link gs-link-static">
-                    <i class="fa-solid fa-coins" style="color:#a1a1aa;"></i>
-                    <span><b>Litecoin</b><small>LSjf1DczHxs3GEbkoMmi1UWH2GikmXDtis</small></span>
-                </div>
+                <a class="gs-link" href="https://github.com/Arif-salah/Megumin-Suite" target="_blank" rel="noopener noreferrer">
+                    <i class="fa-solid fa-code-fork"></i>
+                    <span><b>Megumin Suite</b><small>The original project VCRP is based on</small></span>
+                </a>
             </div>
         </div>
     `);
@@ -166,6 +184,11 @@ export function renderGlobalSettings(c) {
     };
     wireToggle("#gs_toggle_prompt_preview", "promptPreview", "var(--gold)");
     wireToggle("#gs_toggle_utility_prefill", "enableUtilityPrefill", "#10b981");
+
+    $content.find("#gs_cot_prefill_mode").on("change", function () {
+        gs.cotPrefillMode = $(this).val();
+        saveSettingsDebounced();
+    });
 
     $content.find("#gs_save_mode").on("change", function () {
         // getCharacterKey() reads saveMode, so changing it moves where a save lands. Get any

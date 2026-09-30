@@ -18,6 +18,7 @@ import { escapeHtmlAttr, fieldPlaceholder } from "../../utils/html.js";
 import { cleanAIOutput } from "../../engine/chatText.js";
 import { useMeguminEngine, runMeguminTask } from "../../engine/tasks.js";
 import { storyConfigFields, getAllConfigPresets, applyStoryConfigDefaults, isStandingConfigField } from "./config.js";
+import { buildAnimeSidebarPanel } from "../../vcrp/anime.js";
 
 // -------------------------------------------------------------
 // STORY CONFIG (<config> block → [[config]])
@@ -65,11 +66,11 @@ function buildConfigSyncRow() {
         // out there alone — undoing a share nobody asked to undo would be worse.
         if (next) saveProfileToMemory();
         if (!meguminStoryConfigHostSynced()) {
-            toastr.info("Saved. It takes effect when this tab's Global switch is on.", "Megumin Suite");
+            toastr.info("Saved. It takes effect when this tab's Global switch is on.", "VCRP");
         } else {
             toastr.success(next
                 ? "Story Config now travels with the other settings on this tab."
-                : "Story Config stays with this character now.", "Megumin Suite");
+                : "Story Config stays with this character now.", "VCRP");
         }
     });
 
@@ -440,6 +441,8 @@ export function renderStoryConfig(c) {
         localProfile.dnRatio.dialogue = parseInt($(this).val()); saveProfileToMemory();
     });
     sidebar.append(dnPanel);
+    // VCRP: Anime Mode switch, drawn like DN Ratio.
+    sidebar.append(buildAnimeSidebarPanel(() => renderStyleLibrary(c)));
     sidebar.append(`<div style="height: 1px; background: var(--border-color); margin: 0 0 8px 0;"></div>`);
 
     sidebar.append(`<div class="ws-sidebar-title">Writing Style</div>`);

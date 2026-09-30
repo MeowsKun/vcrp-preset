@@ -284,7 +284,7 @@ function renderTreated(b, opts) {
         const html = t.render(parsed, { animate });
         return html && html.trim() ? html : "";
     } catch (e) {
-        console.debug("[Megumin Suite] block treatment declined", b.def.id, e);
+        console.debug("[VCRP] block treatment declined", b.def.id, e);
         return "";
     }
 }
@@ -672,7 +672,7 @@ export function applyBlocksToMessage(root, mes, registry, opts = {}) {
     // prose and sit outside the envelope, so the regex never wrapped them.
     const markerNodes = tailBlocks.length ? findMarkerNodes(root) : [];
     if (opts.debug) {
-        console.debug("[Megumin Blocks] lead=%d tail=%d markers=%d",
+        console.debug("[VCRP Blocks] lead=%d tail=%d markers=%d",
             leadBlocks.length, tailBlocks.length, markerNodes.length);
     }
     if (markerNodes.length) {

@@ -303,7 +303,7 @@ function coWriter(base, id, label, color, patches) {
             if (out[k] && out[k].includes(find)) { out[k] = out[k].replace(find, repl); hit = true; }
         });
         if (!hit) console.warn(
-            `[Megumin Suite] ${label}: co-writing patch ${i + 1} no longer matches the base engine. `
+            `[VCRP] ${label}: co-writing patch ${i + 1} no longer matches the base engine. `
             + `That rule is still in its single-author form.`);
     });
     return out;

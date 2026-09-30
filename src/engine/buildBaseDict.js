@@ -26,6 +26,8 @@ import { memGetRelevantVaultEntries } from "../features/memory/index.js";
 import { meguminRollD20s } from "../utils/dice.js";
 import { meguminOverridableSlots, meguminSlotIsLive, meguminModuleTrigger } from "../../data/slots.js";
 import { resolveSlot } from "../core/sharedFragments.js";
+import { buildKnowledgebase } from "../vcrp/knowledgebase.js";
+import { buildAnimeMode } from "../vcrp/anime.js";
 
 export function buildBaseDict(isTokenCount = false) {
     const dict = {};
@@ -79,7 +81,7 @@ export function buildBaseDict(isTokenCount = false) {
     dict["[[AI1]]"] = "Understood."; // Default
     dict["[[AI2]]"] = "Understood."; // Default
 
-    if (localProfile.personality === "megumin") {
+    if (localProfile.personality === "rebel") {
         dict["[[AI1]]"] = "Fine i read the rules.";
         dict["[[AI2]]"] = "OK i Understnd it.";
     }
@@ -318,6 +320,16 @@ export function buildBaseDict(isTokenCount = false) {
     if (effort !== "unspecified" && dict["[[COT]]"]) {
         let words = effort === "custom" ? (localProfile.customThinkEffort || "100") : effort;
         dict["[[COT]]"] = `Your Thinking must not be more than ${words} words.\n\n` + dict["[[COT]]"];
+    }
+
+    // VCRP: Knowledgebase and Anime mode. Each adds its block, plus a one-sentence
+    // reminder to the CoT (a sentence, not a checklist: the V10 CoTs forbid checklists).
+    const vcrpKb = buildKnowledgebase(localProfile);
+    const vcrpAnime = buildAnimeMode(localProfile);
+    dict["[[knowledgebase]]"] = vcrpKb.block;
+    dict["[[ANIMEMODE]]"] = vcrpAnime.block;
+    if (dict["[[COT]]"]) {
+        [vcrpKb.cotNote, vcrpAnime.cotNote].filter(Boolean).forEach(note => { dict["[[COT]]"] += `\n\n${note}`; });
     }
 
     // [[THINK]] macro.

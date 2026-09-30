@@ -92,7 +92,7 @@ export function npcDecorateUpdatePane(paneEl, msgIndex) {
                     done.alsoDropped > 0
                         ? `${done.label} restored. ${done.alsoDropped} later change${done.alsoDropped === 1 ? "" : "s"} to the same field went with it.`
                         : `${done.label} restored.`,
-                    `Megumin Suite — ${done.npc}`
+                    `VCRP — ${done.npc}`
                 );
             }
             refresh();
@@ -106,7 +106,7 @@ export function npcDecorateUpdatePane(paneEl, msgIndex) {
             // Newest first, so undoing one never has to drop another in this set.
             [...entries].reverse().forEach(h => npcUndoHistoryEntry(h.id));
             if (typeof toastr !== "undefined") {
-                toastr.info(`${entries.length} changes from this reply were undone.`, "Megumin Suite");
+                toastr.info(`${entries.length} changes from this reply were undone.`, "VCRP");
             }
             refresh();
         });

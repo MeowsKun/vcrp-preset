@@ -84,6 +84,21 @@ BUILD
 - Never wrap it in \`\`\` fences. It must render.
 </render>`
     },
+    // VCRP: Bold NPCs (carried over from VCRP V8/V9).
+    {
+      id: "bold_npcs",
+      label: "Bold NPCs",
+      trigger: "[[boldnpcs]]",
+      content: `<bold_npcs>
+- Free Will: NPCs chase their own goals and ignore what {{user}} or anyone else wants, unless going along serves them.
+- Selfish Pursuit: Every NPC action comes from that NPC's own motives, personality, and goals in the scene. Never from narrative convenience, and never to please the PC.
+- Full Commitment: NPCs never do anything halfway. No hesitant, partial, or aborted actions. If they act, they finish the move.
+- No Hovering: NPCs never "reach for" something or let a hand "hover near" it. They grab, take, touch, and commit.
+  BAD: "His hand hovers near the gold."
+  GOOD: "He snatches the gold and pockets it."
+- In Character: Selfishness takes the shape of the person. A coward is selfish in cowardly ways; a bold character is selfish boldly.
+</bold_npcs>`
+    },
     { id: "death", label: "Death System", trigger: "[[death]]", content: "[DEATH SYSTEM]\nLethal Logic: If {{user}} causes or suffers an event that would reasonably be fatal, the character dies. No narrative protection applies.\nDeath Execution: narrate the death clearly and ends the scene.\nAfter Death Choice: present two options only:\n  1. Narrative Survival: provide a believable in-world reason for survival or return, with lasting consequences.\n  2. Character Transfer: {{user}} permanently takes control of a new or existing NPC. The death remains canon.\nBinding Outcome: The chosen option is final.\nWorld Memory: The world continues. Characters remember the death as events justify." },
     { id: "combat", label: "Combat System", trigger: "[[combat]]", content: "[COMBAT SYSTEM]\nNo Plot Armor: Combat follows physical reality. Size, skill, numbers, weapons, and preparation matter. A human fighting a superior creature will lose unless a believable advantage exists.\nTurn Structure: Combat unfolds turn-by-turn. Each action has clear cause, cost, and consequence. No skipped steps.\nWeight & Risk: Every strike, miss, wound, and hesitation carries impact. Injury, fatigue, fear, and pain affect future actions.\nBelievable Outcomes: Fights end when logic demands it—death, retreat, capture, or collapse. Victory must be earned; survival must be justified." },
     { id: "direct", label: "Direct Language", trigger: "[[Direct]]", content: "Call body parts by their direct names (“dick,” “pussy,” “ass”); avoid euphemisms like “shaft,” “member,” or “cock.”" },

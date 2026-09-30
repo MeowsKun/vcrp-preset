@@ -14,8 +14,9 @@
 
 import { extension_settings } from "../../../../../extensions.js";
 import { saveSettingsDebounced } from "../../../../../../script.js";
+import { extensionName } from "../core/constants.js";
 
-const EXT_NAME = "Megumin-Suite";
+const EXT_NAME = extensionName;
 const SETTINGS_KEY = "presentBar";
 const WRAPPER_ID = "meg-pb-wrapper";
 const SCROLL_ID = "meg-pb-scroll";
@@ -90,7 +91,7 @@ function buildWrapperHtml() {
 function mountWrapper() {
     if (document.getElementById(WRAPPER_ID)) return;
     const cfg = settings();
-    const spCfg = extension_settings["Megumin-Suite"]?.sidePanel || {};
+    const spCfg = extension_settings[EXT_NAME]?.sidePanel || {};
     if (spCfg.enabled === false || cfg.position === "off") return;
 
     const $sendForm = window.jQuery ? window.jQuery("#send_form") : null;
@@ -198,7 +199,7 @@ function cardHtml(entry) {
 
 export function update() {
     const cfg = settings();
-    const spCfg = extension_settings["Megumin-Suite"]?.sidePanel || {};
+    const spCfg = extension_settings[EXT_NAME]?.sidePanel || {};
     const wrapper = document.getElementById(WRAPPER_ID);
     if (!wrapper) {
         // Mid-session enable: the bar was never mounted because one of the two

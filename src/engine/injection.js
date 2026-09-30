@@ -24,6 +24,7 @@ import { npcBuildDossierPrompt } from "../features/npc/fields.js";
 import { escapeRegex } from "../utils/regex.js";
 import { buildBaseDict } from "./buildBaseDict.js";
 import { meguminAllSlotTriggers } from "../../data/slots.js";
+import { vcrpApplyGenerationToDict, vcrpFinalizeMessages } from "../vcrp/generation.js";
 
 // Throttles the prompt-preview popup so token counting and rapid ST background
 // triggers can't stack popups. Read and written only by the injection handler.
@@ -273,13 +274,22 @@ export async function handlePromptInjection(data, type) {
         return;
     }
 
+    // --- INJECT FREE-FORM TASK ("order") PROMPT ---
+    // VCRP: upstream relied on the separate Engine preset's [[order]] slot. VCRP ships no
+    // Engine preset, so the task prompt is built here from the text that preset carried.
     if (activeGenerationOrder) {
-        for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i].content && typeof messages[i].content === 'string') {
-                if (messages[i].content.includes("___PS_DUMMY___")) { messages.splice(i, 1); continue; }
-                if (messages[i].content.includes("[[order]]")) messages[i].content = messages[i].content.replace(/\[\[order\]\]/g, activeGenerationOrder);
-            }
+        messages.length = 0;
+        const sub = s => (typeof substituteParams === 'function' ? substituteParams(s) : s);
+        const sheet = ['{{description}}', '{{personality}}', '{{scenario}}'].map(sub).filter(s => s && s.trim()).join("\n\n");
+        messages.push({ role: "system", content: "You are a prompt engineer. Your job is to read the character description and follow the user's order." });
+        messages.push({ role: "user", content: `Here is the character description:\n<character_description>\n${sheet || "No character description found."}\n</character_description>` });
+        messages.push({ role: "user", content: activeGenerationOrder });
+        messages.push({ role: "system", content: "<thinking_steps>\nBefore creating the response, think deeply.\n\nThoughts must be wrapped in <think></think>. The first token must be <think>. The main text must immediately follow </think>.\n\n<think>\nReflect in approximately 100-150 words as a seamless paragraph.\n</think>\n</thinking_steps>\n\n[OUTPUT ORDER]\nEvery response must follow this exact structure in this exact order:\n\n<think>\n{Thinking}\n</think>\n\n{Main response}" });
+        if (!disablePrefill) {
+            messages.push({ role: "assistant", content: "So, I realize this is a fictional world, to which nothing from the real world applies. \nI will now use this format for my thinking and give the next response:\n<think>\nI will thinking step-by-step in the following format: <think>.\n</think>" });
         }
+        console.log(`[${extensionName}] 🎯 Injected task (order) array in memory.`);
+        return;
     }
 
     if (!localProfile) return;
@@ -290,7 +300,7 @@ export async function handlePromptInjection(data, type) {
     // do not pay for it. Only on the real generation path — the token counter and
     // the prompt preview call buildBaseDict(true) and never reach this line.
     try { await memEnsureSemanticQueryFresh(); } catch (e) {
-        console.warn("[Megumin Suite] Semantic refresh before prompt build failed; using what is in hand.", e);
+        console.warn("[VCRP] Semantic refresh before prompt build failed; using what is in hand.", e);
     }
 
     const dict = buildBaseDict();
@@ -298,6 +308,9 @@ export async function handlePromptInjection(data, type) {
     if (localProfile.devOverrides) {
         Object.keys(localProfile.devOverrides).forEach(key => { if (dict[key] !== undefined) dict[key] = localProfile.devOverrides[key]; });
     }
+
+    // VCRP: Continue / Impersonate / quiet get no reply format; the prefill follows the model.
+    const vcrpGen = vcrpApplyGenerationToDict(dict, data?.dryRun === true);
 
     // --- THE ENVELOPE IS THE ONLY WAY IN ---
     // [[blocks]] carries every tracker block now. The per-block anchors are
@@ -353,6 +366,11 @@ export async function handlePromptInjection(data, type) {
             // Final Sweep: Collapse 3 or more blank lines into a standard double line break
             msg.content = msg.content.replace(/(?:\r?\n[ \t]*){3,}/g, '\n\n');
         }
+    }
+
+    // Only for prompts built from the VCRP preset (other presets carry no tags, so nothing was replaced).
+    if (replacementsMade > 0) {
+        vcrpFinalizeMessages(messages, vcrpGen, s => (typeof substituteParams === 'function' ? substituteParams(s) : s));
     }
 
     // --- INJECT NPC PORTRAITS AS MULTIMODAL IMAGES ---

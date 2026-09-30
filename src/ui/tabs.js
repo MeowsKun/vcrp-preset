@@ -24,6 +24,7 @@ import { renderImageGen } from "../features/imagegen/index.js";
 import { renderNpcBank } from "../features/npc/ui.js";
 import { renderMemoryCore } from "../features/memory/index.js";
 import { renderBlocksTab } from "../features/blocks/ui.js";
+import { renderKnowledgebase } from "../vcrp/knowledgebase.js";
 
 export const tabsUI = [
     { title: "PRESETS & COT", sub: "Choose the core preset and COT, and set the standing rules of the story.", icon: "fa-server", render: renderCoreAndCot },
@@ -36,6 +37,7 @@ export const tabsUI = [
     { title: "Image Generation", sub: "Wire up ComfyUI to auto-generate scene images during roleplay.", icon: "fa-image", render: renderImageGen },
     { title: "NPCs Bank", sub: "Automatically extract and track significant NPCs in the story.", icon: "fa-address-book", render: renderNpcBank },
     { title: "Memory Core", sub: "Advanced 3-Tier Context & History Management.", icon: "fa-memory", render: renderMemoryCore },
+    { title: "Knowledgebase", sub: "Core world rules, lore, and trope guidance the AI always remembers.", icon: "fa-book-open", render: renderKnowledgebase },
     { title: "Side Panel", sub: "Pop the tracker blocks out of the chat into a fixed side panel.", icon: "fa-table-columns", render: renderSidePanelTab },
     { title: "Global Settings", sub: "Extension preferences and about info.", icon: "fa-gear", render: renderGlobalSettings }
 ];
@@ -107,11 +109,11 @@ export function toggleTabGlobalSync() {
     if (!title) return;
 
     if (TABS_ALREADY_GLOBAL.includes(title)) {
-        toastr.info(`${title} is stored globally already — it is the same on every character.`, "Megumin Suite");
+        toastr.info(`${title} is stored globally already — it is the same on every character.`, "VCRP");
         return;
     }
     if (!TAB_SYNC_KEYS[title]) {
-        toastr.info("This tab has nothing to sync.", "Megumin Suite");
+        toastr.info("This tab has nothing to sync.", "VCRP");
         return;
     }
 
@@ -125,13 +127,13 @@ export function toggleTabGlobalSync() {
         if (!ok) {
             map[title] = false;
             saveSettingsDebounced();
-            toastr.warning("The panel is still showing the previous chat's settings. Reopen it and try again.", "Megumin Suite");
+            toastr.warning("The panel is still showing the previous chat's settings. Reopen it and try again.", "VCRP");
             updateGlobalSyncButton();
             return;
         }
-        toastr.success(`${title} now applies to every character. Changes here follow automatically.`, "Megumin Suite");
+        toastr.success(`${title} now applies to every character. Changes here follow automatically.`, "VCRP");
     } else {
-        toastr.info(`${title} is back to per-character.`, "Megumin Suite");
+        toastr.info(`${title} is back to per-character.`, "VCRP");
     }
 
     updateGlobalSyncButton();

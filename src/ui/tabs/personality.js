@@ -69,7 +69,7 @@ export function renderPersonality(c) {
         `);
     } else {
         const descriptions = {
-            "megumin": "A rebellious, dominant voice. Adds an edge of arrogance and chaos to the narration. Best for energetic or confrontational stories.",
+            "rebel": "A rebellious, dominant voice. Adds an edge of arrogance and chaos to the narration. Best for energetic or confrontational stories.",
             "director": "Professional narrator. Clean, authoritative story direction with cinematic awareness.",
             "Nora": "Nora should i say more.",
             "engine": "No personality overlay at all. The engine speaks in its purest form — precise, neutral, and fully under your control. Recommended for most setups."

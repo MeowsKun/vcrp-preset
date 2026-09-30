@@ -43,7 +43,8 @@ export function renderGlobalAndBlocks(c) {
         "dn": "Forces dialogue and narration to be wrapped in their respective XML tags. Useful for specific Models for better narration style adherence. <b>Not recommended on V10</b> — the tags fight that engine's own prose rules.",
         "html": "When a character reads something — a phone screen, a letter, a sign — the AI draws the thing itself as HTML instead of describing it. Rare by design: one per reply at most, and most replies have none.",
         "dice_all": "Same d20 system, but everyone rolls — NPCs included. Any character who tries something that can fail gets a roll, all of them listed before the reply. Use this OR Dice, not both.",
-        "dice": "A d20 decides whether risky attempts land. The AI rolls before it writes the scene, so the story follows the die rather than the die following the story. The roll gets its own tab on the block card."
+        "dice": "A d20 decides whether risky attempts land. The AI rolls before it writes the scene, so the story follows the die rather than the die following the story. The roll gets its own tab on the block card.",
+        "bold_npcs": "NPCs chase their own goals, never hover or act halfway, and never bend just to please you. Can clash with the V10 engines' subtler rules and with Enhanced Dialogue, so try it before keeping it on."
     };
 
     // Only MVU is left in this tab's Output Formats section, so only MVU needs a line

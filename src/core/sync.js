@@ -24,14 +24,15 @@ export const TAB_SYNC_KEYS = {
     // setting that failed to write looks like to the reader.
     "PRESETS & COT": ["mode", "model", "cotEnabled", "thinkEffort", "customThinkEffort", "thinkingV2", "storyConfig", "enhancedDialogue"],
     "Persona": ["personality", "toggles"],
-    "Writing Style": ["activeStyleId", "aiRule", "customStyles", "dnRatio"],
+    "Writing Style": ["activeStyleId", "aiRule", "customStyles", "dnRatio", "animeMode"],
     "Global Toggles & Add Ons": ["addons", "blocks", "userLanguage", "userPronouns", "onomatopoeia", "v9Limits"],
     "BLOCKS": ["blockStack", "statBlocks", "blocks"],
     "Story Director": ["storyPlan"],
     "Dynamic Ban List": ["banList", "banListBackend", "banListCustomPromptsEnabled", "banListCustomPrompts"],
     "Image Generation": ["imageGen"],
     "NPCs Bank": ["npcBank"],
-    "Memory Core": ["memoryCore"]
+    "Memory Core": ["memoryCore"],
+    "Knowledgebase": ["knowledgebase"]
 };
 
 // These two are stored globally already, so there is nothing per-character to keep
@@ -107,7 +108,7 @@ export function applyTabKeysToAllProfiles(title) {
     // nothing to recover from. Runs in one tick, so one check at the top covers it.
     const liveKey = getCharacterKey() || "default";
     if (_loadedProfileKey && liveKey !== _loadedProfileKey) {
-        console.debug(`[Megumin-Suite] Global tab sync declined: the settings on screen belong to "${_loadedProfileKey}" but the active chat is now "${liveKey}". Nothing was broadcast.`);
+        console.debug(`[VCRP] Global tab sync declined: the settings on screen belong to "${_loadedProfileKey}" but the active chat is now "${liveKey}". Nothing was broadcast.`);
         return false;
     }
 
@@ -160,7 +161,7 @@ export function syncPromptsGlobally(moduleName, dataKey, dataValue) {
     // single synchronous UI edit, so checking once on entry covers the whole broadcast.
     const liveKey = getCharacterKey() || "default";
     if (_loadedProfileKey && liveKey !== _loadedProfileKey) {
-        console.debug(`[Megumin-Suite] Global prompt sync of ${moduleName}.${dataKey} declined: the value came from "${_loadedProfileKey}" but the active chat is now "${liveKey}". No profiles were changed.`);
+        console.debug(`[VCRP] Global prompt sync of ${moduleName}.${dataKey} declined: the value came from "${_loadedProfileKey}" but the active chat is now "${liveKey}". No profiles were changed.`);
         return;
     }
     // This is the write path that made settings.json grow: one edited prompt block fans

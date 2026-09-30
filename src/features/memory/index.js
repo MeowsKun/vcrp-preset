@@ -184,11 +184,10 @@ export function renderMemoryCore(c) {
                 <div class="mtab-setting-row" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 14px;">
                     <div class="set-info">
                         <div class="set-label">Generator Backend</div>
-                        <div class="set-desc">Bypass standard preset configs for fast direct API calls, or use defined Megumin engine settings for character-style summaries.</div>
+                        <div class="set-desc">Summaries are generated with a direct API call using your current connection.</div>
                     </div>
                     <select id="mem_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
                         <option value="direct" ${mem.backend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                        <option value="preset" ${mem.backend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
                     </select>
                 </div>
                 <div class="mtab-setting-row" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 14px;">
@@ -394,7 +393,7 @@ export function renderMemoryCore(c) {
             $("#mem_header_badge").css({ background: 'rgba(16,185,129,0.12)', color: '#10b981', 'border-color': 'rgba(16,185,129,0.25)' }).html(`<i class="fa-solid fa-circle-check" style="font-size:0.6rem;"></i> Enabled`);
             
             if (isFirstEnable) {
-                toastr.success("Memory Core activated! Auto-archiving on every reply.", "Megumin Suite");
+                toastr.success("Memory Core activated! Auto-archiving on every reply.", "VCRP");
                 // Re-render to update the dropdowns and settings values in the UI
                 setTimeout(() => renderMemoryCore(c), 200);
             } else {
@@ -454,7 +453,7 @@ export function renderMemoryCore(c) {
             // reading of it — say plainly that there was nothing to index.
             const count = (mem.longTermVault || []).length;
             if (count === 0) {
-                toastr.info("Semantic mode is on, but the vault is empty — nothing to index yet.", "Megumin Suite");
+                toastr.info("Semantic mode is on, but the vault is empty — nothing to index yet.", "VCRP");
                 return;
             }
             toastr.info("Semantic Mode active. Syncing vault to Vector Database...");
@@ -975,7 +974,7 @@ export async function memProcessPendingChunks(isAuto = false) {
 
         for (let idx = 0; idx < totalChunks; idx++) {
             if (runIdentityLost()) {
-                console.debug(`[Megumin-Suite] memProcessPendingChunks stopped at chunk ${idx + 1}/${totalChunks}: the profile this run started on ("${runIdentity}") is no longer the active one ("${meguminActiveDataIdentity()}"). Nothing was saved; run the archive again on the chat you want.`);
+                console.debug(`[VCRP] memProcessPendingChunks stopped at chunk ${idx + 1}/${totalChunks}: the profile this run started on ("${runIdentity}") is no longer the active one ("${meguminActiveDataIdentity()}"). Nothing was saved; run the archive again on the chat you want.`);
                 return;
             }
 
@@ -1048,7 +1047,7 @@ export async function memProcessPendingChunks(isAuto = false) {
             // The last chunk's await can still have crossed a chat switch after the
             // loop's own check, so the final save is guarded too.
             if (runIdentityLost()) {
-                console.debug(`[Megumin-Suite] memProcessPendingChunks declined its final save: the run belonged to "${runIdentity}" but "${meguminActiveDataIdentity()}" is active now. The finished summaries were dropped rather than written into the wrong chat.`);
+                console.debug(`[VCRP] memProcessPendingChunks declined its final save: the run belonged to "${runIdentity}" but "${meguminActiveDataIdentity()}" is active now. The finished summaries were dropped rather than written into the wrong chat.`);
                 return;
             }
 
@@ -1096,7 +1095,7 @@ export async function memProcessPendingChunks(isAuto = false) {
         // Fix 4 removed the in-loop saves and the end-of-run save is unreachable from
         // here, so without this every chunk finished before the failure is lost.
         if (changesMade && runIdentityLost()) {
-            console.debug(`[Megumin-Suite] memProcessPendingChunks declined its error-path save: the run belonged to "${runIdentity}" but "${meguminActiveDataIdentity()}" is active now. The partial results were dropped rather than written into the wrong chat.`);
+            console.debug(`[VCRP] memProcessPendingChunks declined its error-path save: the run belonged to "${runIdentity}" but "${meguminActiveDataIdentity()}" is active now. The partial results were dropped rather than written into the wrong chat.`);
         } else if (changesMade) {
             delete mem._archivedSet;
             mem._tokensDirty = true;
@@ -1123,7 +1122,7 @@ export function memRunVaultMigration() {
     // async and can outlive this function.
     const runIdentity = meguminActiveDataIdentity();
     if (_loadedProfileKey && (getCharacterKey() || "default") !== _loadedProfileKey) {
-        console.debug(`[Megumin-Suite] memRunVaultMigration declined: the profile in memory belongs to "${_loadedProfileKey}" but the active chat is now "${getCharacterKey() || "default"}". No chunks were migrated.`);
+        console.debug(`[VCRP] memRunVaultMigration declined: the profile in memory belongs to "${_loadedProfileKey}" but the active chat is now "${getCharacterKey() || "default"}". No chunks were migrated.`);
         return;
     }
 
@@ -1321,7 +1320,7 @@ export function memScrubOverlappingArchives({ notify = false } = {}) {
     // are exactly the orphans that resurface if the engine is switched again.
     if (removedVaultIds.length > 0) {
         Promise.resolve(memDeleteFromVectorDB(removedVaultIds)).catch(e =>
-            console.error("[Megumin Suite] Vector cleanup after rebalance failed:", e));
+            console.error("[VCRP] Vector cleanup after rebalance failed:", e));
     }
 
     if (changesMade) {
@@ -1330,7 +1329,7 @@ export function memScrubOverlappingArchives({ notify = false } = {}) {
         if (notify) {
             toastr.info(
                 `${removedCount} archived block${removedCount === 1 ? "" : "s"} returned to the chat.`,
-                "Megumin Suite — working set rebalanced"
+                "VCRP — working set rebalanced"
             );
         }
     }
@@ -1419,7 +1418,7 @@ export function memGetRelevantVaultEntries() {
             : "the vector store returned no matches (it may be empty, still indexing, or unreachable)";
         if (_lastSemanticFallbackReason !== why) {
             _lastSemanticFallbackReason = why;
-            console.warn(`[Megumin Suite] Semantic search is selected but ${why}. Falling back to keyword (TF-IDF) matching. Re-index from Memory Core → Scanner Engine if this is unexpected.`);
+            console.warn(`[VCRP] Semantic search is selected but ${why}. Falling back to keyword (TF-IDF) matching. Re-index from Memory Core → Scanner Engine if this is unexpected.`);
         }
     } else {
         _lastSemanticFallbackReason = null;
@@ -1551,7 +1550,7 @@ function memRealIndexMap(chat, context) {
 }
 
 // Rule A: The Prompt Interceptor (STRICT)
-window.megumin_memory_intercept = function (chat, _contextSize, _abort, type) {
+window.vcrp_memory_intercept = function (chat, _contextSize, _abort, type) {
     const mem = localProfile?.memoryCore;
     if (!mem?.enabled) return;
 

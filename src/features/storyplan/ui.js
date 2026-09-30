@@ -253,7 +253,6 @@ export function renderStoryPlanner(c) {
                     <div class="set-info"><div class="set-label">Generation Backend</div></div>
                     <select id="sd_backend" class="ps-modern-input" style="width: 220px; cursor: pointer;">
                         <option value="direct" ${sp.backend === 'direct' ? 'selected' : ''}>Direct API Call (Fast)</option>
-                        <option value="preset" ${sp.backend === 'preset' ? 'selected' : ''}>Megumin Engine Preset</option>
                     </select>
                 </div>
                 <div class="mtab-setting-row">
@@ -455,7 +454,7 @@ export async function handleDirectiveGeneration(sp, btn, isEvolve) {
             // Writing now would put this chat's directive into the old one, and
             // planMessageIndex would be counted against the wrong chat's length.
             if (meguminActiveDataIdentity() !== sdIdentity) {
-                console.debug(`[Megumin-Suite] Story Director ${isEvolve ? 'evolve' : 'generate'} declined: it started on "${sdIdentity}" but "${meguminActiveDataIdentity()}" is active now. The new directive was discarded, not applied.`);
+                console.debug(`[VCRP] Story Director ${isEvolve ? 'evolve' : 'generate'} declined: it started on "${sdIdentity}" but "${meguminActiveDataIdentity()}" is active now. The new directive was discarded, not applied.`);
                 toastr.info("Chat changed while the directive was generating. It was discarded.", "Story Director");
                 return;
             }
@@ -474,7 +473,7 @@ export async function handleDirectiveGeneration(sp, btn, isEvolve) {
         }
     } catch (e) {
         toastr.error("Failed to generate directive.");
-        console.error("[Megumin Suite] Story Director error:", e);
+        console.error("[VCRP] Story Director error:", e);
     } finally {
         btn.prop("disabled", false).html(originalHtml);
     }

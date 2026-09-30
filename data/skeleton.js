@@ -15,10 +15,10 @@
 // character description). We neither own nor fill those, so the editor renders
 // them greyed out as fixed landmarks.
 //
-// Source: Megumin Suite V10 Universal.json
+// Source: VCRP V10 Universal.json
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const SKELETON_SOURCE = "Megumin Suite V10 Universal.json";
+export const SKELETON_SOURCE = "VCRP V10 Universal.json";
 
 export const SKELETON = [
     {"id": "main", "name": "Main Prompt", "role": "system", "marker": false, "enabled": true, "content": "[[prompt1]] [[main]] [[prompt2]]\n[[pronouns]]\n[[control]]\n[[OOC]]\n\n[[prompt3]]"},

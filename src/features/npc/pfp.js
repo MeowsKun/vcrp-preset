@@ -71,7 +71,7 @@ export async function npcGeneratePfp(npcName) {
         return null;
     }
 
-    console.log(`[Megumin-Suite] NPC PFP prompt for ${npcName}: ${promptText}`);
+    console.log(`[VCRP] NPC PFP prompt for ${npcName}: ${promptText}`);
     
     // --- ALWAYS ON PROMPT PREVIEW / EDIT FOR NPC PORTRAITS ---
     $("#kazuma_progress_overlay").hide(); // Hide progress bar temporarily
@@ -180,7 +180,7 @@ export async function npcGeneratePfp(npcName) {
                             // portrait would vanish with it, and renderNpcList() would
                             // repaint the panel with the wrong chat's bank.
                             if (meguminActiveDataIdentity() !== pfpIdentity) {
-                                console.debug(`[Megumin-Suite] NPC portrait declined: it was generated for "${pfpIdentity}" but "${meguminActiveDataIdentity()}" is active now. The image was dropped rather than attached to a stale NPC record.`);
+                                console.debug(`[VCRP] NPC portrait declined: it was generated for "${pfpIdentity}" but "${meguminActiveDataIdentity()}" is active now. The image was dropped rather than attached to a stale NPC record.`);
                                 $("#kazuma_progress_overlay").hide();
                                 resolve(null);
                                 return;

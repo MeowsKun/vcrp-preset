@@ -129,6 +129,7 @@ import {
 } from "./src/features/imagegen/index.js";
 import { buildBaseDict } from "./src/engine/buildBaseDict.js";
 import { handlePromptInjection } from "./src/engine/injection.js";
+import { vcrpSetGenerationType } from "./src/vcrp/generation.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
 import { initDraggableButton, updateCharacterDisplay, discoverDefaultImages } from "./src/ui/launcher.js";
 import { tabsUI, switchTab, updateGlobalSyncButton, toggleTabGlobalSync } from "./src/ui/tabs.js";
@@ -411,6 +412,8 @@ jQuery(async () => {
                 meguminCompactStoredPrompts();
                 discoverDefaultImages();
             });
+            // VCRP: remember whether this is a reply, Continue, Impersonate or a quiet call.
+            eventSource.on(event_types.GENERATION_STARTED, vcrpSetGenerationType);
             eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, handlePromptInjection);
             eventSource.on(event_types.CHAT_CHANGED, () => {
                 // A save debounced at 500ms would die when initProfile swaps localProfile
@@ -480,7 +483,7 @@ jQuery(async () => {
                                 // would show narration and none of the block that failed to parse.
                                 const trackerMes = lastMsg.mes || "";
                                 const trackerAt = Math.max(0, trackerMes.search(/<Story_Tracker/i));
-                                console.debug(`[Megumin-Suite] <Story_Tracker> block present but unparseable in message ${lastIndex}`, trackerMes.slice(trackerAt, trackerAt + 200));
+                                console.debug(`[VCRP] <Story_Tracker> block present but unparseable in message ${lastIndex}`, trackerMes.slice(trackerAt, trackerAt + 200));
                             }
 
                             // 2. Frequency-based Trigger Fallback (ONLY if set to frequency)
@@ -501,7 +504,7 @@ jQuery(async () => {
                                     // new chat's story into the old chat's plan. Checked here
                                     // as well so a switch during the 2s wait costs no call.
                                     if (meguminActiveDataIdentity() !== spIdentity) {
-                                        console.debug(`[Megumin-Suite] Story Director auto-evolve skipped: it was queued for "${spIdentity}" but "${meguminActiveDataIdentity()}" is active now.`);
+                                        console.debug(`[VCRP] Story Director auto-evolve skipped: it was queued for "${spIdentity}" but "${meguminActiveDataIdentity()}" is active now.`);
                                         return;
                                     }
                                     const chatText = getChatForStoryDirector();
@@ -509,7 +512,7 @@ jQuery(async () => {
                                     try {
                                         let output = sp.backend === "direct" ? await generateStoryPlanLogic(chatText) : await new Promise(r => useMeguminEngine(async () => r(await generateStoryPlanLogic(chatText))));
                                         if (meguminActiveDataIdentity() !== spIdentity) {
-                                            console.debug(`[Megumin-Suite] Story Director auto-evolve declined: the chat changed while the directive was generating ("${spIdentity}" to "${meguminActiveDataIdentity()}"). The new directive was discarded, not applied.`);
+                                            console.debug(`[VCRP] Story Director auto-evolve declined: the chat changed while the directive was generating ("${spIdentity}" to "${meguminActiveDataIdentity()}"). The new directive was discarded, not applied.`);
                                             return;
                                         }
                                         const directiveMatch = output?.match(/<directive>([\s\S]*?)<\/directive>/i) || output?.match(/<plot>([\s\S]*?)<\/plot>/i);
@@ -523,7 +526,7 @@ jQuery(async () => {
                                             }
                                             toastr.success("Narrative Directive Evolved silently!", "Story Director");
                                         }
-                                    } catch (e) { console.error("[Megumin Suite] Story Director auto-evolve failed", e); }
+                                    } catch (e) { console.error("[VCRP] Story Director auto-evolve failed", e); }
                                 }, 2000); // Delay to let UI settle
                             }
                         }
@@ -555,7 +558,7 @@ jQuery(async () => {
                         }
 
                         if (hasWork) {
-                            toastr.info("Background Memory Scan Triggered...", "Megumin Suite");
+                            toastr.info("Background Memory Scan Triggered...", "VCRP");
                             // We run it after a small delay so ST finishes saving the chat first
                             setTimeout(async () => {
                                 await memProcessPendingChunks(true);
@@ -577,7 +580,7 @@ jQuery(async () => {
                 // and ride along on the next legitimate save.
                 const npcLiveKey = getCharacterKey() || "default";
                 if (npcBank && npcBank.enabled && _loadedProfileKey && npcLiveKey !== _loadedProfileKey) {
-                    console.debug(`[Megumin-Suite] NPC auto-extract declined: the NPC bank in memory belongs to "${_loadedProfileKey}" but this message arrived in "${npcLiveKey}". No NPCs were added, so none land in the wrong chat's bank.`);
+                    console.debug(`[VCRP] NPC auto-extract declined: the NPC bank in memory belongs to "${_loadedProfileKey}" but this message arrived in "${npcLiveKey}". No NPCs were added, so none land in the wrong chat's bank.`);
                 } else if (npcBank && npcBank.enabled) {
                     const chat = getContext().chat;
                     if (chat && chat.length) {
@@ -599,7 +602,7 @@ jQuery(async () => {
                                         messageIndex: chat.length - 1
                                     }));
                                     added = true;
-                                    toastr.success(`NPC added to Bank: ${npcName}`, "Megumin Suite");
+                                    toastr.success(`NPC added to Bank: ${npcName}`, "VCRP");
                                     if ($("#npc_bank_list").length) renderNpcList();
                                 }
                             }
@@ -615,14 +618,14 @@ jQuery(async () => {
                                     const who = [...new Set(applied.map(e => e.npc))].join(", ");
                                     toastr.info(
                                         applied.map(e => `${e.label}: ${e.op === "+" ? "added" : e.op === "-" ? "removed" : "replaced"}`).join(" · "),
-                                        `Megumin Suite — ${who} updated`
+                                        `VCRP — ${who} updated`
                                     );
                                 }
                                 // Refusals are the model going outside the field
                                 // list it was given. Not worth a toast, but a
                                 // silent drop is how a broken update block stays
                                 // broken for weeks.
-                                refused.forEach(r => console.debug(`[Megumin-Suite] NPC update declined for "${r.name}": ${r.reason}.`));
+                                refused.forEach(r => console.debug(`[VCRP] NPC update declined for "${r.name}": ${r.reason}.`));
                             }
 
                             if (added) saveProfileToMemory();
@@ -631,7 +634,7 @@ jQuery(async () => {
                                 // line shows the dossier that failed to parse rather than prose.
                                 const npcMes = lastMsg.mes || "";
                                 const npcAt = Math.max(0, npcMes.search(/New[ _]NPC/i));
-                                console.debug(`[Megumin-Suite] New NPC block present but unparseable in message ${chat.length - 1}`, npcMes.slice(npcAt, npcAt + 200));
+                                console.debug(`[VCRP] New NPC block present but unparseable in message ${chat.length - 1}`, npcMes.slice(npcAt, npcAt + 200));
                             }
                         }
                     }
@@ -748,7 +751,7 @@ jQuery(async () => {
                     if (ogExt && extension_settings.image_generation) extension_settings.image_generation.overswipe = ogExt;
                 }, 200);
 
-                toastr.info("Regenerating Image...", "Megumin Suite");
+                toastr.info("Regenerating Image...", "VCRP");
                 await igGenerateWithComfy(mediaObj.title, { message: message, element: $(element) });
             };
 

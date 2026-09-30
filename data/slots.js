@@ -86,7 +86,7 @@ function meguminModeById(id) {
     if (found) return found;
     try {
         const store = globalThis.extension_settings || {};
-        const bucket = store["Megumin-Suite"] || store["Megumin-Suite-Beta"] || {};
+        const bucket = store["VCRP"] || store["Megumin-Suite"] || store["Megumin-Suite-Beta"] || {};
         return (bucket.customModes || []).find(m => m.id === id) || null;
     } catch { return null; }
 }
@@ -160,6 +160,9 @@ export const MEGUMIN_SLOT_REGISTRY = [
       gate: GATE.notCoWriter,
       hint: "Sent on every engine except the Co-writer variants, which are built to write {{user}}. It lands as item 4 of the preset's final reminder list, so keep it written as a numbered line.",
       fallback: () => "4. NEVER write for or Control {{user}}" },
+    { key: "boldnpcs", trigger: "[[boldnpcs]]", label: "Bold NPCs", scope: "shared", group: "systems",
+      gate: GATE.addon("bold_npcs"), hint: "VCRP: NPCs chase their own goals and never act halfway.",
+      fallback: () => addonText("bold_npcs") },
     { key: "direct", trigger: "[[Direct]]", label: "Direct Language", scope: "shared", group: "systems",
       gate: GATE.addon("direct"), hint: "Blunt anatomical wording instead of euphemism.",
       fallback: () => addonText("direct") },
@@ -235,6 +238,10 @@ export const MEGUMIN_SLOT_REGISTRY = [
     { key: null, trigger: "[[aiprompt]]", label: "Narration Style", scope: "auto", group: "live",
       where: "Writing Style",
       hint: "Your writing style, wrapped differently depending on the engine generation." },
+    { key: null, trigger: "[[knowledgebase]]", label: "Knowledgebase", scope: "auto", group: "live", where: "Knowledgebase",
+      hint: "VCRP: the active knowledgebase entries for this turn." },
+    { key: null, trigger: "[[ANIMEMODE]]", label: "Anime Mode", scope: "auto", group: "live", where: "Writing Style",
+      hint: "VCRP: the anime/manga style rules, when Anime Mode is on." },
     { key: null, trigger: "[[OOC]]", label: "OOC Protocol", scope: "auto", group: "live", where: "Global",
       hint: "Out-of-character directives. Blanked on V8 and V9." },
     { key: null, trigger: "[[control]]", label: "Control Protocol", scope: "auto", group: "live", where: "Global",
