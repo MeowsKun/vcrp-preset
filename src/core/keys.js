@@ -8,24 +8,17 @@
 import { getContext, extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "./constants.js";
 
-// The memory feature supplies the vector-collection half of the data identity.
-// It is registered rather than imported because memory still lives in index.js;
-// once it becomes a module this hook goes away and the import goes back to being
-// a plain one. Registering keeps the original `typeof` guard honest — dropping the
-// call entirely would have silently turned every identity into "...|none".
-let _collectionIdProvider = null;
-export function setCollectionIdProvider(fn) { _collectionIdProvider = fn; }
-
 // One string naming both halves of "which chat is this data for": the profile key a
-// save would write under, and the vector collection the memory helpers insert into.
+// save would write under, and the chat itself (a character-level profile is shared by
+// every chat of that character, so the key alone can't tell two of its chats apart).
 // Work that spans an await (an LLM call, a setTimeout, a batch loop) captures this
 // once at the start and re-checks it before every write, so nothing lands in a chat
 // the user switched to mid-run. Both halves fall back to a fixed string so a plain
 // "not ready yet" reads as one identity rather than as constant churn.
 export function meguminActiveDataIdentity() {
     const key = getCharacterKey() || "default";
-    const collection = (typeof _collectionIdProvider === "function" ? _collectionIdProvider() : null) || "none";
-    return key + "|" + collection;
+    const context = getContext();
+    return key + "|" + ((context && context.chatId) || "none");
 }
 
 export function getCharacterKey() {

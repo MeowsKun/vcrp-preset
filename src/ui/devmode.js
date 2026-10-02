@@ -26,7 +26,7 @@
 // two slots at all. They remain fully selectable and unchanged in the PRESETS
 // tab — see devLegacy in data/modes/legacy.js.
 //
-// One file rather than a folder for the reason memory/index.js is one file:
+// One file rather than a folder:
 // every view needs the editing session and needs to redraw the whole screen, so
 // a split produces modules importing each other plus a context object threaded
 // through all of them. Same coupling, more to read.
@@ -52,35 +52,6 @@ import {
 import { escapeHtmlAttr } from "../utils/html.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : String(s));
-
-// ── Which preset is actually running ────────────────────────────────────────
-//
-// data/skeleton.js is generated from the STANDARD preset, so the Document view
-// draws that card order. The Cache Friendly variant moves several tags down
-// into "Output RULES" so the prompt prefix stays byte-stable across turns and
-// the provider can serve it from cache. Nothing at the reader's end can
-// generate a skeleton for that layout -- gen-skeleton.py is a build tool and
-// does not ship -- so the document is allowed to keep drawing the standard
-// order. It just has to say so rather than let the reader assume.
-//
-// Matched on the VARIANT, not the version. "Megumin Suite V11 Cache Friendly"
-// has to work the day it ships without an edit here, and the version number is
-// the part that churns.
-//
-// A miss costs nothing: no banner, which is exactly the behaviour before this
-// existed. A false positive would be the harmful direction, and "cache
-// friendly" is specific enough that it will not fire by accident.
-//
-// Read off the same selector tasks.js switches presets with.
-const CACHE_FRIENDLY_RE = /cache[\s_-]?friendly/i;
-
-function isCacheFriendlyPreset() {
-    try {
-        return CACHE_FRIENDLY_RE.test($("#settings_preset_openai option:selected").text().trim());
-    } catch (e) {
-        return false;
-    }
-}
 
 // ── The editing session ─────────────────────────────────────────────────────
 //
@@ -490,16 +461,6 @@ function renderLanding(c) {
     session.expanded.clear();
     $("#ps_stage_sub").text("Change what the AI is told, and see exactly where each piece lands.");
 
-    if (isCacheFriendlyPreset()) {
-        c.append(`
-            <div class="dev-note dev-note-warn">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span><b>You're running a Cache Friendly preset.</b> The Engines document shows the
-                standard card order. Several tags sit further down in Output RULES in this preset.
-                Don't worry &mdash; editing works exactly the same.</span>
-            </div>
-        `);
-    }
 
     const changed = meguminAddonSlots().filter(s => getSharedFragment(s.key).trim() !== "").length;
     const engines = (extension_settings[extensionName].customModes || []).length;
@@ -621,21 +582,6 @@ function renderAddonEditor(c, key) {
 
     $right.append(`<div class="dev-side-head"><i class="fa-solid fa-location-dot"></i> Where this goes</div>`);
     $right.append(`<div class="dev-side-text">${describePlacement(slot)}</div>`);
-    if (isCacheFriendlyPreset()) {
-        // Provenance, not an alert: this says where the MAP comes from, and does
-        // not claim this particular slot is one of the ones that moved. Only
-        // [[dice]] actually relocates among the add-ons, and there is no shipped
-        // skeleton for the Cache Friendly layout to check a slot against -- so a
-        // per-slot claim would either need a hand-written list or would cry wolf
-        // on a dozen slots whose position is perfectly correct.
-        $right.append(`
-            <div class="dev-note dev-note-auto">
-                <i class="fa-solid fa-circle-info"></i>
-                <span>Positions shown come from the standard preset. On Cache Friendly a few tags
-                sit further down, in Output RULES.</span>
-            </div>
-        `);
-    }
     $right.append(renderPlacementMap(slot));
 
     $cols.append($left, $right);
@@ -825,16 +771,6 @@ function renderEngineSlot(slot, modeData, rerender) {
 function renderEngineDocument(c, modeData, rerender) {
     const $doc = $(`<div class="dev-doc"></div>`);
 
-    if (isCacheFriendlyPreset()) {
-        $doc.append(`
-            <div class="dev-note dev-note-warn">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span><b>You're running a Cache Friendly preset.</b> The layout below shows the
-                standard card order. Several tags sit further down in Output RULES in this preset.
-                Don't worry &mdash; editing works exactly the same.</span>
-            </div>
-        `);
-    }
     const drawn = new Set();
 
     SKELETON.forEach(card => {

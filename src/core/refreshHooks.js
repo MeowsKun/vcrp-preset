@@ -57,21 +57,9 @@ export function fireRefreshHooks(...names) {
 // either end is visible next to its counterpart rather than silently doing
 // nothing forever.
 export const REFRESH = {
+    // Story Memory dims the chat messages its cut has taken out of the prompt.
     MEMORY_VISUALS: "memory:visuals",
-    MEMORY_DASHBOARD: "memory:dashboard",
-    MEMORY_ACCORDION: "memory:accordion",
-    MEMORY_VAULT: "memory:vault",
     NPC_LIST: "npc:list",
-
-    // Not a redraw: tells the Memory Core its vault-retrieval cache no longer
-    // matches the data behind it, after a prune has removed entries.
-    MEMORY_CACHE_INVALIDATE: "memory:invalidateVaultCache",
-
-    // Rewinding the chat moves the working window back over messages that were
-    // already archived, leaving them both dimmed and stripped from the prompt.
-    // This asks the Memory Core to hand those back. Unlike the others it RETURNS
-    // a value — true when it removed archives — so the prune knows to save.
-    MEMORY_SCRUB_OVERLAPS: "memory:scrubOverlappingArchives",
 
     // Redraws the token counter in the settings footer. It lives outside
     // profile.js because counting tokens means building the whole prompt, which

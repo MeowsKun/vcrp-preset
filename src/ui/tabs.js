@@ -19,7 +19,7 @@ import { renderStoryConfig } from "../features/storyconfig/ui.js";
 import { renderStoryPlanner } from "../features/storyplan/ui.js";
 import { renderBanList } from "../features/banlist/ui.js";
 import { renderNpcBank } from "../features/npc/ui.js";
-import { renderMemoryCore } from "../features/memory/index.js";
+import { renderMemoryTab } from "../vcrp/memory/ui.js";
 import { renderBlocksTab } from "../features/blocks/ui.js";
 import { renderKnowledgebase } from "../vcrp/knowledgebase.js";
 
@@ -31,7 +31,7 @@ export const tabsUI = [
     { title: "Story Director", sub: "Direct the narrative. Shape what happens next.", icon: "fa-clapperboard", render: renderStoryPlanner },
     { title: "Dynamic Ban List", sub: "Scan and ban repetitive AI phrases.", icon: "fa-ban", render: renderBanList },
     { title: "NPCs Bank", sub: "Automatically extract and track significant NPCs in the story.", icon: "fa-address-book", render: renderNpcBank },
-    { title: "Memory Core", sub: "Advanced 3-Tier Context & History Management.", icon: "fa-memory", render: renderMemoryCore },
+    { title: "Memory", sub: "Story Memory keeps long chats under your budget.", icon: "fa-memory", render: renderMemoryTab },
     { title: "Knowledgebase", sub: "Core world rules, lore, and trope guidance the AI always remembers.", icon: "fa-book-open", render: renderKnowledgebase },
     { title: "Global Settings", sub: "Extension preferences and about info.", icon: "fa-gear", render: renderGlobalSettings }
 ];

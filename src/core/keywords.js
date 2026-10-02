@@ -6,7 +6,7 @@
 // for that reason.
 // ────────────────────────────────────────────────────────────────────────────
 
-import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
+import { meguminCleanChatHistoryText } from "../engine/chatText.js";
 
 // Cached Intl.Segmenter — reusing it avoids expensive re-instantiation on every call
 export let _cachedWordSegmenter = null;

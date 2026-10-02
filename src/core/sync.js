@@ -29,7 +29,7 @@ export const TAB_SYNC_KEYS = {
     "Story Director": ["storyPlan"],
     "Dynamic Ban List": ["banList", "banListBackend", "banListCustomPromptsEnabled", "banListCustomPrompts"],
     "NPCs Bank": ["npcBank"],
-    "Memory Core": ["memoryCore"],
+    "Memory": ["vcrpMemory"],
     "Knowledgebase": ["knowledgebase"]
 };
 
@@ -133,14 +133,6 @@ export function applyTabKeysToAllProfiles(title) {
                 const preservedNpcs = prof[k].npcs;
                 prof[k] = JSON.parse(JSON.stringify(currentData[k]));
                 prof[k].npcs = preservedNpcs || [];
-
-            } else if (k === "memoryCore" && currentData[k]) {
-                if (!prof[k]) prof[k] = {};
-                const preservedShort = prof[k].shortTermChunks;
-                const preservedLong = prof[k].longTermVault;
-                prof[k] = JSON.parse(JSON.stringify(currentData[k]));
-                prof[k].shortTermChunks = preservedShort || [];
-                prof[k].longTermVault = preservedLong || [];
 
             } else if (currentData[k] !== undefined) {
                 prof[k] = JSON.parse(JSON.stringify(currentData[k]));

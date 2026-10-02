@@ -4,6 +4,7 @@
   "description": "Test helpers for the VCRP extension (only needed for tools/test_ui.mjs).",
   "devDependencies": {
     "jquery": "^3.7.1",
+    "js-tiktoken": "^1.0.21",
     "jsdom": "^25.0.1"
   }
 }

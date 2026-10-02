@@ -205,6 +205,8 @@ export const MEGUMIN_SLOT_REGISTRY = [
     { key: null, trigger: "[[aiprompt]]", label: "Narration Style", scope: "auto", group: "live",
       where: "Writing Style",
       hint: "Your writing style, wrapped differently depending on the engine generation." },
+    { key: null, trigger: "[[story_recall]]", label: "Story Recall", scope: "auto", group: "live", where: "Memory",
+      hint: "VCRP: old chapters and facts from Story Memory that the current scene touches." },
     { key: null, trigger: "[[knowledgebase]]", label: "Knowledgebase", scope: "auto", group: "live", where: "Knowledgebase",
       hint: "VCRP: the active knowledgebase entries for this turn." },
     { key: null, trigger: "[[ANIMEMODE]]", label: "Anime Mode", scope: "auto", group: "live", where: "Writing Style",

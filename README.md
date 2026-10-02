@@ -12,9 +12,9 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 
 - **Rebranded** to VCRP; settings are stored under the `VCRP` key (the key VCRP V8 used, so
   V8 profiles carry over). Works under any install folder name.
-- **No Engine preset.** Background tasks (memory summaries, NPC scans, the ban list, Story
-  Director, image prompts, style generators) build their own prompt; nothing ever switches your
-  active preset.
+- **No Engine preset.** Background tasks (NPC scans, the ban list, Story Director, style
+  generators) build their own prompt; nothing ever switches your active preset. Story Memory's
+  summaries instead reuse the roleplay prompt itself, so they read it from cache.
 - **Model-aware CoT prefill.** The preset's prefill slot is sent only to models that accept a
   prefill. Newer Claude (Opus/Sonnet 4.6+, Claude 5) and the newest Gemini Flash reject one.
   Setting: Global Settings → CoT Prefill (Auto / Always on / Always off).
@@ -42,28 +42,50 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 
 - **Engines:** V10 Ukiyo and V10 Shura (with Enhanced Dialogue), their CoTs and Thinking Cap variants.
 - **Tabs:** Presets & CoT (with Story Config), Writing Style (+ Anime Mode), Global Toggles & Add-ons,
-  Blocks, Story Director, Dynamic Ban List, NPCs Bank, Memory Core, Knowledgebase, Global Settings,
-  plus Dev Mode.
+  Blocks, Story Director, Dynamic Ban List, NPCs Bank, Memory (Story Memory), Knowledgebase,
+  Global Settings, plus Dev Mode.
 - **Add-ons:** Bold NPCs, Immersive HTML, Dialogue Colors, Dialogue & Narration tags.
 
 ## Install
 
 1. SillyTavern → Extensions → Install Extension → `https://github.com/MeowsKun/vcrp-preset`
    (branch `v10-fork` while in development).
-2. Import one preset from `Presets/` in the AI Response Configuration panel and select it:
-   - `VCRP V10 Universal.json`: the standard preset.
-   - `VCRP V10 Universal Cache Friendly.json`: same content, ordered so APIs that discount
-     cached input (Claude, Gemini, DeepSeek) can cache most of the prompt.
+2. Import `Presets/VCRP V10 Universal.json` in the AI Response Configuration panel and select it.
+   Everything that changes from turn to turn sits after the chat history, so providers that
+   discount cached input (Claude, Gemini, DeepSeek) can reuse the rest of the prompt.
 3. Extensions → Regex: make sure the preset's regex scripts are enabled.
 4. Open VCRP with the wand button, pick an engine in **PRESETS & COT**, and play.
+
+## Long chats on Claude: Story Memory
+
+Story Memory (the **Memory** tab) keeps every request under a dollar target, however long the
+chat runs. While you play nothing is dropped, so every turn reads the prompt from cache. After
+a break the cache has expired anyway, and that is when older messages leave the prompt in one
+cut, covered by chapters (one-line gists plus full text, recalled when the scene touches them)
+and a fact ledger. New chapters wait for your review by default.
+
+It relies on prompt caching. Set up once:
+
+1. **Context Size** (AI Response Configuration): the model's maximum. Below what VCRP sends,
+   SillyTavern trims the oldest message itself every turn and nothing is ever cached.
+2. **Caching:** in SillyTavern's `config.yaml`, under `claude:`, set `cachingAtDepth: 0` and
+   `extendedTTL: true`, then restart. On OpenRouter you can tick **Mark the cache from VCRP**
+   in the Memory tab instead.
+3. **OpenRouter:** put Anthropic first in the provider list and turn off fallbacks, so the chat
+   never moves to a provider without your cache.
+
+Global Settings → Setup Check flags anything missing. Existing Memory Core summaries become
+chapters the first time each chat is opened.
 
 ## Development
 
 - `node tools/link_check.mjs`: loads every module against a stubbed SillyTavern (catches broken imports).
-- `node tools/test_fork.mjs`: builds real prompts from both presets and checks the prompt interceptor.
+- `node tools/test_fork.mjs`: builds real prompts from the preset and checks the prompt interceptor.
 - `node tools/test_ui.mjs`: renders every tab and clicks every button in a simulated browser
   (one-time setup: `cd tools && npm install`).
 - `python tools/gen_skeleton.py`: regenerates `data/skeleton.js` (Dev Mode's layout view) after a preset edit.
+- `node tools/sim_cost.mjs [--memory] [--npcs] [--model opus-4.6] [--direct]`: plays a 1000-message chat
+  through the real prompt builder and prices every request under Claude's prompt caching.
 
 VCRP-specific code lives in `src/vcrp/`; changes to upstream files are kept small and marked
 `VCRP:` so future Megumin Suite updates can be merged.

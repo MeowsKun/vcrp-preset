@@ -23,11 +23,6 @@ export function cleanLegacySettings() {
     Object.keys(extension_settings[extensionName].profiles).forEach(key => {
         if (key === 'default') return; // Do not touch global defaults
         const prof = extension_settings[extensionName].profiles[key];
-        if (prof.memoryCore && (prof.memoryCore.shortTermChunks?.length > 0 || prof.memoryCore.longTermVault?.length > 0)) {
-            delete prof.memoryCore.shortTermChunks;
-            delete prof.memoryCore.longTermVault;
-            didClean = true;
-        }
         if (prof.storyPlan && (prof.storyPlan.currentPlan || prof.storyPlan.lastTrackerState)) {
             prof.storyPlan.currentPlan = "";
             prof.storyPlan.lastTrackerState = "";

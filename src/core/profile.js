@@ -28,6 +28,7 @@ import { normalizeStoryConfig, applyStoryConfigDefaults } from "../features/stor
 import { escapeRegex } from "../utils/regex.js";
 import { ensureKnowledgebase } from "../vcrp/knowledgebase.js";
 import { ensureAnimeMode } from "../vcrp/anime.js";
+import { vcrpMemoryCheckChat, vcrpMemoryMigrateLegacy } from "../vcrp/memory/index.js";
 
 // Last chat_metadata stamp written, so an unchanged profile doesn't re-save.
 export let _lastSavedMetaStamp = "";
@@ -181,21 +182,7 @@ export function initProfile() {
             lastTrackerState: "",
             planMessageIndex: null
         },
-        memoryCore: {
-            enabled: false,
-            architecture: "raw_short_long", // "raw_short_long" or "raw_long"
-            workingLimit: 30,
-            shortTermLimit: 70,
-            chunkSize: 10,
-            backend: "direct",
-            scannerEngine: "tfidf",
-            triggerMode: "frequency",
-            autoFreq: 10,
-            shortTermChunks: [],
-            longTermVault: [],
-            customPrompts: null,
-            customPromptsEnabled: false
-        },
+        vcrpMemory: { enabled: false },
         npcBank: {
             enabled: false,
             oocTrigger: false,
@@ -357,7 +344,6 @@ export function initProfile() {
     // The block is always injected now, so its three standing fields ship set rather
     // than blank. Only fills what is empty, so a reader who picked something keeps it.
     applyStoryConfigDefaults(localProfile.storyConfig);
-    if (localProfile.memoryCore && localProfile.memoryCore.customPromptsEnabled === undefined) localProfile.memoryCore.customPromptsEnabled = false;
     if (localProfile.npcBank && localProfile.npcBank.customPromptsEnabled === undefined) localProfile.npcBank.customPromptsEnabled = false;
     if (localProfile.npcBank && localProfile.npcBank.oocTrigger === undefined) localProfile.npcBank.oocTrigger = false;
     if (localProfile.npcBank && localProfile.npcBank.ignoredNames === undefined) localProfile.npcBank.ignoredNames = "";
@@ -410,10 +396,12 @@ export function initProfile() {
             if (!f.color) f.color = def.color;
         });
     }
-    if (!localProfile.memoryCore) {
-        localProfile.memoryCore = defaults.memoryCore;
-    } else {
-        if (localProfile.memoryCore.chunkSize === undefined) localProfile.memoryCore.chunkSize = 10;
+    // Story Memory (src/vcrp/memory). Before the migration below, which may switch it on.
+    if (!localProfile.vcrpMemory || typeof localProfile.vcrpMemory !== "object") localProfile.vcrpMemory = { enabled: false };
+    // The Memory Core is gone; a profile that had it on gets Story Memory on instead.
+    if (localProfile.memoryCore) {
+        if (localProfile.memoryCore.enabled) localProfile.vcrpMemory.enabled = true;
+        delete localProfile.memoryCore;
     }
     if (!localProfile.dnRatio) localProfile.dnRatio = defaults.dnRatio;
     if (!localProfile.onomatopoeia) localProfile.onomatopoeia = defaults.onomatopoeia;
@@ -490,22 +478,15 @@ export function initProfile() {
     // written is NOT counted: saveMetadata() could still fail, and the settings copy is
     // the sole remaining original until it lands. Those clean up on the next open.
     const metaHadOnEntry = {
-        memory: !!(chat_metadata && chat_metadata["megumin_memory_core"]),
         plan: !!(chat_metadata && chat_metadata["megumin_story_plan"]),
         npcs: !!(chat_metadata && chat_metadata["megumin_npc_bank"])
     };
 
-    if (chat_metadata && chat_metadata["megumin_memory_core"]) {
-        if (localProfile.memoryCore) {
-            localProfile.memoryCore.shortTermChunks = chat_metadata["megumin_memory_core"].shortTermChunks || [];
-            localProfile.memoryCore.longTermVault = chat_metadata["megumin_memory_core"].longTermVault || [];
-        }
-    } else if (chat_metadata && localProfile.memoryCore && (localProfile.memoryCore.shortTermChunks?.length > 0 || localProfile.memoryCore.longTermVault?.length > 0)) {
-        chat_metadata["megumin_memory_core"] = {
-            shortTermChunks: localProfile.memoryCore.shortTermChunks || [],
-            longTermVault: localProfile.memoryCore.longTermVault || []
-        };
+    // The old Memory Core's summaries for this chat become Story Memory chapters, once.
+    const imported = vcrpMemoryMigrateLegacy();
+    if (imported > 0) {
         saveMetadata();
+        if (typeof toastr !== "undefined") toastr.info(`${imported} summaries from the old Memory Core are now Story Memory chapters.`, "VCRP");
     }
 
     if (chat_metadata && chat_metadata["megumin_story_plan"]) {
@@ -548,10 +529,8 @@ export function initProfile() {
         const stored = extension_settings[extensionName].profiles[activeKey];
         if (stored) {
             let freed = false;
-            if (metaHadOnEntry.memory && stored.memoryCore
-                && (stored.memoryCore.shortTermChunks !== undefined || stored.memoryCore.longTermVault !== undefined)) {
-                delete stored.memoryCore.shortTermChunks;
-                delete stored.memoryCore.longTermVault;
+            if (stored.memoryCore) {
+                delete stored.memoryCore;
                 freed = true;
             }
             if (metaHadOnEntry.plan && stored.storyPlan
@@ -615,37 +594,8 @@ export function pruneFutureData() {
     const chatLength = context.chat.length;
     let changesMade = false;
 
-    // 1. Prune Memory Core Chunks
-    const mem = localProfile?.memoryCore;
-    if (mem) {
-        if (mem.shortTermChunks && mem.shortTermChunks.length > 0) {
-            const originalLength = mem.shortTermChunks.length;
-            mem.shortTermChunks = mem.shortTermChunks.filter(chunk => {
-                const parts = chunk.id.split("-");
-                if (parts.length < 2) return true; 
-                return parseInt(parts[1]) < chatLength;
-            });
-            if (mem.shortTermChunks.length !== originalLength) {
-                changesMade = true;
-                delete mem._archivedSet;
-                mem._tokensDirty = true;
-            }
-        }
-
-        if (mem.longTermVault && mem.longTermVault.length > 0) {
-            const originalLength = mem.longTermVault.length;
-            mem.longTermVault = mem.longTermVault.filter(chunk => {
-                const parts = chunk.id.split("-");
-                if (parts.length < 2) return true;
-                return parseInt(parts[1]) < chatLength;
-            });
-            if (mem.longTermVault.length !== originalLength) {
-                changesMade = true;
-                delete mem._archivedSet;
-                mem._tokensDirty = true;
-            }
-        }
-    }
+    // 1. Story Memory: chapters whose messages a rewind removed come back out.
+    if (vcrpMemoryCheckChat()) saveMetadata();
 
     // 2. Prune NPC Bank (SMART SURVIVAL LOGIC)
     const npcBank = localProfile?.npcBank;
@@ -710,18 +660,6 @@ export function pruneFutureData() {
         changesMade = true;
     }
 
-    // 2b. Rebalance the working window.
-    //
-    // The prune above only drops chunks that point PAST the end of the chat.
-    // Rewinding also moves the working-limit cutoff backwards over messages that
-    // were archived while the chat was longer — those stay in _archivedSet, so
-    // they remain dimmed in the UI and stripped from the prompt by the memory
-    // interceptor, with no way back except pressing "Apply & Extract Pending".
-    // Hand them back automatically instead.
-    if (fireRefreshHook(REFRESH.MEMORY_SCRUB_OVERLAPS)) {
-        changesMade = true;
-    }
-
     // 3. Prune Story Director Plan
     const sp = localProfile?.storyPlan;
     if (sp && sp.currentPlan && sp.planMessageIndex !== undefined && sp.planMessageIndex !== null) {
@@ -741,9 +679,6 @@ export function pruneFutureData() {
         saveProfileToMemory();
         console.log(`[VCRP] Pruned/Adjusted out-of-bounds future data (chat length: ${chatLength})`);
         
-        fireRefreshHook(REFRESH.MEMORY_ACCORDION);
-        fireRefreshHook(REFRESH.MEMORY_VAULT, $("#mem_vault_search").val() || "");
-        fireRefreshHook(REFRESH.MEMORY_DASHBOARD);
         fireRefreshHook(REFRESH.MEMORY_VISUALS);
         fireRefreshHook(REFRESH.NPC_LIST);
     }
@@ -771,12 +706,6 @@ export function saveProfileToMemory() {
     const ruleBox = $("#ps_main_current_rule");
     if (ruleBox.length > 0) { localProfile.aiRule = ruleBox.val(); }
 
-    // Invalidate the optimized archived-set cache when profile changes
-    if (localProfile?.memoryCore) {
-        localProfile.memoryCore._archivedSet = null;
-        fireRefreshHook(REFRESH.MEMORY_CACHE_INVALIDATE);
-    }
-
     // Save current avatar/character identifier inside the profile for identification/fuzzy matching
     if (key.startsWith('chat::')) {
         const avatar = getRawAvatar();
@@ -786,20 +715,12 @@ export function saveProfileToMemory() {
     }
 
     if (chat_metadata) {
-        const mem = localProfile.memoryCore;
         const plan = localProfile.storyPlan;
         const bank = localProfile.npcBank;
 
         // Write a block if it has content now, or if the key already exists on the chat.
         // The second half is what keeps a deletion, and a bank left empty by the
         // settings.json migration in initProfile, from being skipped.
-        if (mem && ((mem.shortTermChunks?.length > 0) || (mem.longTermVault?.length > 0)
-            || chat_metadata["megumin_memory_core"] !== undefined)) {
-            if (!chat_metadata["megumin_memory_core"]) chat_metadata["megumin_memory_core"] = {};
-            chat_metadata["megumin_memory_core"].shortTermChunks = mem.shortTermChunks || [];
-            chat_metadata["megumin_memory_core"].longTermVault = mem.longTermVault || [];
-        }
-
         if (plan && (plan.currentPlan || plan.lastTrackerState
             || chat_metadata["megumin_story_plan"] !== undefined)) {
             if (!chat_metadata["megumin_story_plan"]) chat_metadata["megumin_story_plan"] = {};
@@ -812,8 +733,7 @@ export function saveProfileToMemory() {
             chat_metadata["megumin_npc_bank"].npcs = bank.npcs || [];
         }
 
-        const hasAnyBlock = !!(chat_metadata["megumin_memory_core"]
-            || chat_metadata["megumin_story_plan"]
+        const hasAnyBlock = !!(chat_metadata["megumin_story_plan"]
             || chat_metadata["megumin_npc_bank"]);
 
         if (hasAnyBlock) {
@@ -822,7 +742,6 @@ export function saveProfileToMemory() {
             // against the last thing that actually went to disk instead. `key` is in the
             // stamp so switching chats cannot reuse a stale one.
             const metaStamp = key + "|" + JSON.stringify([
-                chat_metadata["megumin_memory_core"] || null,
                 chat_metadata["megumin_story_plan"] || null,
                 chat_metadata["megumin_npc_bank"] || null
             ]);
@@ -834,10 +753,6 @@ export function saveProfileToMemory() {
     }
 
     const profileToSave = JSON.parse(JSON.stringify(localProfile));
-    if (profileToSave.memoryCore) {
-        delete profileToSave.memoryCore.shortTermChunks;
-        delete profileToSave.memoryCore.longTermVault;
-    }
     if (profileToSave.storyPlan) {
         delete profileToSave.storyPlan.currentPlan;
         delete profileToSave.storyPlan.lastTrackerState;
@@ -888,19 +803,7 @@ export function flushProfileSettingsToLoadedKey() {
     const ruleBox = $("#ps_main_current_rule");
     if (ruleBox.length > 0) { localProfile.aiRule = ruleBox.val(); }
 
-    // The same reset the full save does. The archived-set cache is a Set, which
-    // JSON.stringify turns into `{}`; every stored profile holds null there, so
-    // writing `{}` would be a shape nothing else produces and the archived-message
-    // dimming would read it back as an empty cache instead of "not built yet".
-    if (localProfile?.memoryCore) {
-        localProfile.memoryCore._archivedSet = null;
-    }
-
     const profileToSave = JSON.parse(JSON.stringify(localProfile));
-    if (profileToSave.memoryCore) {
-        delete profileToSave.memoryCore.shortTermChunks;
-        delete profileToSave.memoryCore.longTermVault;
-    }
     if (profileToSave.storyPlan) {
         delete profileToSave.storyPlan.currentPlan;
         delete profileToSave.storyPlan.lastTrackerState;

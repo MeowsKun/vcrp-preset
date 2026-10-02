@@ -7,7 +7,7 @@
 
 import { getContext } from "../../st.js";
 import { localProfile } from "../../core/state.js";
-import { memGetCachedKeywords } from "../memory/keywords.js";
+import { memGetCachedKeywords } from "../../core/keywords.js";
 import { escapeRegex } from "../../utils/regex.js";
 import { npcFields, npcFieldByRole, npcBodyFields, npcVitalsFields } from "./fields.js";
 

@@ -8,8 +8,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { extension_settings, getContext } from "../st.js";
-import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode } from "./generation.js";
+import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem } from "./generation.js";
 import { escapeHtmlAttr } from "../utils/html.js";
+import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memoryState, estimateTokens, memoryCanReachPrompt } from "./memory/index.js";
+import { autoSummaryHold } from "./memory/summarize.js";
 
 // A preset is VCRP's if it carries the tags only VCRP/Megumin presets use (the name can be anything).
 const VCRP_TAG_RE = /\[\[(?:blocks|THINK|prompt1)\]\]/;
@@ -41,7 +43,7 @@ export function vcrpHealthCheck() {
     const isVcrp = (cc.prompts || []).some(p => VCRP_TAG_RE.test((p && p.content) || ""));
     if (!isVcrp) {
         add("error", `The active preset "${presetName}" is not a VCRP preset`,
-            "Select \"VCRP V10 Universal\" (or the Cache Friendly one) in AI Response Configuration. Import it from the extension's Presets folder if it is not listed.");
+            "Select \"VCRP V10 Universal\" in AI Response Configuration. Import it from the extension's Presets folder if it is not listed.");
         return summarize(items);
     }
     add("ok", `VCRP preset active: "${presetName}"`);
@@ -82,8 +84,81 @@ export function vcrpHealthCheck() {
     }
     add("info", `Model: ${modelLabel}`,
         mode === "auto" ? `CoT prefill: Auto → ${det.prefill ? "prefilling" : "not prefilling"} (${det.reason}).` : `CoT prefill: ${mode === "on" ? "Always on" : "Always off"}.`);
+    if (vcrpRouteHoistsSystem()) {
+        add("info", "OpenRouter + Claude: after-chat instructions go as user messages",
+            "OpenRouter moves every system message to the front of the prompt. VCRP sends Output Rules and the closing slots as user messages instead, so Claude reads them after the chat and per-turn changes leave the cache intact.");
+    }
+
+    // 5. Long chats: what decides whether a request is cheap or full price.
+    longChatChecks(add, ctx, cc, source, model);
 
     return summarize(items);
+}
+
+function longChatChecks(add, ctx, cc, source, model) {
+    const memOn = vcrpMemoryEnabled();
+    const budget = memOn ? currentMemoryBudget() : null;
+    const isClaude = /claude|anthropic|fable/.test(`${source} ${model}`);
+
+    // SillyTavern trims the oldest message itself once a prompt passes Context Size: the start
+    // of the prompt then changes every turn and nothing is ever read from cache.
+    const maxCtx = Number(cc.openai_max_context) || 0;
+    const chatTokens = (Array.isArray(ctx.chat) ? ctx.chat : []).filter(m => !m.is_system).reduce((n, m) => n + estimateTokens(m.mes || ""), 0);
+    const needed = budget ? budget.warmTokens + 20000 : chatTokens + 20000;
+    if (maxCtx && maxCtx < needed && (budget || chatTokens > maxCtx * 0.6)) {
+        add(budget ? "error" : "warn", `Context Size (${maxCtx.toLocaleString()} tokens) is smaller than ${budget ? "Story Memory may send" : "this chat is getting"}`,
+            `Past Context Size, SillyTavern drops the oldest message on its own, every turn. The start of the prompt then changes each time and every request is billed at full price. Set Context Size to at least ${needed.toLocaleString()} in AI Response Configuration (tick "Unlocked" if the slider stops short), or to the model's maximum.`);
+    } else if (maxCtx && budget) {
+        add("ok", `Context Size leaves Story Memory room (${maxCtx.toLocaleString()} tokens)`);
+    }
+
+    if (!isClaude) return;
+
+    if (source === "openrouter") {
+        const providers = Array.isArray(cc.openrouter_providers) ? cc.openrouter_providers : [];
+        const pinned = providers.length > 0 && /anthropic/i.test(String(providers[0]));
+        if (!pinned || cc.openrouter_allow_fallbacks !== false) {
+            add("info", "OpenRouter: pin the provider to Anthropic",
+                "OpenRouter keeps a chat on one provider while its cache is warm, but if it ever switches (Anthropic to Bedrock or Vertex), the new provider has no cache and that request is billed in full. In AI Response Configuration, put Anthropic first in OpenRouter's provider list and turn off fallbacks.");
+        } else {
+            add("ok", "OpenRouter provider pinned to Anthropic");
+        }
+    }
+
+    if (budget && memoryBudgetSettings().markCache && source === "openrouter") {
+        add("ok", "VCRP marks the prompt cache itself");
+    } else {
+        add("info", "Prompt caching is set in SillyTavern's config.yaml",
+            `VCRP can't read that file. Long chats on Claude need claude.cachingAtDepth: 0 and claude.extendedTTL: true there${budget ? " (or Story Memory's cache lifetime set to 5 minutes)" : ""}.${source === "openrouter" ? " On OpenRouter, Story Memory can mark the cache itself instead (Memory tab)." : ""}`);
+    }
+
+    if (!memOn) return;
+    if (!budget) {
+        add("warn", `Story Memory: no price known for ${model || "this model"}`,
+            "Set a custom price in the Memory tab. Without one the budget can't be worked out, so nothing is ever cut.");
+        return;
+    }
+    if (!memoryCanReachPrompt()) {
+        add("error", "Story Memory is on, but the active preset can't carry its memory text",
+            "The preset needs an enabled slot containing [[long-Memory]] (VCRP V10 Universal has it in <history>). Until then Story Memory cuts nothing, so long chats are not kept to the budget.");
+    }
+    const st = memoryState();
+    const pending = ((st && st.pending) || []).length;
+    if (pending) {
+        add("info", `Story Memory: ${pending} chapter${pending > 1 ? "s" : ""} waiting for review`,
+            "The next cut after a break can't reach past them until they're approved. Memory tab, Review.");
+    }
+    if (autoSummaryHold(st) === "paused after failed summaries") {
+        add("warn", "Story Memory: automatic summaries are paused",
+            "Two summaries in a row failed. Use Summarize now in the Memory tab to retry; a success starts them again.");
+    }
+    const plan = st && st.lastPlan;
+    if (plan && plan.behind) {
+        add("warn", "Story Memory: the last cut fell short of the budget",
+            plan.limit === "summaries" ? "Approve the waiting chapters, or use Summarize now in the Memory tab." : "The recent text kept word for word is more than this budget allows: raise the target or lower the floor in the Memory tab.");
+    } else {
+        add("ok", `Story Memory on: after a break the prompt is cut to about ${Math.round(budget.coldTokens / 1000)}k tokens`);
+    }
 }
 
 function summarize(items) {

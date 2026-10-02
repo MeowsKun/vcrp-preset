@@ -32,10 +32,6 @@ export function setActiveNpcScanRequest(v) { activeNpcScanRequest = v; }
 export let activeNpcUpdateRequest = null;
 export function setActiveNpcUpdateRequest(v) { activeNpcUpdateRequest = v; }
 
-// Memory Core: the chunk text being summarised.
-export let activeMemorySummarizationRequest = null;
-export function setActiveMemorySummarizationRequest(v) { activeMemorySummarizationRequest = v; }
-
 // Manual "run this order" task: substituted into [[order]] placeholders.
 export let activeGenerationOrder = null;
 export function setActiveGenerationOrder(v) { activeGenerationOrder = v; }
@@ -62,7 +58,6 @@ export function isBackgroundGenerationActive() {
         activeStoryPlanRequest ||
         activeBanListChat ||
         activeNpcUpdateRequest ||
-        activeMemorySummarizationRequest ||
         activeGenerationOrder
     );
 }

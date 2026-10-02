@@ -16,11 +16,18 @@ import { extensionName } from "../core/constants.js";
 // ── Generation type ──────────────────────────────────────────────────────────
 
 let currentGen = "reply";
+let currentDry = false;
 
 /** GENERATION_STARTED handler: (type, params, dryRun). Dry runs never change the next real request. */
 export function vcrpSetGenerationType(type, _params, dryRun) {
+    currentDry = !!dryRun;
     if (dryRun) return;
     currentGen = ["continue", "impersonate", "quiet"].includes(type) ? type : "reply";
+}
+
+/** True while SillyTavern is only measuring the prompt (token counts, previews); nothing is sent. */
+export function vcrpIsDryRun() {
+    return currentDry;
 }
 
 // Tags that only make sense in a normal story reply.
@@ -65,6 +72,16 @@ export function vcrpDetectPrefill() {
     return { prefill: false, reason: "unknown model, instruction only" };
 }
 
+/**
+ * True when the route hands Claude one system prompt built from every system-role message,
+ * wherever it sat. OpenRouter does this for Claude (SillyTavern issue #5227): text placed
+ * after the chat is read before it, and a per-turn change there invalidates the whole cache.
+ */
+export function vcrpRouteHoistsSystem() {
+    const { source, model } = vcrpActiveModel();
+    return source === "openrouter" && /claude|anthropic|fable/.test(model);
+}
+
 export function vcrpPrefillMode() {
     return extension_settings[extensionName]?.globalSettings?.cotPrefillMode || "auto";
 }
@@ -99,12 +116,27 @@ export function vcrpFinalizeMessages(messages, gen, substitute = s => s) {
         m.content = m.content.replace(EMPTY_VOICE, "");
         if (!m.content.trim()) messages.splice(i, 1);
     }
-    if (!NOTES[gen]) return;
-    const note = { role: "system", content: substitute(NOTES[gen]) };
-    // A trailing assistant message is the text the model continues from (Continue with
-    // "Continue prefill" on, or an impersonation prefill). The note must go before it, or
-    // the model would start a fresh turn instead of continuing.
-    const last = messages[messages.length - 1];
-    if (last && last.role === "assistant") messages.splice(messages.length - 1, 0, note);
-    else messages.push(note);
+    if (NOTES[gen]) {
+        const note = { role: "system", content: substitute(NOTES[gen]) };
+        // A trailing assistant message is the text the model continues from (Continue with
+        // "Continue prefill" on, or an impersonation prefill). The note must go before it, or
+        // the model would start a fresh turn instead of continuing.
+        const last = messages[messages.length - 1];
+        if (last && last.role === "assistant") messages.splice(messages.length - 1, 0, note);
+        else messages.push(note);
+    }
+    if (vcrpRouteHoistsSystem()) vcrpKeepAfterChatInPlace(messages);
+}
+
+/**
+ * Turns every system message after the opening run of system messages into a user message.
+ * The opening run is the real system prompt and stays one; anything later (Output Rules,
+ * the closing slots, mode notes, injections inside the chat) keeps its place as user text.
+ */
+export function vcrpKeepAfterChatInPlace(messages) {
+    const first = messages.findIndex(m => m.role !== "system");
+    if (first < 0) return;
+    for (let i = first + 1; i < messages.length; i++) {
+        if (messages[i].role === "system") messages[i].role = "user";
+    }
 }

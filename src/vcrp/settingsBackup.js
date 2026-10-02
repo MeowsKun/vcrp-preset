@@ -3,8 +3,8 @@
 //
 // One file with everything stored under extension_settings.VCRP: every character's
 // profile, the global settings, Dev Mode engines, the shared knowledgebase and the
-// tab-sync switches. NPC banks and Memory Core data live in each chat's metadata
-// and are not included (the NPC Bank and Memory Core tabs export those per chat).
+// tab-sync switches. NPC banks and Story Memory (chapters, facts) live in each chat's
+// metadata, saved with the chat file itself, and are not included.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { extension_settings, saveSettingsDebounced, cancelDebounce } from "../st.js";

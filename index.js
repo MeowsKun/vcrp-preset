@@ -32,7 +32,6 @@ import {
     activeBanListChat,
     activeNpcScanRequest,
     setActiveNpcScanRequest,
-    activeMemorySummarizationRequest,
     activeGenerationOrder,
     activeNpcImages,
     pushActiveNpcImage,
@@ -82,15 +81,8 @@ import { buildConfigBlock } from "./src/features/storyconfig/config.js";
 import { renderStoryConfig } from "./src/features/storyconfig/ui.js";
 import { SD_GENRES, renderStoryPlanner, generateStoryPlanLogic } from "./src/features/storyplan/ui.js";
 import { renderBanList } from "./src/features/banlist/ui.js";
-import {
-    renderMemoryCore,
-    memProcessPendingChunks,
-    isMessageArchived,
-    memGetRelevantVaultEntries,
-    updateMemoryVisuals,
-} from "./src/features/memory/index.js";
-import { memGetCachedKeywords } from "./src/features/memory/keywords.js";
-import { memUpdateSemanticQueryDebounced, memEnsureSemanticQueryFresh } from "./src/features/memory/vectordb.js";
+import { memGetCachedKeywords } from "./src/core/keywords.js";
+import { vcrpMemoryUpdateVisuals, vcrpMemoryOnMessageDeleted } from "./src/vcrp/memory/index.js";
 import { npcBuildTextFromData, npcParseBlock, meguminFindNpcDossiers, npcCreateRecord } from "./src/features/npc/data.js";
 import { npcParseUpdateBlocks, npcApplyUpdates, npcUndoHistoryEntry } from "./src/features/npc/updates.js";
 import { renderNpcBank, renderNpcList } from "./src/features/npc/ui.js";
@@ -101,14 +93,15 @@ import { buildBaseDict } from "./src/engine/buildBaseDict.js";
 import { handlePromptInjection } from "./src/engine/injection.js";
 import { vcrpSetGenerationType } from "./src/vcrp/generation.js";
 import { vcrpRefreshHealthBadge } from "./src/vcrp/health.js";
+import { vcrpMemoryAfterReply } from "./src/vcrp/memory/summarize.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
 import { initDraggableButton, updateCharacterDisplay, discoverDefaultImages } from "./src/ui/launcher.js";
 import { tabsUI, switchTab, updateGlobalSyncButton, toggleTabGlobalSync } from "./src/ui/tabs.js";
 import { renderDevMode } from "./src/ui/devmode.js";
 
 // Refresh hooks for the features still living in this file. Each registration
-// moves into its own feature module as that feature is extracted — the memory
-// ones have already gone with src/features/memory/.
+// moves into its own feature module as that feature is extracted (Story Memory
+// registers its own in src/vcrp/memory/).
 
 // -------------------------------------------------------------
 // STATE MANAGEMENT
@@ -386,17 +379,17 @@ jQuery(async () => {
                         if ($("#prompt-slot-modal-overlay").is(":visible")) switchTab(currentTab);
                     }
                 }, 200);
-                updateMemoryVisuals();
+                vcrpMemoryUpdateVisuals();
             });
-            // Background Vectorization triggers for Semantic Mode
-            eventSource.on(event_types.USER_MESSAGE_RENDERED, memUpdateSemanticQueryDebounced);
-            eventSource.on(event_types.MESSAGE_EDITED, memUpdateSemanticQueryDebounced);
-            eventSource.on(event_types.CHAT_CHANGED, memUpdateSemanticQueryDebounced);
-            // Trigger visual update when user clicks "Show more messages"
-            eventSource.on(event_types.MORE_MESSAGES_LOADED, updateMemoryVisuals);
+            // Story Memory dims what the prompt no longer carries; redraw when more messages load.
+            eventSource.on(event_types.MORE_MESSAGES_LOADED, vcrpMemoryUpdateVisuals);
+            // A deleted message may be one a chapter was anchored to: repair, then redraw.
+            eventSource.on(event_types.MESSAGE_DELETED, vcrpMemoryOnMessageDeleted);
+            // VCRP budgeted memory: summarize the next stretch after a reply, when due.
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryAfterReply);
             // IMAGE GEN AUTO-GEN & SWIPE TRIGGERS
             eventSource.on(event_types.MESSAGE_RECEIVED, async () => {
-                updateMemoryVisuals();
+                vcrpMemoryUpdateVisuals();
 
                 // --- STORY DIRECTOR FEEDBACK & AUTO-EVOLVE ---
                 const sp = localProfile?.storyPlan;
@@ -489,41 +482,6 @@ jQuery(async () => {
                         }
                     }
                 }
-
-                // AUTO-TRIGGER MEMORY CORE
-                const mem = localProfile?.memoryCore;
-                if (mem && mem.enabled && (mem.triggerMode === 'frequency' || mem.triggerMode === 'every')) {
-                    const chat = getContext().chat;
-                    const aiMsgCount = chat.filter(m => !m.is_user && !m.is_system).length;
-
-                    const freq = mem.triggerMode === 'every' ? 1 : (mem.autoFreq || 10);
-                    if (aiMsgCount > 0 && aiMsgCount % freq === 0) {
-                        // Check if we actually have enough messages to archive (avoid background notification spam)
-                        let hasWork = false;
-                        const workingLimit = mem.workingLimit || 30;
-                        const chunkSize = mem.chunkSize || 10;
-                        const realMessages = [];
-                        for (let i = 0; i < chat.length; i++) {
-                            if (!chat[i].is_system) realMessages.push({ originalIndex: i, msg: chat[i] });
-                        }
-                        if (realMessages.length > workingLimit) {
-                            const archivableMessages = realMessages.slice(0, realMessages.length - workingLimit);
-                            const unarchivedArchivable = archivableMessages.filter(item => !isMessageArchived(item.originalIndex, mem));
-                            if (unarchivedArchivable.length >= chunkSize) {
-                                hasWork = true;
-                            }
-                        }
-
-                        if (hasWork) {
-                            toastr.info("Background Memory Scan Triggered...", "VCRP");
-                            // We run it after a small delay so ST finishes saving the chat first
-                            setTimeout(async () => {
-                                await memProcessPendingChunks(true);
-                            }, 3000);
-                        }
-                    }
-                }
-
 
                 // AUTO-EXTRACT NPCs
                 const npcBank = localProfile?.npcBank;

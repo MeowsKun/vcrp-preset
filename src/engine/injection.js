@@ -13,18 +13,17 @@ import { localProfile } from "../core/state.js";
 import {
     activeStoryPlanRequest, activeBanListChat,
     activeNpcScanRequest, activeNpcUpdateRequest,
-    activeMemorySummarizationRequest,
     activeGenerationOrder, isBackgroundGenerationActive,
     activeNpcImages, clearActiveNpcImages,
 } from "../core/activeRequests.js";
 import { DEFAULT_PROMPTS } from "../prompts/index.js";
 import { sdGenreLabel } from "../features/storyplan/ui.js";
-import { memEnsureSemanticQueryFresh } from "../features/memory/vectordb.js";
 import { npcBuildDossierPrompt } from "../features/npc/fields.js";
 import { escapeRegex } from "../utils/regex.js";
 import { buildBaseDict } from "./buildBaseDict.js";
 import { meguminAllSlotTriggers } from "../../data/slots.js";
 import { vcrpApplyGenerationToDict, vcrpFinalizeMessages } from "../vcrp/generation.js";
+import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache } from "../vcrp/memory/index.js";
 import { buildTokenBreakdown } from "../vcrp/tokenBreakdown.js";
 
 // Throttles the prompt-preview popup so token counting and rapid ST background
@@ -170,39 +169,6 @@ export async function handlePromptInjection(data, type) {
         return;
     }
 
-    // --- INJECT MEMORY SUMMARIZATION PROMPT ---
-    if (activeMemorySummarizationRequest) {
-        messages.length = 0;
-
-        // Check if the user specified a language in the Global Settings tab
-        const targetLang = (localProfile.userLanguage && localProfile.userLanguage.trim() !== "")
-            ? localProfile.userLanguage
-            : "the same language used in the chat history";
-
-        const memCustom = localProfile.memoryCore.customPromptsEnabled ? localProfile.memoryCore.customPrompts : null;
-        const sys = (memCustom && memCustom.systemPrompt) || DEFAULT_PROMPTS.memoryCore.systemPrompt;
-        const userTask = (memCustom && memCustom.userPrompt) || DEFAULT_PROMPTS.memoryCore.userPrompt;
-
-        messages.push({
-            "role": "system",
-            "content": sys.replace('{{targetLang}}', targetLang)
-        });
-        messages.push({
-            "role": "user",
-            "content": userTask.replace('{{chatHistory}}', activeMemorySummarizationRequest).replace('{{targetLang}}', targetLang)
-        });
-
-        if (!disablePrefill) {
-            messages.push({
-                "role": "assistant",
-                "content": `<think>\nI need to summarize the core events and meaningful dialogue from this chunk, removing all flowery prose and trivial actions. I will output the final result in ${targetLang}.\n</think>\nSummary:\n`
-            });
-        }
-
-        console.log(`[${extensionName}] 🎯 Injected Memory Summarization array in memory.`);
-        return;
-    }
-
     // --- INJECT FREE-FORM TASK ("order") PROMPT ---
     // VCRP: upstream relied on the separate Engine preset's [[order]] slot. VCRP ships no
     // Engine preset, so the task prompt is built here from the text that preset carried.
@@ -222,15 +188,6 @@ export async function handlePromptInjection(data, type) {
     }
 
     if (!localProfile) return;
-
-    // Semantic memory retrieval is a network call fired on a debounce, so without
-    // waiting here the prompt can be assembled from the previous turn's matches.
-    // No-ops unless the search text actually changed, so swipes and regenerations
-    // do not pay for it. Only on the real generation path — the token counter and
-    // the prompt preview call buildBaseDict(true) and never reach this line.
-    try { await memEnsureSemanticQueryFresh(); } catch (e) {
-        console.warn("[VCRP] Semantic refresh before prompt build failed; using what is in hand.", e);
-    }
 
     const dict = buildBaseDict();
 
@@ -300,6 +257,8 @@ export async function handlePromptInjection(data, type) {
     // Only for prompts built from the VCRP preset (other presets carry no tags, so nothing was replaced).
     if (replacementsMade > 0) {
         vcrpFinalizeMessages(messages, vcrpGen, s => (typeof substituteParams === 'function' ? substituteParams(s) : s));
+        vcrpMemoryShapeTask(messages);
+        vcrpMemoryAfterPrompt(messages, data?.dryRun === true);
     }
 
     // --- INJECT NPC PORTRAITS AS MULTIMODAL IMAGES ---
@@ -318,6 +277,9 @@ export async function handlePromptInjection(data, type) {
         }
         clearActiveNpcImages();
     }
+
+    // Cache markers go on last: they turn message text into parts.
+    if (replacementsMade > 0) vcrpMemoryMarkCache(messages, data?.dryRun === true);
 
     if (replacementsMade > 0 && !activeGenerationOrder) {
         console.log(`[${extensionName}] ✅ Executed ${replacementsMade} block replacements.`);

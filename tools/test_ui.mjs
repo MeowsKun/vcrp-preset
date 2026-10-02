@@ -103,9 +103,23 @@ Object.assign(p, { mode: "v10-shura", model: "cot-v10-shura-english", cotEnabled
 p.knowledgebase.enabled = true; p.animeMode.enabled = true;
 p.addons = ["bold_npcs", "html", "color", "dn"];
 if (p.npcBank) { p.npcBank.enabled = true; p.npcBank.npcs = [{ name: "Mara", appearance: "tall", pfp: "" }]; }
-if (p.memoryCore) p.memoryCore.enabled = true;
+
 if (p.storyPlan) p.storyPlan.enabled = true;
 p.banList = ["no purple prose"];
+// Story Memory on, with a chapter, an arc, a fact and a chapter waiting for review.
+const memory = await imp("src/vcrp/memory/index.js");
+const seedMemory = () => {
+    p.vcrpMemory.enabled = true;
+    Object.assign(memory.memoryState(), {
+        lastPlan: { at: 0, cold: true, cut: false, behind: true, limit: "summaries", reason: "cold start, over budget (summaries)", promptTokens: 30000 },
+        chapters: [{ id: "C1", gist: "Bob met Mara at the bar.", chapter: "Bob walked into the Lantern.", from: 0, to: 0, start: null, end: null, checked: "ok" }],
+        arcs: [{ text: "The first week in Baltimore.", covers: [] }],
+        ledger: [{ id: "F1", cat: "person", text: "Mara tends bar at the Lantern." }],
+        pending: [{ from: 0, to: 1, gist: "Mara smiled.", chapter: "Alice smiled.", ops: [{ op: "+", cat: "item", text: "a brass key" }], checked: "corrected", arc: "", foldIds: [], start: null, end: null }, { from: 2, to: 3, gist: "Second.", chapter: "More.", ops: [], checked: "ok", arc: "", foldIds: [], start: null, end: null }],
+        shown: "<story_memory>x</story_memory>",
+    });
+};
+seedMemory();
 await renderAll("all on");
 
 // Click every interactive element in every tab (re-rendering the tab before each click).
@@ -129,6 +143,26 @@ for (let i = 0; i < tabsUI.length; i++) {
             failures++;
             console.log(`  ✗ click ${desc}: THREW ${e && e.stack ? e.stack.split("\n").slice(0, 3).join(" / ") : e}`);
         }
+    }
+}
+// Story Memory's own controls, with the panel switched on for each click (the generic pass
+// above clicks its on/off toggle first, which hides the rest).
+const memTab = tabsUI.findIndex(t => t.title === "Memory");
+seedMemory(); switchTab(memTab);
+const memCount = $("#ps_stage_content").find("[id^=vmem_]").filter("button, input[type=checkbox]").length;
+for (let k = 0; k < memCount; k++) {
+    seedMemory(); switchTab(memTab);
+    const el = $("#ps_stage_content").find("[id^=vmem_]").filter("button, input[type=checkbox]").eq(k);
+    if (!el.length || el.attr("id") === "vmem_enable") continue;
+    const before = errors.length;
+    try {
+        el.trigger(el.is("input") ? "change" : "click");
+        await new Promise(r => setTimeout(r, 2));
+        clicks++;
+        if (errors.length > before) { failures++; console.log(`  ✗ Story Memory › ${el.attr("id")}: ${errors.slice(before).join(" | ").slice(0, 300)}`); }
+    } catch (e) {
+        failures++;
+        console.log(`  ✗ Story Memory › ${el.attr("id")}: THREW ${e && e.stack ? e.stack.split("\n").slice(0, 3).join(" / ") : e}`);
     }
 }
 console.log(`  (${clicks} clicks across all tabs)`);

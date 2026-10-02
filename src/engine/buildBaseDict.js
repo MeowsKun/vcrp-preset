@@ -21,12 +21,12 @@ import { buildBlocksEnvelope } from "../features/blocks/registry.js";
 import { buildConfigBlock } from "../features/storyconfig/config.js";
 import { npcBuildTextFromData } from "../features/npc/data.js";
 import { npcBuildDossierPrompt, npcBuildUpdatePrompt } from "../features/npc/fields.js";
-import { memGetCachedKeywords } from "../features/memory/keywords.js";
-import { memGetRelevantVaultEntries } from "../features/memory/index.js";
+import { memGetCachedKeywords } from "../core/keywords.js";
 import { meguminOverridableSlots, meguminSlotIsLive, meguminModuleTrigger } from "../../data/slots.js";
 import { resolveSlot } from "../core/sharedFragments.js";
 import { buildKnowledgebase } from "../vcrp/knowledgebase.js";
 import { buildAnimeMode } from "../vcrp/anime.js";
+import { vcrpMemoryEnabled, vcrpMemoryBlock, vcrpMemoryRecall } from "../vcrp/memory/index.js";
 
 export function buildBaseDict(isTokenCount = false) {
     const dict = {};
@@ -84,7 +84,6 @@ export function buildBaseDict(isTokenCount = false) {
         if (bId === "summary") return;
         // The UI handles the warning, so we allow the injection anyway:
         // if (bId === "info" && localProfile.blocks.includes("mvu")) return;
-        // if (bId === "summary" && localProfile.memoryCore && localProfile.memoryCore.enabled) return;
 
         const item = hardcodedLogic.blocks.find(b => b.id === bId);
         if (item) dict[item.trigger] = item.content;
@@ -373,63 +372,18 @@ export function buildBaseDict(isTokenCount = false) {
         }
     });
 
-    // --- 5. MEMORY CORE INJECTION ---
+    // --- 5. STORY MEMORY ---
     // Initialize them as empty strings by default so the tags cleanly vanish if there are no memories
     dict["[[long-Memory]]"] = "";
     dict["[[Short-memory]]"] = "";
 
-    if (localProfile.memoryCore && localProfile.memoryCore.enabled) {
-        const mem = localProfile.memoryCore;
-
-        const memCustom = mem.customPromptsEnabled ? mem.customPrompts : null;
-
-        // A. Retrieve Long-Term Memories (Local TF-IDF Keyword Scoring)
-        // updateLiveTokenCount drops [[long-Memory]] via excludeKeys anyway,
-        // so the scan only ever fed a value that got thrown away
-        if (!isTokenCount && mem.longTermVault && mem.longTermVault.length > 0) {
-            const retrieved = memGetRelevantVaultEntries();
-            if (retrieved.length > 0) {
-                // Feed these to the model oldest-first so the archives read as a timeline instead of a relevance ranking.
-                // Sort a COPY - the array can be the live semantic match list or the retrieval cache, never reorder it in place!
-                const ordered = [...retrieved].sort((a, b) => {
-                    const aStart = (a && typeof a.id === 'string') ? parseInt(a.id.split("-")[0], 10) : NaN;
-                    const bStart = (b && typeof b.id === 'string') ? parseInt(b.id.split("-")[0], 10) : NaN;
-                    return (Number.isFinite(aStart) ? aStart : 0) - (Number.isFinite(bStart) ? bStart : 0);
-                });
-                let longXML = "<retrieved_archives>\n";
-                ordered.forEach(m => {
-                    const dateStr = new Date(m.timestamp).toLocaleString();
-                    const content = m.text || m.summary || "";
-                    longXML += `<archive_memory time="${dateStr}">\n[Msg ${m.id}]:\n${content}\n</archive_memory>\n`;
-                });
-                longXML += "</retrieved_archives>";
-
-                const template = (memCustom && memCustom.longTermTemplate) || DEFAULT_PROMPTS.memoryCore.longTermTemplate;
-                dict["[[long-Memory]]"] = template.replace('{{archiveXML}}', longXML);
-            }
-        }
-
-        // B. Inject Short-Term Memories (Chronological)
-        if (mem.shortTermChunks && mem.shortTermChunks.length > 0) {
-            // Same rule as the long-term sort: imports can concatenate chunks out of order,
-            // and one bad id must never break prompt assembly. Sort a COPY - this array IS
-            // the stored data, reordering it here would rewrite storage on the next save.
-            const orderedShort = [...mem.shortTermChunks].sort((a, b) => {
-                const aStart = (a && typeof a.id === 'string') ? parseInt(a.id.split("-")[0], 10) : NaN;
-                const bStart = (b && typeof b.id === 'string') ? parseInt(b.id.split("-")[0], 10) : NaN;
-                return (Number.isFinite(aStart) ? aStart : 0) - (Number.isFinite(bStart) ? bStart : 0);
-            });
-            let shortXML = "<recent_state_extracts>\n";
-            orderedShort.forEach(m => {
-                const dateStr = new Date(m.timestamp).toLocaleString();
-                shortXML += `<archive_memory time="${dateStr}">[Msg ${m.id}]: ${m.summary}</archive_memory>\n`;
-            });
-            shortXML += "</recent_state_extracts>";
-
-            const templateShort = (memCustom && memCustom.shortTermTemplate) || DEFAULT_PROMPTS.memoryCore.shortTermTemplate;
-            dict["[[Short-memory]]"] = templateShort.replace('{{shortXML}}', shortXML);
-        }
+    // The budgeted memory, when on, owns both tags: its snapshot changes only at a cut.
+    if (vcrpMemoryEnabled()) {
+        dict["[[long-Memory]]"] = vcrpMemoryBlock();
+        dict["[[Short-memory]]"] = "";
     }
+    // Old chapters the scene touches. After the chat, so it may change every turn.
+    dict["[[story_recall]]"] = vcrpMemoryEnabled() ? vcrpMemoryRecall() : "";
 
     // --- 5.5 NPC BANK INJECTION ---
     dict["[[npc_dossier]]"] = "";
