@@ -13,6 +13,7 @@ import { escapeHtmlAttr } from "../utils/html.js";
 import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memoryState, estimateTokens, memoryCanReachPrompt } from "./memory/index.js";
 import { autoSummaryHold } from "./memory/summarize.js";
 import { meguminOriginalActive } from "../engine/meguminOriginal.js";
+import { kbAlwaysOnStats, presetCarriesAlwaysSlot } from "./knowledgebase.js";
 
 // A preset is VCRP's if it carries the tags only VCRP/Megumin presets use (the name can be anything).
 const VCRP_TAG_RE = /\[\[(?:blocks|THINK|prompt1)\]\]/;
@@ -103,6 +104,13 @@ export function vcrpHealthCheck() {
     } else if (!originalEngine && originalBanList) {
         add("info", "VCRP engine on the Megumin Original preset",
             "The preset text is Megumin's original, without VCRP's ban list additions and dash rules. Pick a Megumin Original engine to match it, or select \"VCRP V10 Universal\".");
+    }
+
+    // Always-on knowledgebase entries on a preset from before their cached slot.
+    const kbAlways = kbAlwaysOnStats();
+    if (kbAlways.count && !presetCarriesAlwaysSlot()) {
+        add("info", "Re-import the preset to cache always-on knowledgebase entries",
+            `${kbAlways.count} always-on ${kbAlways.count === 1 ? "entry" : "entries"} (about ${kbAlways.tokens.toLocaleString()} tokens) go after the chat and are written to the cache again every turn. The current VCRP presets carry them before the chat, where they are read at a tenth of the price.`);
     }
 
     // 6. Long chats: what decides whether a request is cheap or full price.

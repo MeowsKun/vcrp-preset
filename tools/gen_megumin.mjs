@@ -168,9 +168,11 @@ function edit(text, swaps, name) {
 }
 
 const original = {
-    // Removed features: Death, Combat and Organic NPCs. VCRP's Bold NPCs add-on sits where they did.
+    // Removed features: Death, Combat and Organic NPCs. VCRP's Bold NPCs add-on sits where they
+    // did, and its always-on knowledgebase entries before the ban list, where VCRP's preset has them.
     "Main 2": edit(upText("Main 2"), [
         ["[[prompt5]]\n\n[[death]]\n\n[[combat]]\n\n[[npc_events]]\n\n[[prompt6]]", "[[prompt5]]\n\n[[boldnpcs]]\n\n[[prompt6]]"],
+        ["[[html]]\n\n<banlist>", "[[html]]\n\n[[knowledgebase_always]]\n\n<banlist>"],
     ], "Main 2"),
     "<lore>": upText("<lore>"),
     "</lore><user_persona>": upText("</lore><user_persona>"),

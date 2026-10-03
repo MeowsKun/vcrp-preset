@@ -21,7 +21,10 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 - **Continue, Impersonate, and other extensions' background requests** get a fitting prompt:
   no fresh thinking block, no tracker blocks, no dice lines, no prefill.
 - **Knowledgebase** tab (from VCRP V8): rule/lore entries, always-on or keyword-triggered; per-character
-  and shared (all characters) entries; import/export.
+  and shared (all characters) entries; import/export. Keywords match whole words (`hypno*` for word
+  starts) in the last few messages (adjustable). Always-on entries sit before the chat, so they are
+  cached; keyed ones go after it, only on the turns they fire. "What fires now?" previews which
+  entries your last messages plus the message box would send.
 - **Anime Mode** (from VCRP V8): in the Writing Style sidebar under DN Ratio.
 - **Bold NPCs** add-on (from VCRP V8).
 - **Setup Check** (Global Settings): flags a non-VCRP preset, preset regex not allowed/off, or the wrong API type,

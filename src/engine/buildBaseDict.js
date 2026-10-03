@@ -256,6 +256,7 @@ export function buildBaseDict(isTokenCount = false) {
     const vcrpKb = buildKnowledgebase(localProfile);
     const vcrpAnime = buildAnimeMode(localProfile);
     dict["[[knowledgebase]]"] = vcrpKb.block;
+    dict["[[knowledgebase_always]]"] = vcrpKb.alwaysBlock;   // before the chat: cached
     dict["[[ANIMEMODE]]"] = vcrpAnime.block;
     if (dict["[[COT]]"]) {
         [vcrpKb.cotNote, vcrpAnime.cotNote].filter(Boolean).forEach(note => { dict["[[COT]]"] += `\n\n${note}`; });

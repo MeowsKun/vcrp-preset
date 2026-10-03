@@ -208,7 +208,9 @@ export const MEGUMIN_SLOT_REGISTRY = [
     { key: null, trigger: "[[story_recall]]", label: "Story Recall", scope: "auto", group: "live", where: "Memory",
       hint: "VCRP: old chapters and facts from Story Memory that the current scene touches." },
     { key: null, trigger: "[[knowledgebase]]", label: "Knowledgebase", scope: "auto", group: "live", where: "Knowledgebase",
-      hint: "VCRP: the active knowledgebase entries for this turn." },
+      hint: "VCRP: the keyed knowledgebase entries this turn's messages trigger (and, on a preset without the always-on slot, the always-on ones too)." },
+    { key: null, trigger: "[[knowledgebase_always]]", label: "Knowledgebase (always on)", scope: "auto", group: "live", where: "Knowledgebase",
+      hint: "VCRP: the always-on knowledgebase entries. Sits before the chat, so it is cached and changes only when an entry is edited." },
     { key: null, trigger: "[[ANIMEMODE]]", label: "Anime Mode", scope: "auto", group: "live", where: "Writing Style",
       hint: "VCRP: the anime/manga style rules, when Anime Mode is on." },
 ];

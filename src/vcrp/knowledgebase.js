@@ -1,9 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // VCRP: Knowledgebase.
 //
-// User-defined rule / lore entries injected as [[knowledgebase]]. An entry with no
-// trigger keywords is always sent; one with keywords is sent only when a keyword
-// appears in the last few messages (lorebook-style, to save tokens).
+// User-defined rule / lore entries. An entry with no trigger keywords is always sent;
+// one with keywords is sent only when one of them appears, as a whole word, in the
+// last few messages (lorebook-style, to save tokens).
+//
+// Where they go:
+//   - always-on entries:  [[knowledgebase_always]], in Main 2 before the chat. They change
+//     only when edited, so they sit in the cached part and are read at a tenth of the
+//     price. A preset from before that slot existed gets them in the per-turn block.
+//   - keyed entries:      [[knowledgebase]], in Output RULES after the chat, where coming
+//     and going every turn leaves the cache alone.
 //
 // Two stores:
 //   - this character's entries: on the profile as `knowledgebase` (the key VCRP V8
@@ -19,8 +26,17 @@ import { localProfile } from "../core/state.js";
 import { saveProfileToMemory } from "../core/profile.js";
 import { meguminCleanChatHistoryText } from "../engine/chatText.js";
 import { downloadJsonFile } from "../utils/download.js";
+import { escapeRegex } from "../utils/regex.js";
 
 const EXPORT_FORMAT = "vcrp-knowledgebase";
+export const ALWAYS_SLOT = "[[knowledgebase_always]]";
+const DEFAULT_SCAN_DEPTH = 6;          // recent messages searched for keywords
+const BIG_ALWAYS_TOKENS = 2000;        // always-on entries past this get a warning
+export const kbTokens = text => Math.ceil(String(text || "").length / 3.5);   // the same estimate Story Memory uses
+
+// The hypnosis example fires on its subject only. "conditioning" and "entrance" are left
+// out on purpose: air conditioning and a front entrance are not hypnosis.
+const HYPNOSIS_TRIGGERS = "hypno*, trance, trances, mesmeri*";
 
 // The hypnosis entry's text, shared by the seed and the upgrade below.
 const HYPNOSIS_CONTENT = "Use this framework whenever hypnosis, trance, or conditioning appears in the story.\n\n- Induction: Trance is reached gradually through focus (a fixed point, a voice, repetition, rhythm), not instantly. Resistance, distraction, or disbelief slows or breaks it.\n- Depth: Track a rough depth, from light (relaxed, suggestible but aware), to medium (compliant, fuzzy, fewer inhibitions), to deep (highly pliable, narrowed awareness). Deeper states take longer to reach and to leave.\n- Suggestibility: Subjects accept suggestions that don't violate their core values easily; suggestions that do are resisted, cause distress, or fail. Repetition and depth increase what holds.\n- Triggers: Post-hypnotic triggers (a word, gesture, sound) can be installed and later fire, but only ones that were actually established earlier in the story.\n- Aftereffects: Coming out is groggy and disoriented. Memory of trance may be hazy or absent depending on what was suggested. Effects fade over time unless reinforced.\n\nKeep it internally consistent: never have hypnosis do something it hasn't been set up to do.";
@@ -40,7 +56,7 @@ function makeDefaultKbEntries() {
             id: "kb_default_hypnosis",
             title: "Hypnosis Mechanics (example)",
             content: HYPNOSIS_CONTENT,
-            active: true, triggers: "", timestamp: t,
+            active: true, triggers: HYPNOSIS_TRIGGERS, timestamp: t,
         },
         {
             id: "kb_default_trope",
@@ -64,6 +80,14 @@ export function ensureKnowledgebase(profile) {
     // carried a note meant for the reader. Upgrade untouched copies only.
     kb.entries = kb.entries.filter(e => !(e && e.id === "kb_default_writing" && e.content === LEGACY_KB.writing));
     kb.entries.forEach(e => { if (e && e.id === "kb_default_hypnosis" && e.content === LEGACY_KB.hypnosis) e.content = HYPNOSIS_CONTENT; });
+    // The hypnosis example used to be always on, telling every story about hypnosis every
+    // turn. Untouched copies get its keywords, once: clearing them afterwards sticks.
+    if (!kb.hypnosisKeyed) {
+        kb.entries.forEach(e => {
+            if (e && e.id === "kb_default_hypnosis" && e.content === HYPNOSIS_CONTENT && !String(e.triggers || "").trim()) e.triggers = HYPNOSIS_TRIGGERS;
+        });
+        kb.hypnosisKeyed = true;
+    }
     return kb;
 }
 
@@ -80,37 +104,131 @@ function saveShared() {
     saveSettingsDebounced();
 }
 
-/** The entries to inject right now: active, non-empty, always-on or keyword-matched; this character's first, then shared. */
-export function getInjectableKbEntries(profile = localProfile) {
-    const kb = profile && profile.knowledgebase;
-    if (!kb || !kb.enabled) return [];
-    const usable = e => e && e.active !== false && e.content && e.content.trim();
-    const active = [...(kb.entries || []).filter(usable), ...getSharedKnowledgebase().entries.filter(usable)];
-    if (!active.length) return [];
+// ── Keywords ─────────────────────────────────────────────────────────────────
 
-    let recentText = "";
-    if (active.some(e => (e.triggers || "").trim())) {
-        try {
-            const chat = getContext().chat || [];
-            recentText = chat.filter(m => !m.is_system).slice(-6).map(m => meguminCleanChatHistoryText(m.mes)).join(" ").toLowerCase();
-        } catch (e) { /* no chat: keyed entries stay dormant */ }
-    }
-    return active.filter(e => {
-        const keywords = (e.triggers || "").split(",").map(k => k.trim().toLowerCase()).filter(Boolean);
-        return !keywords.length || keywords.some(k => recentText.includes(k));
-    });
+/** An entry's keywords as typed: comma-separated, blanks dropped. */
+export function parseKeywords(triggers) {
+    return String(triggers || "").split(",").map(k => k.trim()).filter(k => k && k !== "*");
 }
 
-/** Text for [[knowledgebase]] and the one-sentence reminder appended to the CoT. */
+// A keyword matches as a whole word (or phrase), in any script, ignoring case. A trailing
+// * matches word starts: "hypno*" finds hypnosis and hypnotized. Matching inside words was
+// the old behaviour, and it fired "trance" on "entrance" and "ass" on "class".
+const kwCache = new Map();
+export function keywordRegex(keyword) {
+    let re = kwCache.get(keyword);
+    if (!re) {
+        const stem = keyword.endsWith("*");
+        const words = (stem ? keyword.slice(0, -1) : keyword).trim().split(/\s+/).filter(Boolean);
+        // Nothing left to look for (a bare "*") must match nothing, not everything.
+        re = !words.length ? /(?!)/
+            : new RegExp(`(?<![\\p{L}\\p{N}_])${words.map(escapeRegex).join("\\s+")}${stem ? "" : "(?![\\p{L}\\p{N}_])"}`, "iu");
+        if (kwCache.size > 500) kwCache.clear();
+        kwCache.set(keyword, re);
+    }
+    return re;
+}
+
+/** The first of the entry's keywords found in `text`, or null. */
+export function matchedKeyword(entry, text) {
+    for (const k of parseKeywords(entry && entry.triggers)) if (keywordRegex(k).test(text)) return k;
+    return null;
+}
+
+/** How many recent messages keywords are looked for in. */
+export function kbScanDepth(profile = localProfile) {
+    const d = Number(profile && profile.knowledgebase && profile.knowledgebase.scanDepth);
+    return Number.isFinite(d) && d >= 1 ? Math.min(50, Math.round(d)) : DEFAULT_SCAN_DEPTH;
+}
+
+// The text keywords are looked for in: the last messages, without thinking or blocks. With
+// a draft (the preview), the draft stands in for the message about to be sent.
+function scanText(profile, draft) {
+    const depth = kbScanDepth(profile);
+    const chat = ((getContext() || {}).chat || []).filter(m => !m.is_system);
+    const n = draft ? depth - 1 : depth;
+    // slice(-0) would be the whole chat: a scan of one message plus a draft is the draft alone.
+    const parts = (n > 0 ? chat.slice(-n) : []).map(m => meguminCleanChatHistoryText(m.mes));
+    if (draft) parts.push(draft);
+    return parts.join("\n");
+}
+
+// ── What gets sent ───────────────────────────────────────────────────────────
+
+/**
+ * The entries to send right now: always-on ones, and keyed ones with the keyword that
+ * fired them ({entry, keyword}). Active, non-empty only; this character's before shared.
+ * `draft` previews the next message without sending it.
+ */
+export function kbSelection(profile = localProfile, draft = "") {
+    const kb = profile && profile.knowledgebase;
+    if (!kb || !kb.enabled) return { always: [], keyed: [], dormant: [] };
+    const usable = e => e && e.active !== false && e.content && e.content.trim();
+    const active = [...(kb.entries || []).filter(usable), ...getSharedKnowledgebase().entries.filter(usable)];
+    const always = active.filter(e => !parseKeywords(e.triggers).length);
+    const keyedAll = active.filter(e => parseKeywords(e.triggers).length);
+    let text = "";
+    if (keyedAll.length) {
+        try { text = scanText(profile, String(draft || "").trim()); } catch (e) { /* no chat: keyed entries stay dormant */ }
+    }
+    const keyed = [], dormant = [];
+    for (const e of keyedAll) {
+        const keyword = text ? matchedKeyword(e, text) : null;
+        if (keyword) keyed.push({ entry: e, keyword }); else dormant.push(e);
+    }
+    return { always, keyed, dormant };
+}
+
+/** Every entry that would be sent right now, in order. */
+export function getInjectableKbEntries(profile = localProfile) {
+    const s = kbSelection(profile);
+    return [...s.always, ...s.keyed.map(x => x.entry)];
+}
+
+/** Whether the active preset has an enabled slot carrying [[knowledgebase_always]]. */
+export function presetCarriesAlwaysSlot() {
+    try {
+        const cc = getContext().chatCompletionSettings || {};
+        const carrier = (cc.prompts || []).filter(p => p && typeof p.content === "string" && p.content.includes(ALWAYS_SLOT));
+        if (!carrier.length) return false;
+        const order = Array.isArray(cc.prompt_order) ? (cc.prompt_order.find(o => o && o.character_id === 100001) || cc.prompt_order[0]) : null;
+        if (!order || !Array.isArray(order.order)) return true;
+        return carrier.some(p => order.order.some(o => o.identifier === p.identifier && o.enabled));
+    } catch (e) {
+        return false;
+    }
+}
+
+// An entry's own text must not close the tags it is sent in.
+const guardTags = s => String(s).replace(/<(\/?)(knowledgebase\w*|entry)\b/gi, "‹$1$2");
+const entryXml = e => `<entry title="${String(e.title || "").replace(/"/g, "'")}">\n${guardTags(e.content.trim())}\n</entry>`;
+const wrap = (tag, lead, entries) => `<${tag}>\n${lead}\n\n${entries.map(entryXml).join("\n\n")}\n</${tag}>`;
+
+/**
+ * The text for [[knowledgebase_always]] (alwaysBlock, cached), [[knowledgebase]] (block,
+ * per turn), and the one-sentence reminder appended to the CoT.
+ */
 export function buildKnowledgebase(profile = localProfile) {
-    const entries = getInjectableKbEntries(profile);
-    if (!entries.length) return { block: "", cotNote: "" };
-    const block = "<knowledgebase>\nBinding rules and lore for this story. Where an entry applies to the scene, follow it exactly.\n\n"
-        + entries.map(e => `<entry title="${String(e.title || "").replace(/"/g, "'")}">\n${e.content.trim()}\n</entry>`).join("\n\n")
-        + "\n</knowledgebase>";
-    const titles = entries.map(e => `"${e.title}"`).join(", ");
+    const { always, keyed } = kbSelection(profile);
+    const fired = keyed.map(x => x.entry);
+    if (!always.length && !fired.length) return { block: "", alwaysBlock: "", cotNote: "" };
+    const cached = always.length > 0 && presetCarriesAlwaysSlot();
+    const alwaysBlock = cached
+        ? wrap("knowledgebase", "Standing rules and lore for this story. Where an entry applies to the scene, follow it exactly.", always)
+        : "";
+    const perTurn = cached ? fired : [...always, ...fired];
+    const block = !perTurn.length ? ""
+        : cached ? wrap("knowledgebase_scene", "Rules and lore the current scene touches. Where an entry applies, follow it exactly.", perTurn)
+        : wrap("knowledgebase", "Binding rules and lore for this story. Where an entry applies to the scene, follow it exactly.", perTurn);
+    const titles = [...always, ...fired].map(e => `"${e.title}"`).join(", ");
     const cotNote = `Also keep in mind the knowledgebase entries (${titles}): anything they define that bears on this scene is binding.`;
-    return { block, cotNote };
+    return { block, alwaysBlock, cotNote };
+}
+
+/** Always-on entries and their tokens, for the tab and Setup Check. */
+export function kbAlwaysOnStats(profile = localProfile) {
+    const { always } = kbSelection(profile);
+    return { count: always.length, tokens: always.reduce((n, e) => n + kbTokens(e.content), 0) };
 }
 
 // ── Import / export ──────────────────────────────────────────────────────────
@@ -188,6 +306,21 @@ export function renderKnowledgebase(c) {
                 <button id="kb_btn_export" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem;"><i class="fa-solid fa-file-export"></i> Export</button>
             </div>
 
+            <div class="mtab-panel" style="margin-bottom: 18px; padding: 12px 14px;">
+                <div id="kb_summary" style="font-size: 0.75rem; line-height: 1.55; display: flex; flex-direction: column; gap: 3px;"></div>
+                <div class="mtab-setting-row" style="padding: 10px 0 0; border: none;">
+                    <div class="set-info">
+                        <div class="set-label">Keyword scan</div>
+                        <div class="set-desc">How many recent messages are searched for an entry's keywords.</div>
+                    </div>
+                    <input id="kb_scan_depth" type="number" min="1" max="50" step="1" class="ps-modern-input" style="width: 80px;">
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                    <button id="kb_btn_preview" class="ps-modern-btn secondary" style="padding: 4px 10px; font-size: 0.72rem;" title="Which entries the last messages, plus whatever is in the message box, would send. Nothing is sent."><i class="fa-solid fa-magnifying-glass"></i> What fires now?</button>
+                </div>
+                <div id="kb_preview_out" style="margin-top: 8px; font-size: 0.75rem; line-height: 1.55;"></div>
+            </div>
+
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <div style="color: #818cf8; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
                     <i class="fa-solid fa-user"></i> This Character
@@ -248,6 +381,33 @@ export function renderKnowledgebase(c) {
         }
     });
 
+    $("#kb_scan_depth").val(kbScanDepth(localProfile)).on("change", function () {
+        const v = Math.round(Number($(this).val()));
+        kb.scanDepth = Number.isFinite(v) ? Math.min(50, Math.max(1, v)) : DEFAULT_SCAN_DEPTH;
+        $(this).val(kb.scanDepth);
+        saveProfileToMemory();
+    });
+
+    // Built with .text(), so titles and keywords can hold anything.
+    $("#kb_btn_preview").on("click", () => {
+        const draft = String($("#send_textarea").val() || "");
+        const s = kbSelection(localProfile, draft);
+        const out = $("#kb_preview_out").empty();
+        const line = (label, color, items) => {
+            const row = $(`<div></div>`);
+            row.append($(`<b></b>`).css("color", color).text(`${label}: `));
+            row.append(document.createTextNode(items.length ? items.join(" · ") : "none"));
+            out.append(row);
+        };
+        if (!s.always.length && !s.keyed.length && !s.dormant.length) {
+            out.append($(`<div style="opacity:.8;"></div>`).text("No active entries."));
+            return;
+        }
+        line("Always on", "#10b981", s.always.map(e => e.title || "Untitled"));
+        line(`Fires now${draft.trim() ? " (with the message box)" : ""}`, "#f59e0b", s.keyed.map(x => `${x.entry.title || "Untitled"} (on "${x.keyword}")`));
+        line(`Not now (searched the last ${kbScanDepth(localProfile)} messages)`, "var(--text-muted)", s.dormant.map(e => e.title || "Untitled"));
+    });
+
     $("#kb_btn_export").on("click", exportKnowledgebase);
     $("#kb_btn_import").on("click", () => $("#kb_file_import").trigger("click"));
     $("#kb_file_import").on("change", function () {
@@ -272,9 +432,27 @@ export function renderKnowledgebase(c) {
     if (kb.enabled) renderKbLists();
 }
 
+// What the entries cost: always-on ones go out on every request, keyed ones only when they fire.
+function paintSummary() {
+    const el = $("#kb_summary");
+    if (!el.length) return;
+    const kb = ensureKnowledgebase(localProfile);
+    const all = [...kb.entries, ...getSharedKnowledgebase().entries].filter(e => e && e.active !== false && e.content && e.content.trim());
+    const keyedCount = all.filter(e => parseKeywords(e.triggers).length).length;
+    const { count, tokens } = kbAlwaysOnStats(localProfile);
+    const cached = presetCarriesAlwaysSlot();
+    el.empty();
+    const add = (text, color) => el.append($(`<div></div>`).css("color", color || "").text(text));
+    add(`Always on: ${count} ${count === 1 ? "entry" : "entries"}, about ${tokens.toLocaleString()} tokens on every request${count && cached ? ", cached before the chat. Editing one makes the next request full price once." : "."}`);
+    add(`Keyed: ${keyedCount} ${keyedCount === 1 ? "entry" : "entries"}, sent only on the turns their keywords appear.`);
+    if (tokens > BIG_ALWAYS_TOKENS) add("That is a lot to send on every request. Give the entries that only matter sometimes a few keywords.", "#f59e0b");
+    if (count && !cached) add("The active preset is from before the always-on slot: these entries go after the chat and are written to the cache again every turn. Re-import the VCRP preset to cache them.", "#f59e0b");
+}
+
 function renderKbLists() {
     const kb = ensureKnowledgebase(localProfile);
     const shared = getSharedKnowledgebase();
+    paintSummary();
     renderEntryList($("#kb_entry_list"), kb.entries, {
         save: saveProfileToMemory,
         countEl: "#kb_count_own",
@@ -301,7 +479,7 @@ function renderEntryList(list, entries, opts) {
     entries.forEach((entry, idx) => {
         const isActive = entry.active !== false;
         const hasContent = !!(entry.content && entry.content.trim());
-        const isTriggered = !!(entry.triggers || "").trim();
+        const isTriggered = parseKeywords(entry.triggers).length > 0;
 
         const card = $(`
             <div class="kb-entry-card" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(99,102,241,${isActive ? "0.25" : "0.1"}); border-radius: 10px; overflow: hidden; transition: border-color 0.2s, opacity 0.2s; opacity: ${isActive ? "1" : "0.5"};">
@@ -332,15 +510,19 @@ function renderEntryList(list, entries, opts) {
                         <label style="display:block; font-size:0.63rem; color:#818cf8; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;">
                             <i class="fa-solid fa-key" style="font-size:0.55rem;"></i> Trigger Keywords <span style="color:var(--text-muted); font-weight:400; text-transform:none; letter-spacing:0;">(optional, comma-separated)</span>
                         </label>
-                        <input type="text" class="ps-modern-input kb-triggers-input" placeholder="e.g. hypnosis, trance, spiral - leave blank to always inject" style="width:100%; font-size:0.72rem;" />
-                        <div style="font-size:0.6rem; color:var(--text-muted); margin-top:4px;">Leave blank = always injected. With keywords, this entry only injects when one appears in recent chat (saves tokens).</div>
+                        <input type="text" class="ps-modern-input kb-triggers-input" placeholder="e.g. hypno*, trance, spiral - leave blank to always inject" style="width:100%; font-size:0.72rem;" />
+                        <div style="font-size:0.6rem; color:var(--text-muted); margin-top:4px;">Leave blank = always injected. With keywords, this entry is sent only when one appears in recent chat as a whole word, in any capitalisation. End a keyword with * to match word starts: hypno* finds hypnosis and hypnotized.</div>
                     </div>
                 </div>
             </div>
         `);
 
         // Values are set through .val()/.text(), never pasted into the HTML, so any text is safe.
-        const paintCount = len => card.find(".kb-char-count").text(`${len} chars`).css("color", len > 2000 ? "#ef4444" : "var(--text-muted)");
+        const paintCount = len => card.find(".kb-char-count").text(`${len} chars · about ${Math.ceil(len / 3.5).toLocaleString()} tokens${isTriggered ? " when it fires" : " on every request"}`).css("color", len > 2000 ? "#ef4444" : "var(--text-muted)");
+        // Saved as you type, a moment after the last keystroke: on a phone, closing the panel
+        // mid-edit may never fire the change event the save used to wait for.
+        let saveTimer = null;
+        const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => opts.save(), 400); };
         card.find(".kb-title-input").val(entry.title);
         card.find(".kb-content-input").val(entry.content);
         card.find(".kb-triggers-input").val(entry.triggers || "");
@@ -355,14 +537,16 @@ function renderEntryList(list, entries, opts) {
             $(this).find(".kb-chevron").css("transform", opening ? "rotate(90deg)" : "rotate(0deg)");
         });
         card.find(".kb-title-input")
-            .on("change", function () { entry.title = $(this).val(); opts.save(); })
+            .on("input", function () { entry.title = $(this).val(); saveSoon(); })
+            .on("change", function () { entry.title = $(this).val(); clearTimeout(saveTimer); opts.save(); })
             .on("click", e => e.stopPropagation())
             .on("keydown", e => { if (e.key === "Enter") e.target.blur(); });
         card.find(".kb-content-input")
-            .on("input", function () { paintCount($(this).val().length); })
-            .on("change", function () { entry.content = $(this).val(); opts.save(); renderKbLists(); });
+            .on("input", function () { entry.content = $(this).val(); paintCount(entry.content.length); saveSoon(); })
+            .on("change", function () { entry.content = $(this).val(); clearTimeout(saveTimer); opts.save(); renderKbLists(); });
         card.find(".kb-triggers-input")
-            .on("change", function () { entry.triggers = $(this).val(); opts.save(); renderKbLists(); })
+            .on("input", function () { entry.triggers = $(this).val(); saveSoon(); })
+            .on("change", function () { entry.triggers = $(this).val(); clearTimeout(saveTimer); opts.save(); renderKbLists(); })
             .on("click", e => e.stopPropagation())
             .on("keydown", e => { if (e.key === "Enter") e.target.blur(); });
         card.find(".kb_active_toggle").on("click", function (e) {
