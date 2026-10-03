@@ -178,12 +178,21 @@ const MARKER_TEXT = { charDescription: CARD, personaDescription: PERSONA };
 const tokMemo = new Map();
 const tokens = s => { let n = tokMemo.get(s); if (n === undefined) { n = Math.ceil(enc.encode(s).length * TOKFACTOR); tokMemo.set(s, n); } return n; };
 
+// In-chat slots (injection_position 1, e.g. Output RULES at depth 1) go inside the chat,
+// `injection_depth` messages from the end, not where the slot order lists them.
+const inChat = order.map(o => byId[o.identifier]).filter(q => q.injection_position === 1);
 function buildPrompt(history) {
     const out = [];
     for (const o of order) {
         const q = byId[o.identifier];
+        if (inChat.includes(q)) continue;
         if (q.identifier === "chatHistory") {
-            history.forEach(m => out.push({ role: m.is_user ? "user" : "assistant", content: m.mes }));
+            const chatMsgs = history.map(m => ({ role: m.is_user ? "user" : "assistant", content: m.mes }));
+            for (const inj of [...inChat].sort((a, b) => (b.injection_depth || 0) - (a.injection_depth || 0))) {
+                const content = substituteParams(inj.content || "");
+                if (content) chatMsgs.splice(Math.max(0, chatMsgs.length - (inj.injection_depth || 0)), 0, { role: inj.role || "system", content });
+            }
+            out.push(...chatMsgs);
             continue;
         }
         const content = q.marker ? (MARKER_TEXT[q.identifier] || "") : substituteParams(q.content || "");

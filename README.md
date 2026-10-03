@@ -81,6 +81,11 @@ It relies on prompt caching. Set up once:
 Global Settings → Setup Check flags anything missing. Existing Memory Core summaries become
 chapters the first time each chat is opened.
 
+To see it work without waiting for a break, use **Testing** in the Memory tab: **Cut now** takes
+what the approved chapters cover out of the prompt (the next reply costs full price once),
+**Undo cut** puts it back, **Preview recall** shows which chapters your last messages plus the
+message box would bring back, and the memory text the prompt carries is shown in full.
+
 ## Megumin Original
 
 For RP that reads exactly the way it did on Megumin Suite, with Story Memory and everything else

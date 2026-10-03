@@ -45,20 +45,32 @@ Object.assign(p, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled:
 console.log("0 ok  profile initialised under the VCRP key; knowledgebase seeded:", p.knowledgebase.entries.length, "entries");
 
 // ── Prompt builder (what ST hands to CHAT_COMPLETION_PROMPT_READY, roughly) ──
+// A slot set to "in-chat" (injection_position 1) is not placed by the slot order: SillyTavern
+// puts it inside the chat, `injection_depth` messages from the end. Output RULES is one (depth 1,
+// so it lands before the latest message), which is what any check of "after the chat" must face.
 function buildPrompt(presetFile, { history = 3 } = {}) {
     const preset = JSON.parse(readFileSync(join(REPO, "Presets", presetFile), "utf8"));
     const byId = Object.fromEntries(preset.prompts.map(x => [x.identifier, x]));
+    const order = preset.prompt_order.find(x => x.character_id === 100001).order;
+    const inChat = order.filter(o => o.enabled && byId[o.identifier] && byId[o.identifier].injection_position === 1)
+        .map(o => byId[o.identifier]);
     const out = [];
-    for (const o of preset.prompt_order.find(x => x.character_id === 100001).order) {
+    for (const o of order) {
         if (!o.enabled) continue;
         const q = byId[o.identifier];
-        if (!q) continue;
+        if (!q || inChat.includes(q)) continue;
         if (q.identifier === "chatHistory") {
+            const chatMsgs = [];
             for (let i = 1; i <= history; i++) {
-                out.push({ role: "user", content: `user msg ${i}` });
-                out.push({ role: "assistant", content: `<think>plan ${i}</think>\nScene prose ${i}.` });
+                chatMsgs.push({ role: "user", content: `user msg ${i}` });
+                chatMsgs.push({ role: "assistant", content: `<think>plan ${i}</think>\nScene prose ${i}.` });
             }
-            out.push({ role: "user", content: "latest user msg" });
+            chatMsgs.push({ role: "user", content: "latest user msg" });
+            for (const inj of [...inChat].sort((a, b) => (b.injection_depth || 0) - (a.injection_depth || 0))) {
+                const content = substituteParams(inj.content || "");
+                if (content) chatMsgs.splice(Math.max(0, chatMsgs.length - (inj.injection_depth || 0)), 0, { role: inj.role || "system", content });
+            }
+            out.push(...chatMsgs);
             continue;
         }
         const role = q.marker ? "system" : q.role || "system";
@@ -618,7 +630,9 @@ console.log("18 ok Story Memory chapters (parse, facts, folding, stretch, summar
     const all = text(msgs);
     assert(all.includes("<story_recall>") && all.includes("Mara Voss gave Bob a brass key"), "the chapter the scene touches comes back");
     assert(!all.includes("still in the prompt"), "a chapter whose messages are still carried is not recalled");
-    assert(all.indexOf("<story_recall>") > all.indexOf("latest user msg"), "recall sits after the chat");
+    // Output RULES is in-chat at depth 1: after every older message, just before the newest.
+    assert(all.indexOf("<story_recall>") > all.indexOf("Scene prose 3") && all.indexOf("<story_recall>") < all.indexOf("latest user msg"),
+        "recall sits after the cached history, just before the newest message");
     assert.deepEqual(meta.lastRecall, ["C1"]);
     meta.cut = null;
     assert(!text(await run("VCRP V10 Universal.json")).includes("<story_recall>"), "before the first cut there is nothing to recall");
@@ -1296,5 +1310,106 @@ console.log("27 ok Megumin Original (engines, thinking steps, shared wording, pr
     extension_settings.VCRP.globalSettings.cotPrefillMode = keepPrefillMode;
 }
 console.log("28 ok Megumin Original through VCRP's checks (Claude/Gemini prefill, continue/impersonate/quiet, every feature, OpenRouter, cache layout, settings)");
+
+// 29. What Story Memory sends, end to end, and the Memory tab's testing tools: a forced cut
+//     carries the gists and facts, recall answers a touched chapter, a cancelled preview
+//     warms nothing, and "Cut now" / "Undo cut" behave.
+{
+    const memory = await imp("src/vcrp/memory/index.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { mode: q.mode, model: q.model };
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english" });
+    q.vcrpMemory.enabled = true;
+    ctx.mainApi = "openai";
+    ctx.symbols = { ignore: Symbol("ignore") };
+    const vp = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5", prompts: vp.prompts, prompt_order: vp.prompt_order });
+    const T = 2000 * 3600 * 1000;
+    memory.setMemoryClock(() => T);
+
+    chat.length = 0;
+    for (let i = 0; i < 30; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `q${i}`, mes: `(${i}) Another evening at the bar.` });
+    delete meta.vcrp_memory;
+    const st = memory.memoryState();
+    Object.assign(st, {
+        summarized: memory.anchorOf(chat, 20), lastRequestAt: T - 60000, fixedTokens: 8000,
+        chapters: [
+            { id: "C1", gist: "Mara gave Bob a brass key.", chapter: "Mara Voss gave Bob a brass key to the cellar under the Lantern.", from: 0, to: 9, start: null, end: memory.anchorOf(chat, 10) },
+            { id: "C2", gist: "Jonah fixed the harbor boat.", chapter: "Jonah fixed the boat engine at the harbor.", from: 10, to: 19, start: memory.anchorOf(chat, 10), end: memory.anchorOf(chat, 20) },
+        ],
+        ledger: [{ id: "F1", cat: "item", text: "Bob carries Mara's brass key." }], arcs: [],
+    });
+
+    // Before any cut: no memory text and nothing to recall.
+    assert.equal(memory.previewRecall("the brass key from Mara at the Lantern").cut, 0, "nothing is cut yet");
+    assert(!text(await run("VCRP V10 Universal.json")).includes("<story_memory>"), "no memory text before the first cut");
+
+    // Cut now: lands on the summarized edge (a user message), keeps the last 4.
+    let r = memory.forceCut(st, chat);
+    assert.deepEqual(r, { result: "cut", cutAt: 20 }, "cut as far as the chapters reach");
+    assert(st.shown.includes("- Mara gave Bob a brass key.") && st.shown.includes("- Jonah fixed the harbor boat.") && st.shown.includes("[item] Bob carries Mara's brass key."), "gists and facts in the memory text");
+    assert.equal(memory.forceCut(st, chat).result, "already", "a second cut has nowhere further to go");
+
+    // The next (warm) request keeps the cut, hides the cut messages, and sends gists, facts and recall.
+    chat.push({ is_user: true, name: "Bob", send_date: "q30", mes: "I take out Mara's brass key and head for the Lantern cellar." });
+    vcrpSetGenerationType("normal", {}, false);
+    const core = chat.map(m => ({ ...m }));
+    await globalThis.vcrp_memory_intercept(core, 1e9, () => {}, "normal");
+    assert.equal(core.filter(m => m.extra && m.extra[ctx.symbols.ignore]).length, 20, "messages 1-20 leave the prompt");
+    assert.equal(memory.resolveAnchor(chat, st.cut), 20, "a warm request keeps the forced cut");
+    let msgs = await run("VCRP V10 Universal.json");
+    let t = text(msgs);
+    const memMsg = msgs.find(m => typeof m.content === "string" && m.content.includes("<story_memory>"));
+    assert(memMsg && memMsg.role === "system" && t.indexOf("<story_memory>") < t.indexOf("user msg 1"), "gists and facts sit before the chat, in the cached part");
+    assert(t.includes("<story_recall>") && t.includes("Mara Voss gave Bob a brass key to the cellar under the Lantern."), "the touched chapter is recalled in full");
+    assert(!t.includes("Jonah fixed the boat engine"), "an untouched chapter stays a gist");
+    assert.deepEqual(st.lastRecall, ["C1"]);
+
+    // Preview recall: the draft counts, and nothing is recorded.
+    st.lastRecall = ["X"];
+    r = memory.previewRecall("Jonah's boat engine at the harbor again");
+    assert(r.ids.includes("C2") && r.text.includes("Jonah fixed the boat engine"), "the draft brings its chapter back");
+    assert.deepEqual(st.lastRecall, ["X"], "a preview records nothing");
+
+    // Undo: the previous cut (none) and no memory text.
+    assert(memory.undoForceCut(st, chat) && st.cut === null && st.shown === "", "undo restores the uncut prompt");
+    assert(!memory.undoForceCut(st, chat), "nothing left to undo");
+    // A real cut after a test cut: Undo must not reach back past it.
+    memory.forceCut(st, chat);
+    assert(Object.prototype.hasOwnProperty.call(st, "qaPrevCut"), "a test cut can be undone");
+    st.chapters.push({ id: "C3", gist: "A quiet week.", chapter: "Nothing much happened that week.", from: 20, to: 25, start: memory.anchorOf(chat, 20), end: memory.anchorOf(chat, 26) });
+    st.summarized = memory.anchorOf(chat, 26);
+    Object.assign(st, { lastRequestAt: T - 5 * 3600 * 1000, fixedTokens: 1e6 });   // cold, and far over budget
+    extension_settings.VCRP.globalSettings.memoryBudget = { minVerbatim: 10 };
+    vcrpSetGenerationType("normal", {}, false);
+    await globalThis.vcrp_memory_intercept(chat.map(m => ({ ...m })), 1e9, () => {}, "normal");
+    delete extension_settings.VCRP.globalSettings.memoryBudget;
+    assert.equal(memory.resolveAnchor(chat, st.cut), 26, "the cold start cuts further for real");
+    assert(!Object.prototype.hasOwnProperty.call(st, "qaPrevCut") && !memory.undoForceCut(st, chat), "a real cut clears the undo");
+    delete meta.vcrp_memory;
+    assert.equal(memory.forceCut(memory.memoryState(), chat).result, "no chapters", "no chapters, no cut");
+
+    // A preview the player cancels warmed nothing: the cache clock goes back.
+    const st2 = memory.memoryState();
+    st2.lastRequestAt = T - 5 * 3600 * 1000;
+    memory.setMemoryClock(() => T);
+    memory.vcrpMemoryAfterPrompt([{ role: "system", content: "x" }], false);
+    assert.equal(st2.lastRequestAt, T, "a sent request stamps the clock");
+    memory.vcrpMemoryRequestCancelled();
+    assert.equal(st2.lastRequestAt, T - 5 * 3600 * 1000, "a cancelled one puts it back");
+    q.vcrpMemory.enabled = false;
+    memory.vcrpMemoryAfterPrompt([{ role: "system", content: "x" }], false);
+    memory.vcrpMemoryRequestCancelled();
+    assert.equal(st2.lastRequestAt, T - 5 * 3600 * 1000, "a cancel after a prompt that stamped nothing changes nothing");
+
+    memory.setMemoryClock(null);
+    delete meta.vcrp_memory;
+    chat.length = 0;
+    ctx.mainApi = "textgenerationwebui";
+    delete chatCompletionSettings.prompts; delete chatCompletionSettings.prompt_order;
+    Object.assign(q, keep);
+}
+console.log("29 ok what Story Memory sends (gists, facts, recall), Cut now / Undo / Preview recall, cancelled preview");
 
 console.log("\nALL FORK CHECKS PASSED");

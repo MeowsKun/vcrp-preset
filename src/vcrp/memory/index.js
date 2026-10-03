@@ -44,6 +44,7 @@ export const memoryNow = () => clock();
 let lastVisibleChars = -1;        // history text carried by the request being built (-1: not measured)
 let taskActive = false;           // a summary or check call is being built
 let taskStandalone = null;        // ...and, for a standalone call, the messages that replace the prompt
+let stampedOver = null;           // lastRequestAt before the request being built stamped it
 
 export function vcrpMemoryEnabled() {
     return !!(localProfile && localProfile.vcrpMemory && localProfile.vcrpMemory.enabled);
@@ -210,6 +211,7 @@ export async function vcrpMemoryIntercept(chat, type) {
             cutAt = plan.cutAt;
             st.cut = anchorOf(chat, cutAt);
             refreshShownMemory(st, chat, cutAt);
+            delete st.qaPrevCut;   // a real cut since "Cut now": there is nothing left to undo
         }
         st.lastPlan = { at: now, cold: plan.cold, cut: plan.cut, behind: plan.behind, limit: plan.limit, reason: plan.reason, promptTokens: plan.promptTokens };
     }
@@ -233,15 +235,28 @@ export async function vcrpMemoryIntercept(chat, type) {
  * which is what makes this the place to stamp the cache clock.
  */
 export function vcrpMemoryAfterPrompt(messages, dryRun) {
+    stampedOver = null;   // only this prompt's own stamp may ever be taken back
     if (dryRun || !vcrpMemoryEnabled()) return;
     const st = memoryState();
     if (!st || !Array.isArray(messages)) return;
     if (taskStandalone) return;   // a standalone summary call never touches the roleplay cache
+    stampedOver = st.lastRequestAt || 0;
     st.lastRequestAt = clock();
     if (taskActive || lastVisibleChars < 0) return;   // not a fair measure of the roleplay prompt
     const total = messages.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : 0), 0);
     st.fixedTokens = Math.max(0, Math.round((total - lastVisibleChars) / CHARS_PER_TOKEN));
     lastVisibleChars = -1;
+}
+
+/**
+ * The prompt was built but never sent (Cancel in the payload preview). It warmed no cache,
+ * so the clock goes back: left stamped, the next request after a break would count as warm,
+ * skip its cut, and be billed in full at the size the cut exists to prevent.
+ */
+export function vcrpMemoryRequestCancelled() {
+    const st = memoryState();
+    if (st && stampedOver !== null) st.lastRequestAt = stampedOver;
+    stampedOver = null;
 }
 
 /**
@@ -270,8 +285,11 @@ export const memoryTaskActive = () => taskActive;
 
 /**
  * A summary call is the roleplay prompt with the instruction placed after the chat.
- * Everything after the instruction (Output Rules, the closing slots) is for story turns:
- * drop it, so the instruction is the last thing read. It all sits after the cached part.
+ * The story-turn slots (Output Rules, the closing slot) are for story replies: drop them,
+ * so the instruction is the last thing read and the summary is not told how to write a
+ * scene. Output Rules is an in-chat slot (depth 1), so it sits INSIDE the chat, before
+ * the latest message, not next to the instruction: it is found by what it opens with,
+ * wherever it is. All of it sits after the cached part.
  */
 export function vcrpMemoryShapeTask(messages) {
     if (!taskActive || !Array.isArray(messages)) return;
@@ -289,8 +307,8 @@ export function vcrpMemoryShapeTask(messages) {
     const own = messages[i];
     const at = own.content.indexOf(TASK_MARKER);
     if (at > 0) own.content = own.content.slice(at);
-    // ...and drop the story-turn slots (Output Rules, </history>) between the chat and it.
-    while (i > 0 && isStoryTurnSlot(messages[i - 1])) { messages.splice(i - 1, 1); i--; }
+    // ...and drop the story-turn slots (Output Rules, </history>) wherever they sit.
+    for (let j = i - 1; j >= 0; j--) if (isStoryTurnSlot(messages[j])) messages.splice(j, 1);
 }
 
 // The preset's after-chat slots, by how they open: rules for a story reply, not a summary.
@@ -323,12 +341,21 @@ const RECENT_MESSAGES = 4;     // what "the current scene" means for recall
 export function vcrpMemoryRecall() {
     if (taskActive) return "";   // a summary call drops the after-chat part anyway
     const st = memoryState();
+    if (!st) return "";
+    const chat = memoryChat();
+    const recent = chat.slice(-RECENT_MESSAGES).map(m => carriedText(m)).join(" ");
+    const r = recallFor(st, chat, recent);
+    // Only a request that goes out may claim "recalled for the last request": SillyTavern
+    // also builds dry prompts just to count tokens.
+    if (!vcrpIsDryRun()) st.lastRecall = r.ids;
+    return r.text;
+}
+
+/** What the recall would bring back for `recent`: {text, ids, cut}. Changes nothing. */
+function recallFor(st, chat, recent) {
     const s = memoryBudgetSettings();
-    if (!st || !(s.recallTokens > 0)) return "";
-    const context = typeof getContext === "function" ? getContext() : null;
-    const chat = (context && Array.isArray(context.chat) ? context.chat : []).filter(m => !m.is_system);
     const cutAt = Math.max(0, resolveAnchor(chat, st.cut));
-    if (cutAt === 0) { st.lastRecall = []; return ""; }
+    if (!(s.recallTokens > 0) || cutAt === 0) return { text: "", ids: [], cut: cutAt };
     const before = chapterBefore(chat, cutAt);
     const chapters = (st.chapters || []).map((c, i) => ({ c, i })).filter(x => before(x.c)).map(x => ({
         id: x.c.id, order: x.i, label: `${x.c.id}, messages ${x.c.from + 1}-${x.c.to + 1}`,
@@ -338,10 +365,53 @@ export function vcrpMemoryRecall() {
     const facts = (st.ledger || []).filter(f => hidden.has(f.id)).map((f, i) => ({
         id: f.id, order: 1e6 + i, text: `[${f.cat}] ${f.text}`, tokens: estimateTokens(f.text) + 4, fact: true,
     }));
-    const recent = chat.slice(-RECENT_MESSAGES).map(m => carriedText(m)).join(" ");
     const picked = pickRecall([...chapters, ...facts], keywordsOf(recent), s.recallTokens);
-    st.lastRecall = picked.map(p => p.id);
-    return formatRecall(picked.filter(p => !p.fact), picked.filter(p => p.fact));
+    return { text: formatRecall(picked.filter(p => !p.fact), picked.filter(p => p.fact)), ids: picked.map(p => p.id), cut: cutAt };
+}
+
+// ── Testing (the Memory tab's QA tools) ──────────────────────────────────────
+
+/**
+ * What the next request would recall if `draft` were sent now: the last messages plus the
+ * draft, the way the real request will see them. Changes nothing.
+ */
+export function previewRecall(draft = "") {
+    const st = memoryState();
+    if (!st) return { text: "", ids: [], cut: 0 };
+    const chat = memoryChat();
+    const text = String(draft || "").trim();
+    const recent = [...chat.slice(-(text ? RECENT_MESSAGES - 1 : RECENT_MESSAGES)).map(m => carriedText(m)), text].join(" ");
+    return recallFor(st, chat, recent);
+}
+
+/**
+ * QA: cut now instead of waiting for a break. Everything the approved chapters cover leaves
+ * the prompt, except the last few messages; the cut lands on a user message like every
+ * cut. The previous cut is kept so it can be undone. Returns {result: "cut"|"no chapters"|
+ * "already", cutAt}.
+ */
+export function forceCut(st, chat) {
+    const from = Math.max(0, resolveAnchor(chat, st.cut));
+    const covered = Math.max(0, resolveAnchor(chat, st.summarized));
+    if (!covered) return { result: "no chapters", cutAt: from };
+    let target = Math.min(covered, chat.length - RECENT_MESSAGES);
+    while (target > 0 && !(chat[target] && chat[target].is_user)) target--;
+    if (target <= from) return { result: "already", cutAt: from };
+    st.qaPrevCut = st.cut || null;
+    st.cut = anchorOf(chat, target);
+    refreshShownMemory(st, chat, target);
+    return { result: "cut", cutAt: target };
+}
+
+/** QA: put back the cut "Cut now" replaced. */
+export function undoForceCut(st, chat) {
+    if (!Object.prototype.hasOwnProperty.call(st, "qaPrevCut")) return false;
+    st.cut = st.qaPrevCut || null;
+    delete st.qaPrevCut;
+    const at = Math.max(0, resolveAnchor(chat, st.cut));
+    if (at > 0) refreshShownMemory(st, chat, at);
+    else { st.shown = ""; st.hiddenFacts = []; }
+    return true;
 }
 
 /** What [[long-Memory]] carries while this system is on. */

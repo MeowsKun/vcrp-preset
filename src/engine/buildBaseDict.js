@@ -28,7 +28,7 @@ import { meguminOverridableSlots, meguminSlotIsLive, meguminModuleTrigger } from
 import { resolveSlot } from "../core/sharedFragments.js";
 import { buildKnowledgebase } from "../vcrp/knowledgebase.js";
 import { buildAnimeMode } from "../vcrp/anime.js";
-import { vcrpMemoryEnabled, vcrpMemoryBlock, vcrpMemoryRecall } from "../vcrp/memory/index.js";
+import { vcrpMemoryEnabled, vcrpMemoryBlock, vcrpMemoryRecall, previewRecall } from "../vcrp/memory/index.js";
 
 export function buildBaseDict(isTokenCount = false) {
     const dict = {};
@@ -395,7 +395,8 @@ export function buildBaseDict(isTokenCount = false) {
         dict["[[Short-memory]]"] = "";
     }
     // Old chapters the scene touches. After the chat, so it may change every turn.
-    dict["[[story_recall]]"] = vcrpMemoryEnabled() ? vcrpMemoryRecall() : "";
+    // A token count (the tabs' counters) sees the same text but records nothing.
+    dict["[[story_recall]]"] = !vcrpMemoryEnabled() ? "" : isTokenCount ? previewRecall().text : vcrpMemoryRecall();
 
     // --- 5.5 NPC BANK INJECTION ---
     dict["[[npc_dossier]]"] = "";

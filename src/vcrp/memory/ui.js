@@ -17,6 +17,7 @@ import { vcrpActiveModel } from "../generation.js";
 import { BUDGET_DEFAULTS, priceForModel, costEstimate } from "./budget.js";
 import {
     vcrpMemoryEnabled, memoryState, memoryBudgetSettings, currentMemoryBudget, resolveAnchor, refreshShownMemory, estimateTokens,
+    forceCut, undoForceCut, previewRecall, vcrpMemoryUpdateVisuals,
 } from "./index.js";
 import { storyChat, approvePending, discardPending, nextSpan, memorySummaryRunning, unsummarizedTokens, autoSummaryHold, catchUp, catchUpEstimate } from "./summarize.js";
 import { FACT_CATEGORIES, formatFactChanges, applyFactChanges } from "./ledger.js";
@@ -158,8 +159,65 @@ export function renderVcrpMemoryPanel($c) {
         if (!confirm("Delete every chapter, fact and waiting review for this chat? The whole chat goes back into the prompt.")) return;
         const stNow = memoryState();
         Object.assign(stNow, { cut: null, summarized: null, shown: "", chapters: [], arcs: [], ledger: [], retired: [], pending: [], nextFactId: 1, chapterSeq: 0, hiddenFacts: [], lastRecall: [], summaryFailures: 0 });
+        delete stNow.qaPrevCut;
         await saveMetadata();
         rerender();
+    });
+
+    // ── Testing ──
+    // Lets the player see gists, facts and recall at work without waiting an hour for the
+    // cache to go cold. "Cut now" is a real cut, so the next reply is a real test.
+    const canUndo = !!st && Object.prototype.hasOwnProperty.call(st, "qaPrevCut");
+    $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title purple"><i class="fa-solid fa-flask"></i> Testing</div>
+        <div style="font-size:0.75rem; line-height:1.55; opacity:.85;"><b>Cut now</b> takes everything the approved chapters cover out of the prompt (the last 4 messages always stay), so the next reply runs on gists, facts and recall, the way it will after a break. That reply costs full price once. <b>Undo cut</b> puts the previous cut back. <b>Preview recall</b> shows what your last messages, plus whatever is in the message box, would bring back.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+            <button id="vmem_qa_cut" class="ps-modern-btn secondary" style="font-size:0.72rem;"><i class="fa-solid fa-scissors"></i> Cut now</button>
+            <button id="vmem_qa_undo" class="ps-modern-btn secondary" style="font-size:0.72rem;" ${canUndo ? "" : "disabled"}><i class="fa-solid fa-rotate-left"></i> Undo cut</button>
+            <button id="vmem_qa_recall" class="ps-modern-btn secondary" style="font-size:0.72rem;"><i class="fa-solid fa-magnifying-glass"></i> Preview recall</button>
+        </div>
+        <details style="margin-top:10px; font-size:0.75rem;"><summary style="cursor:pointer;">Memory text the prompt carries${st && st.shown ? ` (about ${k(estimateTokens(st.shown))} tokens)` : ""}</summary>
+            <pre style="white-space:pre-wrap; font-size:0.72rem; max-height:260px; overflow:auto; margin-top:6px;">${esc((st && st.shown) || "(empty: nothing has been cut yet, so the whole chat is still in the prompt word for word)")}</pre>
+        </details>
+        <div id="vmem_qa_out" style="margin-top:8px; font-size:0.75rem;"></div></div>`);
+
+    $c.find("#vmem_qa_cut").on("click", async () => {
+        const stNow = memoryState();
+        const chatNow = storyChat();
+        if (!stNow) return;
+        if (!confirm("Cut now?\n\nEverything the approved chapters cover leaves the prompt (the last 4 messages stay). The next reply runs on the memory instead and costs full price once.")) return;
+        const r = forceCut(stNow, chatNow);
+        if (r.result === "no chapters") {
+            if (typeof toastr !== "undefined") toastr.warning("No approved chapters yet. Use Summarize now and approve the chapters first (on a short chat, lower \"Always kept word for word\" so there is something to summarize).", "VCRP Memory");
+            return;
+        }
+        if (r.result === "already") {
+            if (typeof toastr !== "undefined") toastr.info(`The prompt already starts at message ${r.cutAt + 1}, and the approved chapters reach no further than that.`, "VCRP Memory");
+            return;
+        }
+        await saveMetadata();
+        vcrpMemoryUpdateVisuals();
+        if (typeof toastr !== "undefined") toastr.success(`Cut at message ${r.cutAt + 1}. The next reply carries the gists and facts instead of messages 1–${r.cutAt}.`, "VCRP Memory");
+        rerender();
+    });
+    $c.find("#vmem_qa_undo").on("click", async () => {
+        const stNow = memoryState();
+        if (!stNow || !undoForceCut(stNow, storyChat())) return;
+        await saveMetadata();
+        vcrpMemoryUpdateVisuals();
+        if (typeof toastr !== "undefined") toastr.info("The previous cut is back. The next reply costs full price once.", "VCRP Memory");
+        rerender();
+    });
+    $c.find("#vmem_qa_recall").on("click", () => {
+        const draft = String($("#send_textarea").val() || "");
+        const r = previewRecall(draft);
+        const out = $c.find("#vmem_qa_out");
+        if (!r.cut) {
+            out.html(`<div style="opacity:.8;">Nothing is cut yet, so there is nothing to recall: every message is still in the prompt word for word.</div>`);
+        } else if (!r.text) {
+            out.html(`<div style="opacity:.8;">Nothing would come back. No chapter before message ${r.cut + 1} shares at least two distinctive words (a name, a place, an object) with the last messages${draft.trim() ? " and the message box" : ""}.</div>`);
+        } else {
+            out.html(`<div style="margin-bottom:4px;">Would come back: <b>${esc(r.ids.join(", "))}</b></div><pre style="white-space:pre-wrap; font-size:0.72rem; max-height:260px; overflow:auto;">${esc(r.text)}</pre>`);
+        }
     });
 
     // ── Review ──

@@ -23,7 +23,7 @@ import { escapeRegex } from "../utils/regex.js";
 import { buildBaseDict } from "./buildBaseDict.js";
 import { meguminAllSlotTriggers } from "../../data/slots.js";
 import { vcrpApplyGenerationToDict, vcrpFinalizeMessages } from "../vcrp/generation.js";
-import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache } from "../vcrp/memory/index.js";
+import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled } from "../vcrp/memory/index.js";
 import { buildTokenBreakdown } from "../vcrp/tokenBreakdown.js";
 
 // Throttles the prompt-preview popup so token counting and rapid ST background
@@ -329,6 +329,7 @@ export async function handlePromptInjection(data, type) {
 
         if (!confirmed) {
             messages.length = 0; // Empty the payload
+            vcrpMemoryRequestCancelled(); // VCRP: nothing went out, so no cache was warmed
             toastr.info("Generation cancelled by user.");
             
             // FIX: Explicitly tell SillyTavern to abort to prevent Auto-Retry loops.
