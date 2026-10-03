@@ -1531,4 +1531,116 @@ console.log("29 ok what Story Memory sends (gists, facts, recall), Cut now / Und
 }
 console.log("30 ok knowledgebase (whole words, scan depth, hypnosis keyed, guarded text, cached always-on, fallback, preview, Setup Check)");
 
+// 31. Story Memory pins, the spend estimate, swipe-aware scanning, and Dev Mode's live layout.
+{
+    const memory = await imp("src/vcrp/memory/index.js");
+    const L = await imp("src/vcrp/memory/ledger.js");
+    const kbm = await imp("src/vcrp/knowledgebase.js");
+    const gen = await imp("src/vcrp/generation.js");
+    const dev = await imp("src/ui/devmode.js");
+    const skel = await imp("data/skeleton.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keepKb = JSON.parse(JSON.stringify(q.knowledgebase));
+    const close = (a, b) => Math.abs(a - b) < 1e-9;
+
+    // Pins: never cut by the cap (facts survive even the gist-trimming phase), never folded.
+    const facts = Array.from({ length: 30 }, (_, i) => ({ id: `F${i + 1}`, cat: "world", text: `A long standing fact number ${i + 1} about the town and its people.`, since: "C1", updated: "C1" }));
+    facts[0].pinned = true;   // the oldest: the first to go without its pin
+    const chs = Array.from({ length: 14 }, (_, i) => ({ id: `C${i + 1}`, gist: `Gist number ${i + 1} of the story so far, with some detail.`, chapter: "x", from: i, to: i }));
+    chs[0].pinned = true;
+    const r = L.composeMemory({ arcs: [], chapters: chs, ledger: facts }, () => true, 200);
+    assert(r.text.includes("fact number 1 about") && !r.hidden.includes("F1"), "a pinned fact is never cut by the cap");
+    assert(!r.text.includes("fact number 2 about") && r.hidden.includes("F2"), "unpinned facts still go");
+    assert(r.text.includes("Gist number 1 of") && !r.text.includes("Gist number 2 of"), "a pinned gist survives the gist trimming; unpinned old ones go");
+    assert(L.gistsToFold(chs).length === 10 && !L.gistsToFold(chs).some(c => c.pinned), "pinned chapters never fold");
+    const folded = chs.map((c, i) => i < 5 ? { ...c, folded: true } : c);
+    const ft = L.composeMemoryText({ arcs: [{ text: "An arc." }], chapters: folded, ledger: [] });
+    assert(ft.includes("Gist number 1 of") && !ft.includes("Gist number 2 of"), "a pinned chapter folded earlier keeps its line");
+
+    // Spend: cold writes the whole prompt, warm reads the cached part; a cancelled preview
+    // costs nothing; output at the output price; a Continue counts only its new text;
+    // memory calls are counted apart.
+    q.vcrpMemory.enabled = true;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+    delete meta.vcrp_memory;
+    const st = memory.memoryState();
+    memory.setMemoryClock(() => 3000 * 3600 * 1000);
+    const price = memory.currentMemoryBudget().price;
+    const big = "word ".repeat(3500);   // 5,000 tokens a message
+    const prompt = [{ role: "system", content: big }];
+    for (let i = 0; i < 4; i++) prompt.push({ role: "user", content: big }, { role: "assistant", content: big });
+    prompt.push({ role: "user", content: "hi" });   // 45,001 tokens in all
+    const { requestCost } = await imp("src/vcrp/memory/budget.js");
+    const budget = memory.currentMemoryBudget();
+    vcrpSetGenerationType("normal", {}, false);
+    memory.vcrpMemoryAfterPrompt(prompt, false);
+    const cold = st.spend.last.cost;
+    assert(st.spend.replies === 1 && st.spend.last.cold && close(cold, requestCost(budget, { write: 45001 })), "the first request is cold: all written");
+    memory.vcrpMemoryAfterPrompt(prompt, false);
+    // Warm: cached up to the reply before last; that reply and everything after it are written.
+    assert(!st.spend.last.cold && close(st.spend.last.cost, requestCost(budget, { read: 30000, write: 15001 })), "a warm request reads the cached part");
+    memory.vcrpMemoryRequestCancelled();
+    assert(st.spend.replies === 1 && close(st.spend.replyCost, cold), "a cancelled preview costs nothing");
+    memory.vcrpMemoryAfterPrompt(prompt, false);
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "word ".repeat(700) });   // 1,000 tokens
+    let before = st.spend.replyCost;
+    memory.vcrpMemoryCountReply(0, "normal");
+    assert(close(st.spend.replyCost - before, 1000 * price.output / 1e6), "the reply is priced at the output rate");
+    vcrpSetGenerationType("continue", {}, false);
+    memory.vcrpMemoryAfterPrompt(prompt, false);
+    chat[0].mes += "word ".repeat(350);   // 500 more
+    before = st.spend.replyCost;
+    memory.vcrpMemoryCountReply(0, "continue");
+    assert(close(st.spend.replyCost - before, 500 * price.output / 1e6), "a Continue counts only the new text");
+    vcrpSetGenerationType("normal", {}, false);
+    memory.setMemoryTaskActive(true);
+    memory.vcrpMemoryAfterPrompt(prompt, false);
+    memory.setMemoryTaskActive(false);
+    memory.vcrpMemoryCountTaskOutput("word ".repeat(350));
+    assert(st.spend.tasks === 1 && st.spend.taskCost > 0 && st.spend.replies === 3, "memory calls are counted apart from replies");
+    const lastReply = st.spend.last;
+    vcrpSetGenerationType("quiet", {}, false);   // another background call: an NPC scan, the Story Director
+    memory.vcrpMemoryAfterPrompt(prompt, false);
+    vcrpSetGenerationType("normal", {}, false);
+    assert(st.spend.tasks === 2 && st.spend.replies === 3 && st.spend.last === lastReply, "other background calls too, and they never become the last reply");
+    memory.resetSpend(st);
+    assert(st.spend.replies === 0 && st.spend.replyCost === 0 && st.spend.tasks === 0, "reset");
+
+    // Swipes: the reply being replaced is not scanned, by the knowledgebase or by recall.
+    chat.length = 0;
+    for (let i = 0; i < 24; i++) chat.push({ is_user: i % 2 === 0, send_date: `s${i}`, mes: `(${i}) Quiet day.` });
+    chat.push({ is_user: false, send_date: "s24", mes: "Mara's brass key opens the Lantern cellar." });
+    q.knowledgebase = { enabled: true, seeded: true, hypnosisKeyed: true, scanDepth: 6, entries: [{ id: "k", title: "Lantern", content: "Lantern lore.", active: true, triggers: "lantern" }] };
+    Object.assign(st, {
+        cut: memory.anchorOf(chat, 10), summarized: memory.anchorOf(chat, 10), arcs: [], ledger: [],
+        chapters: [{ id: "C1", gist: "Mara gave Bob a key.", chapter: "Mara Voss gave Bob a brass key to the Lantern cellar.", from: 0, to: 9, start: null, end: memory.anchorOf(chat, 10) }],
+    });
+    vcrpSetGenerationType("swipe", {}, false);
+    assert.equal(kbm.kbSelection(q).keyed.length, 0, "a swipe: the knowledgebase skips the reply it replaces");
+    assert.equal(memory.vcrpMemoryRecall(), "", "a swipe: recall skips it too");
+    vcrpSetGenerationType("normal", {}, false);
+    assert.equal(kbm.kbSelection(q).keyed.length, 1, "any other request scans it");
+    assert(memory.vcrpMemoryRecall().includes("Mara Voss gave Bob"), "and recalls from it");
+    assert.equal(gen.vcrpWithoutSwipedReply(chat), chat, "outside a swipe the chat is untouched");
+
+    // Dev Mode draws the preset actually loaded, in-chat slots marked; the shipped one otherwise.
+    const op = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Megumin Original.json"), "utf8"));
+    Object.assign(chatCompletionSettings, { prompts: op.prompts, prompt_order: op.prompt_order });
+    const live = dev.liveSkeleton();
+    assert(live.find(c => c.name === "Main 2").content.includes("- **thought-verbs:** felt, realized, knew, understood, sensed."), "Dev Mode shows the loaded preset's text");
+    assert.equal(live.find(c => c.name === "Output RULES").depth, 1, "Output RULES is marked as in-chat");
+    delete chatCompletionSettings.prompts; delete chatCompletionSettings.prompt_order;
+    assert.equal(dev.liveSkeleton(), skel.SKELETON, "no VCRP preset loaded: the shipped layout");
+    assert.equal(skel.SKELETON.find(c => c.name === "Output RULES").depth, 1, "the shipped layout marks it too");
+
+    memory.setMemoryClock(null);
+    delete meta.vcrp_memory;
+    chat.length = 0;
+    q.vcrpMemory.enabled = false;
+    q.knowledgebase = keepKb;
+}
+console.log("31 ok pins, spend estimate, swipe-aware scanning, Dev Mode's live layout");
+
 console.log("\nALL FORK CHECKS PASSED");

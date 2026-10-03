@@ -82,7 +82,7 @@ import { renderStoryConfig } from "./src/features/storyconfig/ui.js";
 import { SD_GENRES, renderStoryPlanner, generateStoryPlanLogic } from "./src/features/storyplan/ui.js";
 import { renderBanList } from "./src/features/banlist/ui.js";
 import { memGetCachedKeywords } from "./src/core/keywords.js";
-import { vcrpMemoryUpdateVisuals, vcrpMemoryOnMessageDeleted } from "./src/vcrp/memory/index.js";
+import { vcrpMemoryUpdateVisuals, vcrpMemoryOnMessageDeleted, vcrpMemoryCountReply } from "./src/vcrp/memory/index.js";
 import { npcBuildTextFromData, npcParseBlock, meguminFindNpcDossiers, npcCreateRecord } from "./src/features/npc/data.js";
 import { npcParseUpdateBlocks, npcApplyUpdates, npcUndoHistoryEntry } from "./src/features/npc/updates.js";
 import { renderNpcBank, renderNpcList } from "./src/features/npc/ui.js";
@@ -389,6 +389,8 @@ jQuery(async () => {
             // Dash cleaner first, so every handler after it (the tracker capture,
             // Story Memory) sees the reply as it will stay in the history.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDedashOnReply);
+            // Story Memory's spend estimate: the reply's output, added to its request.
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryCountReply);
             // VCRP budgeted memory: summarize the next stretch after a reply, when due.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryAfterReply);
             // IMAGE GEN AUTO-GEN & SWIPE TRIGGERS

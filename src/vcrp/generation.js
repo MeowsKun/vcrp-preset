@@ -16,13 +16,30 @@ import { extensionName } from "../core/constants.js";
 // ── Generation type ──────────────────────────────────────────────────────────
 
 let currentGen = "reply";
+let currentRaw = "normal";       // SillyTavern's own name for it: "swipe" is a reply to VCRP, but not to a scan
 let currentDry = false;
 
 /** GENERATION_STARTED handler: (type, params, dryRun). Dry runs never change the next real request. */
 export function vcrpSetGenerationType(type, _params, dryRun) {
     currentDry = !!dryRun;
     if (dryRun) return;
+    currentRaw = String(type || "normal");
     currentGen = ["continue", "impersonate", "quiet"].includes(type) ? type : "reply";
+}
+
+/** What VCRP is building: "reply" (normal, swipe, regenerate), "continue", "impersonate" or "quiet". */
+export function vcrpGenerationKind() {
+    return currentGen;
+}
+
+/**
+ * The chat as the reply being written will follow it. On a swipe, SillyTavern leaves the
+ * reply being replaced in the chat (it only drops it from the prompt), so anything scanning
+ * the recent messages (knowledgebase keywords, Story Memory recall) must skip it too.
+ */
+export function vcrpWithoutSwipedReply(chat) {
+    if (currentRaw !== "swipe" || !Array.isArray(chat) || !chat.length || chat[chat.length - 1].is_user) return chat;
+    return chat.slice(0, -1);
 }
 
 /** True while SillyTavern is only measuring the prompt (token counts, previews); nothing is sent. */

@@ -84,6 +84,11 @@ It relies on prompt caching. Set up once:
 Global Settings → Setup Check flags anything missing. Existing Memory Core summaries become
 chapters the first time each chat is opened.
 
+**Pin** a fact or a chapter (the pin button beside it) to keep it in the memory text for good:
+the size cap never trims it and a pinned chapter is never folded into an arc. The meter also
+keeps a running **spend estimate** for the chat (replies and background calls, from VCRP's own
+token counts; hidden reasoning SillyTavern never sees is not included).
+
 To see it work without waiting for a break, use **Testing** in the Memory tab: **Cut now** takes
 what the approved chapters cover out of the prompt (the next reply costs full price once),
 **Undo cut** puts it back, **Preview recall** shows which chapters your last messages plus the

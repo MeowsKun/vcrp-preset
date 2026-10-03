@@ -22,9 +22,9 @@ import { extension_settings, getContext, chat_metadata, saveMetadata } from "../
 import { extensionName } from "../../core/constants.js";
 import { localProfile } from "../../core/state.js";
 import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
-import { vcrpActiveModel, vcrpIsDryRun, vcrpRouteHoistsSystem } from "../generation.js";
-import { priceForModel, computeBudget, BUDGET_DEFAULTS } from "./budget.js";
-import { planWindow } from "./window.js";
+import { vcrpActiveModel, vcrpIsDryRun, vcrpRouteHoistsSystem, vcrpWithoutSwipedReply, vcrpGenerationKind } from "../generation.js";
+import { priceForModel, computeBudget, requestCost, BUDGET_DEFAULTS } from "./budget.js";
+import { planWindow, isCold } from "./window.js";
 import { composeMemory } from "./ledger.js";
 import { keywordsOf, pickRecall, formatRecall } from "./recall.js";
 import { TASK_MARKER } from "./prompts.js";
@@ -236,9 +236,11 @@ export async function vcrpMemoryIntercept(chat, type) {
  */
 export function vcrpMemoryAfterPrompt(messages, dryRun) {
     stampedOver = null;   // only this prompt's own stamp may ever be taken back
+    spendUndo = null;
     if (dryRun || !vcrpMemoryEnabled()) return;
     const st = memoryState();
     if (!st || !Array.isArray(messages)) return;
+    countPromptSpend(st, messages);   // before the stamp: it needs to know whether the cache was warm
     if (taskStandalone) return;   // a standalone summary call never touches the roleplay cache
     stampedOver = st.lastRequestAt || 0;
     st.lastRequestAt = clock();
@@ -257,6 +259,104 @@ export function vcrpMemoryRequestCancelled() {
     const st = memoryState();
     if (st && stampedOver !== null) st.lastRequestAt = stampedOver;
     stampedOver = null;
+    // Nor did it cost anything.
+    if (st && spendUndo) {
+        const s = spendOf(st);
+        if (spendUndo.kind === "reply") { s.replies--; s.replyCost -= spendUndo.cost; s.last = spendUndo.prevLast; }
+        else { s.tasks--; s.taskCost -= spendUndo.cost; }
+    }
+    spendUndo = null;
+    continueFrom = null;
+}
+
+// ── Spend estimate ───────────────────────────────────────────────────────────
+// A running estimate of what this chat has cost, from VCRP's own token counts (SillyTavern
+// does not hand extensions the bill). Input is priced as Claude's cache prices it: a warm
+// request reads everything up to the reply before last from the cache and writes the rest;
+// a cold one writes it all. Output is the reply's text, plus its reasoning when SillyTavern
+// shows it. Hidden reasoning it never sees is not included.
+
+let spendUndo = null;      // what the prompt being built added, until it is known to have gone out
+let continueFrom = null;   // a Continue: the tokens the message already had
+
+export function spendOf(st) {
+    if (!st.spend || typeof st.spend !== "object") st.spend = { since: clock(), replies: 0, replyCost: 0, tasks: 0, taskCost: 0, last: null };
+    return st.spend;
+}
+
+const tokensOfMessage = m => estimateTokens(typeof (m && m.content) === "string" ? m.content
+    : Array.isArray(m && m.content) ? m.content.map(p => (p && p.text) || "").join("") : "");
+
+// What a warm request writes to the cache: from the reply before last onward. SillyTavern
+// marks the cache two turns back, so everything before that reply was cached last time.
+// null when the chat is too young to have a cached history.
+function warmWrittenTokens(messages) {
+    let end = messages.length;
+    if (end && messages[end - 1].role === "assistant") end--;   // a prefill is not a reply
+    let seen = 0, from = -1;
+    for (let i = end - 1; i >= 0; i--) if (messages[i].role === "assistant" && ++seen === 2) { from = i; break; }
+    if (from < 0) return null;
+    return messages.slice(from).reduce((n, m) => n + tokensOfMessage(m), 0);
+}
+
+function countPromptSpend(st, messages) {
+    const budget = currentMemoryBudget();
+    if (!budget) return;
+    const total = messages.reduce((n, m) => n + tokensOfMessage(m), 0);
+    // A standalone summary call carries a prompt of its own: priced as written.
+    const cold = !!taskStandalone || isCold({ lastRequestAt: st.lastRequestAt }, clock(), budget);
+    const tail = cold ? null : warmWrittenTokens(messages);
+    const write = tail === null ? total : Math.min(total, tail);
+    const cost = requestCost(budget, { read: total - write, write });
+    const s = spendOf(st);
+    // Every background call (Story Memory's, an NPC scan, the Story Director, another
+    // extension's) is counted apart, and never stands in for "the last reply".
+    if (taskActive || vcrpGenerationKind() === "quiet") {
+        s.tasks++; s.taskCost += cost;
+        spendUndo = { kind: "task", cost };
+        return;
+    }
+    spendUndo = { kind: "reply", cost, prevLast: s.last };
+    s.replies++; s.replyCost += cost;
+    s.last = { at: clock(), cost, cold, tokens: total };
+    continueFrom = null;
+    if (vcrpGenerationKind() === "continue") {
+        const chat = memoryChat();
+        const m = chat[chat.length - 1];
+        if (m && !m.is_user) continueFrom = estimateTokens(String(m.mes || "") + String((m.extra && m.extra.reasoning) || ""));
+    }
+}
+
+/** MESSAGE_RECEIVED: the reply's output, added to the request that asked for it. */
+export function vcrpMemoryCountReply(messageId, type) {
+    if (type === "first_message" || !vcrpMemoryEnabled()) return;
+    const st = memoryState();
+    const budget = currentMemoryBudget();
+    if (!st || !budget || !st.spend || !st.spend.last) return;
+    const context = typeof getContext === "function" ? getContext() : null;
+    const msg = context && Array.isArray(context.chat) ? context.chat[Number(messageId)] : null;
+    if (!msg || msg.is_user) return;
+    let out = estimateTokens(String(msg.mes || "") + String((msg.extra && msg.extra.reasoning) || ""));
+    if (continueFrom !== null) { out = Math.max(0, out - continueFrom); continueFrom = null; }
+    const cost = out * budget.price.output / 1e6;
+    st.spend.replyCost += cost;
+    st.spend.last.cost += cost;
+    st.spend.last.output = out;
+    spendUndo = null;
+}
+
+/** A summary or check call's answer: its output, added to the summary costs. */
+export function vcrpMemoryCountTaskOutput(text) {
+    const st = memoryState();
+    const budget = currentMemoryBudget();
+    if (!st || !budget || !vcrpMemoryEnabled()) return;
+    spendOf(st).taskCost += estimateTokens(String(text || "")) * budget.price.output / 1e6;
+}
+
+/** Starts the estimate over. */
+export function resetSpend(st) {
+    st.spend = null;
+    spendOf(st);
 }
 
 /**
@@ -343,7 +443,8 @@ export function vcrpMemoryRecall() {
     const st = memoryState();
     if (!st) return "";
     const chat = memoryChat();
-    const recent = chat.slice(-RECENT_MESSAGES).map(m => carriedText(m)).join(" ");
+    // The cut is counted in the whole chat; the scene, without a reply being swiped.
+    const recent = vcrpWithoutSwipedReply(chat).slice(-RECENT_MESSAGES).map(m => carriedText(m)).join(" ");
     const r = recallFor(st, chat, recent);
     // Only a request that goes out may claim "recalled for the last request": SillyTavern
     // also builds dry prompts just to count tokens.

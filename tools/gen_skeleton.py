@@ -72,6 +72,8 @@ def main():
             "marker": bool(p.get("marker")),
             "enabled": bool(entry.get("enabled")),
             "content": p.get("content") or "",
+            # In-chat slots (Output RULES) sit this many messages from the end of the chat.
+            "depth": int(p.get("injection_depth") or 0) if p.get("injection_position") == 1 else None,
         }
         rows.append("    " + json.dumps(card, ensure_ascii=False) + ",")
     text = HEADER.replace("{source}", PRESET) + "\n".join(rows) + "\n" + FOOTER

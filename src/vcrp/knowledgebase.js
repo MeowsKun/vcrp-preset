@@ -27,6 +27,7 @@ import { saveProfileToMemory } from "../core/profile.js";
 import { meguminCleanChatHistoryText } from "../engine/chatText.js";
 import { downloadJsonFile } from "../utils/download.js";
 import { escapeRegex } from "../utils/regex.js";
+import { vcrpWithoutSwipedReply } from "./generation.js";
 
 const EXPORT_FORMAT = "vcrp-knowledgebase";
 export const ALWAYS_SLOT = "[[knowledgebase_always]]";
@@ -145,7 +146,9 @@ export function kbScanDepth(profile = localProfile) {
 // a draft (the preview), the draft stands in for the message about to be sent.
 function scanText(profile, draft) {
     const depth = kbScanDepth(profile);
-    const chat = ((getContext() || {}).chat || []).filter(m => !m.is_system);
+    // A preview (draft) looks at the chat as it stands; a request skips a reply being swiped.
+    const all = ((getContext() || {}).chat || []).filter(m => !m.is_system);
+    const chat = draft ? all : vcrpWithoutSwipedReply(all);
     const n = draft ? depth - 1 : depth;
     // slice(-0) would be the whole chat: a scan of one message plus a draft is the draft alone.
     const parts = (n > 0 ? chat.slice(-n) : []).map(m => meguminCleanChatHistoryText(m.mes));

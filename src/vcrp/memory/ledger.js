@@ -109,9 +109,9 @@ export function formatLedgerForTask(ledger) {
     return ledger.map(f => `${f.id} [${f.cat}] ${f.text}`).join("\n");
 }
 
-/** The gists still waiting to be folded, oldest first, when there are enough to fold. */
+/** The gists still waiting to be folded, oldest first, when there are enough to fold. Pinned ones never fold. */
 export function gistsToFold(chapters) {
-    const open = (chapters || []).filter(c => !c.folded);
+    const open = (chapters || []).filter(c => !c.folded && !c.pinned);
     return open.length >= FOLD_AT ? open.slice(0, FOLD_COUNT) : [];
 }
 
@@ -123,6 +123,8 @@ const changedIn = f => (f.updated === "edit" ? Infinity : (parseInt(String(f.upd
  * The memory text within `capTokens`. Over the cap, the facts that changed longest ago are
  * left out of the text, oldest first; they stay in the ledger and come back through recall
  * when the scene touches them (recall.js). Returns the text and the ids left out.
+ * Pinned facts and pinned chapters' gists are never left out: the reader marked them as
+ * canon that must always be in front of the model, so they may take the text over the cap.
  */
 export function composeMemory(parts, isBeforeCut = () => true, capTokens = Infinity) {
     const ledger = parts.ledger || [];
@@ -130,20 +132,21 @@ export function composeMemory(parts, isBeforeCut = () => true, capTokens = Infin
     const hidden = [];
     if (estimate(text) <= capTokens) return { text, hidden };
     const keep = new Set(ledger.map(f => f.id));
-    for (const f of [...ledger].sort((a, b) => changedIn(a) - changedIn(b))) {
+    for (const f of ledger.filter(x => !x.pinned).sort((a, b) => changedIn(a) - changedIn(b))) {
         keep.delete(f.id);
         hidden.push(f.id);
         text = composeMemoryText({ ...parts, ledger: ledger.filter(x => keep.has(x.id)) }, isBeforeCut);
         if (estimate(text) <= capTokens) return { text, hidden };
     }
-    // Still over with every fact out (a chat brought over from the old Memory Core can hold
-    // a hundred gists): the oldest gists go next, then the oldest arcs. Their chapters stay,
-    // and come back through recall when the scene touches them.
-    let chapters = (parts.chapters || []).filter(c => !c.folded && isBeforeCut(c));
+    // Still over with every unpinned fact out (a chat brought over from the old Memory Core
+    // can hold a hundred gists): the oldest unpinned gists go next, then the oldest arcs.
+    // Their chapters stay, and come back through recall when the scene touches them.
+    let chapters = (parts.chapters || []).filter(c => (!c.folded || c.pinned) && isBeforeCut(c));
     let arcs = [...(parts.arcs || [])];
-    const rest = { ...parts, ledger: [] };
-    while (estimate(text) > capTokens && (chapters.length || arcs.length)) {
-        if (chapters.length) chapters = chapters.slice(1); else arcs = arcs.slice(1);
+    const rest = { ...parts, ledger: ledger.filter(f => f.pinned) };
+    while (estimate(text) > capTokens && (chapters.some(c => !c.pinned) || arcs.length)) {
+        const oldest = chapters.findIndex(c => !c.pinned);
+        if (oldest >= 0) chapters = chapters.filter((_, i) => i !== oldest); else arcs = arcs.slice(1);
         text = composeMemoryText({ ...rest, chapters, arcs }, () => true);
     }
     return { text, hidden };
@@ -157,7 +160,8 @@ export function composeMemory(parts, isBeforeCut = () => true, capTokens = Infin
 export function composeMemoryText({ arcs = [], chapters = [], ledger = [] }, isBeforeCut = () => true) {
     const lines = [];
     for (const a of arcs) lines.push(`- ${a.text}`);
-    for (const c of chapters) if (!c.folded && isBeforeCut(c)) lines.push(`- ${c.gist}`);
+    // A pinned chapter keeps its own line even once an arc has folded it.
+    for (const c of chapters) if ((!c.folded || c.pinned) && isBeforeCut(c)) lines.push(`- ${c.gist}`);
     const parts = [];
     if (lines.length) parts.push(`<story_so_far>\n${lines.join("\n")}\n</story_so_far>`);
     if (ledger.length) parts.push(`<facts>\n${ledger.map(f => `- [${f.cat}] ${f.text}`).join("\n")}\n</facts>`);

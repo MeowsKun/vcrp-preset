@@ -32,7 +32,7 @@
 // through all of them. Same coupling, more to read.
 // ────────────────────────────────────────────────────────────────────────────
 
-import { extension_settings, saveSettingsDebounced, Popup, POPUP_TYPE } from "../st.js";
+import { extension_settings, saveSettingsDebounced, Popup, POPUP_TYPE, getContext } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
 import { isDevEngineDirty, setDevEngineDirty } from "../core/state.js";
@@ -80,7 +80,33 @@ const session = {
 // so where a tag sits and whether its message is on are that person's settled
 // decisions — not defects to report to whoever is typing in the box. A field
 // badge now says what is IN the field, and nothing about the preset.
-const CHAT_HISTORY_INDEX = SKELETON.findIndex(c => c.id === "chatHistory");
+/**
+ * The preset as it is actually loaded, drawn as data/skeleton.js draws the shipped one, so
+ * the document shows the Megumin Original preset's text when that one is in use. Falls back
+ * to the shipped snapshot when no VCRP preset is loaded. `depth` marks an in-chat slot.
+ */
+export function liveSkeleton() {
+    try {
+        const cc = getContext().chatCompletionSettings || {};
+        const prompts = Array.isArray(cc.prompts) ? cc.prompts : [];
+        if (!prompts.some(p => /\[\[(?:THINK|prompt1|blocks)\]\]/.test((p && p.content) || ""))) return SKELETON;
+        const byId = new Map(prompts.map(p => [p && p.identifier, p]));
+        const order = Array.isArray(cc.prompt_order) ? (cc.prompt_order.find(o => o && o.character_id === 100001) || cc.prompt_order[0]) : null;
+        if (!order || !Array.isArray(order.order)) return SKELETON;
+        const cards = order.order.map(e => {
+            const p = byId.get(e.identifier);
+            if (!p) return null;
+            return {
+                id: p.identifier, name: p.name || p.identifier, role: p.role || "system", marker: !!p.marker,
+                enabled: !!e.enabled, content: p.content || "",
+                depth: p.injection_position === 1 ? Number(p.injection_depth) || 0 : null,
+            };
+        }).filter(Boolean);
+        return cards.length ? cards : SKELETON;
+    } catch (e) {
+        return SKELETON;
+    }
+}
 
 // Some slots reach the model without ever appearing under their own tag.
 // Saying "not in preset" about one of those is a false alarm, and it is a
@@ -128,19 +154,34 @@ function statusOf(slot, modeData) {
 // Every card in the preset counts, switched on or not. Whether a message is
 // enabled is the preset author's business and changes from one day to the next;
 // the editor's job is to show where the text sits, not to audit that choice.
-function findPlacement(trigger, slot) {
+function findPlacement(trigger, slot, sk = liveSkeleton()) {
     // A carried slot has no position of its own; it inherits its carrier's.
     if (slot && slot.carrier && CARRIERS[slot.carrier]) {
         trigger = CARRIERS[slot.carrier].tag;
     }
-    for (let i = 0; i < SKELETON.length; i++) {
-        const card = SKELETON[i];
+    const chatIndex = sk.findIndex(c => c.id === "chatHistory");
+    for (let i = 0; i < sk.length; i++) {
+        const card = sk[i];
         if (card.marker) continue;
         const tags = card.content.match(/\[\[[^\]\n]+\]\]/g) || [];
         const idx = tags.indexOf(trigger);
-        if (idx > -1) return { card, cardIndex: i, tags, idx };
+        if (idx > -1) return { card, cardIndex: i, tags, idx, chatIndex };
     }
     return null;
+}
+
+// Where a card's text lands relative to the chat. An in-chat slot (Output RULES) sits a set
+// number of messages from the end of the chat, whatever its place in the list.
+function whereInPrompt(p) {
+    if (p.card.depth != null) {
+        return p.card.depth <= 1
+            ? "inside the chat, just before the newest message (one of the last things the model reads)"
+            : `inside the chat, ${p.card.depth} messages from the end`;
+    }
+    if (p.chatIndex < 0) return "";
+    return p.cardIndex > p.chatIndex
+        ? "after the whole chat history (one of the last things the model reads)"
+        : "before the chat history";
 }
 
 /** One sentence a non-technical reader can act on. */
@@ -150,8 +191,7 @@ function describePlacement(slot) {
     if (carried) {
         const where = p
             ? ` It goes out in the <b>${esc(p.card.name)}</b> message`
-              + (CHAT_HISTORY_INDEX > -1 && p.cardIndex > CHAT_HISTORY_INDEX
-                  ? ", after the whole chat history." : ".")
+              + (whereInPrompt(p) && whereInPrompt(p) !== "before the chat history" ? `, ${whereInPrompt(p)}.` : ".")
             : "";
         return carried.text + where;
     }
@@ -161,11 +201,7 @@ function describePlacement(slot) {
         // complaint: the preset ships fixed and its author knows what is in it.
         return `Placed wherever your preset puts <code>${esc(slot.trigger)}</code>.`;
     }
-    const when = CHAT_HISTORY_INDEX > -1
-        ? (p.cardIndex > CHAT_HISTORY_INDEX
-            ? "after the whole chat history — one of the last things the model reads"
-            : "before the chat history")
-        : "";
+    const when = whereInPrompt(p);
     const before = p.tags[p.idx - 1];
     const after = p.tags[p.idx + 1];
     const neighbours = [
@@ -181,10 +217,11 @@ function describePlacement(slot) {
 
 /** A little map of the outgoing messages with this slot's position marked. */
 function renderPlacementMap(slot) {
-    const p = findPlacement(slot.trigger, slot);
+    const sk = liveSkeleton();
+    const p = findPlacement(slot.trigger, slot, sk);
     const $map = $(`<div class="dev-map"></div>`);
 
-    SKELETON.forEach((card, i) => {
+    sk.forEach((card, i) => {
         const isHit = p && i === p.cardIndex;
         const $row = $(`
             <div class="dev-map-row ${isHit ? "is-hit" : ""} ${card.marker ? "is-st" : ""}">
@@ -773,7 +810,7 @@ function renderEngineDocument(c, modeData, rerender) {
 
     const drawn = new Set();
 
-    SKELETON.forEach(card => {
+    liveSkeleton().forEach(card => {
         if (card.marker) {
             $doc.append(`
                 <div class="dev-card dev-card-st">

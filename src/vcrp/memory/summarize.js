@@ -25,7 +25,7 @@ import {
 import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
 import {
     memoryState, memoryBudgetSettings, currentMemoryBudget, estimateTokens, anchorOf, resolveAnchor,
-    vcrpMemoryEnabled, setMemoryTaskActive, memoryNow,
+    vcrpMemoryEnabled, setMemoryTaskActive, memoryNow, vcrpMemoryCountTaskOutput,
 } from "./index.js";
 import { summaryTarget, isCold } from "./window.js";
 import { parseSummary, parseCheck, parseFactChanges, applyFactChanges, formatFactChanges, formatLedgerForTask, gistsToFold } from "./ledger.js";
@@ -121,7 +121,10 @@ const otherTaskRunning = () => !!(activeStoryPlanRequest || activeBanListChat ||
 
 async function quiet(prompt, standalone) {
     setMemoryTaskActive(true, standalone || null);
-    try { return await generateQuietPrompt({ quietPrompt: prompt }); } finally { setMemoryTaskActive(false); }
+    let out;
+    try { out = await generateQuietPrompt({ quietPrompt: prompt }); } finally { setMemoryTaskActive(false); }
+    vcrpMemoryCountTaskOutput(out);
+    return out;
 }
 
 function noteFailure(st, reason) {

@@ -17,12 +17,23 @@ import { vcrpActiveModel } from "../generation.js";
 import { BUDGET_DEFAULTS, priceForModel, costEstimate } from "./budget.js";
 import {
     vcrpMemoryEnabled, memoryState, memoryBudgetSettings, currentMemoryBudget, resolveAnchor, refreshShownMemory, estimateTokens,
-    forceCut, undoForceCut, previewRecall, vcrpMemoryUpdateVisuals,
+    forceCut, undoForceCut, previewRecall, vcrpMemoryUpdateVisuals, resetSpend,
 } from "./index.js";
 import { storyChat, approvePending, discardPending, nextSpan, memorySummaryRunning, unsummarizedTokens, autoSummaryHold, catchUp, catchUpEstimate } from "./summarize.js";
 import { FACT_CATEGORIES, formatFactChanges, applyFactChanges } from "./ledger.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
+
+// The running spend estimate, as one line of the meter. Empty until a request has been counted.
+function spendLine(st) {
+    const s = st && st.spend;
+    if (!s || !(s.replies || s.tasks)) return "";
+    const total = s.replyCost + s.taskCost;
+    const avg = s.replies ? s.replyCost / s.replies : 0;
+    const last = s.last ? ` Last reply: about ${money(s.last.cost)}${s.last.cold ? " (cache cold)" : ""}.` : "";
+    return `<div style="margin-top:4px;"><b>Spent in this chat (estimate):</b> about ${money(total)} · ${s.replies} ${s.replies === 1 ? "reply" : "replies"} (${money(avg)} each)${s.tasks ? ` · ${s.tasks} background call${s.tasks === 1 ? "" : "s"} such as memory summaries (${money(s.taskCost)})` : ""}.${last}
+        <span style="opacity:.7;">From VCRP's own token counts; hidden reasoning SillyTavern never sees is not included.</span></div>`;
+}
 const money = n => `$${n.toFixed(n < 0.1 ? 3 : 2)}`;
 const k = n => `${Math.round(n / 100) / 10}k`;
 
@@ -121,7 +132,8 @@ export function renderVcrpMemoryPanel($c) {
                 : `<div style="opacity:.7;">No request sent yet with Story Memory on.</div>`}
             <div>${covered ? `Chapters cover messages 1–${covered} of ${chat.length}.` : `No chapters yet (${chat.length} messages).`} The prompt carries from message ${cutAt + 1}.${pending.length ? ` <b style="color:#f59e0b;">${pending.length} chapter${pending.length > 1 ? "s" : ""} waiting for review.</b>` : ""}</div>
             ${st && st.shown ? `<div style="opacity:.75;">Memory text in the prompt: about ${k(estimateTokens(st.shown))} tokens${(st.hiddenFacts || []).length ? `, ${st.hiddenFacts.length} older facts kept for recall only` : ""}.</div>` : ""}
-            ${st && (st.lastRecall || []).length ? `<div style="opacity:.75;">Recalled for the last request: ${esc(st.lastRecall.join(", "))}.</div>` : ""}`;
+            ${st && (st.lastRecall || []).length ? `<div style="opacity:.75;">Recalled for the last request: ${esc(st.lastRecall.join(", "))}.</div>` : ""}
+            ${spendLine(st)}`;
         const hold = autoSummaryHold(st);
         if (hold) meter += `<div style="color:#f59e0b;"><i class="fa-solid fa-circle-pause"></i> Automatic summaries are ${hold === "waiting for review" ? "holding until you review the waiting chapters" : "paused after two failed summaries; Summarize now retries"}.</div>`;
         // A long chat nobody has summarized: a break would end in a full-price request on all of it.
@@ -139,7 +151,15 @@ export function renderVcrpMemoryPanel($c) {
             <button id="vmem_summarize" class="ps-modern-btn secondary" style="font-size:0.72rem;"><i class="fa-solid fa-feather"></i> Summarize now</button>
             <button id="vmem_refresh_shown" class="ps-modern-btn secondary" style="font-size:0.72rem;" title="Puts edited chapters and facts into the prompt now. The next request then costs full price once."><i class="fa-solid fa-arrows-rotate"></i> Update the prompt now</button>
             <button id="vmem_reset" class="ps-modern-btn secondary" style="font-size:0.72rem; color:#ef4444;"><i class="fa-solid fa-trash"></i> Reset this chat's memory</button>
+            ${st && st.spend && (st.spend.replies || st.spend.tasks) ? `<button id="vmem_spend_reset" class="ps-modern-btn secondary" style="font-size:0.72rem;" title="Starts the spend estimate over. The memory itself is not touched."><i class="fa-solid fa-coins"></i> Reset spend estimate</button>` : ""}
         </div></div>`);
+    $c.find("#vmem_spend_reset").on("click", async () => {
+        const stNow = memoryState();
+        if (!stNow) return;
+        resetSpend(stNow);
+        await saveMetadata();
+        rerender();
+    });
 
     $c.find("#vmem_summarize").on("click", async () => {
         const stNow = memoryState();
@@ -223,6 +243,8 @@ export function renderVcrpMemoryPanel($c) {
     // ── Review ──
     if (pending.length) {
         const e = pending[0];
+        const pinnedIds = new Set((st.ledger || []).filter(f => f.pinned).map(f => f.id));
+        const pinnedTouched = [...new Set((e.ops || []).filter(o => o.op !== "+" && pinnedIds.has(o.id)).map(o => o.id))];
         const badge = e.checked === "ok" ? `<span style="color:#10b981;">checked: accurate</span>` : e.checked === "corrected" ? `<span style="color:#f59e0b;">checked: corrected</span>` : `<span style="color:#ef4444;">check unreadable</span>`;
         $c.append(`<div class="mtab-panel" style="margin-bottom:14px; border-color: rgba(245,158,11,0.35);">
             <div class="mtab-panel-title gold"><i class="fa-solid fa-clipboard-check"></i> Review: messages ${e.from + 1}–${e.to + 1} · ${badge}${pending.length > 1 ? ` · ${pending.length - 1} more after this` : ""}</div>
@@ -233,6 +255,7 @@ export function renderVcrpMemoryPanel($c) {
             <label style="font-size:0.72rem; opacity:.8;">Fact changes (+ category | fact, ~ F3 | new wording, - F7 | reason)</label>
             <textarea id="vmem_rev_changes" class="ps-modern-input" style="width:100%; height:90px; resize:vertical; font-family:monospace; font-size:0.72rem;">${esc(formatFactChanges(e.ops))}</textarea>
             ${e.arc ? `<div style="font-size:0.72rem; margin-top:6px; opacity:.8;">Also folds ${e.foldIds.length} older gists into: <i>${esc(e.arc)}</i></div>` : ""}
+            ${pinnedTouched.length ? `<div style="font-size:0.72rem; margin-top:6px; color:#f59e0b;"><i class="fa-solid fa-thumbtack"></i> Changes ${pinnedTouched.length === 1 ? "a pinned fact" : "pinned facts"}: ${esc(pinnedTouched.join(", "))}. Check ${pinnedTouched.length === 1 ? "it" : "them"} before approving.</div>` : ""}
             <div style="display:flex; gap:8px; margin-top:10px;">
                 <button id="vmem_rev_approve" class="ps-modern-btn" style="font-size:0.72rem;"><i class="fa-solid fa-check"></i> Approve</button>
                 <button id="vmem_rev_discard" class="ps-modern-btn secondary" style="font-size:0.72rem; color:#ef4444;" title="Throws this away (and anything queued after it). It is written again after a later reply."><i class="fa-solid fa-xmark"></i> Discard</button>
@@ -304,9 +327,10 @@ export function renderVcrpMemoryPanel($c) {
     // ── Fact ledger ──
     const ledger = st.ledger || [];
     $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title green"><i class="fa-solid fa-list-check"></i> Facts (${ledger.length})</div>
-        <div style="font-size:0.72rem; opacity:.75; margin-bottom:8px;">Durable facts the story has established. Edits reach the prompt at the next cut, or with "Update the prompt now".</div>
+        <div style="font-size:0.72rem; opacity:.75; margin-bottom:8px;">Durable facts the story has established. <i class="fa-solid fa-thumbtack"></i> Pinned facts always stay in the memory text, whatever the size cap; summaries can still update or retire them as the story changes. Edits and pins reach the prompt at the next cut, or with "Update the prompt now".</div>
         <div id="vmem_facts" style="display:flex; flex-direction:column; gap:4px;">
             ${ledger.map(f => `<div style="display:flex; gap:6px; align-items:center;">
+                <button class="ps-modern-btn secondary vmem-fact-pin" data-id="${esc(f.id)}" style="padding:2px 7px;${f.pinned ? " color:#f59e0b; border-color:rgba(245,158,11,0.5);" : " opacity:.5;"}" title="${f.pinned ? "Pinned: always in the memory text. Click to unpin." : "Pin: always keep this fact in the memory text."}"><i class="fa-solid fa-thumbtack"></i></button>
                 <span style="font-size:0.65rem; opacity:.7; min-width:86px;" title="${(st.hiddenFacts || []).includes(f.id) ? "Over the memory cap: comes back only when the scene touches it" : ""}">${esc(f.id)} · ${esc(f.cat)}${(st.hiddenFacts || []).includes(f.id) ? " · recall" : ""}</span>
                 <input class="ps-modern-input vmem-fact" data-id="${esc(f.id)}" style="flex:1;" value="${esc(f.text)}">
                 <button class="ps-modern-btn secondary vmem-fact-del" data-id="${esc(f.id)}" style="padding:2px 8px; color:#ef4444;" title="Retire this fact"><i class="fa-solid fa-xmark"></i></button>
@@ -325,6 +349,14 @@ export function renderVcrpMemoryPanel($c) {
     };
     $c.find(".vmem-fact").on("change", async function () { await edit([{ op: "~", id: $(this).data("id"), text: String($(this).val()).trim() }]); });
     $c.find(".vmem-fact-del").on("click", async function () { await edit([{ op: "-", id: $(this).data("id"), reason: "removed by the reader" }]); rerender(); });
+    $c.find(".vmem-fact-pin").on("click", async function () {
+        const stNow = memoryState();
+        const f = (stNow.ledger || []).find(x => x.id === String($(this).data("id")));
+        if (!f) return;
+        f.pinned = !f.pinned;
+        await saveMetadata();
+        rerender();
+    });
     $c.find("#vmem_add_fact").on("click", async () => {
         const text = String($c.find("#vmem_new_fact").val() || "").trim();
         if (!text) return;
@@ -337,11 +369,22 @@ export function renderVcrpMemoryPanel($c) {
     const arcs = st.arcs || [];
     $c.append(`<div class="mtab-panel"><div class="mtab-panel-title blue"><i class="fa-solid fa-book"></i> Chapters (${chapters.length})</div>
         ${arcs.length ? `<div style="font-size:0.75rem; margin-bottom:8px;">${arcs.map(a => `<div>• <i>${esc(a.text)}</i></div>`).join("")}</div>` : ""}
-        ${chapters.length ? [...chapters].reverse().map(c => `<details style="margin-bottom:4px;${c.folded ? " opacity:.6;" : ""}">
-            <summary style="cursor:pointer; font-size:0.78rem;"><b>${esc(c.id)}</b> · messages ${c.from + 1}–${c.to + 1}${c.folded ? " · folded into an arc" : ""} · ${esc(c.gist)}</summary>
+        ${chapters.length ? `<div style="font-size:0.72rem; opacity:.75; margin-bottom:8px;"><i class="fa-solid fa-thumbtack"></i> A pinned chapter keeps its gist line in the memory text: never trimmed by the size cap, never folded into an arc. It reaches the prompt at the next cut, or with "Update the prompt now".</div>` : ""}
+        ${chapters.length ? [...chapters].reverse().map(c => `<details style="margin-bottom:4px;${c.folded && !c.pinned ? " opacity:.6;" : ""}">
+            <summary style="cursor:pointer; font-size:0.78rem;"><button class="ps-modern-btn secondary vmem-ch-pin" data-id="${esc(c.id)}" style="padding:1px 6px; margin-right:4px;${c.pinned ? " color:#f59e0b; border-color:rgba(245,158,11,0.5);" : " opacity:.5;"}" title="${c.pinned ? "Pinned. Click to unpin." : "Pin this chapter's gist"}"><i class="fa-solid fa-thumbtack"></i></button><b>${esc(c.id)}</b> · messages ${c.from + 1}–${c.to + 1}${c.folded ? (c.pinned ? " · folded, kept by its pin" : " · folded into an arc") : ""} · ${esc(c.gist)}</summary>
             <div style="font-size:0.75rem; white-space:pre-wrap; padding:6px 10px; opacity:.85;">${esc(c.chapter)}</div></details>`).join("")
         : `<div style="font-size:0.75rem; opacity:.7;">No chapters yet. They are written after replies, once the chat is long enough to need them.</div>`}
         </div>`);
+    $c.find(".vmem-ch-pin").on("click", async function (e) {
+        e.preventDefault();   // inside <summary>: do not also open or close the chapter
+        e.stopPropagation();
+        const stNow = memoryState();
+        const ch = (stNow.chapters || []).find(x => x.id === String($(this).data("id")));
+        if (!ch) return;
+        ch.pinned = !ch.pinned;
+        await saveMetadata();
+        rerender();
+    });
 }
 
 /** The Memory tab. */
