@@ -9,6 +9,7 @@
 
 import { extension_settings } from "../../st.js";
 import { extensionName } from "../../core/constants.js";
+import { MEGUMIN_CONFIG } from "../../../data/megumin.js";
 
 // The preamble is always emitted whenever the block is emitted at all.
 export const CONFIG_PREAMBLE = `These are standing settings for this story. Where a setting here contradicts anything above, this block wins. These apply to the whole story, not a single scene.`;
@@ -311,18 +312,24 @@ export function countActiveConfigFields(cfg) {
 // Compiles the profile's storyConfig into the <config> block that replaces [[config]].
 // The block is always on; it returns "" only when every field is empty, so the tag is
 // stripped cleanly on a profile that has somehow been blanked.
-export function buildConfigBlock(cfg) {
+//
+// `original` (a Megumin Original engine) sends Megumin's wording of the shipped options
+// and notes. A value the reader typed is sent as typed either way.
+export function buildConfigBlock(cfg, { original = false } = {}) {
     if (!cfg) return "";
 
     normalizeStoryConfig(cfg);
     const lines = [];
     storyConfigFields.forEach(f => {
-        const raw = cfg[f.key];
+        let raw = cfg[f.key];
         if (!raw || String(raw).trim() === "") return;
+        raw = String(raw).trim();
+        if (original && Object.prototype.hasOwnProperty.call(MEGUMIN_CONFIG.values, raw)) raw = MEGUMIN_CONFIG.values[raw];
         // The asterisked note tells the model what the field governs. pov carries none —
         // the value already says everything it needs to.
-        const note = f.aiNote ? ` *${f.aiNote}*` : "";
-        lines.push(`- ${f.tag}: ${String(raw).trim()}${note}`);
+        const aiNote = original && Object.prototype.hasOwnProperty.call(MEGUMIN_CONFIG.notes, f.key) ? MEGUMIN_CONFIG.notes[f.key] : f.aiNote;
+        const note = aiNote ? ` *${aiNote}*` : "";
+        lines.push(`- ${f.tag}: ${raw}${note}`);
     });
 
     if (lines.length === 0) return "";

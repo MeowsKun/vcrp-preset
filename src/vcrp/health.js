@@ -12,6 +12,7 @@ import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode,
 import { escapeHtmlAttr } from "../utils/html.js";
 import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memoryState, estimateTokens, memoryCanReachPrompt } from "./memory/index.js";
 import { autoSummaryHold } from "./memory/summarize.js";
+import { meguminOriginalActive } from "../engine/meguminOriginal.js";
 
 // A preset is VCRP's if it carries the tags only VCRP/Megumin presets use (the name can be anything).
 const VCRP_TAG_RE = /\[\[(?:blocks|THINK|prompt1)\]\]/;
@@ -43,7 +44,7 @@ export function vcrpHealthCheck() {
     const isVcrp = (cc.prompts || []).some(p => VCRP_TAG_RE.test((p && p.content) || ""));
     if (!isVcrp) {
         add("error", `The active preset "${presetName}" is not a VCRP preset`,
-            "Select \"VCRP V10 Universal\" in AI Response Configuration. Import it from the extension's Presets folder if it is not listed.");
+            "Select \"VCRP V10 Universal\" (or \"VCRP V10 Megumin Original\") in AI Response Configuration. Import it from the extension's Presets folder if it is not listed.");
         return summarize(items);
     }
     add("ok", `VCRP preset active: "${presetName}"`);
@@ -89,7 +90,22 @@ export function vcrpHealthCheck() {
             "OpenRouter moves every system message to the front of the prompt. VCRP sends Output Rules and the closing slots as user messages instead, so Claude reads them after the chat and per-turn changes leave the cache intact.");
     }
 
-    // 5. Long chats: what decides whether a request is cheap or full price.
+    // 5. Engine and preset from the same family. Told apart by the ban list: VCRP's
+    // adds entries Megumin's never had.
+    const prompts = Array.isArray(cc.prompts) ? cc.prompts : [];
+    const hasText = s => prompts.some(p => p && typeof p.content === "string" && p.content.includes(s));
+    const vcrpBanList = hasText("**stripped articles:**");
+    const originalBanList = !vcrpBanList && hasText("<banlist>");
+    const originalEngine = meguminOriginalActive();
+    if (originalEngine && vcrpBanList) {
+        add("info", "Megumin Original engine on the VCRP preset",
+            "The preset's ban list and final reminder are VCRP's, dash rules included. For Megumin's writing all the way through, select \"VCRP V10 Megumin Original\" in AI Response Configuration.");
+    } else if (!originalEngine && originalBanList) {
+        add("info", "VCRP engine on the Megumin Original preset",
+            "The preset text is Megumin's original, without VCRP's ban list additions and dash rules. Pick a Megumin Original engine to match it, or select \"VCRP V10 Universal\".");
+    }
+
+    // 6. Long chats: what decides whether a request is cheap or full price.
     longChatChecks(add, ctx, cc, source, model);
 
     return summarize(items);
@@ -140,7 +156,7 @@ function longChatChecks(add, ctx, cc, source, model) {
     }
     if (!memoryCanReachPrompt()) {
         add("error", "Story Memory is on, but the active preset can't carry its memory text",
-            "The preset needs an enabled slot containing [[long-Memory]] (VCRP V10 Universal has it in <history>). Until then Story Memory cuts nothing, so long chats are not kept to the budget.");
+            "The preset needs an enabled slot containing [[long-Memory]] (both VCRP presets have it in <history>). Until then Story Memory cuts nothing, so long chats are not kept to the budget.");
     }
     const st = memoryState();
     const pending = ((st && st.pending) || []).length;

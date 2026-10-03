@@ -108,7 +108,7 @@ dialogue is characterization, not information transfer. every line carries the s
 
 - register: vocabulary, syntax and worldview are locked to age, class, region, education, trade and era, and bend toward whoever is listening. a twenty-two-year-old in a diner does not say "i would be inclined to disagree"; she says "yeah no" and means "absolutely not". a forty-six-year-old mechanic talks in short, clean sentences because he cut the waste decades ago. a teenager from a specific neighborhood uses the specific language of that neighborhood. authority over a domain is not fluency in it: a commander lacks his specialists' vocabulary, an owner lacks his technicians'. no jargon in a mouth that never trained in it; outside their competence characters approximate, misname, or reach for an analogy from their own life. slang, references and touchstones come from the speaker's own era, not the reader's; references miss across generations, and the one who missed it doesn't always notice.
 
-- no acting: no punchlines, no zingers, no clean rhetorical question with a sting at the end, no polished simile, no line timed for a camera, no precise clever noun; people say "that thing", "the — you know, the cable", and keep going; no one lands the exact right word on the first try. the sting comes from the situation, the timing, and the silence around the words; the narrator's cleverness lives in the structure and the beat, never in a character's mouth. two characters never share one mouth, and the narrator's never leaks into theirs. the test: say it out loud. if it sounds like a person speaking (stumbling, correcting, losing their nerve), it's right. if it sounds like a character reading a paragraph, cut it. if it sounds like a speech, burn it.
+- no acting: no punchlines, no zingers, no clean rhetorical question with a sting at the end, no polished simile, no line timed for a camera, no precise clever noun; people say "that thing", "the... you know, the cable", and keep going; no one lands the exact right word on the first try. the sting comes from the situation, the timing, and the silence around the words; the narrator's cleverness lives in the structure and the beat, never in a character's mouth. two characters never share one mouth, and the narrator's never leaks into theirs. the test: say it out loud. if it sounds like a person speaking (stumbling, correcting, losing their nerve), it's right. if it sounds like a character reading a paragraph, cut it. if it sounds like a speech, burn it.
 
 - economy: not every line does work. talk is noise as often as it is meaning, some exchanges go nowhere, and refusal, deflection and "i dunno" are complete answers; sometimes "i dunno" means exactly that. speech sits in a body, broken by movement and by whatever someone is holding. the silence between two lines is the character thinking, deciding, or changing their mind; leave it silent.
 
@@ -177,7 +177,7 @@ Every line of speech MUST satisfy two mandates at once. **VOICE:** it is unmista
 
 - **idiolect:** Each character possesses a fixed, individual idiolect: a defined lexicon, cadence, and set of verbal habits belonging to no one else. Establish it at first utterance; hold it for the story's duration. TEST: with all attribution stripped, the speaker MUST remain identifiable. If not, the voice is undifferentiated; revise before output.
 - **register-lock:** Vocabulary, syntax, and reference are constrained by the character's age, class, region, trade, and era, and MUST bend toward the listener. NEVER place vocabulary or jargon in a mouth lacking the corresponding history. Authority over a domain does NOT confer its technical fluency.
-- **orality:** Speech MUST carry the properties of live talk: contractions, fragments, high-frequency plain diction, self-interruption, trailing clauses, redundancy, approximation ("the — that thing, you know"). PROHIBITED in a character's mouth: the complete balanced sentence as default, constructed metaphor, literary or precise vocabulary, any rhetorical polish. TEST: vocalize the line. If it scans as prose, it is invalid.
+- **orality:** Speech MUST carry the properties of live talk: contractions, fragments, high-frequency plain diction, self-interruption, trailing clauses, redundancy, approximation ("the... that thing, you know"). PROHIBITED in a character's mouth: the complete balanced sentence as default, constructed metaphor, literary or precise vocabulary, any rhetorical polish. TEST: vocalize the line. If it scans as prose, it is invalid.
 - **no-composition:** A character NEVER delivers authored cleverness: no epigram, no timed punchline, no elegant simile, no perfectly chosen word. Wit resides in situation and timing, NEVER in the mouth. The narrator's voice MUST NOT bleed into a character's.
 - **emotion → disfluency:** Fluency is inversely proportional to emotional intensity. As affect rises, syntax degrades: clipped, fragmented, repeated, or abandoned mid-thought. At peak emotion a character CANNOT produce a composed, complete, or clever sentence.
 - **indirection:** Maintain a gap between intent and utterance; the character NEVER closes it. NO character names their own feeling, justifies their own behavior, or summarizes the situation. Intent surfaces obliquely: deflection, topic-change, non-answer, an action in place of a line. The reader infers; the character never explains.
@@ -281,7 +281,7 @@ Flow:
 
 Emotional Delivery (orthographic cues, in spoken dialogue only):
 - The higher the emotion, the more syntax degrades: clipped, stammering, fragmented, or abandoned mid-thought. At peak emotion an NPC cannot land a clean, composed, or clever sentence.
-- Em dashes and ellipses are allowed in spoken NPC dialogue only, for stammering, emphasis, and trailing off.
+- Ellipses are allowed in spoken NPC dialogue only, for stammering, hesitation, and trailing off. The only em dash allowed anywhere is at the very end of a spoken line that gets cut off.
 - Fear/uncertainty = stammering: "I... I d-don't know what to do!"
 - Anger/yelling = all-CAP words: "I'M GOING TO WRECK YOU!"
 - Despair/shock = broken syntax + caps: "You.. you never loved ME?! JUST SAY IT!"
@@ -307,7 +307,7 @@ Bans in Spoken Dialogue:
 - Ban chained clauses (...and...and..., ...or...or...). Split ideas into separate statements using periods, commas, or action beats.
 - Ban abstract or philosophical speeches; trail off to mundane details instead.
 - Ban tricolons (lists of three). Break them up using action beats.
-- Ban punchlines, zingers, clean rhetorical questions with a sting, polished similes, lines timed for a camera, and precise clever nouns; NPCs say "that thing," "the — you know, the cable," and keep going.
+- Ban punchlines, zingers, clean rhetorical questions with a sting, polished similes, lines timed for a camera, and precise clever nouns; NPCs say "that thing," "the... you know, the cable," and keep going.
 - Ban the sardonic, understated, every-line-a-double-entendre register as a default; that is the book's voice. Wit may belong to one NPC as an earned, specific habit; then it lives in that mouth only and the other voices in the room stay un-wry.
 - Ban the narrator's voice in an NPC's mouth. Two NPCs never share one mouth.
 - TEST: say it out loud. If it sounds like a person speaking (stumbling, correcting, losing their nerve), it's right. If it sounds like a character reading a paragraph, cut it. If it sounds like a speech, burn it.
@@ -316,13 +316,14 @@ Reference Examples (varied structure, strong emotion; copy the SHAPE, never the 
 - Sad/scared/uncertain: "I... I d-don't know what to do!"
 - Angry: "I'M GOING TO WRECK YOU!"
 - Despair/shock: "You.. you never loved ME?! JUST SAY IT!"
-- Flushed, talking too fast: "It's nothing, it's really nothing, I just — look, can we not do this here, is it that bad, okay, okay, I'll stop."
+- Flushed, talking too fast: "It's nothing, it's really nothing, I just... look, can we not do this here, is it that bad, okay, okay, I'll stop."
 - Should NOT sound like: "We don't need to talk about this. We were never going to talk about this." / "I don't mind waiting. I'm in no particular hurry."
 </dialogue>`;
 
-export function applyEnhancedDialogue(text) {
+// `section` lets a Megumin Original engine swap in Megumin's own version instead.
+export function applyEnhancedDialogue(text, section = ENHANCED_DIALOGUE) {
     if (typeof text !== "string" || !text) return text;
-    return text.replace(/<dialogue>[\s\S]*?<\/dialogue>/gi, () => ENHANCED_DIALOGUE);
+    return text.replace(/<dialogue>[\s\S]*?<\/dialogue>/gi, () => section);
 }
 
 export const modes_v10 = [

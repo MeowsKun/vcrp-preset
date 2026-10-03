@@ -10,7 +10,9 @@
 import { getContext, extension_settings, substituteParams } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
-import { isV7Engine, isModernEngine, isCoWriterEngine } from "../core/engines.js";
+import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine } from "../core/engines.js";
+import { meguminStyleRule, meguminAddonText, meguminPlanTemplate } from "./meguminOriginal.js";
+import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING } from "../../data/megumin.js";
 import {
     activeNpcImages, pushActiveNpcImage, clearActiveNpcImages,
 } from "../core/activeRequests.js";
@@ -36,6 +38,9 @@ export function buildBaseDict(isTokenCount = false) {
     const activeEngine = allAvailableModes.find(m => m.id === localProfile.mode);
     const isV7 = isV7Engine(activeEngine);
     const isModern = isModernEngine(activeEngine);
+    // A Megumin Original engine takes Megumin's own wording of every shared text
+    // below (styles, add-ons, Story Config, Enhanced Dialogue, Story Director).
+    const megumin = isMeguminEngine(activeEngine);
 
     // 1. GLOBAL DEFAULTS (Language, Pronouns, Word Count)
     const targetLang = (localProfile.userLanguage && localProfile.userLanguage.trim() !== "")
@@ -51,7 +56,7 @@ export function buildBaseDict(isTokenCount = false) {
     dict["[[count]]"] = "";
 
     // Story Config (<config> block). Empty when the config is off or every field is on Default.
-    dict["[[config]]"] = buildConfigBlock(localProfile.storyConfig);
+    dict["[[config]]"] = buildConfigBlock(localProfile.storyConfig, { original: megumin });
 
     // 2. STANDARD STAGE SELECTIONS (Stage 2, 4, 5, 6)
 
@@ -67,15 +72,16 @@ export function buildBaseDict(isTokenCount = false) {
         
         dict["[[aiprompt]]"] = `<Narration_style>\n narrator_persona: "${povInjectionStr}${narratorPersona}"\n quarantine_rule: "CRITICAL: This opinionated voice applies STRICTLY and EXCLUSIVELY to the narration. It MUST NOT bleed into <NPC_dialogue>. NPCs do not share the narrator's wit or perspective; their dialogue remains entirely bound by their own demographics, stress levels, and individual flaws."\n proportional_prose: "Match narrative intensity to the event. A spilled coffee is just a minor annoyance, not a catalyst for dramatic prose. Zero purple prose. Use grounded metaphors sparingly to anchor a scene, not distract from it."\n</Narration_style>`;
     } else if (localProfile.aiRule) {
+        const aiRule = megumin ? meguminStyleRule(localProfile.activeStyleId, localProfile.aiRule) : localProfile.aiRule;
         if (isV7 && localProfile.activeStyleId !== "dir_v7" && localProfile.activeStyleId !== "dir_v7_core" && localProfile.activeStyleId !== "dir_v7_gentle") {
-            dict["[[aiprompt]]"] = `<narrative_style>\n voice: ${povInjectionStr}${localProfile.aiRule}\n  pacing: "Unhurried where it should be. A quiet moment can take a paragraph. A violent one can take a sentence. Match the rhythm to the content."\n  length_directive: "Typical outputs should run 3–6 substantial paragraphs, scaling with scene density. Lean toward the higher end during rich, atmospheric, or multi-character scenes. Go shorter — even a single paragraph — only when the moment genuinely demands economy: a held breath, a door closing, a line that hits harder alone. Never pad, never rush."\n</narrative_style>`;
+            dict["[[aiprompt]]"] = `<narrative_style>\n voice: ${povInjectionStr}${aiRule}\n  pacing: "Unhurried where it should be. A quiet moment can take a paragraph. A violent one can take a sentence. Match the rhythm to the content."\n  length_directive: "Typical outputs should run 3–6 substantial paragraphs, scaling with scene density. Lean toward the higher end during rich, atmospheric, or multi-character scenes. Go shorter — even a single paragraph — only when the moment genuinely demands economy: a held breath, a door closing, a line that hits harder alone. Never pad, never rush."\n</narrative_style>`;
         } else {
-            dict["[[aiprompt]]"] = povInjectionStr + localProfile.aiRule;
+            dict["[[aiprompt]]"] = povInjectionStr + aiRule;
         }
     }
     localProfile.addons.forEach(aId => {
         const item = hardcodedLogic.addons.find(a => a.id === aId);
-        if (item) dict[item.trigger] = item.content;
+        if (item) dict[item.trigger] = megumin ? meguminAddonText(item.id, item.content) : item.content;
     });
 
 
@@ -109,7 +115,9 @@ export function buildBaseDict(isTokenCount = false) {
 
     if (localProfile.onomatopoeia && localProfile.onomatopoeia.enabled) {
         let onoRule = `- Narration must utilize onomatopoeia. Use precise, context-specific phonetic representations for physical interactions (e.g., the click of a latch, the thud of a heavy object, the soughing of wind) rather than abstract descriptions of sound.`;
-        if (localProfile.onomatopoeia.useStyling) {
+        if (localProfile.onomatopoeia.useStyling && megumin) {
+            onoRule += MEGUMIN_ONOMATO_STYLING;
+        } else if (localProfile.onomatopoeia.useStyling) {
             onoRule += `\nAll onomatopoeic words must be animated and colored using HTML tags and inline CSS. The selected style tag and color must objectively correspond to the physical nature or movement of the sound produced; for example, a repetitive friction sound such as "shush-shush" must utilize a sliding animation tag to represent the physical action.`;
         }
         dict["[[onomato]]"] = onoRule;
@@ -135,7 +143,7 @@ export function buildBaseDict(isTokenCount = false) {
             && localProfile.enhancedDialogue[activeEngine.id]);
         for (let i = 1; i <= 6; i++) {
             let val = activeEngine[`p${i}`] || "";
-            if (enhanced) val = applyEnhancedDialogue(val);
+            if (enhanced) val = applyEnhancedDialogue(val, megumin ? MEGUMIN_ENHANCED_DIALOGUE : undefined);
             dict[`[[prompt${i}]]`] = val;
             dict[`[prompt${i}]`] = val;
         }
@@ -300,15 +308,19 @@ export function buildBaseDict(isTokenCount = false) {
             finalInjection += unresBlock + "\n\n";
         }
 
+        // Megumin's wording of the shipped templates on an original engine; a custom one always wins.
+        const shippedPlan = key => megumin
+            ? meguminPlanTemplate(key, DEFAULT_PROMPTS.storyPlan[key])
+            : DEFAULT_PROMPTS.storyPlan[key];
         if (planText && planText.trim() !== "") {
-            const template = (spCustom && spCustom.injectionTemplate) || DEFAULT_PROMPTS.storyPlan.injectionTemplate;
+            const template = (spCustom && spCustom.injectionTemplate) || shippedPlan("injectionTemplate");
             finalInjection += template.replace('{{planText}}', planText);
         }
 
         dict["[[storyplan]]"] = finalInjection.trim();
 
         // The refined tracker block you asked for
-        const trackerTemplate = (spCustom && spCustom.trackerTemplate) || DEFAULT_PROMPTS.storyPlan.trackerTemplate;
+        const trackerTemplate = (spCustom && spCustom.trackerTemplate) || shippedPlan("trackerTemplate");
         dict["[[storytracker]]"] = trackerTemplate;
     } else {
         dict["[[storyplan]]"] = "";

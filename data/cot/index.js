@@ -5,10 +5,13 @@
 // that is what these actually are — none of them describe an LLM model.
 
 // VCRP: only the V10 CoTs ship (plus cot-off); the V1-V9 generations were removed.
+// The Megumin Original set is Megumin Suite's own, generated into data/megumin.js.
 import { cot_v10 } from "./v10.js";
+import { cot_megumin } from "../megumin.js";
 
 export const models = [
     ...cot_v10,
+    ...cot_megumin,
 ];
 
 /**
@@ -28,10 +31,12 @@ export function meguminCotForMode(modeId, lang = "english") {
     if (!modeId) return null;
 
     let prefix = null;
-    // Shura first: "v10-shura" contains "v10", and the specific pairing wins.
+    // Megumin Original first: "v10-shura-megumin" is also a "v10-shura".
+    if (modeId.includes("megumin")) prefix = modeId.includes("shura") ? "cot-meg-shura" : "cot-meg-ukiyo";
+    // Shura next: "v10-shura" contains "v10", and the specific pairing wins.
     // The uncapped variant is the default either way -- the Thinking Cap is a
     // remedy for a model that over-thinks, not something to hand everyone.
-    if (modeId.includes("v10-shura")) prefix = "cot-v10-shura";
+    else if (modeId.includes("v10-shura")) prefix = "cot-v10-shura";
     else if (modeId.includes("v10")) prefix = "cot-v10-ukiyo";
     if (!prefix) return null;
 

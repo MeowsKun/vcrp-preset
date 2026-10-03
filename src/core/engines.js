@@ -25,6 +25,11 @@ export const isV10Engine = m => !!m && (String(m.id || "").startsWith("v10") || 
 // before the flag existed still reads correctly.
 export const isCoWriterEngine = m => !!m && (m.isCoWriter === true || String(m.id || "").endsWith("-cw"));
 
+// The Megumin Original pair: Megumin Suite V10's own text, which also takes the
+// original wording of every shared text (styles, add-ons, Story Config). Flag only,
+// so a Dev Mode clone of one stays original.
+export const isMeguminEngine = m => !!m && m.megumin === true;
+
 // ── Behaviour, named for what it does ────────────────────────────────────────
 //
 // V10 inherits everything V9 does EXCEPT the Lean/Full render limits, which it

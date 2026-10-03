@@ -2,7 +2,7 @@
 // Global Settings — extension preferences, community links and about.
 // ────────────────────────────────────────────────────────────────────────────
 
-import { extension_settings, saveSettingsDebounced } from "../../st.js";
+import { extension_settings, saveSettingsDebounced, getContext } from "../../st.js";
 import { extensionName } from "../../core/constants.js";
 import { localProfile } from "../../core/state.js";
 import { initProfile, saveProfileToMemory } from "../../core/profile.js";
@@ -12,6 +12,7 @@ import { escapeHtmlAttr } from "../../utils/html.js";
 import { vcrpDetectPrefill, vcrpActiveModel } from "../../vcrp/generation.js";
 import { buildHealthCard, vcrpRefreshHealthBadge } from "../../vcrp/health.js";
 import { exportAllSettings, pickAndImportSettings } from "../../vcrp/settingsBackup.js";
+import { vcrpDedashChat, vcrpStoryIsEnglish } from "../../vcrp/dedash.js";
 
 // The version on the about card. One place, so it cannot fall out of step with
 // itself the way "v9" did once V10 shipped.
@@ -114,6 +115,27 @@ export function renderGlobalSettings(c) {
             </div>
         </div>
     `);
+    // VCRP: the dash cleaner. Its key is always a boolean (profile.js fills it), so
+    // the shared toggle wiring below works on it unchanged.
+    const englishNote = vcrpStoryIsEnglish() ? "" : ` <b>Paused for this chat:</b> its story language is set to ${escapeHtmlAttr(localProfile.userLanguage)}.`;
+    $content.append(`
+        <div class="mtab-toggle-row ${gs.cleanDashes ? 'active' : ''}" id="gs_toggle_clean_dashes" style="cursor: pointer;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-minus" style="color: #38bdf8;"></i> Clean Em Dashes</div>
+                <div class="toggle-desc">Takes the em dashes out of each new reply: a comma in narration, an ellipsis in speech. A spoken line that gets cut off keeps its dash ("Wait, I didn't—"). Thinking, trackers and blocks are left alone. English stories only, since other languages use dashes to mark dialogue. Paused while a Megumin Original engine is selected, so it writes the way Megumin does.${englishNote}</div>
+            </div>
+            <div class="ps-switch" style="${gs.cleanDashes ? 'background: #38bdf8;' : ''}"></div>
+        </div>
+        <div class="mtab-panel" style="margin: 0; padding: 12px 16px;">
+            <div class="mtab-setting-row" style="padding: 0; border: none;">
+                <div class="set-info">
+                    <div class="set-label"><i class="fa-solid fa-broom" style="color: #38bdf8;"></i> Clean This Chat</div>
+                    <div class="set-desc">The same cleanup for every earlier reply in the open chat, the greeting and old swipes included, so the AI stops copying the old dashes. Your own messages are never touched. Old messages change, so the next reply pays once to rebuild the cache: cents in a young chat, up to about $1 in a long one.</div>
+                </div>
+                <button id="gs_clean_chat_dashes" class="ps-modern-btn secondary" style="padding: 5px 12px; font-size: 0.75rem; flex-shrink: 0;"><i class="fa-solid fa-broom"></i> Clean</button>
+            </div>
+        </div>
+    `);
 
     // ── DATA ────────────────────────────────────────────────────────────────
     $content.append(`<div class="wstyle-section-head gold" style="margin-top:8px;"><i class="fa-solid fa-floppy-disk"></i> Data</div>`);
@@ -186,7 +208,7 @@ export function renderGlobalSettings(c) {
 
     // ── WIRING ──────────────────────────────────────────────────────────────
     //
-    // One helper for both toggles. Each used to carry its own block re-applying
+    // One helper for every toggle. Each used to carry its own block re-applying
     // the same three styles by hand, which is how they came to use different
     // colours for the same state.
     const wireToggle = (id, key, colour) => {
@@ -200,6 +222,24 @@ export function renderGlobalSettings(c) {
     };
     wireToggle("#gs_toggle_prompt_preview", "promptPreview", "var(--gold)");
     wireToggle("#gs_toggle_utility_prefill", "enableUtilityPrefill", "#10b981");
+    wireToggle("#gs_toggle_clean_dashes", "cleanDashes", "#38bdf8");
+
+    $content.find("#gs_clean_chat_dashes").on("click", async function () {
+        const chat = getContext().chat;
+        if (!Array.isArray(chat) || !chat.length) { toastr.info("Open a chat first."); return; }
+        if (!vcrpStoryIsEnglish()) { toastr.warning(`This chat's story language is ${localProfile.userLanguage}, which uses dashes for dialogue. Nothing was changed.`); return; }
+        if (!confirm("Clean the em dashes out of every reply in this chat?\n\nYour own messages stay as they are. The next reply rebuilds the cache once.")) return;
+        const $btn = $(this).prop("disabled", true);
+        try {
+            const n = await vcrpDedashChat();
+            toastr.success(n ? `Cleaned ${n} ${n === 1 ? "reply" : "replies"}.` : "No dashes to clean.");
+        } catch (e) {
+            console.error("[VCRP] Clean This Chat failed:", e);
+            toastr.error("Cleaning stopped partway. See the browser console.");
+        } finally {
+            $btn.prop("disabled", false);
+        }
+    });
 
     $content.find("#gs_cot_prefill_mode").on("change", function () {
         gs.cotPrefillMode = $(this).val();

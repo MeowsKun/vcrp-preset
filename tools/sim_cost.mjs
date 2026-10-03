@@ -62,7 +62,8 @@ const TARGET = +opt("target", 0.30);
 const NPCS = !!opt("npcs", false);
 const NPC_NAMES = ["Mara", "Jonah", "Ilse", "Teo", "Ruth", "Dez"];
 const ENGINE = opt("engine", "ukiyo");
-const PRESET = "VCRP V10 Universal.json";
+const ORIGINAL = !!opt("original", false);   // the Megumin Original engine and preset
+const PRESET = ORIGINAL ? "VCRP V10 Megumin Original.json" : "VCRP V10 Universal.json";
 const BUDGET = +opt("budget", 0.30);
 const TOKFACTOR = +opt("tokfactor", 1.15);
 const SEED = +opt("seed", 7);
@@ -86,7 +87,8 @@ const rand = rng(SEED);
 const between = (a, b) => a + Math.floor(rand() * (b - a + 1));
 // Real English prose to build messages from: the sentences of the preset's own text.
 const SENTENCES = (() => {
-    const src = readFileSync(join(REPO, "Presets", PRESET), "utf8") + readFileSync(join(REPO, "data", "modes", "v10.js"), "utf8");
+    // Always the same source, so --original changes the prompt and not the chat.
+    const src = readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8") + readFileSync(join(REPO, "data", "modes", "v10.js"), "utf8");
     return src.replace(/\\n/g, "\n").replace(/\[\[[^\]]*\]\]|\{\{[^}]*\}\}|<[^>]+>|[*`#>|]/g, " ")
         .split(/(?<=[.!?])\s+/).map(s => s.replace(/\s+/g, " ").replace(/^[-\s]+/, "").trim())
         .filter(s => s.length > 40 && s.length < 300 && /^[A-Za-z"]/.test(s));
@@ -153,8 +155,9 @@ await imp("src/vcrp/memory/index.js");         // registers globalThis.vcrp_memo
 const { meguminCleanChatHistoryText } = await imp("src/engine/chatText.js");
 initProfile();
 Object.assign(state.localProfile, ENGINE === "shura"
-    ? { mode: "v10-shura", model: "cot-v10-shura-english", cotEnabled: true }
-    : { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
+    ? (ORIGINAL ? { mode: "v10-shura-megumin", model: "cot-meg-shura-english" } : { mode: "v10-shura", model: "cot-v10-shura-english" })
+    : (ORIGINAL ? { mode: "v10-ukiyo-megumin", model: "cot-meg-ukiyo-english" } : { mode: "v10-core", model: "cot-v10-ukiyo-english" }),
+    { cotEnabled: true });
 if (NPCS) {
     state.localProfile.npcBank.enabled = true;
     state.localProfile.npcBank.npcs = NPC_NAMES.map(name => ({ name, appearance: `${name}'s look, described in two plain sentences.`, role: "regular at the Lantern", agenda: `what ${name} wants this week` }));
@@ -332,7 +335,7 @@ for (let t = 1; t < N; t += 2) {            // each user message triggers one re
 const q = (arr, p) => { const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const costs = rows.map(r => r.cost);
 const sum = a => a.reduce((x, y) => x + y, 0);
-const label = `${MEMORY ? `MEMORY on${ENABLE_AT ? ` from msg ${ENABLE_AT}` : ""} (target $${TARGET}) · ` : ""}${NPCS ? "NPC Bank on · " : ""}${MODEL} · ${TTL} cache · depth ${DEPTH} · ${Number.isFinite(CONTEXT) ? `context ${CONTEXT}` : "no context limit"} · ${DIRECT ? "direct Anthropic" : NOFIX ? "OpenRouter WITHOUT the fix" : "OpenRouter"} · ${ENGINE}`;
+const label = `${MEMORY ? `MEMORY on${ENABLE_AT ? ` from msg ${ENABLE_AT}` : ""} (target $${TARGET}) · ` : ""}${NPCS ? "NPC Bank on · " : ""}${MODEL} · ${TTL} cache · depth ${DEPTH} · ${Number.isFinite(CONTEXT) ? `context ${CONTEXT}` : "no context limit"} · ${DIRECT ? "direct Anthropic" : NOFIX ? "OpenRouter WITHOUT the fix" : "OpenRouter"} · ${ENGINE}${ORIGINAL ? " · Megumin Original" : ""}`;
 console.log(`\n${label}`);
 console.log(`${rows.length} requests over ${N} messages · replies $${sum(costs).toFixed(2)}${MEMORY ? ` + memory upkeep $${upkeep.cost.toFixed(2)} (${upkeep.calls} calls) = $${(sum(costs) + upkeep.cost).toFixed(2)}` : ""}`);
 console.log(`per request: mean $${(sum(costs) / costs.length).toFixed(3)} · median $${q(costs, 0.5).toFixed(3)} · p90 $${q(costs, 0.9).toFixed(3)} · max $${Math.max(...costs).toFixed(3)}`);
@@ -350,6 +353,6 @@ if (MEMORY) {
 const worst = [...rows].sort((a, b) => b.cost - a.cost).slice(0, 3);
 console.log(`\nmost expensive: ${worst.map(r => `msg ${r.msg} $${r.cost.toFixed(3)} (${r.total} tok${r.cut ? ", cut" : ""})`).join(" · ")}`);
 mkdirSync(join(REPO, "tools", "out"), { recursive: true });
-const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}.csv`);
+const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}${ORIGINAL ? "_original" : ""}.csv`);
 writeFileSync(file, "msg,in_history,prompt_tokens,read,write,plain,cost,cut\n" + rows.map(r => [r.msg, r.inHistory, r.total, r.read, r.write, r.plain, r.cost.toFixed(4), r.cut ? 1 : 0].join(",")).join("\n"));
 console.log(`per-request rows: ${file}`);

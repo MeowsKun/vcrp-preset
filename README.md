@@ -29,7 +29,10 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 - **Backup & Restore** (Global Settings): all VCRP settings in one file.
 - **Token breakdown** in the Prompt Payload Preview: what each part of the prompt costs.
 - **Merged ban list:** V10's list plus VCRP's rules (stripped articles, pattern descriptions,
-  stock phrases; em dashes allowed only inside spoken NPC dialogue).
+  stock phrases; no em dashes except at the end of a spoken line that gets cut off).
+- **Clean Em Dashes** (Global Settings, on by default): takes the em dashes out of each new reply,
+  a comma in narration and an ellipsis in speech, leaving the thinking, trackers and blocks alone.
+  English stories only. **Clean This Chat** does the same for every earlier reply in the open chat.
 - User Consent block without the slur in its example list; Megumin's feedback form and donation
   details removed from the About card (it links to the original project instead).
 - **Trimmed:** Side Panel, Image Generation (ComfyUI, incl. NPC portrait generation and NPC image
@@ -40,7 +43,8 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 
 ## What's included
 
-- **Engines:** V10 Ukiyo and V10 Shura (with Enhanced Dialogue), their CoTs and Thinking Cap variants.
+- **Engines:** V10 Ukiyo and V10 Shura (with Enhanced Dialogue), their CoTs and Thinking Cap variants,
+  plus their **Megumin Original** versions (below).
 - **Tabs:** Presets & CoT (with Story Config), Writing Style (+ Anime Mode), Global Toggles & Add-ons,
   Blocks, Story Director, Dynamic Ban List, NPCs Bank, Memory (Story Memory), Knowledgebase,
   Global Settings, plus Dev Mode.
@@ -77,6 +81,25 @@ It relies on prompt caching. Set up once:
 Global Settings → Setup Check flags anything missing. Existing Memory Core summaries become
 chapters the first time each chat is opened.
 
+## Megumin Original
+
+For RP that reads exactly the way it did on Megumin Suite, with Story Memory and everything else
+VCRP adds still working:
+
+- **Engines** "V10 Ukiyo · Megumin Original" and "V10 Shura · Megumin Original": Megumin Suite
+  V10's own engine text, thinking steps (and Thinking Cap variants) and Enhanced Dialogue, word
+  for word. While one is selected, your writing style, add-ons, Story Config and Story Director
+  are sent in Megumin's wording too (a text you edited yourself is sent as you wrote it), and the
+  dash cleaner pauses.
+- **Preset** `Presets/VCRP V10 Megumin Original.json`: Megumin's own preset text (ban list,
+  Output RULES, lore and persona wrappers) on VCRP's layout, which is what Story Memory, the
+  cache and the model-aware CoT prefill depend on. Only tags for features VCRP removed are gone,
+  and the slur is still out of the (off by default) User Consent block.
+
+Import the preset like the other one and pick a Megumin Original engine in PRESETS & COT. Setup
+Check notes a mismatched pair. Both versions are generated from the upstream commit by
+`node tools/gen_megumin.mjs`.
+
 ## Development
 
 - `node tools/link_check.mjs`: loads every module against a stubbed SillyTavern (catches broken imports).
@@ -84,6 +107,8 @@ chapters the first time each chat is opened.
 - `node tools/test_ui.mjs`: renders every tab and clicks every button in a simulated browser
   (one-time setup: `cd tools && npm install`).
 - `python tools/gen_skeleton.py`: regenerates `data/skeleton.js` (Dev Mode's layout view) after a preset edit.
+- `node tools/gen_megumin.mjs`: regenerates `data/megumin.js` and the Megumin Original preset from
+  Megumin Suite V10 itself, after VCRP rewords a shared text or changes its preset layout.
 - `node tools/sim_cost.mjs [--memory] [--npcs] [--model opus-4.6] [--direct]`: plays a 1000-message chat
   through the real prompt builder and prices every request under Claude's prompt caching.
 

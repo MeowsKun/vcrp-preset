@@ -94,6 +94,7 @@ import { handlePromptInjection } from "./src/engine/injection.js";
 import { vcrpSetGenerationType } from "./src/vcrp/generation.js";
 import { vcrpRefreshHealthBadge } from "./src/vcrp/health.js";
 import { vcrpMemoryAfterReply } from "./src/vcrp/memory/summarize.js";
+import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
 import { initDraggableButton, updateCharacterDisplay, discoverDefaultImages } from "./src/ui/launcher.js";
 import { tabsUI, switchTab, updateGlobalSyncButton, toggleTabGlobalSync } from "./src/ui/tabs.js";
@@ -385,6 +386,9 @@ jQuery(async () => {
             eventSource.on(event_types.MORE_MESSAGES_LOADED, vcrpMemoryUpdateVisuals);
             // A deleted message may be one a chapter was anchored to: repair, then redraw.
             eventSource.on(event_types.MESSAGE_DELETED, vcrpMemoryOnMessageDeleted);
+            // Dash cleaner first, so every handler after it (the tracker capture,
+            // Story Memory) sees the reply as it will stay in the history.
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDedashOnReply);
             // VCRP budgeted memory: summarize the next stretch after a reply, when due.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryAfterReply);
             // IMAGE GEN AUTO-GEN & SWIPE TRIGGERS

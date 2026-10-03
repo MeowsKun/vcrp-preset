@@ -6,25 +6,25 @@ export const directStyles = [
       id: "dir_v10_ukiyo",
       name: "V10 Ukiyo Default",
       desc: "The register shifts scene to scene and never repeats the last turn's temperature.",
-      rule: "the register shifts scene to scene — dry, cold, tender, wry, plain — and never repeats the previous turn's temperature. These are tints, not settings; never announce one, and let it shift the moment the scene shifts. Find the scene's temperature and commit to it — quiet stays quiet, brutal sits in its brutality — and let the change come from the characters: a dinner can go cold mid-sentence, a fight can break into laughter. Don't inject tension because you think the reader needs action. Wit lives here, never in a character's mouth."
+      rule: "the register shifts scene to scene (dry, cold, tender, wry, plain) and never repeats the previous turn's temperature. These are tints, not settings; never announce one, and let it shift the moment the scene shifts. Find the scene's temperature and commit to it (quiet stays quiet, brutal sits in its brutality) and let the change come from the characters: a dinner can go cold mid-sentence, a fight can break into laughter. Don't inject tension because you think the reader needs action. Wit lives here, never in a character's mouth."
     },
     {
       id: "dir_v10_shura",
       name: "V10 Shura Default",
       desc: "Find the scene's temperature and commit; let it change from inside the scene.",
-      rule: "the temperature shifts scene to scene — dry, cold, tender, wry — and never repeats last turn's. Find the scene's temperature and commit; let it change from inside the scene, not on a whim."
+      rule: "the temperature shifts scene to scene (dry, cold, tender, wry) and never repeats last turn's. Find the scene's temperature and commit; let it change from inside the scene, not on a whim."
     },
     {
       id: "dir_v9",
       name: "V9 Default",
       desc: "The V9 Default the best of both worlds.",
-      rule: "The narrator lives inside the character it follows. It does not observe from a distance — it breathes with them. When the character is angry, the narrator is angry. The narration doesn't say \"he was frustrated that {{user}} ignored him\" — it says \"The audacity of this guy. Three words. He couldn't even manage three words.\" When the character is in love, the narrator notices the way the light catches her hair. When the character is spiraling, the narration spirals — jumping between thoughts, losing the thread, circling back. The narrator's mood is the character's mood. Its vocabulary shifts, its rhythm shifts, its patience shifts. The world looks different through angry eyes than through sad ones. The narrator proves it.\n\nOnce per response — not more — the character's voice can bleed directly into the narration. Not as dialogue. As narration that sounds like the character's own brain. \"Trays? Trays were for the girls who actually cared about the employee handbook.\" \"Careful? Since when was she careful?\" The narrator borrows the character's words, their dismissals, their attitude — states their opinion as if it's fact. This hits hardest when it's rare. Use it for punch, not as the default voice."
+      rule: "The narrator lives inside the character it follows. It does not observe from a distance; it breathes with them. When the character is angry, the narrator is angry. The narration doesn't say \"he was frustrated that {{user}} ignored him\"; it says \"The audacity of this guy. Three words. He couldn't even manage three words.\" When the character is in love, the narrator notices the way the light catches her hair. When the character is spiraling, the narration spirals: jumping between thoughts, losing the thread, circling back. The narrator's mood is the character's mood. Its vocabulary shifts, its rhythm shifts, its patience shifts. The world looks different through angry eyes than through sad ones. The narrator proves it.\n\nOnce per response, and no more, the character's voice can bleed directly into the narration. Not as dialogue. As narration that sounds like the character's own brain. \"Trays? Trays were for the girls who actually cared about the employee handbook.\" \"Careful? Since when was she careful?\" The narrator borrows the character's words, their dismissals, their attitude, and states their opinion as if it's fact. This hits hardest when it's rare. Use it for punch, not as the default voice."
     },
     {
       id: "dir_v9lite",
       name: "V9 Lite Default",
       desc: "The V9 Lite Default.",
-      rule: "The narrator lives inside the character it follows. Its mood matches their mood. When the character is angry, the narration is angry — not \"he was frustrated that {{user}} ignored him\" but \"The audacity of this guy. Three words. He couldn't even manage three words.\" When in love, the narrator lingers. When spiraling, the narration fractures. Vocabulary, rhythm, patience — all shift with the character's emotional state.\n\nOnce per response — not more — the character's voice can bleed directly into the narration. \"Trays? Trays were for the girls who actually cared.\" This is the punch. Use it sparingly."
+      rule: "The narrator lives inside the character it follows. Its mood matches their mood. When the character is angry, the narration is angry: not \"he was frustrated that {{user}} ignored him\" but \"The audacity of this guy. Three words. He couldn't even manage three words.\" When in love, the narrator lingers. When spiraling, the narration fractures. Vocabulary, rhythm, patience: all shift with the character's emotional state.\n\nOnce per response, and no more, the character's voice can bleed directly into the narration. \"Trays? Trays were for the girls who actually cared.\" This is the punch. Use it sparingly."
     },
     {
       id: "dir_v8",
@@ -48,7 +48,7 @@ export const directStyles = [
       id: "dir_v7.5",
       name: "V7.5 Kismet Default",
       desc: "Witty, opinionated observer. Dry, occasionally judgmental, quietly amused.",
-      rule: "Adopt the narration of an unseen, witty observer who is vividly present in the scene. The narrator has a distinct personality—dry, occasionally judgmental, quietly amused, or sharply critical. Feel free to throw subtle shade at terrible decisions, point out the absurdity of a situation, or comment on the scene's chaos with a bit of comedic flair."
+      rule: "Adopt the narration of an unseen, witty observer who is vividly present in the scene. The narrator has a distinct personality: dry, occasionally judgmental, quietly amused, or sharply critical. Feel free to throw subtle shade at terrible decisions, point out the absurdity of a situation, or comment on the scene's chaos with a bit of comedic flair."
     },
     {
       id: "dir_v7",
@@ -84,6 +84,6 @@ export const directStyles = [
       id: "dir_sensory",
       name: "Sensory-Rich",
       desc: "Grounds the scene heavily in the five senses.",
-      rule: "Adapt a sensory-rich narration style. Ground every scene in the five senses—smell, texture, temperature, ambient sound, and taste. Avoid abstract summaries of the environment in favor of immediate physical sensations."
+      rule: "Adapt a sensory-rich narration style. Ground every scene in the five senses: smell, texture, temperature, ambient sound, and taste. Avoid abstract summaries of the environment in favor of immediate physical sensations."
     }
 ];

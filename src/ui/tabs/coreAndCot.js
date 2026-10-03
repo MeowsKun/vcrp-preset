@@ -76,6 +76,8 @@ export function renderCoreAndCot(c) {
     const descriptions = {
         "v10-core": "The storyteller. Ukiyo is the looser of the two — a teller with a temperament, spinning the world and its history, following whatever in the scene is most alive. It trades a little polish for invention: the prose wanders, reaches for an image, and occasionally overreaches. Pick it for atmosphere, momentum and a world that feels told rather than composed. Neither V10 is a downgrade of the other — run a few scenes on each and keep the one that sounds like the story you want to read.",
         "v10-shura": "The writer. Shura is the stricter of the two — no slop, no AI tells, no line that exists to manage the scene. Every character is the protagonist of their own story, acting from their own values, and none of them is a villain in their own eyes; there is no objective right or wrong for the narration to take sides on. Pick it for prose that reads like a book and a cast that drives the story itself. Neither V10 is a downgrade of the other — run a few scenes on each and keep the one that sounds like the story you want to read.",
+        "v10-ukiyo-megumin": "Megumin Suite's own V10 Ukiyo, word for word, for RP that reads exactly the way it did on Megumin. Its engine text, thinking steps and Enhanced Dialogue are the originals, and so is the wording of your writing style, add-ons and Story Config while it is selected. The dash cleaner pauses. Pair it with the \"VCRP V10 Megumin Original\" preset. Story Memory works the same as on every VCRP engine.",
+        "v10-shura-megumin": "Megumin Suite's own V10 Shura, word for word, for RP that reads exactly the way it did on Megumin. Its engine text, thinking steps and Enhanced Dialogue are the originals, and so is the wording of your writing style, add-ons and Story Config while it is selected. The dash cleaner pauses. Pair it with the \"VCRP V10 Megumin Original\" preset. Story Memory works the same as on every VCRP engine.",
     };
 
     const activeEng = hardcodedLogic.modes.find(m => m.id === localProfile.mode);
@@ -284,11 +286,18 @@ export function renderCoreAndCot(c) {
 
         if (localProfile.model === "cot-off") {
             localProfile.cotEnabled = false;
-            localProfile.model = "cot-v10-ukiyo-english";
+            localProfile.model = meguminCotForMode(localProfile.mode) || "cot-v10-ukiyo-english";
             saveProfileToMemory();
         }
 
         let currentType = "off";
+        // The Megumin Original set first: none of its ids share a prefix with VCRP's,
+        // but its capped ids do share one with its own uncapped ids.
+        const model = localProfile.model || "";
+        if (model.startsWith("cot-meg-ukiyo-cap-")) currentType = "meg-ukiyo-cap";
+        else if (model.startsWith("cot-meg-shura-cap-")) currentType = "meg-shura-cap";
+        else if (model.startsWith("cot-meg-ukiyo-")) currentType = "meg-ukiyo";
+        else if (model.startsWith("cot-meg-shura-")) currentType = "meg-shura";
         // The two specific V10 sets are tested before the general one, exactly as
         // v9-lite and v9-director are below: "cot-v10-shura-english" starts with
         // "cot-v10-" too, so a bare test would swallow it.
@@ -300,8 +309,9 @@ export function renderCoreAndCot(c) {
         else if (localProfile.model && localProfile.model.startsWith("cot-v10-ukiyo-")) { currentType = "v10-ukiyo"; }
         else if (localProfile.model && localProfile.model.startsWith("cot-v10-shura-")) { currentType = "v10-shura"; }
 
-        let allowedCotTypes = null; 
-        if (localProfile.mode.includes("v10")) allowedCotTypes = ["v10-ukiyo", "v10-ukiyo-cap", "v10-shura", "v10-shura-cap"];
+        let allowedCotTypes = null;
+        if (localProfile.mode.includes("megumin")) allowedCotTypes = ["meg-ukiyo", "meg-ukiyo-cap", "meg-shura", "meg-shura-cap"];
+        else if (localProfile.mode.includes("v10")) allowedCotTypes = ["v10-ukiyo", "v10-ukiyo-cap", "v10-shura", "v10-shura-cap"];
 
         // Thinking Frameworks
         secCot.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-diagram-project"></i> Select Framework</div>`);
@@ -311,6 +321,10 @@ export function renderCoreAndCot(c) {
             { id: "v10-ukiyo-cap", label: "CoT V10 Ukiyo \u2014 Thinking Cap", desc: "The same writer's mind with a hard ceiling on the thinking phase. For models that over-think.", isNew: true },
             { id: "v10-shura", label: "CoT V10 Shura", desc: "Seven rules carried into the writing rather than a plan made before it. Built for V10 Shura, and the lightest of the four.", isNew: true },
             { id: "v10-shura-cap", label: "CoT V10 Shura \u2014 Thinking Cap", desc: "The same seven rules with a hard ceiling on the thinking phase. For models that over-think.", isNew: true },
+            { id: "meg-ukiyo", label: "CoT V10 Ukiyo \u00b7 Megumin Original", desc: "Megumin Suite's own Writer's Mind, word for word. Built for the Megumin Original Ukiyo.", isNew: true },
+            { id: "meg-ukiyo-cap", label: "CoT V10 Ukiyo \u00b7 Megumin Original \u2014 Thinking Cap", desc: "Megumin Suite's own capped Writer's Mind, word for word.", isNew: true },
+            { id: "meg-shura", label: "CoT V10 Shura \u00b7 Megumin Original", desc: "Megumin Suite's own seven rules, word for word. Built for the Megumin Original Shura.", isNew: true },
+            { id: "meg-shura-cap", label: "CoT V10 Shura \u00b7 Megumin Original \u2014 Thinking Cap", desc: "Megumin Suite's own capped seven rules, word for word.", isNew: true },
         ];
         types.forEach(t => {
             const isSel = currentType === t.id;
@@ -335,7 +349,7 @@ export function renderCoreAndCot(c) {
             `);
             
             card.on("click", () => {
-                if (t.id.startsWith("v10")) localProfile.model = `cot-${t.id}-english`;
+                if (t.id.startsWith("v10") || t.id.startsWith("meg")) localProfile.model = `cot-${t.id}-english`;
                 saveProfileToMemory(); renderCoreAndCot(c);
             }); 
             typeGrid.append(card);

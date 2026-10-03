@@ -205,10 +205,15 @@ export function initProfile() {
         extension_settings[extensionName].globalSettings = {
             promptPreview: false,
             enableUtilityPrefill: false,
+            cleanDashes: true,
             saveMode: "character"
         };
     } else if (!extension_settings[extensionName].globalSettings.saveMode) {
         extension_settings[extensionName].globalSettings.saveMode = "character";
+    }
+    // Added after release: on for everyone, existing installs included.
+    if (typeof extension_settings[extensionName].globalSettings.cleanDashes !== "boolean") {
+        extension_settings[extensionName].globalSettings.cleanDashes = true;
     }
 
     if (!extension_settings[extensionName].profiles["default"]) {
