@@ -23,7 +23,8 @@ import { escapeRegex } from "../utils/regex.js";
 import { buildBaseDict } from "./buildBaseDict.js";
 import { meguminAllSlotTriggers } from "../../data/slots.js";
 import { vcrpApplyGenerationToDict, vcrpFinalizeMessages } from "../vcrp/generation.js";
-import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled } from "../vcrp/memory/index.js";
+import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone } from "../vcrp/memory/index.js";
+import { vcrpCacheCheckRecord } from "../vcrp/cacheCheck.js";
 import { buildTokenBreakdown } from "../vcrp/tokenBreakdown.js";
 
 // Throttles the prompt-preview popup so token counting and rapid ST background
@@ -341,8 +342,12 @@ export async function handlePromptInjection(data, type) {
                 if (typeof ctxStop === "function") ctxStop();
             } catch (e) { /* fall through to the button */ }
             setTimeout(() => { $("#mes_stop").trigger("click"); }, 10);
-            
+
             return;
         }
     }
+
+    // VCRP: what changed since the last prompt that went out (Memory tab → Testing). Last,
+    // so a prompt cancelled in the preview above is never counted.
+    if (replacementsMade > 0 && data?.dryRun !== true && !memoryTaskStandalone()) vcrpCacheCheckRecord(messages, vcrpGen);
 }

@@ -1643,4 +1643,47 @@ console.log("30 ok knowledgebase (whole words, scan depth, hypnosis keyed, guard
 }
 console.log("31 ok pins, spend estimate, swipe-aware scanning, Dev Mode's live layout");
 
+// 32. Cache check: each prompt against the one before. The chat moving on is normal; a
+//     change before the chat history (a lorebook entry, a {{time}} macro) is flagged, with
+//     where it is and what changed. An expired cache says nothing.
+{
+    const cc = await imp("src/vcrp/cacheCheck.js");
+    cc.vcrpCacheCheckReset();
+    const send = async m => { vcrpSetGenerationType("normal", {}, false); await handlePromptInjection({ chat: m, dryRun: false }); return m; };
+    await send(buildPrompt("VCRP V10 Universal.json", { history: 3 }));
+    assert.equal(cc.vcrpCacheCheckReport(), null, "one prompt: nothing to compare yet");
+    await send(buildPrompt("VCRP V10 Universal.json", { history: 4 }));   // one exchange later
+    let rep = cc.vcrpCacheCheckReport();
+    assert(rep.change && rep.change.fromEnd <= 6 && rep.ratio > 0.7 && !cc.vcrpCacheCheckTrouble(rep), `the chat moving on is normal (from end ${rep.change && rep.change.fromEnd}, kept ${rep.ratio.toFixed(2)})`);
+    assert.equal(cc.vcrpCacheCheckSummary(rep).level, "ok");
+
+    const m = buildPrompt("VCRP V10 Universal.json", { history: 5 });
+    const i = m.findIndex(x => typeof x.content === "string" && x.content.includes("[Char Description]"));
+    m[i] = { ...m[i], content: m[i].content.replace("[Char Description]", "[Char Description]\nThe time is 3:28 PM.") };
+    await send(m);
+    rep = cc.vcrpCacheCheckReport();
+    const sum = cc.vcrpCacheCheckSummary(rep);
+    assert(cc.vcrpCacheCheckTrouble(rep) && sum.level === "warn", "a change before the chat is flagged");
+    assert(sum.detail.includes("The time is 3:28 PM") && sum.detail.includes(`message ${i + 1} of`), "with where it is and what changed");
+
+    cc.vcrpCacheCheckRecord([{ role: "system", content: "a" }], "reply", 0);
+    cc.vcrpCacheCheckRecord([{ role: "system", content: "b" }], "reply", 2 * 3600 * 1000);
+    assert.equal(cc.vcrpCacheCheckSummary(cc.vcrpCacheCheckReport()), null, "two hours apart: the cache was cold anyway, nothing to report");
+
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    cc.vcrpCacheCheckReset();
+    await send(buildPrompt("VCRP V10 Universal.json", { history: 3 }));
+    const m2 = buildPrompt("VCRP V10 Universal.json", { history: 5 });   // a fresh prompt: a sent one has no tags left to fill
+    m2[i] = { ...m2[i], content: m2[i].content.replace("[Char Description]", "[Char Description]\nThe time is 3:31 PM.") };
+    await send(m2);
+    ctx.mainApi = "openai";
+    const vp = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    Object.assign(chatCompletionSettings, { prompts: vp.prompts, prompt_order: vp.prompt_order });
+    assert(vcrpHealthCheck().items.some(x => x.level === "warn" && x.title.startsWith("The prompt changed early")), "Setup Check shows it");
+    ctx.mainApi = "textgenerationwebui";
+    delete chatCompletionSettings.prompts; delete chatCompletionSettings.prompt_order;
+    cc.vcrpCacheCheckReset();
+}
+console.log("32 ok cache check (normal turns pass, early changes flagged with place and text, cold cache silent, Setup Check)");
+
 console.log("\nALL FORK CHECKS PASSED");

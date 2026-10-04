@@ -94,6 +94,12 @@ what the approved chapters cover out of the prompt (the next reply costs full pr
 **Undo cut** puts it back, **Preview recall** shows which chapters your last messages plus the
 message box would bring back, and the memory text the prompt carries is shown in full.
 
+**Cache check** (Memory tab → Testing, and Setup Check): every prompt is compared with the one
+before it. When something before the chat history changes from one turn to the next (a lorebook
+entry switching on and off, a `{{time}}` or `{{random}}` macro), the cache can only be read up to
+that point and the rest is written again at double price on every request. The check names the
+message where the prompt first changed and shows the text before and after.
+
 ## Megumin Original
 
 For RP that reads exactly the way it did on Megumin Suite, with Story Memory and everything else

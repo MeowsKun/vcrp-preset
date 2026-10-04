@@ -21,8 +21,16 @@ import {
 } from "./index.js";
 import { storyChat, approvePending, discardPending, nextSpan, memorySummaryRunning, unsummarizedTokens, autoSummaryHold, catchUp, catchUpEstimate } from "./summarize.js";
 import { FACT_CATEGORIES, formatFactChanges, applyFactChanges } from "./ledger.js";
+import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "../cacheCheck.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
+
+// The cache check, in the Testing panel: did the last prompt keep the one before it?
+function cacheCheckHtml(s) {
+    const c = vcrpCacheCheckSummary(vcrpCacheCheckReport(), s.ttl === "5m" ? 5 : 60);
+    if (!c) return `<div style="margin-top:10px; font-size:0.75rem; opacity:.75;"><b>Cache check:</b> send two messages within the cache lifetime, and this shows how much of the prompt the second one kept from the first.</div>`;
+    return `<div style="margin-top:10px; font-size:0.75rem; line-height:1.5;${c.level === "warn" ? " color:#f59e0b;" : ""}"><b>${c.level === "warn" ? '<i class="fa-solid fa-triangle-exclamation"></i> ' : ""}${esc(c.title)}.</b> ${esc(c.detail)}</div>`;
+}
 
 // The running spend estimate, as one line of the meter. Empty until a request has been counted.
 function spendLine(st) {
@@ -198,7 +206,8 @@ export function renderVcrpMemoryPanel($c) {
         <details style="margin-top:10px; font-size:0.75rem;"><summary style="cursor:pointer;">Memory text the prompt carries${st && st.shown ? ` (about ${k(estimateTokens(st.shown))} tokens)` : ""}</summary>
             <pre style="white-space:pre-wrap; font-size:0.72rem; max-height:260px; overflow:auto; margin-top:6px;">${esc((st && st.shown) || "(empty: nothing has been cut yet, so the whole chat is still in the prompt word for word)")}</pre>
         </details>
-        <div id="vmem_qa_out" style="margin-top:8px; font-size:0.75rem;"></div></div>`);
+        <div id="vmem_qa_out" style="margin-top:8px; font-size:0.75rem;"></div>
+        ${cacheCheckHtml(s)}</div>`);
 
     $c.find("#vmem_qa_cut").on("click", async () => {
         const stNow = memoryState();

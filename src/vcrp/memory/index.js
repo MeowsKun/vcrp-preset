@@ -382,6 +382,8 @@ export function setMemoryTaskActive(on, standalone = null) {
     taskStandalone = on && Array.isArray(standalone) ? standalone : null;
 }
 export const memoryTaskActive = () => taskActive;
+/** True while a standalone summary call (a prompt of its own) is being built. */
+export const memoryTaskStandalone = () => !!taskStandalone;
 
 /**
  * A summary call is the roleplay prompt with the instruction placed after the chat.

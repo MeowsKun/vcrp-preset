@@ -14,6 +14,7 @@ import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memorySta
 import { autoSummaryHold } from "./memory/summarize.js";
 import { meguminOriginalActive } from "../engine/meguminOriginal.js";
 import { kbAlwaysOnStats, presetCarriesAlwaysSlot } from "./knowledgebase.js";
+import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "./cacheCheck.js";
 
 // A preset is VCRP's if it carries the tags only VCRP/Megumin presets use (the name can be anything).
 const VCRP_TAG_RE = /\[\[(?:blocks|THINK|prompt1)\]\]/;
@@ -115,6 +116,10 @@ export function vcrpHealthCheck() {
 
     // 6. Long chats: what decides whether a request is cheap or full price.
     longChatChecks(add, ctx, cc, source, model);
+
+    // 7. Cache check: did the last prompt keep the one before it, or change early on?
+    const cache = vcrpCacheCheckSummary(vcrpCacheCheckReport(), memoryBudgetSettings().ttl === "5m" ? 5 : 60);
+    if (cache) add(cache.level, cache.title, cache.detail);
 
     return summarize(items);
 }
