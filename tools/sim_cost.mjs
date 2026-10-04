@@ -63,6 +63,12 @@ const NPCS = !!opt("npcs", false);
 const NPC_NAMES = ["Mara", "Jonah", "Ilse", "Teo", "Ruth", "Dez"];
 const ENGINE = opt("engine", "ukiyo");
 const ORIGINAL = !!opt("original", false);   // the Megumin Original engine and preset
+// Whose cache markers: "vcrp" (the last two replies, VCRP's default on OpenRouter + Claude)
+// or "st" (SillyTavern's cachingAtDepth). Direct Anthropic always uses SillyTavern's.
+const MARKS = DIRECT ? "st" : String(opt("marks", "vcrp"));
+// A provider that reads the cache only where a marker matches exactly (Bedrock), rather than
+// also looking back for an older marker (Anthropic's own API).
+const EXACT = !!opt("exact", false);
 const PRESET = ORIGINAL ? "VCRP V10 Megumin Original.json" : "VCRP V10 Universal.json";
 const BUDGET = +opt("budget", 0.30);
 const TOKFACTOR = +opt("tokfactor", 1.15);
@@ -142,7 +148,7 @@ globalThis.__ST__ = {
 };
 installBrowserGlobals();
 globalThis.extension_settings = extension_settings;
-const { ext } = buildFakeTree("sim-cost");
+const { ext } = buildFakeTree(`sim-cost-${process.pid}`);   // one tree per run, so runs can go side by side
 const imp = p => import(pathToFileURL(join(ext, p)).href);
 const { handlePromptInjection } = await imp("src/engine/injection.js");
 const { initProfile } = await imp("src/core/profile.js");
@@ -150,6 +156,7 @@ const state = await imp("src/core/state.js");
 const { vcrpSetGenerationType } = await imp("src/vcrp/generation.js");
 const mem = await imp("src/vcrp/memory/index.js");
 const S = await imp("src/vcrp/memory/summarize.js");
+const CACHE = await imp("src/vcrp/memory/cache.js");
 const L = await imp("src/vcrp/memory/ledger.js");
 await imp("src/vcrp/memory/index.js");         // registers globalThis.vcrp_memory_intercept
 const { meguminCleanChatHistoryText } = await imp("src/engine/chatText.js");
@@ -244,9 +251,12 @@ const contentDigest = s => { let d = digMemo.get(s); if (!d) { d = digest(s); di
 const cache = new Map();   // prefix hash -> last use (ms)
 
 function price1(msgs, now, outTokens) {
+    // The prompt as text: VCRP may already have turned a marked message into parts. Where the
+    // markers go is decided here (MARKS), from the text.
+    msgs = msgs.map(m => ({ ...m, content: typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => (p && p.text) || "").join("") : "" }));
     // Through OpenRouter every system message is pulled to the front, as one system prompt.
     let blocks = msgs.map((m, i) => ({ ...m, bp: false, i }));
-    const marks = new Set(breakpoints(msgs));
+    const marks = new Set(MARKS === "st" ? breakpoints(msgs) : CACHE.cacheMarkIndices(msgs));
     blocks.forEach(b => { b.bp = marks.has(b.i); });
     if (HOIST) {
         const sys = blocks.filter(b => b.role === "system");
@@ -262,6 +272,7 @@ function price1(msgs, now, outTokens) {
     const total = cum;
     let read = 0, hitAt = -1;
     for (let i = (lastBp >= 0 ? lastBp : -1); i >= 0; i--) {
+        if (EXACT && !blocks[i].bp) continue;   // no look-back: only this request's own markers
         const t = cache.get(pref[i].h);
         if (t !== undefined && now - t <= TTL_MS) { read = pref[i].cum; hitAt = i; break; }
     }
@@ -344,7 +355,7 @@ for (let t = 1; t < N; t += 2) {            // each user message triggers one re
 const q = (arr, p) => { const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const costs = rows.map(r => r.cost);
 const sum = a => a.reduce((x, y) => x + y, 0);
-const label = `${MEMORY ? `MEMORY on${ENABLE_AT ? ` from msg ${ENABLE_AT}` : ""} (target $${TARGET}) · ` : ""}${NPCS ? "NPC Bank on · " : ""}${MODEL} · ${TTL} cache · depth ${DEPTH} · ${Number.isFinite(CONTEXT) ? `context ${CONTEXT}` : "no context limit"} · ${DIRECT ? "direct Anthropic" : NOFIX ? "OpenRouter WITHOUT the fix" : "OpenRouter"} · ${ENGINE}${ORIGINAL ? " · Megumin Original" : ""}`;
+const label = `${MEMORY ? `MEMORY on${ENABLE_AT ? ` from msg ${ENABLE_AT}` : ""} (target $${TARGET}) · ` : ""}${NPCS ? "NPC Bank on · " : ""}${MODEL} · ${TTL} cache · depth ${DEPTH} · ${Number.isFinite(CONTEXT) ? `context ${CONTEXT}` : "no context limit"} · ${DIRECT ? "direct Anthropic" : NOFIX ? "OpenRouter WITHOUT the fix" : "OpenRouter"} · ${ENGINE}${ORIGINAL ? " · Megumin Original" : ""} · markers: ${MARKS === "st" ? "SillyTavern" : "VCRP"}${EXACT ? " · exact-match provider (Bedrock)" : ""}`;
 console.log(`\n${label}`);
 console.log(`${rows.length} requests over ${N} messages · replies $${sum(costs).toFixed(2)}${MEMORY ? ` + memory upkeep $${upkeep.cost.toFixed(2)} (${upkeep.calls} calls) = $${(sum(costs) + upkeep.cost).toFixed(2)}` : ""}`);
 console.log(`per request: mean $${(sum(costs) / costs.length).toFixed(3)} · median $${q(costs, 0.5).toFixed(3)} · p90 $${q(costs, 0.9).toFixed(3)} · max $${Math.max(...costs).toFixed(3)}`);
@@ -362,6 +373,6 @@ if (MEMORY) {
 const worst = [...rows].sort((a, b) => b.cost - a.cost).slice(0, 3);
 console.log(`\nmost expensive: ${worst.map(r => `msg ${r.msg} $${r.cost.toFixed(3)} (${r.total} tok${r.cut ? ", cut" : ""})`).join(" · ")}`);
 mkdirSync(join(REPO, "tools", "out"), { recursive: true });
-const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}${ORIGINAL ? "_original" : ""}.csv`);
+const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}${ORIGINAL ? "_original" : ""}_${MARKS}${EXACT ? "_exact" : ""}.csv`);
 writeFileSync(file, "msg,in_history,prompt_tokens,read,write,plain,cost,cut\n" + rows.map(r => [r.msg, r.inHistory, r.total, r.read, r.write, r.plain, r.cost.toFixed(4), r.cut ? 1 : 0].join(",")).join("\n"));
 console.log(`per-request rows: ${file}`);

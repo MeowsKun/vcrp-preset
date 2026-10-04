@@ -75,9 +75,12 @@ It relies on prompt caching. Set up once:
 
 1. **Context Size** (AI Response Configuration): the model's maximum. Below what VCRP sends,
    SillyTavern trims the oldest message itself every turn and nothing is ever cached.
-2. **Caching:** in SillyTavern's `config.yaml`, under `claude:`, set `cachingAtDepth: 0` and
-   `extendedTTL: true`, then restart. On OpenRouter you can tick **Mark the cache from VCRP**
-   in the Memory tab instead.
+2. **Caching:** on **OpenRouter + Claude**, VCRP marks the cache itself (Memory tab, "Mark the
+   cache from VCRP", on by default): on your last two replies, which line up from one turn to the
+   next on every provider, Bedrock included. For the lowest cost set `cachingAtDepth: -1` under
+   `claude:` in SillyTavern's `config.yaml`, so SillyTavern adds none of its own markers, then
+   restart. On the **direct Anthropic** API, set `cachingAtDepth: 0` and `extendedTTL: true` there
+   instead.
 3. **OpenRouter:** put Anthropic first in the provider list and turn off fallbacks, so the chat
    never moves to a provider without your cache.
 

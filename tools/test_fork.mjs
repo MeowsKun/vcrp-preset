@@ -652,26 +652,60 @@ console.log("19 ok recall and the memory cap");
         { role: "user", content: "u2" }, { role: "assistant", content: "a2" },
         { role: "user", content: "u3" }, { role: "user", content: "output rules (sent as user)" },
     ];
-    assert.deepEqual(C.cacheMarkIndices(sample()), [6, 3], "marks the newest user turn and the user turn two switches back");
-    assert.deepEqual(C.cacheMarkIndices([...sample(), { role: "assistant", content: "<think>" }]), [6, 3], "a trailing prefill is skipped");
+    // The last two replies: they never change once in the chat, so they line up turn to turn.
+    assert.deepEqual(C.cacheMarkIndices(sample()), [4, 2], "marks the last two replies");
+    assert.deepEqual(C.cacheMarkIndices([...sample(), { role: "assistant", content: "<think>" }]), [4, 2], "a trailing prefill (or a reply being continued) is skipped");
+    assert.deepEqual(C.cacheMarkIndices([{ role: "system", content: "s" }, { role: "assistant", content: "greeting" }, { role: "user", content: "hi" }]), [1], "one reply: one marker");
+    assert.deepEqual(C.cacheMarkIndices([{ role: "user", content: "u" }, { role: "assistant", content: "" }, { role: "assistant", content: "a" }, { role: "user", content: "x" }]), [2], "an empty reply gets no marker");
     let m = sample();
     C.markCache(m, "1h");
-    assert.deepEqual(m[6].content, [{ type: "text", text: "output rules (sent as user)", cache_control: { type: "ephemeral", ttl: "1h" } }]);
-    assert(typeof m[5].content === "string" && Array.isArray(m[3].content), "only the marked messages change");
+    assert.deepEqual(m[4].content, [{ type: "text", text: "a2", cache_control: { type: "ephemeral", ttl: "1h" } }]);
+    assert(typeof m[6].content === "string" && typeof m[5].content === "string" && Array.isArray(m[2].content), "only the marked messages change");
     m = sample(); C.markCache(m, "5m");
-    assert.deepEqual(m[6].content[0].cache_control, { type: "ephemeral" }, "the 5-minute cache needs no ttl");
+    assert.deepEqual(m[4].content[0].cache_control, { type: "ephemeral" }, "the 5-minute cache needs no ttl");
 
-    // In the real prompt: only with Story Memory on, the option ticked, and OpenRouter + Claude.
+    // In the real prompt: on by default with Story Memory on, OpenRouter + Claude only.
     const keep = { ...chatCompletionSettings };
     const q = state.localProfile;
     q.vcrpMemory.enabled = true;
     const marked = msgs => msgs.filter(x => Array.isArray(x.content) && x.content.some(p => p.cache_control)).length;
     Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "anthropic/claude-opus-5.5" });
+    extension_settings.VCRP.globalSettings.memoryBudget = { markCache: false };
     assert.equal(marked(await run("VCRP V10 Universal.json")), 0, "option off: no markers");
-    extension_settings.VCRP.globalSettings.memoryBudget = { markCache: true };
+    delete extension_settings.VCRP.globalSettings.memoryBudget;
     const withMarks = await run("VCRP V10 Universal.json");
-    assert.equal(marked(withMarks), 2, "option on, OpenRouter + Claude: two markers");
-    assert(withMarks.at(-1).content.at(-1).cache_control.ttl === "1h", "the newest turn is marked, with the 1-hour lifetime");
+    assert.equal(marked(withMarks), 2, "on by default, OpenRouter + Claude: two markers");
+    const markedTexts = withMarks.filter(x => Array.isArray(x.content) && x.content.some(p => p.cache_control)).map(x => x.content.map(p => p.text).join(""));
+    assert(markedTexts.length === 2 && markedTexts.every(t => /Scene prose [23]\./.test(t)), "on the last two replies");
+    assert(withMarks.find(x => Array.isArray(x.content) && x.content.some(p => p.cache_control)).content.at(-1).cache_control.ttl === "1h", "with the 1-hour lifetime");
+    q.vcrpMemory.enabled = false;
+    assert.equal(marked(await run("VCRP V10 Universal.json")), 2, "Story Memory off: still marked (cachingAtDepth: -1 must never mean no cache at all)");
+    q.vcrpMemory.enabled = true;
+
+    // Turn to turn, the newer prompt's older marker sits where the older prompt's newer marker
+    // did, on an identical prompt up to it: an exact match, which any provider reads.
+    const markedPrefix = msgs => {
+        const at = msgs.map((x, i) => (Array.isArray(x.content) && x.content.some(p => p.cache_control)) ? i : -1).filter(i => i >= 0);
+        return at.map(i => JSON.stringify(msgs.slice(0, i + 1).map(x => [x.role, typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("")])));
+    };
+    vcrpSetGenerationType("normal", {}, false);
+    const turn1 = buildPrompt("VCRP V10 Universal.json", { history: 3 });
+    await handlePromptInjection({ chat: turn1, dryRun: false });
+    const turn2 = buildPrompt("VCRP V10 Universal.json", { history: 4 });
+    await handlePromptInjection({ chat: turn2, dryRun: false });
+    assert.equal(markedPrefix(turn2)[0], markedPrefix(turn1)[1], "this turn's older marker = last turn's newer marker, same prompt up to it");
+
+    // A standalone summary call is marked too: its check call reads the stretch from the cache.
+    const memory = await imp("src/vcrp/memory/index.js");
+    const standalone = [{ role: "system", content: "keeper" }, { role: "user", content: "<chat>stretch</chat>" }, { role: "assistant", content: "I have read this stretch of the chat." }, { role: "user", content: "[VCRP MEMORY TASK: summarize]" }];
+    vcrpSetGenerationType("quiet", {}, false);
+    memory.setMemoryTaskActive(true, standalone);
+    const sa = buildQuietPrompt("VCRP V10 Universal.json", "[VCRP MEMORY TASK: summarize]");
+    await handlePromptInjection({ chat: sa, dryRun: false });
+    memory.setMemoryTaskActive(false);
+    assert(sa.length === 4 && Array.isArray(sa[2].content) && sa[2].content[0].cache_control, "standalone: the short reply after the stretch carries the marker");
+    vcrpSetGenerationType("normal", {}, false);
+
     Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
     assert.equal(marked(await run("VCRP V10 Universal.json")), 0, "direct Anthropic: left to SillyTavern");
 
@@ -691,6 +725,9 @@ console.log("19 ok recall and the memory cap");
     assert(has("ok", /marks the prompt cache itself/), "VCRP marking: noted");
     Object.assign(chatCompletionSettings, { openai_max_context: 1000000, openrouter_providers: ["Anthropic"], openrouter_allow_fallbacks: false });
     extension_settings.VCRP.globalSettings.memoryBudget = {};
+    hc = vcrpHealthCheck();
+    assert(hc.items.some(i => i.level === "ok" && /marks the prompt cache itself/.test(i.title) && /cachingAtDepth: -1/.test(i.detail)), "VCRP marking is the default, with the cachingAtDepth: -1 tip");
+    extension_settings.VCRP.globalSettings.memoryBudget = { markCache: false };
     hc = vcrpHealthCheck();
     assert(has("ok", /Context Size leaves Story Memory room/) && has("ok", /pinned to Anthropic/) && has("info", /config\.yaml/), "fixed: all clear, with the config.yaml reminder");
     assert.equal(hc.errors, 0, `no problems left: ${JSON.stringify(hc.items.filter(i => i.level === "error"))}`);
@@ -815,9 +852,9 @@ console.log("21 ok step 6: legacy data moved over, rewind repair, edited message
     assert.equal(r.status, "pending");
     assert(seen[0].length === 4 && seen[0][1].content.startsWith("<chat>\nBob: (0)") && seen[0][3].content.includes("[VCRP MEMORY TASK"), "standalone: only the stretch and the instruction");
     const C = await imp("src/vcrp/memory/cache.js");
-    assert.deepEqual(C.cacheMarkIndices(seen[0]), [3, 1], "caching marks the instruction and the end of the stretch, so the check call reads the stretch");
+    assert.deepEqual(C.cacheMarkIndices(seen[0]), [2], "caching marks the short reply after the stretch, so the check call reads the stretch");
     assert.deepEqual(seen[1].slice(0, 3), seen[0].slice(0, 3), "the check call opens with the same three messages");
-    assert(!seen.flat().some(m => Array.isArray(m.content)), "no cache markers on a standalone call");
+    assert(seen.every(call => call.every((m, i) => !Array.isArray(m.content) || (i === 2 && m.role === "assistant"))), "a standalone call's only marker is on the short reply after the stretch");
     assert.equal(st.lastRequestAt, T - 5 * 3600 * 1000, "a standalone call leaves the cache clock alone");
     assert.equal(st.pending[0].checked, "ok", "'OK, accurate.' counts as OK");
 
@@ -1654,7 +1691,7 @@ console.log("31 ok pins, spend estimate, swipe-aware scanning, Dev Mode's live l
     assert.equal(cc.vcrpCacheCheckReport(), null, "one prompt: nothing to compare yet");
     await send(buildPrompt("VCRP V10 Universal.json", { history: 4 }));   // one exchange later
     let rep = cc.vcrpCacheCheckReport();
-    assert(rep.change && rep.change.fromEnd <= 6 && rep.ratio > 0.7 && !cc.vcrpCacheCheckTrouble(rep), `the chat moving on is normal (from end ${rep.change && rep.change.fromEnd}, kept ${rep.ratio.toFixed(2)})`);
+    assert(rep.change && !rep.change.early && !cc.vcrpCacheCheckTrouble(rep), `the chat moving on is normal (kept ${rep.ratio.toFixed(2)})`);
     assert.equal(cc.vcrpCacheCheckSummary(rep).level, "ok");
 
     const m = buildPrompt("VCRP V10 Universal.json", { history: 5 });
@@ -1685,5 +1722,72 @@ console.log("31 ok pins, spend estimate, swipe-aware scanning, Dev Mode's live l
     cc.vcrpCacheCheckReset();
 }
 console.log("32 ok cache check (normal turns pass, early changes flagged with place and text, cold cache silent, Setup Check)");
+
+// 33. The live bug: the preset's "Blocks cleanup" regex strips <Blocks> only from depth 3 on,
+//     so the newest reply kept its blocks for one turn and lost them the next, and every turn
+//     missed the cache from that reply onward. VCRP now strips them from every earlier reply,
+//     carries last turn's blocks in the per-turn rules, and the cache check flags the old way.
+{
+    const cc = await imp("src/vcrp/cacheCheck.js");
+    const bh = await imp("src/vcrp/blockHistory.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const q = state.localProfile;
+    const keepOrder = JSON.stringify(q.blockStack.order);
+    const BLOCKS = n => `\n<Blocks>\n<World_State>Turn ${n}: the bar, night.</World_State>\n</Blocks>`;
+    // What SillyTavern hands over: its regex has stripped blocks from replies at depth 3+,
+    // so only the newest reply still has them.
+    const withBlocks = h => {
+        const m = buildPrompt("VCRP V10 Universal.json", { history: h });
+        const lastReply = m.map(x => x.role === "assistant" && /Scene prose/.test(x.content)).lastIndexOf(true);   // not the prefill slot
+        m[lastReply] = { ...m[lastReply], content: m[lastReply].content + BLOCKS(h) };
+        return m;
+    };
+
+    // Without VCRP's strip (the old behaviour), the cache check catches it.
+    cc.vcrpCacheCheckReset();
+    cc.vcrpCacheCheckRecord(withBlocks(3), "reply");
+    cc.vcrpCacheCheckRecord(withBlocks(4), "reply");
+    let rep = cc.vcrpCacheCheckReport();
+    assert(cc.vcrpCacheCheckTrouble(rep) && rep.change.role === "assistant" && rep.change.was.includes("Turn 3"), "the old way: the previous reply changed, and the check says so");
+
+    // With it: both turns identical up to the previous reply, and the markers line up.
+    cc.vcrpCacheCheckReset();
+    q.vcrpMemory.enabled = true;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "anthropic/claude-opus-4.6" });
+    vcrpSetGenerationType("normal", {}, false);
+    const t1 = withBlocks(3); await handlePromptInjection({ chat: t1, dryRun: false });
+    const t2 = withBlocks(4); await handlePromptInjection({ chat: t2, dryRun: false });
+    rep = cc.vcrpCacheCheckReport();
+    assert(rep && !cc.vcrpCacheCheckTrouble(rep) && !rep.change.early, "VCRP's strip: nothing already in the chat changes");
+    const textOfMsg = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    assert(!t2.some(x => x.role === "assistant" && /<Blocks>/.test(textOfMsg(x))), "no reply in the history keeps its blocks");
+    const markedAt = msgs => msgs.map((x, i) => (Array.isArray(x.content) && x.content.some(p => p.cache_control)) ? i : -1).filter(i => i >= 0);
+    const [older2] = markedAt(t2), [, newer1] = markedAt(t1);
+    assert.equal(JSON.stringify(t2.slice(0, older2 + 1).map(textOfMsg)), JSON.stringify(t1.slice(0, newer1 + 1).map(textOfMsg)), "the markers meet on an identical prompt");
+
+    // A reply being continued keeps its blocks: it is still being written.
+    const cont = [{ role: "user", content: "u" }, { role: "assistant", content: "old" + BLOCKS(1) }, { role: "user", content: "go on" }, { role: "assistant", content: "half a reply" + BLOCKS(2) }];
+    bh.stripHistoryBlocks(cont);
+    assert(!cont[1].content.includes("<Blocks>") && cont[3].content.includes("<Blocks>"), "a trailing reply is left alone");
+
+    // Last turn's blocks travel in the per-turn block instructions instead.
+    q.blockStack.order = ["world"]; meguminSyncLegacyBlockIds();
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "Hi." }, { is_user: false, mes: "Hello." + BLOCKS(7) }, { is_user: true, mes: "And now?" });
+    const t3 = await run("VCRP V10 Universal.json");
+    const after = t3.findIndex(x => textOfMsg(x).includes("The blocks as they stood at the end of your last reply"));
+    assert(after > -1 && textOfMsg(t3[after]).includes("Turn 7: the bar, night."), "last turn's blocks are in the per-turn rules");
+    vcrpSetGenerationType("swipe", {}, false);
+    chat.push({ is_user: false, mes: "A reply being swiped." + BLOCKS(8) });
+    assert(bh.lastBlocksState().includes("Turn 7") && !bh.lastBlocksState().includes("Turn 8"), "a swipe: the blocks from before the swiped reply");
+    vcrpSetGenerationType("normal", {}, false);
+
+    chat.length = 0;
+    q.blockStack.order = JSON.parse(keepOrder); meguminSyncLegacyBlockIds();
+    q.vcrpMemory.enabled = false;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+    cc.vcrpCacheCheckReset();
+}
+console.log("33 ok blocks kept out of the history (cache-stable), last turn's blocks carried per turn, markers meet, check catches the old way");
 
 console.log("\nALL FORK CHECKS PASSED");

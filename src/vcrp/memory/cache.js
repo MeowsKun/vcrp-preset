@@ -1,32 +1,41 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// VCRP memory: marking the prompt cache without config.yaml.
+// VCRP memory: marking the prompt cache.
 //
-// SillyTavern only asks Claude to cache when its server config says so (claude.cachingAtDepth,
-// claude.extendedTTL), and that file can't be edited from the browser. This does the same
-// marking from VCRP, for the OpenRouter route: the cache_control markers ride on the messages
-// themselves, which SillyTavern passes to OpenRouter as they are.
+// A cache is only read where a new request's marker meets one an earlier request wrote,
+// over an identical prompt up to that point. Anthropic's own API also looks a few blocks
+// back for an older marker; Bedrock (one of OpenRouter's Claude providers) does not, so on
+// that route the markers have to land on the same message from one turn to the next.
 //
-// Same placement as SillyTavern's cachingAtDepth 0 (skip a trailing prefill, skip system
-// messages, mark the newest user turn and the user turn two role switches back), so if both
-// are on they mark the same messages and stay inside Anthropic's limit of four markers.
-// Off by default: "Mark the cache from VCRP" in Story Memory.
+// SillyTavern's cachingAtDepth marks the newest user turn and the user turn two switches
+// back. That only lines up when nothing sits between the last reply and the newest message,
+// and VCRP's per-turn rules (Output RULES, an in-chat slot at depth 1) sit exactly there:
+// measured live, every reply and summary call read only the fixed part of the prompt from
+// cache and wrote the whole chat history again.
+//
+// So VCRP marks the last two replies instead. A reply never changes once it is in the chat
+// (VCRP strips its <Blocks> in every turn, see blockHistory.js), so this turn's newer marker
+// is next turn's older one, on the same text: read from cache, every time, on any provider.
+// What comes after the last reply (the newest message, the per-turn rules) is not cached at
+// all, which is cheaper than SillyTavern writing it to the cache at double price every turn.
+//
+// The OpenRouter + Claude route only; "Mark the cache from VCRP" in Story Memory, on by
+// default. Two markers, so even with SillyTavern's own two still on, the request stays
+// within Anthropic's limit of four.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Indices the markers go on, newest first. */
-export function cacheMarkIndices(messages, depth = 0) {
+const textOf = m => typeof (m && m.content) === "string" ? m.content
+    : Array.isArray(m && m.content) ? m.content.filter(p => p && p.type === "text").map(p => p.text || "").join("") : "";
+
+/**
+ * Indices the markers go on, newest first: the last two replies (assistant messages with
+ * text). A trailing assistant message is a prefill or a reply being continued, and is skipped.
+ */
+export function cacheMarkIndices(messages) {
     const marks = [];
-    let passedPrefill = false, d = 0, prev = "";
-    for (let i = messages.length - 1; i >= 0; i--) {
-        const role = messages[i].role;
-        if (!passedPrefill && role === "assistant") continue;
-        passedPrefill = true;
-        if (role === "system") continue;
-        if (role !== prev) {
-            if (d === depth || d === depth + 2) marks.push(i);
-            if (d === depth + 2) break;
-            d++;
-            prev = role;
-        }
+    let end = messages.length;
+    if (end && messages[end - 1].role === "assistant") end--;
+    for (let i = end - 1; i >= 0 && marks.length < 2; i--) {
+        if (messages[i].role === "assistant" && textOf(messages[i]).trim()) marks.push(i);
     }
     return marks;
 }

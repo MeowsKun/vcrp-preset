@@ -17,8 +17,22 @@
 const CHARS_PER_TOKEN = 3.5;   // the same estimate Story Memory uses
 const tokens = chars => Math.ceil(chars / CHARS_PER_TOKEN);
 
-let prev = null;   // { at, kind, texts, roles }
+let prev = null;   // the last reply's prompt: { at, kind, texts, roles, lastReply }
 let last = null;   // the latest comparison (see compare)
+
+// Prompts the chat itself moves on with. A background call (a summary, a check) is compared
+// with the reply before it, never the other way round: its own task is not part of the chat.
+const REPLY_KINDS = new Set(["reply", "continue", "impersonate"]);
+
+// The last reply in a prompt: an assistant message that is not trailing (a trailing one is
+// a prefill or a reply being continued). Everything up to and including it is chat that the
+// next prompt must carry unchanged.
+function lastReplyIndex(roles) {
+    let end = roles.length;
+    if (end && roles[end - 1] === "assistant") end--;
+    for (let i = end - 1; i >= 0; i--) if (roles[i] === "assistant") return i;
+    return -1;
+}
 
 const textOf = m => typeof (m && m.content) === "string" ? m.content
     : Array.isArray(m && m.content) ? m.content.map(p => (p && p.type === "text" ? p.text : "[image]")).join("\n") : "";
@@ -45,8 +59,8 @@ function compare(a, b) {
         change = {
             index: i, of: b.texts.length, role: b.roles[i], label: firstLine(now),
             was: i < a.texts.length ? around(was, j) : "(no message here before)", now: around(now, j),
-            // Messages after the change: a change in the last few is the chat moving on.
-            fromEnd: b.texts.length - i,
+            // At or before the previous prompt's last reply: chat that should not have changed.
+            early: i <= a.lastReply,
         };
     }
     return {
@@ -62,9 +76,10 @@ function compare(a, b) {
  */
 export function vcrpCacheCheckRecord(messages, kind = "reply", now = Date.now()) {
     if (!Array.isArray(messages) || !messages.length) return;
-    const cur = { at: now, kind, texts: messages.map(textOf), roles: messages.map(m => String(m && m.role)) };
+    const roles = messages.map(m => String(m && m.role));
+    const cur = { at: now, kind, texts: messages.map(textOf), roles, lastReply: lastReplyIndex(roles) };
     if (prev) last = compare(prev, cur);
-    prev = cur;
+    if (REPLY_KINDS.has(kind)) prev = cur;
 }
 
 /** The latest comparison, or null before there are two prompts to compare. */
@@ -74,12 +89,12 @@ export function vcrpCacheCheckReport() {
 
 /**
  * Whether the latest comparison shows a problem: the cache would still have been warm, but
- * the prompt changed long before its end. A change only in the newest few messages (the
- * reply, the new message, the per-turn rules sitting among them) is normal.
+ * something changed at or before the previous prompt's last reply, which was already chat.
+ * Changes after it (the new reply, the newest message, the per-turn rules) are normal.
  */
 export function vcrpCacheCheckTrouble(report = last, ttlMinutes = 60) {
     if (!report || !report.change || report.minutes > ttlMinutes * 0.95) return false;
-    return report.change.fromEnd > 6 && report.ratio < 0.7;
+    return report.change.early === true;
 }
 
 /**
@@ -95,14 +110,14 @@ export function vcrpCacheCheckSummary(report = last, ttlMinutes = 60) {
         return {
             level: "warn",
             title: `The prompt changed early: only about ${k(report.stableTokens)} of ${k(report.totalTokens)} tokens could be read from the cache`,
-            detail: `The first change is in message ${c.index + 1} of ${c.of} (${c.role}), which starts "${c.label}". Before: "${c.was}" Now: "${c.now}" `
-                + "Everything after that point is written to the cache again, at double price, on every request. Usual causes: a lorebook (World Info) entry that switches on and off with keywords, or a macro such as {{time}}, {{date}} or {{random}} in the card, persona or lorebook.",
+            detail: `The first change is in message ${c.index + 1} of ${c.of} (${c.role}), which starts "${c.label}". It was already in the previous prompt, so it should not have changed. Before: "${c.was}" Now: "${c.now}" `
+                + "Everything after that point is written to the cache again, at double price. Usual causes: a lorebook (World Info) entry that switches on and off with keywords; a macro such as {{time}}, {{date}} or {{random}} in the card, persona or lorebook; a regex that edits older messages differently from newer ones.",
         };
     }
     return {
         level: "ok",
-        title: `Cache check: the last request kept about ${k(report.stableTokens)} of ${k(report.totalTokens)} tokens of the one before`,
-        detail: report.change ? "Only the newest messages changed, as they should." : "",
+        title: `Cache check: the last request kept about ${k(report.stableTokens)} of ${k(report.totalTokens)} tokens of the reply before it`,
+        detail: report.change ? "Nothing that was already in the chat changed; only the new messages and the per-turn rules did, as they should." : "",
     };
 }
 

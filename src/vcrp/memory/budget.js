@@ -34,7 +34,7 @@ export const BUDGET_DEFAULTS = {
     review: true,           // new chapters wait for the reader's approval before they count
     recallTokens: 1000,     // old chapters brought back per request when the scene touches them (0 = off)
     memoryCap: 3000,        // the most the always-carried memory text may take; older facts move to recall
-    markCache: false,       // VCRP puts the cache markers on (OpenRouter), for players who can't edit config.yaml
+    markCache: true,        // VCRP puts the cache markers on (OpenRouter + Claude), on the last two replies: see cache.js
     // VCRP counts tokens by length (about 3.5 characters each); markup-heavy text such as the
     // preset itself runs denser. Sizing the cold-start prompt a little under the budget keeps
     // that error from pushing a break-time request over the target.

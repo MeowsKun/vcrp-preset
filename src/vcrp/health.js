@@ -154,11 +154,12 @@ function longChatChecks(add, ctx, cc, source, model) {
         }
     }
 
-    if (budget && memoryBudgetSettings().markCache && source === "openrouter") {
-        add("ok", "VCRP marks the prompt cache itself");
+    if (memoryBudgetSettings().markCache && vcrpRouteHoistsSystem()) {
+        add("ok", "VCRP marks the prompt cache itself (your last two replies)",
+            "For the lowest cost, set claude.cachingAtDepth: -1 in SillyTavern's config.yaml, so SillyTavern adds none of its own markers. Its markers don't line up with VCRP's layout from turn to turn; with both on it still works, a little dearer.");
     } else {
         add("info", "Prompt caching is set in SillyTavern's config.yaml",
-            `VCRP can't read that file. Long chats on Claude need claude.cachingAtDepth: 0 and claude.extendedTTL: true there${budget ? " (or Story Memory's cache lifetime set to 5 minutes)" : ""}.${source === "openrouter" ? " On OpenRouter, Story Memory can mark the cache itself instead (Memory tab)." : ""}`);
+            `VCRP can't read that file. Long chats on Claude need claude.cachingAtDepth: 0 and claude.extendedTTL: true there${budget ? " (or Story Memory's cache lifetime set to 5 minutes)" : ""}.${source === "openrouter" ? " On OpenRouter + Claude, VCRP can mark the cache itself instead (Memory tab: Mark the cache from VCRP), which also works on Bedrock." : ""}`);
     }
 
     if (!memOn) return;

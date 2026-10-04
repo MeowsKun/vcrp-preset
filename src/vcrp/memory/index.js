@@ -28,7 +28,7 @@ import { planWindow, isCold } from "./window.js";
 import { composeMemory } from "./ledger.js";
 import { keywordsOf, pickRecall, formatRecall } from "./recall.js";
 import { TASK_MARKER } from "./prompts.js";
-import { markCache } from "./cache.js";
+import { markCache, cacheMarkIndices } from "./cache.js";
 import { registerRefreshHook, REFRESH } from "../../core/refreshHooks.js";
 
 const META_KEY = "vcrp_memory";
@@ -299,15 +299,30 @@ function warmWrittenTokens(messages) {
     return messages.slice(from).reduce((n, m) => n + tokensOfMessage(m), 0);
 }
 
+// With VCRP's own markers (on the last two replies): cached up to the reply before last
+// (when warm), written up to the last reply, and plain input after it.
+function vcrpMarkedSplit(messages, total, cold) {
+    const marks = cacheMarkIndices(messages);   // newest first
+    const upTo = i => messages.slice(0, i + 1).reduce((n, m) => n + tokensOfMessage(m), 0);
+    const cachedEnd = marks.length ? upTo(marks[0]) : 0;
+    const read = !cold && marks.length > 1 ? upTo(marks[1]) : 0;
+    return { read, write: cachedEnd - read, plain: total - cachedEnd };
+}
+
 function countPromptSpend(st, messages) {
     const budget = currentMemoryBudget();
     if (!budget) return;
     const total = messages.reduce((n, m) => n + tokensOfMessage(m), 0);
     // A standalone summary call carries a prompt of its own: priced as written.
     const cold = !!taskStandalone || isCold({ lastRequestAt: st.lastRequestAt }, clock(), budget);
-    const tail = cold ? null : warmWrittenTokens(messages);
-    const write = tail === null ? total : Math.min(total, tail);
-    const cost = requestCost(budget, { read: total - write, write });
+    let cost;
+    if (memoryBudgetSettings().markCache && vcrpRouteHoistsSystem()) {
+        cost = requestCost(budget, vcrpMarkedSplit(messages, total, cold));
+    } else {
+        const tail = cold ? null : warmWrittenTokens(messages);
+        const write = tail === null ? total : Math.min(total, tail);
+        cost = requestCost(budget, { read: total - write, write });
+    }
     const s = spendOf(st);
     // Every background call (Story Memory's, an NPC scan, the Story Director, another
     // extension's) is counted apart, and never stands in for "the last reply".
@@ -364,7 +379,10 @@ export function resetSpend(st) {
  * for players who can't edit SillyTavern's config.yaml. Runs last, once the text is final.
  */
 export function vcrpMemoryMarkCache(messages, dryRun) {
-    if (dryRun || !vcrpMemoryEnabled() || !Array.isArray(messages) || taskStandalone) return false;
+    // Whether Story Memory is on or not: the cache saves money on any chat, and a player who
+    // set cachingAtDepth: -1 as Setup Check suggests would otherwise have no markers at all.
+    // Standalone summary calls too: their check call reads the stretch from the cache.
+    if (dryRun || !Array.isArray(messages)) return false;
     const s = memoryBudgetSettings();
     if (!s.markCache || !vcrpRouteHoistsSystem()) return false;
     markCache(messages, s.ttl);

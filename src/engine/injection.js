@@ -25,6 +25,7 @@ import { meguminAllSlotTriggers } from "../../data/slots.js";
 import { vcrpApplyGenerationToDict, vcrpFinalizeMessages } from "../vcrp/generation.js";
 import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone } from "../vcrp/memory/index.js";
 import { vcrpCacheCheckRecord } from "../vcrp/cacheCheck.js";
+import { stripHistoryBlocks } from "../vcrp/blockHistory.js";
 import { buildTokenBreakdown } from "../vcrp/tokenBreakdown.js";
 
 // Throttles the prompt-preview popup so token counting and rapid ST background
@@ -257,6 +258,9 @@ export async function handlePromptInjection(data, type) {
 
     // Only for prompts built from the VCRP preset (other presets carry no tags, so nothing was replaced).
     if (replacementsMade > 0) {
+        // Earlier replies lose their <Blocks> here, every turn alike, so a reply's text never
+        // changes once it is in the chat (blockHistory.js: the cache depends on it).
+        stripHistoryBlocks(messages);
         vcrpFinalizeMessages(messages, vcrpGen, s => (typeof substituteParams === 'function' ? substituteParams(s) : s));
         vcrpMemoryShapeTask(messages);
         vcrpMemoryAfterPrompt(messages, data?.dryRun === true);

@@ -13,6 +13,7 @@ import { localProfile } from "../core/state.js";
 import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine } from "../core/engines.js";
 import { meguminStyleRule, meguminAddonText, meguminPlanTemplate } from "./meguminOriginal.js";
 import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING } from "../../data/megumin.js";
+import { previousBlocksNote } from "../vcrp/blockHistory.js";
 import {
     activeNpcImages, pushActiveNpcImage, clearActiveNpcImages,
 } from "../core/activeRequests.js";
@@ -586,6 +587,11 @@ export function buildBaseDict(isTokenCount = false) {
     // was doing. Anything that populates a tag a block reads must run before
     // this line.
     dict["[[blocks]]"] = buildBlocksEnvelope(dict);
+    // VCRP: earlier replies go out without their blocks (cache), so last turn's travel here.
+    if (dict["[[blocks]]"]) {
+        const previous = previousBlocksNote();
+        if (previous) dict["[[blocks]]"] += `\n\n${previous}`;
+    }
 
     return dict;
 }
