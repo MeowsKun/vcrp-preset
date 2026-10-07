@@ -1790,4 +1790,72 @@ console.log("32 ok cache check (normal turns pass, early changes flagged with pl
 }
 console.log("33 ok blocks kept out of the history (cache-stable), last turn's blocks carried per turn, markers meet, check catches the old way");
 
+// 34. Reply length: the safety cap goes on VCRP's own reply requests only, never raises
+//     SillyTavern's limit, never touches a background call; the measured reply size feeds
+//     Story Memory's budget (a Continue is not a whole reply).
+{
+    const rl = await imp("src/vcrp/replyLength.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const send = async (kind = "normal") => { vcrpSetGenerationType(kind, {}, false); await handlePromptInjection({ chat: buildPrompt("VCRP V10 Universal.json"), dryRun: false }); };
+    const capped = (max) => { const d = { max_tokens: max }; rl.vcrpApplyReplyCap(d); return d.max_tokens; };
+
+    await send();
+    assert.equal(capped(20000), 20000, "off by default");
+    extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 6000 };
+    await send();
+    assert.equal(capped(20000), 6000, "a VCRP reply request is capped");
+    assert.equal(capped(20000), 20000, "once per prompt: the next request is not this prompt's");
+    await send();
+    assert.equal(capped(3000), 3000, "never raises SillyTavern's own lower limit");
+    await send("quiet");
+    assert.equal(capped(20000), 20000, "a background call keeps its own size");
+    await handlePromptInjection({ chat: [{ role: "system", content: "some other preset" }, { role: "user", content: "hi" }], dryRun: false });
+    assert.equal(capped(20000), 20000, "another preset's prompt is left alone");
+    await send();
+    await handlePromptInjection({ chat: buildPrompt("VCRP V10 Universal.json"), dryRun: true });
+    assert.equal(capped(20000), 6000, "a dry run in between does not lose the note");
+    await send();
+    const reasoning = { max_completion_tokens: 20000 };
+    rl.vcrpApplyReplyCap(reasoning);
+    assert.deepEqual(reasoning, { max_completion_tokens: 6000 }, "only the limit the request carries: no max_tokens added for a reasoning model");
+    delete extension_settings.VCRP.globalSettings.memoryBudget;
+
+
+    // Measured reply size: three whole replies replace the default in the budget.
+    const q = state.localProfile;
+    q.vcrpMemory.enabled = true;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-4-6" });
+    delete meta.vcrp_memory;
+    const st = memory.memoryState();
+    const prompt = [{ role: "system", content: "s" }, { role: "user", content: "u" }];
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "" });
+    assert.equal(memory.measuredOutputTokens(), null, "nothing measured yet");
+    assert.equal(memory.currentMemoryBudget().outputTokens, 2500, "the default until then");
+    for (const words of [3500, 3500, 3500]) {   // 5,000 tokens each
+        vcrpSetGenerationType("normal", {}, false);
+        memory.vcrpMemoryAfterPrompt(prompt, false);
+        chat[0].mes = "w ".repeat(words * 2.5);
+        memory.vcrpMemoryCountReply(0, "normal");
+    }
+    assert.equal(memory.measuredOutputTokens(), 5000, "three replies averaged");
+    const b = memory.currentMemoryBudget();
+    const { computeBudget, priceForModel } = await imp("src/vcrp/memory/budget.js");
+    const plain = computeBudget(priceForModel("claude-opus-4-6"), {});
+    assert(b.outputTokens === 5000 && plain.outputTokens === 2500 && b.coldTokens < plain.coldTokens, `the budget plans for the real size: a smaller cold-start prompt (${b.coldTokens} vs ${plain.coldTokens})`);
+    vcrpSetGenerationType("continue", {}, false);
+    memory.vcrpMemoryAfterPrompt(prompt, false);
+    chat[0].mes += "w ".repeat(500);
+    memory.vcrpMemoryCountReply(0, "continue");
+    assert.equal(st.spend.recentOut.length, 3, "a Continue is not counted as a whole reply");
+    vcrpSetGenerationType("normal", {}, false);
+
+    delete meta.vcrp_memory;
+    chat.length = 0;
+    q.vcrpMemory.enabled = false;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+}
+console.log("34 ok reply length (safety cap on VCRP replies only, never raised, measured size feeds the budget)");
+
 console.log("\nALL FORK CHECKS PASSED");

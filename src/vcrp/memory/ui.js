@@ -17,11 +17,12 @@ import { vcrpActiveModel } from "../generation.js";
 import { BUDGET_DEFAULTS, priceForModel, costEstimate } from "./budget.js";
 import {
     vcrpMemoryEnabled, memoryState, memoryBudgetSettings, currentMemoryBudget, resolveAnchor, refreshShownMemory, estimateTokens,
-    forceCut, undoForceCut, previewRecall, vcrpMemoryUpdateVisuals, resetSpend,
+    forceCut, undoForceCut, previewRecall, vcrpMemoryUpdateVisuals, resetSpend, measuredOutputTokens,
 } from "./index.js";
 import { storyChat, approvePending, discardPending, nextSpan, memorySummaryRunning, unsummarizedTokens, autoSummaryHold, catchUp, catchUpEstimate } from "./summarize.js";
 import { FACT_CATEGORIES, formatFactChanges, applyFactChanges } from "./ledger.js";
 import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "../cacheCheck.js";
+import { storyConfigFields } from "../../features/storyconfig/config.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 
@@ -70,6 +71,60 @@ async function runCatchUp($c, max) {
     if ($c.closest("body").length) renderVcrpMemoryPanel($c);
 }
 
+// ── Reply length ──
+// The two things that really set a reply's length, gathered here: the story's length
+// (Story Config's own field, the same setting) and the thinking's (Thinking Effort). The
+// cap only stops a runaway reply; set below a normal one, it cuts replies off. Drawn with
+// Story Memory on or off: length is most of what a reply costs either way.
+function renderReplyLength($c, s, budget, st, rerender) {
+    const on = vcrpMemoryEnabled();
+    const lengthField = storyConfigFields.find(f => f.key === "length");
+    const lengthOpts = (lengthField && lengthField.options || []).map(o => typeof o === "string" ? { label: o, value: o } : o);
+    const cfg = localProfile.storyConfig || {};
+    const curLength = String(cfg.length || "");
+    const customLength = curLength && !lengthOpts.some(o => o.value === curLength);
+    const effort = String(localProfile.thinkEffort || "unspecified");
+    const measured = measuredOutputTokens();
+    const measuredCount = ((st && st.spend && st.spend.recentOut) || []).length;
+    const avgCost = measured && budget ? measured * budget.price.output / 1e6 : null;
+    const cap = Number(s.replyCap) || 0;
+    $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title blue"><i class="fa-solid fa-ruler-horizontal"></i> Reply length</div>
+        <div style="font-size:0.75rem; line-height:1.55; margin-bottom:6px;">${measured
+            ? `Your ${measuredCount ? `last ${measuredCount}` : "recent"} replies averaged about <b>${k(measured)} output tokens</b>${avgCost !== null ? ` (about ${money(avgCost)} each in output alone)` : ""}.${on ? " Story Memory's budget plans for that." : ""}`
+            : (on ? `<span style="opacity:.75;">After a few replies, their measured length shows here, and Story Memory's budget plans for it.</span>` : `<span style="opacity:.75;">With Story Memory on, your replies' measured length shows here.</span>`)}
+            <span style="opacity:.7;">Hidden reasoning SillyTavern never sees is not counted.</span></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Story length</div><div class="set-desc">How long the story part of each reply runs. The same setting as Story Config's Length.</div></div>
+            <select id="vmem_len" class="ps-modern-input" style="width:170px;">
+                <option value="" ${!curLength ? "selected" : ""}>Default (no length rule)</option>
+                ${lengthOpts.map(o => `<option value="${esc(o.value)}" ${o.value === curLength ? "selected" : ""}>${esc(o.label)}</option>`).join("")}
+                ${customLength ? `<option value="${esc(curLength)}" selected>Custom (set in Story Config)</option>` : ""}
+            </select></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Thinking length</div><div class="set-desc">The most words VCRP's visible thinking may take before the story starts. The same setting as Thinking Effort.</div></div>
+            <select id="vmem_think" class="ps-modern-input" style="width:170px;">
+                ${[["unspecified", "No limit"], ["100", "100 words"], ["250", "250 words"], ["450", "450 words"]].map(([v, l]) => `<option value="${v}" ${effort === v ? "selected" : ""}>${l}</option>`).join("")}
+                ${effort === "custom" ? `<option value="custom" selected>Custom: ${esc(localProfile.customThinkEffort || "")} words</option>` : ""}
+            </select></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Safety cap (tokens)</div><div class="set-desc">Stops a reply at this many tokens, thinking included. It does not make replies shorter: one that reaches it is cut off mid-sentence. Set it well above a normal reply${measured ? ` (about ${k(measured * 2)}, twice your average)` : " (about twice your average)"}, so only a runaway one stops. 0 = off; SillyTavern's Max Response Length still applies.</div></div>
+            <input id="vmem_cap_reply" type="number" min="0" max="64000" step="500" class="ps-modern-input" style="width:90px;" value="${cap}"></div>
+        ${cap && measured && cap < measured * 1.3 ? `<div style="font-size:0.72rem; color:#f59e0b; margin-top:4px;"><i class="fa-solid fa-triangle-exclamation"></i> The cap is close to your average reply: many replies will be cut off.</div>` : ""}
+        </div>`);
+    $c.find("#vmem_len").on("change", function () {
+        if (!localProfile.storyConfig) localProfile.storyConfig = {};
+        localProfile.storyConfig.length = String($(this).val());
+        saveProfileToMemory();
+    });
+    $c.find("#vmem_think").on("change", function () {
+        localProfile.thinkEffort = String($(this).val());
+        saveProfileToMemory();
+    });
+    $c.find("#vmem_cap_reply").on("change", function () {
+        const v = Math.round(Number($(this).val()));
+        saveSetting("replyCap", Number.isFinite(v) && v > 0 ? Math.min(64000, v) : 0);
+        rerender();
+    });
+
+}
+
 export function renderVcrpMemoryPanel($c) {
     const rerender = () => renderVcrpMemoryPanel($c);
     $c.empty();
@@ -110,7 +165,10 @@ export function renderVcrpMemoryPanel($c) {
         if (!confirm(`This chat has about ${k(backlog)} tokens nobody has summarized. Until they are, the first request after a break can't be cut and costs far more than your target.\n\nCatch up now? About ${est.chapters} chapter${est.chapters > 1 ? "s" : ""}, roughly ${money(est.cost)}, around ${est.minutes} minute${est.minutes > 1 ? "s" : ""} in the background. Please don't send messages until it finishes.${review ? "\n\nReview is on: the chapters will wait for your approval, and only approved chapters can be cut, so approve them before your next break (there's an Approve all button). Switch review off first if you'd rather they save directly." : ""}`)) return;
         await runCatchUp($c, Infinity);
     });
-    if (!on) return;
+    if (!on) {
+        renderReplyLength($c, s, budget, null, rerender);
+        return;
+    }
     const st = memoryState();
 
     $c.append(`
@@ -290,6 +348,8 @@ export function renderVcrpMemoryPanel($c) {
         });
     }
 
+    renderReplyLength($c, s, budget, st, rerender);
+
     // ── Settings ──
     const cp = s.customPrice || {};
     $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title gold"><i class="fa-solid fa-sliders"></i> Budget</div>
@@ -305,7 +365,7 @@ export function renderVcrpMemoryPanel($c) {
             <input id="vmem_recall" type="number" min="0" max="5000" step="100" class="ps-modern-input" style="width:90px;" value="${s.recallTokens}"></div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Memory text cap</div><div class="set-desc">Tokens the always-carried memory may take. Past it, the facts that changed longest ago move to recall only. Every token here comes out of what survives a break.</div></div>
             <input id="vmem_cap" type="number" min="500" max="20000" step="250" class="ps-modern-input" style="width:90px;" value="${s.memoryCap}"></div>
-        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Mark the cache from VCRP</div><div class="set-desc">On by default (OpenRouter + Claude). VCRP marks your last two replies, which line up from one turn to the next on every provider, Bedrock included; SillyTavern's own markers do not, with VCRP's rules sitting before your newest message. For the lowest cost, also set <code>cachingAtDepth: -1</code> in config.yaml so SillyTavern adds none of its own (with both on it still works, just a little dearer). VCRP's markers carry the cache lifetime set above.</div></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Mark the cache from VCRP</div><div class="set-desc">On by default (OpenRouter + Claude). VCRP marks your last two replies, which line up from one turn to the next on every provider, Bedrock included; SillyTavern's own markers do not, with VCRP's rules sitting before your newest message. <b>Needs <code>cachingAtDepth: -1</code> in config.yaml</b>, so SillyTavern adds none of its own: with both on, a request can carry more cache markers than Claude accepts and fail with a 400 error. If you can't change config.yaml, untick this instead. VCRP's markers carry the cache lifetime set above.</div></div>
             <input id="vmem_markcache" type="checkbox" ${s.markCache ? "checked" : ""}></div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Review chapters before they count</div><div class="set-desc">New chapters and fact changes wait for your approval. Until approved, nothing new can be cut.</div></div>
             <input id="vmem_review" type="checkbox" ${s.review ? "checked" : ""}></div>

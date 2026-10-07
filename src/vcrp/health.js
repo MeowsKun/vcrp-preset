@@ -7,7 +7,7 @@
 // Global Settings, and puts a red dot on the VCRP button while a problem stands.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { extension_settings, getContext } from "../st.js";
+import { extension_settings, getContext, event_types } from "../st.js";
 import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem } from "./generation.js";
 import { escapeHtmlAttr } from "../utils/html.js";
 import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memoryState, estimateTokens, memoryCanReachPrompt } from "./memory/index.js";
@@ -15,6 +15,7 @@ import { autoSummaryHold } from "./memory/summarize.js";
 import { meguminOriginalActive } from "../engine/meguminOriginal.js";
 import { kbAlwaysOnStats, presetCarriesAlwaysSlot } from "./knowledgebase.js";
 import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "./cacheCheck.js";
+import { replyCapTokens } from "./replyLength.js";
 
 // A preset is VCRP's if it carries the tags only VCRP/Megumin presets use (the name can be anything).
 const VCRP_TAG_RE = /\[\[(?:blocks|THINK|prompt1)\]\]/;
@@ -117,6 +118,12 @@ export function vcrpHealthCheck() {
     // 6. Long chats: what decides whether a request is cheap or full price.
     longChatChecks(add, ctx, cc, source, model);
 
+    // Reply length: the safety cap rides on a SillyTavern event older versions lack.
+    if (replyCapTokens() && !(event_types && event_types.CHAT_COMPLETION_SETTINGS_READY)) {
+        add("warn", "This SillyTavern version can't take VCRP's reply safety cap",
+            "It lacks the event extensions use to adjust a request. Set Max Response Length in AI Response Configuration instead, or update SillyTavern.");
+    }
+
     // 7. Cache check: did the last prompt keep the one before it, or change early on?
     const cache = vcrpCacheCheckSummary(vcrpCacheCheckReport(), memoryBudgetSettings().ttl === "5m" ? 5 : 60);
     if (cache) add(cache.level, cache.title, cache.detail);
@@ -156,7 +163,7 @@ function longChatChecks(add, ctx, cc, source, model) {
 
     if (memoryBudgetSettings().markCache && vcrpRouteHoistsSystem()) {
         add("ok", "VCRP marks the prompt cache itself (your last two replies)",
-            "For the lowest cost, set claude.cachingAtDepth: -1 in SillyTavern's config.yaml, so SillyTavern adds none of its own markers. Its markers don't line up with VCRP's layout from turn to turn; with both on it still works, a little dearer.");
+            "This needs claude.cachingAtDepth: -1 in SillyTavern's config.yaml, so SillyTavern adds none of its own markers. With both on, a request can carry more cache markers than Claude accepts and fail with a 400 \"bad request\" error. If you can't change config.yaml, untick \"Mark the cache from VCRP\" in the Memory tab instead (and pin OpenRouter to Anthropic, where SillyTavern's markers still read the cache).");
     } else {
         add("info", "Prompt caching is set in SillyTavern's config.yaml",
             `VCRP can't read that file. Long chats on Claude need claude.cachingAtDepth: 0 and claude.extendedTTL: true there${budget ? " (or Story Memory's cache lifetime set to 5 minutes)" : ""}.${source === "openrouter" ? " On OpenRouter + Claude, VCRP can mark the cache itself instead (Memory tab: Mark the cache from VCRP), which also works on Bedrock." : ""}`);

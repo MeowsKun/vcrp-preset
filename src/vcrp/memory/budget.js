@@ -27,7 +27,8 @@ export const MODEL_PRICES = [
 export const BUDGET_DEFAULTS = {
     targetCost: 0.30,       // $ per request, worst case
     ttl: "1h",              // must match SillyTavern's claude.extendedTTL (1h) or not (5m)
-    outputTokens: 2500,     // reply + visible CoT + hidden thinking, per request
+    outputTokens: 2500,     // reply + visible CoT + hidden thinking, per request; the chat's measured average replaces it (index.js)
+    replyCap: 0,            // safety cap on a reply's tokens, thinking included (0 = off): replyLength.js
     warmCeiling: 100000,    // the most the prompt may carry while the cache is warm
     minVerbatim: 10000,     // recent messages always kept word for word, whatever the budget
     customPrice: null,      // { input, output, read } for a model the table does not know

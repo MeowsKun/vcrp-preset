@@ -26,6 +26,7 @@ import { vcrpApplyGenerationToDict, vcrpFinalizeMessages } from "../vcrp/generat
 import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone } from "../vcrp/memory/index.js";
 import { vcrpCacheCheckRecord } from "../vcrp/cacheCheck.js";
 import { stripHistoryBlocks } from "../vcrp/blockHistory.js";
+import { vcrpNotePrompt } from "../vcrp/replyLength.js";
 import { buildTokenBreakdown } from "../vcrp/tokenBreakdown.js";
 
 // Throttles the prompt-preview popup so token counting and rapid ST background
@@ -35,6 +36,9 @@ export let lastPromptPreviewTime = 0;
 export async function handlePromptInjection(data, type) {
     const messages = data?.messages || data?.chat || (Array.isArray(data) ? data : null);
     if (!messages || !Array.isArray(messages)) return;
+    // VCRP: not a VCRP prompt until its tags are filled below (the reply-length safety cap
+    // only touches those). A dry run sends nothing, so it leaves the note alone.
+    if (data?.dryRun !== true) vcrpNotePrompt(false);
     // Opt IN, not opt out. The prefill breaks utility generations on Claude and
     // several other APIs, and the people it breaks for are the least likely to go
     // looking for a switch, so the safe state is the default. `!== true` also means
@@ -257,6 +261,7 @@ export async function handlePromptInjection(data, type) {
     }
 
     // Only for prompts built from the VCRP preset (other presets carry no tags, so nothing was replaced).
+    if (replacementsMade > 0 && data?.dryRun !== true) vcrpNotePrompt(true);
     if (replacementsMade > 0) {
         // Earlier replies lose their <Blocks> here, every turn alike, so a reply's text never
         // changes once it is in the chat (blockHistory.js: the cache depends on it).

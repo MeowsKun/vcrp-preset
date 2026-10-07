@@ -165,6 +165,26 @@ for (let k = 0; k < memCount; k++) {
         console.log(`  ✗ Story Memory › ${el.attr("id")}: THREW ${e && e.stack ? e.stack.split("\n").slice(0, 3).join(" / ") : e}`);
     }
 }
+// Reply length, with Story Memory off: the panel still shows (length is most of what a reply
+// costs either way), Story Memory's own controls do not, and each control reaches its setting.
+{
+    p.vcrpMemory.enabled = false;
+    switchTab(memTab);
+    const box = $("#ps_stage_content");
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ Reply length: ${what}`); } };
+    check(box.find("#vmem_len").length === 1 && box.find("#vmem_think").length === 1 && box.find("#vmem_cap_reply").length === 1, "the panel is missing with Story Memory off");
+    check(box.find("#vmem_summarize").length === 0, "Story Memory's own controls show while it is off");
+    const lengthValue = box.find("#vmem_len option").eq(2).val();
+    box.find("#vmem_len").val(lengthValue).trigger("change");
+    check(p.storyConfig && p.storyConfig.length === lengthValue, "Story length does not reach Story Config's Length");
+    box.find("#vmem_think").val("250").trigger("change");
+    check(p.thinkEffort === "250", "Thinking length does not reach Thinking Effort");
+    box.find("#vmem_cap_reply").val("9000").trigger("change");
+    const capNow = (((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).replyCap;
+    check(capNow === 9000, `the safety cap is not saved (${capNow})`);
+    clicks += 3;
+    console.log("  ✓ Reply length (Story Memory off): drawn, and each control reaches its setting");
+}
 console.log(`  (${clicks} clicks across all tabs)`);
 await new Promise(r => setTimeout(r, 200)); // let async handlers settle
 if (errors.length) console.log("  late console.error:", errors.slice(-3).join(" | ").slice(0, 400));

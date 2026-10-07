@@ -58,7 +58,21 @@ export function memoryBudgetSettings() {
 /** The budget for the connected model, or null when its price is unknown (set a custom one). */
 export function currentMemoryBudget() {
     const s = memoryBudgetSettings();
-    return computeBudget(priceForModel(vcrpActiveModel().model, s.customPrice), s);
+    // What this chat's replies really come to, once a few are measured: a budget that plans
+    // for 2,500 output tokens while replies run to 5,000 would cut too little.
+    const measured = measuredOutputTokens();
+    return computeBudget(priceForModel(vcrpActiveModel().model, s.customPrice), measured ? { ...s, outputTokens: measured } : s);
+}
+
+const MEASURED_MIN = 3;    // replies measured before the average replaces the default
+const RECENT_OUT = 10;     // the average covers this many recent replies
+
+/** This chat's recent replies' output tokens, averaged; null until a few are measured. Creates nothing. */
+export function measuredOutputTokens() {
+    const st = chat_metadata && chat_metadata[META_KEY];
+    const r = st && st.spend && Array.isArray(st.spend.recentOut) ? st.spend.recentOut : [];
+    if (r.length < MEASURED_MIN) return null;
+    return Math.min(32000, Math.max(500, Math.round(r.reduce((a, b) => a + b, 0) / r.length)));
 }
 
 /** This chat's state, created on first use. */
@@ -352,11 +366,14 @@ export function vcrpMemoryCountReply(messageId, type) {
     const msg = context && Array.isArray(context.chat) ? context.chat[Number(messageId)] : null;
     if (!msg || msg.is_user) return;
     let out = estimateTokens(String(msg.mes || "") + String((msg.extra && msg.extra.reasoning) || ""));
-    if (continueFrom !== null) { out = Math.max(0, out - continueFrom); continueFrom = null; }
+    const continued = continueFrom !== null;
+    if (continued) { out = Math.max(0, out - continueFrom); continueFrom = null; }
     const cost = out * budget.price.output / 1e6;
     st.spend.replyCost += cost;
     st.spend.last.cost += cost;
     st.spend.last.output = out;
+    // A whole reply's size, for the budget and the Reply length panel; a Continue is a part.
+    if (!continued) st.spend.recentOut = [...(st.spend.recentOut || []), out].slice(-RECENT_OUT);
     spendUndo = null;
 }
 

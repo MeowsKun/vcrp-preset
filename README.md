@@ -77,15 +77,23 @@ It relies on prompt caching. Set up once:
    SillyTavern trims the oldest message itself every turn and nothing is ever cached.
 2. **Caching:** on **OpenRouter + Claude**, VCRP marks the cache itself (Memory tab, "Mark the
    cache from VCRP", on by default): on your last two replies, which line up from one turn to the
-   next on every provider, Bedrock included. For the lowest cost set `cachingAtDepth: -1` under
-   `claude:` in SillyTavern's `config.yaml`, so SillyTavern adds none of its own markers, then
-   restart. On the **direct Anthropic** API, set `cachingAtDepth: 0` and `extendedTTL: true` there
-   instead.
+   next on every provider, Bedrock included. This **needs** `cachingAtDepth: -1` under `claude:`
+   in SillyTavern's `config.yaml` (then restart), so SillyTavern adds none of its own markers:
+   with both, a request can carry more markers than Claude accepts and fail with a 400 error.
+   If you can't change `config.yaml`, untick "Mark the cache from VCRP" and pin OpenRouter to
+   Anthropic instead. On the **direct Anthropic** API, set `cachingAtDepth: 0` and
+   `extendedTTL: true` there.
 3. **OpenRouter:** put Anthropic first in the provider list and turn off fallbacks, so the chat
    never moves to a provider without your cache.
 
 Global Settings → Setup Check flags anything missing. Existing Memory Core summaries become
 chapters the first time each chat is opened.
+
+**Reply length** (Memory tab): a reply's length is most of what it costs once the cache works.
+The panel shows your recent replies' measured size (Story Memory's budget plans for it), and
+sets the story's length (Story Config's Length) and the thinking's (Thinking Effort). A safety
+cap in tokens stops a runaway reply; set it well above a normal one, since a reply that reaches
+it is cut off.
 
 **Pin** a fact or a chapter (the pin button beside it) to keep it in the memory text for good:
 the size cap never trims it and a pinned chapter is never folded into an arc. The meter also

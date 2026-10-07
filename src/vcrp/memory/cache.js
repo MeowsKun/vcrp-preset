@@ -19,8 +19,9 @@
 // all, which is cheaper than SillyTavern writing it to the cache at double price every turn.
 //
 // The OpenRouter + Claude route only; "Mark the cache from VCRP" in Story Memory, on by
-// default. Two markers, so even with SillyTavern's own two still on, the request stays
-// within Anthropic's limit of four.
+// default. It needs SillyTavern's own markers off (claude.cachingAtDepth: -1): with both,
+// a live request on Bedrock failed with a 400, the route evidently adding a marker of its
+// own and taking the count past Claude's limit of four.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const textOf = m => typeof (m && m.content) === "string" ? m.content

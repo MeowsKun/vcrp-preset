@@ -95,6 +95,7 @@ import { vcrpSetGenerationType } from "./src/vcrp/generation.js";
 import { vcrpRefreshHealthBadge } from "./src/vcrp/health.js";
 import { vcrpMemoryAfterReply } from "./src/vcrp/memory/summarize.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
+import { vcrpApplyReplyCap } from "./src/vcrp/replyLength.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
 import { initDraggableButton, updateCharacterDisplay, discoverDefaultImages } from "./src/ui/launcher.js";
 import { tabsUI, switchTab, updateGlobalSyncButton, toggleTabGlobalSync } from "./src/ui/tabs.js";
@@ -391,6 +392,8 @@ jQuery(async () => {
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDedashOnReply);
             // Story Memory's spend estimate: the reply's output, added to its request.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryCountReply);
+            // Reply length: the safety cap on the request itself (where SillyTavern has the event).
+            if (event_types.CHAT_COMPLETION_SETTINGS_READY) eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, vcrpApplyReplyCap);
             // VCRP budgeted memory: summarize the next stretch after a reply, when due.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryAfterReply);
             // IMAGE GEN AUTO-GEN & SWIPE TRIGGERS
