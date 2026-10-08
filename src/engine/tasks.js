@@ -14,11 +14,13 @@
 import { generateQuietPrompt } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { setActiveBanListChat, setActiveGenerationOrder } from "../core/activeRequests.js";
+import { vcrpCountBackgroundOutput } from "../vcrp/memory/index.js";
 
 export async function analyzeSlopDirectly(chatText) {
     setActiveBanListChat(chatText);
     try {
         let rawOutput = await generateQuietPrompt({ prompt: "___PS_BANLIST___" });
+        vcrpCountBackgroundOutput(rawOutput);
         return rawOutput.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
     } catch (e) {
         console.error(`[${extensionName}] Ban List Analysis Failed:`, e);
@@ -51,7 +53,9 @@ export async function useMeguminEngine(task, _targetPreset) {
 export async function runMeguminTask(orderText) {
     setActiveGenerationOrder(orderText);
     try {
-        return await generateQuietPrompt({ prompt: "___PS_DUMMY___" });
+        const out = await generateQuietPrompt({ prompt: "___PS_DUMMY___" });
+        vcrpCountBackgroundOutput(out);
+        return out;
     } finally {
         setActiveGenerationOrder(null);
     }

@@ -12,6 +12,8 @@ import { DEFAULT_PROMPTS } from "../../prompts/index.js";
 import { renderPromptEditor } from "../../ui/promptEditor.js";
 import { downloadJsonFile } from "../../utils/download.js";
 import { getChatForNpcScan } from "../../engine/chatText.js";
+import { vcrpChatForNpcScan, vcrpNpcScanMark, vcrpNoteNpcScan, npcEstimate } from "../../vcrp/backgroundCosts.js";
+import { vcrpCountBackgroundOutput } from "../../vcrp/memory/index.js";
 import { npcBuildTextFromData, npcParseBlock, meguminFindNpcDossiers, npcCreateRecord } from "./data.js";
 import { npcBodyFields, npcVitalsFields, NPC_FIELD_TYPES, NPC_DEFAULT_FIELDS, npcBuildUpdatePrompt } from "./fields.js";
 import { npcParseUpdateBlocks, npcApplyUpdates } from "./updates.js";
@@ -103,6 +105,14 @@ export function renderNpcBank(c) {
                     </div>
                     <input type="number" id="npc_scan_depth" class="ps-modern-input" value="${nb.scanDepth || 60}" min="10" style="width: 90px; text-align: center; background: rgba(0,0,0,0.2);" />
                 </div>
+                <div class="mtab-setting-row" style="padding-bottom: 0; border: none;">
+                    <div class="set-info">
+                        <div class="set-label">Only New Messages</div>
+                        <div class="set-desc">A scan reads only the messages since the last scan (plus a few before them for context), up to the depth above. A scan soon after the last one costs cents. Untick to re-read the whole depth every time.</div>
+                    </div>
+                    <input type="checkbox" id="npc_scan_new_only" ${nb.scanNewOnly !== false ? "checked" : ""} />
+                </div>
+                <div id="npc_scan_estimate" class="set-desc" style="margin-top: 10px;">${npcScanEstimateText()}</div>
             </div>
 
             <!-- DOSSIER FIELDS -->
@@ -276,8 +286,13 @@ export function renderNpcBank(c) {
     });
 
     $("#npc_btn_scan_story").on("click", async function () {
-        const chatText = getChatForNpcScan();
-        if (chatText.length < 100) return toastr.warning("Not enough chat history to scan.");
+        // VCRP: by default only what is new since the last scan, so a rescan is cheap.
+        const newOnly = localProfile.npcBank.scanNewOnly !== false;
+        const { text: chatText, fresh, resumed } = vcrpChatForNpcScan({ newOnly });
+        if (newOnly && fresh === 0) return toastr.info("No new messages since the last scan. Untick \"Only New Messages\" in Scanner Settings to re-read them.", "NPC Bank");
+        if (chatText.length < 100) return toastr.warning(resumed ? "Too little new since the last scan." : "Not enough chat history to scan.");
+        const scanIdentity = meguminActiveDataIdentity();
+        const scanMark = vcrpNpcScanMark();
         
         const btn = $(this);
         btn.prop("disabled", true).html(`<i class="fa-solid fa-spinner fa-spin"></i> Scanning...`);
@@ -290,6 +305,13 @@ export function renderNpcBank(c) {
             setActiveNpcScanRequest({ chatText, existingNames });
             
             let rawOutput = await generateQuietPrompt({ prompt: "___PS_NPC_SCAN___" });
+            vcrpCountBackgroundOutput(rawOutput);
+            // VCRP: a scan of one chat must not fill another chat's bank.
+            if (meguminActiveDataIdentity() !== scanIdentity) {
+                console.debug(`[VCRP] NPC scan discarded: it started on "${scanIdentity}" but "${meguminActiveDataIdentity()}" is active now.`);
+                toastr.info("Chat changed while the scan was running. Its results were discarded.", "NPC Bank");
+                return;
+            }
             
             let addedCount = 0;
             for (const dossier of meguminFindNpcDossiers(rawOutput)) {
@@ -304,13 +326,21 @@ export function renderNpcBank(c) {
             }
             if (addedCount > 0) { saveProfileToMemory(); renderNpcList(); toastr.success(`Found and added ${addedCount} new NPC(s)!`); } 
             else { toastr.info("No new significant NPCs found in the story."); }
+            // The next scan starts after what this one read. Not after a stopped or empty one.
+            if (String(rawOutput || "").trim()) await vcrpNoteNpcScan(scanMark);
         } catch (e) { toastr.error("Failed to scan story for NPCs."); } 
-        finally { setActiveNpcScanRequest(null); btn.prop("disabled", false).html(`<i class="fa-solid fa-radar"></i> Scan Story`); }
+        finally { setActiveNpcScanRequest(null); btn.prop("disabled", false).html(`<i class="fa-solid fa-radar"></i> Scan Story`); $("#npc_scan_estimate").text(npcScanEstimateText()); }
     });
 
     $("#npc_scan_depth").on("input change", function() {
         let val = parseInt($(this).val()); if (isNaN(val) || val < 1) val = 60;
         localProfile.npcBank.scanDepth = val; saveProfileToMemory();
+        $("#npc_scan_estimate").text(npcScanEstimateText());
+    });
+
+    $("#npc_scan_new_only").on("change", function () {
+        localProfile.npcBank.scanNewOnly = $(this).is(":checked"); saveProfileToMemory();
+        $("#npc_scan_estimate").text(npcScanEstimateText());
     });
 
     if (nb.enabled) renderNpcList();
@@ -468,12 +498,26 @@ export function renderNpcFieldEditor(c) {
     return wrap;
 }
 
+// VCRP: what the next scan and a forced update send, so the cost is no surprise.
+function npcScanEstimateText() {
+    try {
+        const newOnly = localProfile.npcBank.scanNewOnly !== false;
+        if (newOnly && vcrpChatForNpcScan({ newOnly }).fresh === 0) return "Next scan: no new messages since the last one.";
+        return `Next scan: ${npcEstimate({ newOnly }).text}`;
+    } catch (e) { return ""; }
+}
+function npcUpdateEstimateText() {
+    try { return ` ${npcEstimate().text}`; } catch (e) { return ""; }
+}
+
 export function renderNpcList() {
     const list = $("#npc_bank_list");
     list.empty();
     if (!localProfile.npcBank.npcs) localProfile.npcBank.npcs = [];
     const npcs = localProfile.npcBank.npcs;
     $("#npc_count").text(`(${npcs.length})`);
+
+    const updateCost = escapeHtmlAttr(npcUpdateEstimateText());
 
     if (npcs.length === 0) {
         list.append('<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 20px;">No NPCs saved yet. The AI will add them automatically when significant NPCs are introduced.</div>');
@@ -533,7 +577,7 @@ export function renderNpcList() {
                     </div>
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <span style="color: var(--text-muted); font-size: 0.6rem;">${dateStr}</span>
-                        <button class="npc_force_update" data-idx="${idx}" style="background: transparent; border: none; color: #fbbf24; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Re-read the story and update this NPC's changeable fields now"><i class="fa-solid fa-arrows-rotate"></i></button>
+                        <button class="npc_force_update" data-idx="${idx}" style="background: transparent; border: none; color: #fbbf24; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Re-read the story and update this NPC's changeable fields now.${updateCost}"><i class="fa-solid fa-arrows-rotate"></i></button>
                         <button class="npc_export_btn" data-idx="${idx}" style="background: transparent; border: none; color: #3b82f6; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Export NPC"><i class="fa-solid fa-download"></i></button>
                         <button class="npc_del_btn" data-idx="${idx}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.75rem; padding: 2px 4px;" title="Delete NPC"><i class="fa-solid fa-trash"></i></button>
                     </div>
@@ -661,6 +705,7 @@ export function renderNpcList() {
             });
             try {
                 const raw = await generateQuietPrompt({ prompt: "___PS_NPC_UPDATE___" });
+                vcrpCountBackgroundOutput(raw);
                 const cleaned = String(raw || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
                 if (meguminActiveDataIdentity() !== identity) {

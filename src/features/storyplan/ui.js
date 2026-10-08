@@ -11,7 +11,9 @@ import { setActiveStoryPlanRequest } from "../../core/activeRequests.js";
 import { saveProfileToMemory, saveProfileDebounced } from "../../core/profile.js";
 import { DEFAULT_PROMPTS } from "../../prompts/index.js";
 import { renderPromptEditor } from "../../ui/promptEditor.js";
-import { cleanAIOutput, getChatForStoryDirector } from "../../engine/chatText.js";
+import { cleanAIOutput } from "../../engine/chatText.js";
+import { vcrpChatForStoryDirector, directorEstimate } from "../../vcrp/backgroundCosts.js";
+import { vcrpCountBackgroundOutput } from "../../vcrp/memory/index.js";
 import { escapeHtmlAttr } from "../../utils/html.js";
 import { useMeguminEngine } from "../../engine/tasks.js";
 
@@ -239,6 +241,7 @@ export function renderStoryPlanner(c) {
                         <button id="sd_btn_evolve" class="wstyle-gen-btn" style="padding: 8px 18px; font-size: 0.78rem; background: rgba(139, 92, 246, 0.15); border-color: rgba(139, 92, 246, 0.3);" ${sp.currentPlan ? '' : 'disabled'}><i class="fa-solid fa-arrows-rotate"></i> Evolve</button>
                     </div>
                 </div>
+                <div id="sd_cost_estimate" class="set-desc" style="margin: -6px 0 10px;">${directorEstimateText()}</div>
                 <textarea id="sd_current_plan" class="ps-modern-input sd-directive-output" placeholder="Your narrative directive will appear here after generation.">${sp.currentPlan || ""}</textarea>
                 <div class="mtab-callout">
                     <i class="fa-solid fa-circle-info"></i>
@@ -258,7 +261,7 @@ export function renderStoryPlanner(c) {
                 <div class="mtab-setting-row">
                     <div class="set-info">
                         <div class="set-label">Context Limit</div>
-                        <div class="set-desc">How much chat history the Director reads to analyze the plot.</div>
+                        <div class="set-desc">How much chat history the Director reads to analyze the plot. With Story Memory on, it reads the story memory and the last 30 messages instead, at a fraction of the cost.</div>
                     </div>
                     <select id="sd_context_limit" class="ps-modern-input" style="width: 220px; cursor: pointer;">
                         <option value="100" ${sp.contextLimit === 100 ? 'selected' : ''}>Last 100 Messages</option>
@@ -410,7 +413,7 @@ export function renderStoryPlanner(c) {
     $("#sd_backend").on("change", e => { sp.backend = $(e.target).val(); saveProfileToMemory(); });
 
     // Context Limit
-    $("#sd_context_limit").on("change", e => { sp.contextLimit = parseInt($(e.target).val(), 10); saveProfileToMemory(); });
+    $("#sd_context_limit").on("change", e => { sp.contextLimit = parseInt($(e.target).val(), 10); saveProfileToMemory(); $("#sd_cost_estimate").text(directorEstimateText()); });
 
     // Trigger
     $("#sd_trigger").on("change", e => {
@@ -430,8 +433,13 @@ export function renderStoryPlanner(c) {
     });
 }
 
+// VCRP: what pressing Generate or Evolve sends, so the cost is no surprise.
+function directorEstimateText() {
+    try { return directorEstimate().text; } catch (e) { return ""; }
+}
+
 export async function handleDirectiveGeneration(sp, btn, isEvolve) {
-    const chatText = getChatForStoryDirector();
+    const chatText = vcrpChatForStoryDirector();
     if (chatText.length < 100) return toastr.warning("Not enough chat history to generate a directive.");
 
     // `sp` was captured when the Story Director tab was rendered, so it can already be a
@@ -476,6 +484,7 @@ export async function handleDirectiveGeneration(sp, btn, isEvolve) {
         console.error("[VCRP] Story Director error:", e);
     } finally {
         btn.prop("disabled", false).html(originalHtml);
+        $("#sd_cost_estimate").text(directorEstimateText());
     }
 }
 
@@ -483,6 +492,7 @@ export async function generateStoryPlanLogic(chatText) {
     setActiveStoryPlanRequest(chatText);
     try {
         let rawOutput = await generateQuietPrompt({ prompt: "___PS_STORY_PLAN___" });
+        vcrpCountBackgroundOutput(rawOutput);
         return rawOutput;
     } finally {
         setActiveStoryPlanRequest(null);

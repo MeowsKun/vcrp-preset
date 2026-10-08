@@ -20,7 +20,7 @@
 import { getContext, generateQuietPrompt, isGenerating, saveMetadata } from "../../st.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
 import {
-    activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder,
+    activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder, activeFocusAudit,
 } from "../../core/activeRequests.js";
 import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
 import {
@@ -117,7 +117,7 @@ let running = false;
 export const memorySummaryRunning = () => running;
 
 /** Another VCRP background task swaps in its own prompt while it runs: never overlap one. */
-const otherTaskRunning = () => !!(activeStoryPlanRequest || activeBanListChat || activeNpcScanRequest || activeNpcUpdateRequest || activeGenerationOrder);
+const otherTaskRunning = () => !!(activeStoryPlanRequest || activeBanListChat || activeNpcScanRequest || activeNpcUpdateRequest || activeGenerationOrder || activeFocusAudit);
 
 async function quiet(prompt, standalone) {
     setMemoryTaskActive(true, standalone || null);

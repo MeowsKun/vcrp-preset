@@ -377,6 +377,30 @@ export function vcrpMemoryCountReply(messageId, type) {
     spendUndo = null;
 }
 
+/**
+ * A VCRP background task's prompt (the Story Director, an NPC scan or update, the ban
+ * list, a style): a prompt of its own, sent whole and never cached, so plain input.
+ */
+export function vcrpCountBackgroundPrompt(messages) {
+    if (!vcrpMemoryEnabled() || !Array.isArray(messages)) return;
+    const st = memoryState();
+    const budget = currentMemoryBudget();
+    if (!st || !budget) return;
+    const s = spendOf(st);
+    s.bgCalls = (s.bgCalls || 0) + 1;
+    s.bgCost = (s.bgCost || 0) + requestCost(budget, { plain: messages.reduce((n, m) => n + tokensOfMessage(m), 0) });
+}
+
+/** A background task's answer. */
+export function vcrpCountBackgroundOutput(text) {
+    if (!vcrpMemoryEnabled()) return;
+    const st = memoryState();
+    const budget = currentMemoryBudget();
+    if (!st || !budget) return;
+    const s = spendOf(st);
+    s.bgCost = (s.bgCost || 0) + estimateTokens(String(text || "")) * budget.price.output / 1e6;
+}
+
 /** A summary or check call's answer: its output, added to the summary costs. */
 export function vcrpMemoryCountTaskOutput(text) {
     const st = memoryState();
@@ -471,6 +495,12 @@ export function refreshShownMemory(st, chat, cutAt) {
 
 const RECENT_MESSAGES = 4;     // what "the current scene" means for recall
 
+// Other features can add words to what recall looks for (Focus's plot focus). Kept as a
+// hook so memory does not depend on them.
+const recallQueries = new Set();
+export function registerRecallQuery(fn) { recallQueries.add(fn); }
+const recallExtra = () => [...recallQueries].map(fn => { try { return String(fn() || ""); } catch (e) { return ""; } }).filter(Boolean).join(" ");
+
 /**
  * What [[story_recall]] carries this request: chapters that have left the prompt and facts
  * the cap keeps out, when the last few messages touch them. Empty before the first cut.
@@ -481,7 +511,7 @@ export function vcrpMemoryRecall() {
     if (!st) return "";
     const chat = memoryChat();
     // The cut is counted in the whole chat; the scene, without a reply being swiped.
-    const recent = vcrpWithoutSwipedReply(chat).slice(-RECENT_MESSAGES).map(m => carriedText(m)).join(" ");
+    const recent = [...vcrpWithoutSwipedReply(chat).slice(-RECENT_MESSAGES).map(m => carriedText(m)), recallExtra()].join(" ");
     const r = recallFor(st, chat, recent);
     // Only a request that goes out may claim "recalled for the last request": SillyTavern
     // also builds dry prompts just to count tokens.
@@ -518,7 +548,7 @@ export function previewRecall(draft = "") {
     if (!st) return { text: "", ids: [], cut: 0 };
     const chat = memoryChat();
     const text = String(draft || "").trim();
-    const recent = [...chat.slice(-(text ? RECENT_MESSAGES - 1 : RECENT_MESSAGES)).map(m => carriedText(m)), text].join(" ");
+    const recent = [...chat.slice(-(text ? RECENT_MESSAGES - 1 : RECENT_MESSAGES)).map(m => carriedText(m)), text, recallExtra()].join(" ");
     return recallFor(st, chat, recent);
 }
 

@@ -1858,4 +1858,502 @@ console.log("33 ok blocks kept out of the history (cache-stable), last turn's bl
 }
 console.log("34 ok reply length (safety cap on VCRP replies only, never raised, measured size feeds the budget)");
 
+// 35. Background calls: counted in the spend estimate (prompt and answer, apart from replies),
+//     the Story Director reads the story memory plus the recent messages, a scan reads only
+//     what is new since the last one, and the estimate prices what each would send.
+{
+    const memory = await imp("src/vcrp/memory/index.js");
+    const bg = await imp("src/vcrp/backgroundCosts.js");
+    const { getChatForStoryDirector } = await imp("src/engine/chatText.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const q = state.localProfile;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-4-6" });
+
+    // Counted only with Story Memory on (the estimate lives in its state).
+    delete meta.vcrp_memory;
+    q.vcrpMemory.enabled = false;
+    await runMeguminTask("Write a style rule.");
+    assert(!meta.vcrp_memory || !meta.vcrp_memory.spend || !meta.vcrp_memory.spend.bgCalls, "Story Memory off: nothing counted");
+    q.vcrpMemory.enabled = true;
+    const out = await runMeguminTask("Write a style rule.");
+    const s = memory.memoryState().spend;
+    assert(s.bgCalls === 1 && s.bgCost > 0 && s.replies === 0 && s.tasks === 0, `a task is its own bucket (${JSON.stringify(s)})`);
+    const promptOnly = s.bgCost;
+    memory.vcrpCountBackgroundPrompt([{ role: "user", content: "x".repeat(4000) }]);
+    assert(s.bgCalls === 2 && s.bgCost > promptOnly, "a prompt adds a call and its input");
+    assert(out.length > 0, "the task still returns its answer");
+
+    // The Story Director: 100 long messages, chapters up to message 90. A chapter that starts
+    // before the last 30 messages is read as a gist (even one they partly show); one that
+    // starts inside them is not.
+    chat.length = 0;
+    for (let i = 0; i < 100; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `d${i}`, mes: `Message ${i}. ` + "Words of the story. ".repeat(60) });
+    const st = memory.memoryState();
+    const A = i => memory.anchorOf(chat, i);
+    st.chapters = [
+        { id: "C1", gist: "GIST-ONE: Bob met Alice.", start: null, end: A(40) },
+        { id: "C2", gist: "GIST-TWO: they argued.", start: A(40), end: A(80) },
+        { id: "C3", gist: "GIST-THREE: they made up.", start: A(80), end: A(90) },
+    ];
+    st.summarized = A(90);
+    st.ledger = [{ id: "F1", cat: "person", text: "Alice runs the café." }];
+    q.storyPlan.contextLimit = 100;
+    const viaMemory = bg.vcrpChatForStoryDirector();
+    assert(viaMemory.includes("<story_memory>") && viaMemory.includes("GIST-ONE") && viaMemory.includes("Alice runs the café."), "the memory goes in");
+    assert(viaMemory.includes("GIST-TWO") && !viaMemory.includes("GIST-THREE"), "a chapter the recent messages only partly show keeps its gist; one inside them does not");
+    assert(viaMemory.includes("Message 70.") && viaMemory.includes("Message 99.") && !viaMemory.includes("Message 69."), "the last 30 messages word for word");
+    const raw = getChatForStoryDirector();
+    assert(memory.estimateTokens(viaMemory) < memory.estimateTokens(raw) / 2, `far less than 100 raw messages (${memory.estimateTokens(viaMemory)} vs ${memory.estimateTokens(raw)})`);
+    // Chapters waiting for review: the approved ones end at 40, so the Director reads from
+    // there and nothing between the memory and the messages is lost.
+    st.chapters = st.chapters.slice(0, 1); st.summarized = A(40);
+    let lagging = bg.vcrpChatForStoryDirector();
+    assert(lagging.includes("GIST-ONE") && lagging.includes("Message 40.") && !lagging.includes("Message 39."), "no gap between the approved chapters and the messages");
+    q.storyPlan.contextLimit = 10;
+    lagging = bg.vcrpChatForStoryDirector();
+    assert(lagging.includes("Message 90.") && !lagging.includes("Message 89."), "never more than the Director's own window");
+    q.storyPlan.contextLimit = 100;
+    st.summarized = { index: 40, fp: "a|gone|gone" };
+    assert.equal(bg.vcrpChatForStoryDirector(), raw, "summaries that lost their place: the usual window");
+    st.chapters = []; st.ledger = []; st.summarized = null;
+    assert.equal(bg.vcrpChatForStoryDirector(), raw, "nothing summarized yet: the usual window");
+    st.chapters = [{ id: "C1", gist: "GIST-ONE", start: null, end: A(40) }]; st.summarized = A(40);
+    q.vcrpMemory.enabled = false;
+    assert.equal(bg.vcrpChatForStoryDirector(), raw, "Story Memory off: the usual window");
+    q.vcrpMemory.enabled = true;
+
+    // NPC scans: the first reads the whole depth; after it, only what is new.
+    q.npcBank.scanDepth = 60;
+    delete meta.vcrp_npc_scan;
+    let scan = bg.vcrpChatForNpcScan({ newOnly: true });
+    assert(scan.fresh === 60 && scan.count === 60 && !scan.resumed, "no scan yet: the whole depth");
+    const mark = bg.vcrpNpcScanMark();
+    chat.push({ is_user: false, name: "Alice", send_date: "late", mes: "A reply that came in while the scan ran." });
+    await bg.vcrpNoteNpcScan(mark);
+    scan = bg.vcrpChatForNpcScan({ newOnly: true });
+    assert(scan.fresh === 1 && scan.count === 5 && scan.resumed && scan.text.includes("came in while"), `the reply during the scan is still new, with 4 before it (${scan.fresh}/${scan.count})`);
+    for (let i = 0; i < 3; i++) chat.push({ is_user: i % 2 === 0, name: "Bob", send_date: `n${i}`, mes: `New message ${i}.` });
+    scan = bg.vcrpChatForNpcScan({ newOnly: true });
+    assert(scan.fresh === 4 && scan.count === 8, `four new, four for context (${scan.fresh}/${scan.count})`);
+    assert.equal(bg.vcrpChatForNpcScan().count, 60, "an update (or the box unticked) still reads the whole depth");
+    await bg.vcrpNoteNpcScan();
+    assert.equal(bg.vcrpChatForNpcScan({ newOnly: true }).fresh, 0, "nothing new right after a scan");
+    chat.splice(chat.length - 1, 1);
+    scan = bg.vcrpChatForNpcScan({ newOnly: true });
+    assert(scan.fresh === 60, "the last scanned message deleted: back to the whole depth");
+
+    // The estimate: what goes out, and its price on the connected model.
+    const e = bg.backgroundEstimate(100000);
+    assert(Math.abs(e.cost - 0.55) < 1e-9 && e.text === "Sends about 100k tokens, roughly $0.55 on Claude Opus 4.5-4.8.", e.text);
+    await bg.vcrpNoteNpcScan();
+    assert(bg.npcEstimate({ newOnly: true }).tokens < bg.npcEstimate().tokens, "a scan of what is new is priced lower");
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openai", openai_model: "some-unknown-model" });
+    assert.equal(bg.backgroundEstimate(5000).text, "Sends about 5k tokens.", "an unknown model: the size only");
+
+    delete meta.vcrp_memory; delete meta.vcrp_npc_scan;
+    chat.length = 0;
+    q.vcrpMemory.enabled = false;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+
+    // Text with a "$" goes into a prompt as written ("$$", "$&" and "$'" are codes to String.replace).
+    const { setActiveStoryPlanRequest } = await imp("src/core/activeRequests.js");
+    const money = "Bob paid $$5 for it, $& change, and $' tip.";
+    setActiveStoryPlanRequest(money);
+    const director = [{ role: "user", content: "x" }];
+    await handlePromptInjection({ chat: director, dryRun: false });
+    setActiveStoryPlanRequest(null);
+    assert(text(director).includes(money), "the Story Director gets the chat as written");
+    const kbOn = q.knowledgebase.enabled;
+    q.addons = []; q.knowledgebase.enabled = false;
+    chat.push({ is_user: true, mes: "Hi." }, { is_user: false, mes: "Hello." }, { is_user: true, mes: "Go on." });
+    q.storyPlan.enabled = true; const keepPlan = q.storyPlan.currentPlan; q.storyPlan.currentPlan = money;
+    const reply = await run("VCRP V10 Universal.json");
+    assert(text(reply).includes(money), "a directive with a $ goes into the reply prompt as written");
+    q.storyPlan.currentPlan = keepPlan; q.storyPlan.enabled = false; q.knowledgebase.enabled = kbOn;
+    chat.length = 0;
+}
+console.log("35 ok background calls (counted apart, the Director reads the memory, scans read what is new, priced before sending)");
+
+// 36. Focus: an audit every N replies reads them against the card and earlier findings, its
+//     correction waits for review, then rides in the per-turn rules (both presets, after the
+//     chat history, so the cached part never changes); findings that come back are counted.
+{
+    const focus = await imp("src/vcrp/focus/index.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const q = state.localProfile;
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const seed = n => { chat.length = 0; for (let i = 0; i < n; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `f${i}`, mes: `Line ${i}. ` + (i % 2 ? "Alice smirks and pours the coffee, the air thick with tension. " : "Bob orders. ").repeat(4) }); };
+    const answer = body => async () => { const m = [{ role: "system", content: "main preset" }]; vcrpSetGenerationType("quiet", {}, false); await handlePromptInjection({ chat: m, dryRun: false }); sent.push(m); return body; };
+    let sent = [];
+    const FIRST = "<think>Reading.</think>\n<recurring>none</recurring>\n<findings>\n- [motif] Alice smirks in every reply\n- [slop] \"the air thick with tension\" in most replies\n- [drift] Alice has gone soft and agreeable\n</findings>\n<note>\nStop the smirk. Drop \"air thick with\". Alice is curt and sardonic again.\n</note>";
+
+    // Off by default: nothing in the prompt, no tag left over.
+    delete meta.vcrp_focus;
+    seed(30);
+    assert(!focus.focusSettings().enabled, "off by default");
+    let msgs = await run("VCRP V10 Universal.json");
+    assert.deepEqual(leftovers(msgs), [], "no [[focus]] left in the prompt");
+    assert.equal(await focus.focusAuditIfDue(), null, "off: never due");
+
+    // On, every 10: due, and an audit reads the last 10 replies with the player's messages.
+    q.focus = { enabled: true, every: 10, checks: { drift: true, motifs: true, slop: true } };
+    const input = focus.focusAuditInput();
+    assert(input.replies === 10 && input.text.startsWith("Bob (player): Line 10.") && input.text.includes("Alice: Line 29.") && !input.text.includes("Line 9."), "the last 10 replies and the player's messages between them");
+    assert(input.card.includes("Alice is a barista."), "the card goes in");
+    assert(focus.focusEstimate().text.startsWith("Sends about"), "priced before it runs");
+
+    // The audit: its own prompt, the answer waits for review, nothing reaches the prompt yet.
+    quietImpl = answer(FIRST);
+    let r = await focus.focusAuditIfDue();
+    assert.equal(r.status, "pending", JSON.stringify(r));
+    const audit = sent[0];
+    assert(textOf(audit[0]).includes("line editor") && text(audit).includes("<character_card>") && text(audit).includes("None yet. This is the first audit.") && text(audit).includes("Alice: Line 29."), "the audit's own prompt: card, no earlier findings, the replies");
+    assert(!text(audit).includes("main preset"), "the roleplay prompt is replaced");
+    let st = focus.peekFocusState();
+    assert(st.pending.findings.length === 3 && st.pending.note.startsWith("Stop the smirk."), "parsed: three findings and the note");
+    assert.equal(focus.repliesSinceAudit(), 0, "the replies count as audited");
+    assert.equal(await focus.focusAuditIfDue(), null, "an audit waiting for review holds the next one");
+    msgs = await run("VCRP V10 Universal.json");
+    assert(!text(msgs).includes("[FOCUS]"), "review first: nothing in the prompt before approval");
+    const before = msgs;
+
+    // Approved (edited): the note goes out with every reply, after the chat history.
+    await focus.approveFocusAudit("Stop the smirk. Alice is curt again. Cost $$5.");
+    for (const preset of ["VCRP V10 Universal.json", "VCRP V10 Megumin Original.json"]) {
+        msgs = await run(preset);
+        const at = msgs.findIndex(m => textOf(m).includes("[FOCUS]"));
+        const lastReply = msgs.map(m => m.role).lastIndexOf("assistant", msgs.length - 2);
+        assert(at > -1 && textOf(msgs[at]).includes("Alice is curt again. Cost $$5."), `${preset}: the approved note, as written`);
+        assert(at > lastReply, `${preset}: after the chat history (index ${at}, last reply ${lastReply})`);
+    }
+    // The Megumin mirror's engines: the correction once, every other word as with Focus off;
+    // an impersonation (writing {{user}}'s turn) goes without it.
+    const keepEngine = { mode: q.mode, model: q.model };
+    for (const [mode, model] of [["v10-ukiyo-megumin", "cot-meg-ukiyo-english"], ["v10-shura-megumin", "cot-meg-shura-english"]]) {
+        Object.assign(q, { mode, model });
+        for (const kind of ["normal", "continue", "impersonate"]) {
+            const on = text(await run("VCRP V10 Megumin Original.json", kind));
+            q.focus.enabled = false;
+            const off = text(await run("VCRP V10 Megumin Original.json", kind));
+            q.focus.enabled = true;
+            const n = on.split("[FOCUS]").length - 1;
+            assert.equal(n, kind === "impersonate" ? 0 : 1, `${mode} ${kind}: the correction ${kind === "impersonate" ? "left out" : "once"}`);
+            const stripped = on.replace(/\[FOCUS\][^\n]*\n[^\n]*\n[^\n]*\n\n/, "").replace(/\n{3,}/g, "\n\n");
+            assert.equal(stripped, off.replace(/\n{3,}/g, "\n\n"), `${mode} ${kind}: everything else as with Focus off`);
+        }
+    }
+    Object.assign(q, keepEngine);
+    vcrpSetGenerationType("normal", {}, false);
+    msgs = await run("VCRP V10 Universal.json");
+    const upTo = m => m.map(textOf).slice(0, m.map(x => x.role).lastIndexOf("assistant", m.length - 2) + 1);
+    assert.deepEqual(upTo(msgs), upTo(before), "everything up to the last reply is unchanged: the cache is untouched");
+    st = focus.peekFocusState();
+    assert.deepEqual(st.items.map(i => `${i.id}:${i.kind}:${i.times}`), ["F1:motif:1", "F2:slop:1", "F3:drift:1"], "the findings are kept, numbered");
+
+    // A reply sent while an audit runs keeps the roleplay prompt.
+    const { setActiveFocusAudit } = await imp("src/core/activeRequests.js");
+    setActiveFocusAudit(input);
+    msgs = await run("VCRP V10 Universal.json");
+    setActiveFocusAudit(null);
+    assert(text(msgs).includes("Writer's Mind") && !text(msgs).includes("line editor"), "a reply during an audit is not hijacked");
+
+    // Ten more replies: the next audit is shown the list and says what came back.
+    for (let i = 30; i < 50; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `f${i}`, mes: `Line ${i}. Alice smirks again.` + " More words.".repeat(20) });
+    assert.equal(focus.repliesSinceAudit(), 10, "ten new replies");
+    sent = [];
+    quietImpl = answer("<recurring>F1, F9</recurring>\n<findings>\n- [motifs] every scene ends on a door closing\n- [slop] a mix of fear and want\n</findings>\n<note>The smirk is back after a correction: cut it. Vary scene endings.</note>");
+    q.focus.checks.slop = false;
+    r = await focus.focusAuditIfDue();
+    assert.equal(r.status, "pending");
+    assert(text(sent[0]).includes("F1 [motif] Alice smirks in every reply (flagged 1 time)") && !text(sent[0]).includes("- [slop] Slop."), "the earlier findings go in; a check that is off is not asked for");
+    st = focus.peekFocusState();
+    assert(st.pending.findings.length === 1 && st.pending.findings[0].kind === "motif", "a finding of a check that is off is dropped; [motifs] reads as a motif");
+    await focus.approveFocusAudit();
+    assert.deepEqual(st.items.map(i => `${i.id}:${i.times}`), ["F1:2", "F2:1", "F3:1", "F4:1"], "the motif that came back is counted; an unknown number is ignored");
+    assert(focus.vcrpFocusBlock().includes("The smirk is back"), "the new note replaces the old one");
+    q.focus.checks.slop = true;
+
+    // Repeat offenders: what came back after a correction stays in the prompt under every new one.
+    let block = focus.vcrpFocusBlock();
+    assert(block.includes(`${focus.FOCUS_STANDING_INTRO}\n- Alice smirks in every reply`) && !block.includes("- \"the air thick"), "the motif that came back stays; a one-time finding does not");
+    const keepNote = focus.peekFocusState().note;
+    await focus.setFocusNote("Vary the pacing.");
+    block = focus.vcrpFocusBlock();
+    assert(block.includes("Vary the pacing.\nEarlier audits kept finding these. Keep them out:\n- Alice smirks in every reply"), "a later correction that leaves it out still carries it");
+    q.focus.standing = false;
+    assert(!focus.vcrpFocusBlock().includes("Keep them out"), "Keep repeat offenders off: the correction alone");
+    q.focus.standing = true;
+    await focus.setFocusNote("");
+    assert.equal(focus.vcrpFocusBlock(), "", "taking the correction out takes the repeat offenders with it");
+    await focus.setFocusNote(keepNote);
+    const top = focus.focusStanding({ items: [2, 5, 1, 3, 4].map((t, i) => ({ id: `F${i}`, kind: "motif", text: `x${t}`, times: t, last: i })) });
+    assert.deepEqual(top.map(i => i.times), [5, 4, 3], "at most three, the most flagged first");
+
+    // Clean, failed, stopped, discarded.
+    for (let i = 50; i < 70; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `f${i}`, mes: `Line ${i}.` + " Fine prose.".repeat(20) });
+    quietImpl = answer("<recurring>none</recurring><findings>none</findings><note>none</note>");
+    r = await focus.focusAuditIfDue();
+    assert(r.status === "clean" && !focus.peekFocusState().pending && focus.vcrpFocusBlock().includes("The smirk is back"), "no drift: nothing to review, the note stays");
+    for (let i = 70; i < 90; i++) chat.push({ is_user: i % 2 === 0, name: "X", send_date: `f${i}`, mes: `Line ${i}.` + " Fine.".repeat(20) });
+    quietImpl = answer("");
+    r = await focus.focusAuditIfDue();
+    assert(r.status === "aborted" && focus.repliesSinceAudit() === 10 && !focus.peekFocusState().failures, "stopped: no failure, the replies are still due");
+    quietImpl = answer("I refuse to follow the format.");
+    r = await focus.focusAuditIfDue();
+    assert(r.status === "failed" && !r.paused && focus.repliesSinceAudit() === 10, "a malformed answer is a failure, the replies stay due");
+    r = await focus.focusAuditIfDue();
+    assert(r.status === "failed" && r.paused, "two in a row: paused");
+    assert.equal(await focus.focusAuditIfDue(), null, "paused: not due until a manual audit");
+    quietImpl = answer(FIRST);
+    r = await focus.runFocusAudit();
+    assert(r.status === "pending" && !focus.peekFocusState().failures, "a manual audit works and clears the pause");
+    await focus.discardFocusAudit();
+    assert(!focus.peekFocusState().pending && focus.peekFocusState().items.length === 4, "discarded: nothing it found is kept");
+
+    // The chat changes during an audit: the result is dropped.
+    for (let i = 90; i < 110; i++) chat.push({ is_user: i % 2 === 0, name: "X", send_date: `f${i}`, mes: `Line ${i}.` + " Fine.".repeat(20) });
+    quietImpl = async () => { ctx.chatId = "another chat"; return FIRST; };
+    r = await focus.runFocusAudit();
+    ctx.chatId = undefined;
+    assert(r.status === "aborted" && !focus.peekFocusState().pending, "a chat switch mid-audit discards it");
+
+    // Counted in the spend estimate with Story Memory on; off, Focus adds nothing to the prompt.
+    q.vcrpMemory.enabled = true;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-4-6" });
+    delete meta.vcrp_memory;
+    quietImpl = answer(FIRST);
+    await focus.runFocusAudit();
+    assert(memory.memoryState().spend.bgCalls === 1 && memory.memoryState().spend.bgCost > 0, "an audit is in the spend estimate");
+    q.vcrpMemory.enabled = false; delete meta.vcrp_memory;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+    q.focus.enabled = false;
+    assert.equal(focus.vcrpFocusBlock(), "", "Focus off: no note in the prompt, though one is saved");
+
+    // Parsing on its own: thinking without an opening tag, numbered lines, none.
+    const parsed = focus.parseFocusAudit("…still thinking</think><recurring>f2</recurring><findings>\n1. [drift]: Bob talks like Alice\n</findings><note>None.</note>");
+    assert.deepEqual(parsed, { recurring: ["F2"], findings: [{ kind: "drift", text: "Bob talks like Alice" }], note: "" }, JSON.stringify(parsed));
+    assert.equal(focus.parseFocusAudit("no tags at all"), null);
+    assert.equal(focus.parseFocusAudit("<findings>none</findings><note>Cut the smirk, then").note, "Cut the smirk, then", "a note cut off by the length limit still counts");
+    // However the model dresses a finding; a finding that only starts with a kind's word is not one.
+    const kinds = t => focus.parseFocusAudit(`<findings>\n${t}\n</findings><note>n</note>`, { drift: true, motifs: true, slop: true }).findings.map(f => `${f.kind}:${f.text}`);
+    assert.deepEqual(kinds("- **[motif]** the smirk\n- [SLOP]: air thick with\n- Motif: eyes darken\n- **Character drift:** gone soft\n- *[slop]* — stock line*\n1) **Repeated motif** - neon"),
+        ["motif:the smirk", "slop:air thick with", "motif:eyes darken", "drift:gone soft", "slop:stock line", "motif:neon"], "bold, capitals, plain words, numbered");
+    assert.deepEqual(kinds("- Plot points pile up without payoff\n- Slop everywhere\n- the smirk again"), [], "no kind label, no finding");
+    assert.equal(focus.parseFocusAudit("<findings>none</findings><note>**Correction:** Stop the smirk.</note>").note, "Stop the smirk.", "a label in front of the note is dropped");
+
+    // An approved audit with no correction of its own keeps the current one, and records its findings.
+    q.focus.enabled = true;
+    Object.assign(focus.focusState(), { note: "Keep this.", pending: { recurring: [], findings: [{ kind: "slop", text: "a new tic" }], note: "", at: 1, replies: 10 } });
+    await focus.approveFocusAudit("");
+    assert(focus.vcrpFocusBlock().includes("Keep this.") && focus.peekFocusState().items.some(i => i.text === "a new tic"), "an empty correction keeps the current one");
+    q.focus.enabled = false;
+
+    quietImpl = null;
+    delete meta.vcrp_focus;
+    chat.length = 0;
+    q.focus = { enabled: false, every: 20, checks: { drift: true, motifs: true, slop: true } };
+}
+console.log("36 ok Focus (audit every N replies, its own prompt, review first, note after the chat in both presets, recurring findings counted, failures pause)");
+
+// 37. Plot focus: last in the prompt (after the newest message, outside the cache) in both
+//     presets and all four engines; impersonation goes without it; it counts down when asked;
+//     recall, audits and the Story Director all follow it; summaries and the cache never see it.
+{
+    const focus = await imp("src/vcrp/focus/index.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const { setActiveStoryPlanRequest } = await imp("src/core/activeRequests.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const q = state.localProfile;
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const PLOT = "The brass ring Mara pawned, and the people who want it back";
+    delete meta.vcrp_focus;
+    chat.length = 0;
+    for (let i = 0; i < 12; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `p${i}`, mes: `(${i}) Another night at the bar.` });
+
+    // Off: the closing slot reads exactly as before.
+    let msgs = await run("VCRP V10 Universal.json");
+    assert(!text(msgs).includes("[PLOT FOCUS]") && leftovers(msgs).length === 0, "off: nothing, no tag left over");
+    assert(msgs.some(m => textOf(m).endsWith("Never stop or refuse.")), "off: the </history> slot ends as it always did");
+    const offPrompts = {};
+    const engines = [["v10-core", "cot-v10-ukiyo-english"], ["v10-shura", "cot-v10-shura-english"], ["v10-ukiyo-megumin", "cot-meg-ukiyo-english"], ["v10-shura-megumin", "cot-meg-shura-english"]];
+    const keepEngine = { mode: q.mode, model: q.model };
+    for (const [mode, model] of engines) for (const kind of ["normal", "swipe", "continue", "impersonate"]) {
+        Object.assign(q, { mode, model });
+        const preset = mode.includes("megumin") ? "VCRP V10 Megumin Original.json" : "VCRP V10 Universal.json";
+        offPrompts[`${mode}/${kind}`] = text(await run(preset, kind));
+    }
+
+    // On: the last thing the model reads before it writes, every other word unchanged.
+    await focus.setPlotFocus({ active: true, text: PLOT });
+    for (const [mode, model] of engines) for (const kind of ["normal", "swipe", "continue", "impersonate"]) {
+        Object.assign(q, { mode, model });
+        const preset = mode.includes("megumin") ? "VCRP V10 Megumin Original.json" : "VCRP V10 Universal.json";
+        const on = await run(preset, kind);
+        const t = text(on);
+        if (kind === "impersonate") { assert.equal(t, offPrompts[`${mode}/${kind}`], `${mode} impersonate: the reader steers their own turn`); continue; }
+        assert.equal(t.split("[PLOT FOCUS]").length - 1, 1, `${mode} ${kind}: once`);
+        const at = on.findIndex(m => textOf(m).includes("[PLOT FOCUS]"));
+        const newest = on.map(textOf).lastIndexOf("latest user msg");
+        // After it: only the prefill, or a Continue's own instruction, which must come last.
+        assert(at > newest && on.slice(at + 1).every(m => m.role === "assistant" || /^\[Continue your previous reply/.test(textOf(m))), `${mode} ${kind}: after the newest message, nothing but the prefill (or Continue's note) after it`);
+        assert(textOf(on[at]).trimEnd().endsWith("never mention this note."), `${mode} ${kind}: it closes the slot`);
+        assert.equal(t.replace(/\n\n\[PLOT FOCUS\][\s\S]*?never mention this note\./, ""), offPrompts[`${mode}/${kind}`], `${mode} ${kind}: every other word as with it off`);
+    }
+    Object.assign(q, keepEngine);
+    msgs = await run("VCRP V10 Universal.json");
+    const block = textOf(msgs.find(m => textOf(m).includes("[PLOT FOCUS]")));
+    assert(block.includes(`The story should revolve around: ${PLOT}`) && block.includes(focus.focusPrompt("plotCentral")) && block.includes("Answer Bob's latest message first"), "central by default, {{user}} filled in");
+    await focus.setPlotFocus({ strength: "driving" });
+    assert(text(await run("VCRP V10 Universal.json")).includes(focus.focusPrompt("plotDriving")), "the strength changes the steer");
+
+    // The cache: VCRP's marks on OpenRouter sit on the same replies, and everything up to them is identical.
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "anthropic/claude-opus-4.6" });
+    const marked = m => m.map((x, i) => (Array.isArray(x.content) && x.content.some(p => p.cache_control)) ? i : -1).filter(i => i >= 0);
+    const withPlot = await run("VCRP V10 Megumin Original.json");
+    await focus.setPlotFocus({ active: false });
+    const without = await run("VCRP V10 Megumin Original.json");
+    await focus.setPlotFocus({ active: true });
+    const mk = marked(withPlot);
+    assert(mk.length === 2 && JSON.stringify(mk) === JSON.stringify(marked(without)), `the cache marks do not move (${mk})`);
+    assert.deepEqual(withPlot.slice(0, mk[1] + 1).map(textOf), without.slice(0, mk[1] + 1).map(textOf), "nothing cached changes");
+    assert(withPlot.findIndex(m => textOf(m).includes("[PLOT FOCUS]")) > mk[1], "it sits after the newest mark");
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+
+    // A Story Memory summary call drops it with the other story-turn slots.
+    const { TASK_MARKER } = await imp("src/vcrp/memory/prompts.js");
+    q.vcrpMemory.enabled = true;
+    memory.setMemoryTaskActive(true, null);
+    vcrpSetGenerationType("quiet", {}, false);
+    const summary = buildPrompt("VCRP V10 Megumin Original.json");
+    summary.push({ role: "system", content: `${TASK_MARKER}: not a story turn.] Summarize.` });
+    await handlePromptInjection({ chat: summary, dryRun: false });
+    memory.setMemoryTaskActive(false);
+    assert(!text(summary).includes("[PLOT FOCUS]"), "a summary call does not carry it");
+
+    // Recall: an old chapter about the plot focus comes back though the scene never names it.
+    for (let i = 12; i < 40; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `p${i}`, mes: `(${i}) Another night at the bar.` });
+    Object.assign(memory.memoryState(), {
+        cut: memory.anchorOf(chat, 20), summarized: memory.anchorOf(chat, 20), shown: "", hiddenFacts: [], ledger: [], arcs: [],
+        chapters: [
+            { id: "C1", gist: "Mara pawned a ring.", chapter: "Mara pawned her mother's brass ring at Okafor's pawnshop to pay the rent.", from: 0, to: 9, start: null, end: memory.anchorOf(chat, 10) },
+            { id: "C2", gist: "A storm.", chapter: "A storm flooded the harbor road.", from: 10, to: 19, start: memory.anchorOf(chat, 10), end: memory.anchorOf(chat, 20) },
+        ],
+    });
+    vcrpSetGenerationType("normal", {}, false);
+    assert(text(await run("VCRP V10 Universal.json")).includes("Okafor's pawnshop"), "recall brings back the chapter about the plot focus");
+    assert.deepEqual(memory.previewRecall("").ids, ["C1"], "Preview recall agrees");
+    await focus.setPlotFocus({ active: false });
+    assert(!text(await run("VCRP V10 Universal.json")).includes("Okafor's pawnshop"), "off: the scene alone decides");
+    await focus.setPlotFocus({ active: true });
+    q.vcrpMemory.enabled = false;
+
+    // Audits check plot drift; plot findings go when the plot focus changes.
+    q.focus = { enabled: true, every: 10, checks: { drift: true, motifs: false, slop: false } };
+    const input = focus.focusAuditInput();
+    const audit = focus.buildFocusAuditMessages(input);
+    assert(text(audit).includes(`<plot_focus>\n${PLOT}\n</plot_focus>`) && text(audit).includes("- [plot] Plot drift.") && text(audit).includes("[drift], [plot]"), "the audit is given the plot focus and asked about plot drift");
+    const parsed = focus.parseFocusAudit("<recurring>none</recurring><findings>\n- [plot] the ring has not come up in 8 replies\n- [slop] off check\n</findings><note>Bring the ring back.</note>", input.checks, { plot: true });
+    assert.deepEqual(parsed.findings, [{ kind: "plot", text: "the ring has not come up in 8 replies" }], "a plot finding is kept; a finding of a check that is off is not");
+    assert.deepEqual(focus.parseFocusAudit("<findings>\n- [plot] x\n</findings><note>n</note>", input.checks).findings, [], "without a plot focus, no plot findings");
+    Object.assign(focus.focusState(), { items: [{ id: "F1", kind: "plot", text: "ring forgotten", times: 2, last: 1 }, { id: "F2", kind: "drift", text: "soft", times: 1, last: 1 }] });
+    await focus.setPlotFocus({ text: "Alice's sister arriving in town" });
+    assert.deepEqual(focus.peekFocusState().items.map(i => i.id), ["F2"], "a new plot focus drops the old one's findings");
+    await focus.setPlotFocus({ text: PLOT });
+
+    // The Story Director plans around it.
+    setActiveStoryPlanRequest("Bob: hello\n\nAlice: hi there, this is the story so far, long enough to plan from.");
+    const director = [{ role: "user", content: "x" }];
+    await handlePromptInjection({ chat: director, dryRun: false });
+    setActiveStoryPlanRequest(null);
+    assert(text(director).includes(`- Plot Focus (Driving; build the blueprint around it): ${PLOT}`), "the Director's settings carry it");
+
+    // The count: on for 2 replies from now; a swipe of the last one still gets it.
+    const said = [];
+    globalThis.toastr = { info: m => said.push(m), success() {}, warning() {}, error() {} };
+    await focus.setPlotFocus({ endAfter: 2 });
+    assert.equal(focus.plotFocusRemaining(), 2, "two replies left");
+    chat.push({ is_user: true, name: "Bob", send_date: "c1", mes: "go" }, { is_user: false, name: "Alice", send_date: "c2", mes: "first" });
+    focus.vcrpFocusAfterReply(String(chat.length - 1), "normal");
+    assert(focus.plotFocusActive() && said.length === 0, "one left, still on");
+    chat.push({ is_user: true, name: "Bob", send_date: "c3", mes: "go" }, { is_user: false, name: "Alice", send_date: "c4", mes: "second" });
+    assert(!focus.plotFocusActive() && !text(await run("VCRP V10 Universal.json")).includes("[PLOT FOCUS]"), "used up: no longer sent");
+    focus.vcrpFocusAfterReply(String(chat.length - 1), "normal");
+    focus.vcrpFocusAfterReply(String(chat.length - 1), "normal");
+    assert(said.filter(m => m.includes("has run its 2 replies")).length === 1, "it says so once");
+    vcrpSetGenerationType("swipe", {}, false);
+    assert(focus.plotFocusActive(), "a swipe of the last reply still gets it");
+    vcrpSetGenerationType("normal", {}, false);
+    await focus.setPlotFocus({ active: false });
+    await focus.setPlotFocus({ active: true });
+    assert(focus.plotFocusActive() && focus.plotFocusRemaining() === 2, "switching it on again restarts the count");
+    delete globalThis.toastr;
+
+    // Setup Check: a preset imported before the tag cannot carry it.
+    const presetJson = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V10 Universal", prompts: presetJson.prompts, prompt_order: presetJson.prompt_order, extensions: presetJson.extensions });
+    const warned = () => vcrpHealthCheck().items.some(i => /Re-import the preset: .*plot focus/.test(i.title));
+    assert(!warned(), "the current preset: no warning");
+    chatCompletionSettings.prompts = presetJson.prompts.map(p => ({ ...p, content: String(p.content || "").replace("[[plotfocus]]", "") }));
+    assert(warned(), "an old preset: re-import");
+    for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
+
+    delete meta.vcrp_focus; delete meta.vcrp_memory;
+    chat.length = 0;
+    q.focus = { enabled: false, every: 20, checks: { drift: true, motifs: true, slop: true } };
+}
+console.log("37 ok plot focus (last in the prompt in both presets and all engines, cache untouched, countdown, recall, audits, Director, summaries, Setup Check)");
+
+// 38. Focus prompts the reader can edit (used only while their edits are on, a blank one falls
+//     back, stored as a difference from the built-in text), and the one-time update notice.
+{
+    const focus = await imp("src/vcrp/focus/index.js");
+    const { DEFAULT_PROMPTS } = await imp("src/prompts/index.js");
+    const { meguminSparsifyProfilePrompts, meguminRehydrateProfilePrompts } = await imp("src/prompts/storage.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const q = state.localProfile;
+    delete meta.vcrp_focus;
+    chat.length = 0;
+    for (let i = 0; i < 12; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `e${i}`, mes: `(${i}) Alice pours a drink and says something dry about the weather, the rent, the regulars.` });
+    q.focus = { enabled: true, every: 5, checks: { drift: true, motifs: true, slop: true },
+        customPromptsEnabled: false,
+        customPrompts: { ...JSON.parse(JSON.stringify(DEFAULT_PROMPTS.focus)), checkSlop: "- [slop] Count every \"$$ and $'\" cliché.", plotTemplate: "[PLOT] {{plot}} / {{strength}} / {{user}} / {{nope}}", plotCentral: "" } };
+    await focus.setPlotFocus({ active: true, text: "the ring {{strength}}" });
+    const audit = () => text(focus.buildFocusAuditMessages(focus.focusAuditInput()));
+    assert(audit().includes(DEFAULT_PROMPTS.focus.checkSlop) && focus.vcrpPlotFocusBlock().includes("[PLOT FOCUS]"), "edits off: the built-in text");
+    q.focus.customPromptsEnabled = true;
+    assert(audit().includes("- [slop] Count every \"$$ and $'\" cliché.") && !audit().includes(DEFAULT_PROMPTS.focus.checkSlop), "edits on: the reader's check, $ and all");
+    assert.equal(focus.vcrpPlotFocusBlock(), `\n\n[PLOT] the ring {{strength}} / ${DEFAULT_PROMPTS.focus.plotCentral} / {{user}} / {{nope}}`, "tokens filled once; a blank field falls back; unknown tokens left for SillyTavern");
+    assert(text(await run("VCRP V10 Universal.json")).includes("[PLOT] the ring {{strength}} / Make it the center of the story") && text(await run("VCRP V10 Universal.json")).includes(" / Bob / "), "in the prompt, {{user}} filled by SillyTavern's own pass");
+    const stored = meguminSparsifyProfilePrompts(JSON.parse(JSON.stringify(q)));
+    assert.deepEqual(Object.keys(stored.focus.customPrompts).sort(), ["checkSlop", "plotCentral", "plotTemplate"], "only the edited keys are stored");
+    meguminRehydrateProfilePrompts(stored);
+    assert.equal(stored.focus.customPrompts.auditTask, DEFAULT_PROMPTS.focus.auditTask, "and the rest come back on load");
+    q.focus.customPromptsEnabled = false;
+
+    // The update notice: an update shows it once; a fresh install never needs it.
+    const wn = await imp("src/vcrp/whatsNew.js");
+    const gsKeep = extension_settings.VCRP.globalSettings.whatsNewSeen;
+    assert.equal(gsKeep, wn.WHATS_NEW_ID, "a fresh install starts with it seen");
+    delete extension_settings.VCRP.globalSettings.whatsNewSeen;
+    const toasts = [];
+    globalThis.toastr = { info: (m, t) => toasts.push(`${t}: ${m}`) };
+    wn.whatsNewToast();
+    assert(toasts.length === 1 && toasts[0].includes("Import the VCRP preset again") && toasts[0].includes(wn.WHATS_NEW_ID), "after an update: one toast that says to re-import");
+    wn.markWhatsNewSeen();
+    wn.whatsNewToast();
+    assert(toasts.length === 1 && !wn.hasUnseenWhatsNew(), "once seen, never again");
+    delete globalThis.toastr;
+    const manifest = JSON.parse(readFileSync(join(REPO, "manifest.json"), "utf8"));
+    assert.equal(manifest.version, wn.WHATS_NEW_ID, "the notice belongs to the version in manifest.json");
+
+    await focus.setPlotFocus({ active: false });
+    delete meta.vcrp_focus;
+    chat.length = 0;
+    q.focus = { enabled: false, every: 20, checks: { drift: true, motifs: true, slop: true } };
+}
+console.log("38 ok Focus prompts editable (on/off, blank falls back, $-safe, stored as a diff) and the update notice (once, fresh installs skip it)");
+
 console.log("\nALL FORK CHECKS PASSED");

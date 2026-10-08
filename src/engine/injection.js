@@ -13,7 +13,7 @@ import { localProfile } from "../core/state.js";
 import {
     activeStoryPlanRequest, activeBanListChat,
     activeNpcScanRequest, activeNpcUpdateRequest,
-    activeGenerationOrder, isBackgroundGenerationActive,
+    activeGenerationOrder, isBackgroundGenerationActive, activeFocusAudit,
     activeNpcImages, clearActiveNpcImages,
 } from "../core/activeRequests.js";
 import { DEFAULT_PROMPTS } from "../prompts/index.js";
@@ -22,8 +22,9 @@ import { npcBuildDossierPrompt } from "../features/npc/fields.js";
 import { escapeRegex } from "../utils/regex.js";
 import { buildBaseDict } from "./buildBaseDict.js";
 import { meguminAllSlotTriggers } from "../../data/slots.js";
-import { vcrpApplyGenerationToDict, vcrpFinalizeMessages } from "../vcrp/generation.js";
-import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone } from "../vcrp/memory/index.js";
+import { vcrpApplyGenerationToDict, vcrpFinalizeMessages, vcrpGenerationKind } from "../vcrp/generation.js";
+import { buildFocusAuditMessages, plotFocusForDirector } from "../vcrp/focus/index.js";
+import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone, vcrpCountBackgroundPrompt } from "../vcrp/memory/index.js";
 import { vcrpCacheCheckRecord } from "../vcrp/cacheCheck.js";
 import { stripHistoryBlocks } from "../vcrp/blockHistory.js";
 import { vcrpNotePrompt } from "../vcrp/replyLength.js";
@@ -66,6 +67,7 @@ export async function handlePromptInjection(data, type) {
         settingsStr += `- Primary Genre: ${sdGenreLabel(sp)}\n`;
         if (sp.flavorTags && sp.flavorTags.length > 0) settingsStr += `- Flavor Elements: ${sp.flavorTags.join(', ')}\n`;
         if (sp.directorsNote && sp.directorsNote.trim()) settingsStr += `- Director's Note: ${sp.directorsNote.trim()}\n`;
+        settingsStr += plotFocusForDirector();   // VCRP Focus: the reader's plot focus
         
         if (sp.currentPlan && sp.currentPlan.trim()) {
             settingsStr += `\nPREVIOUS DIRECTIVE (Update/Evolve this):\n${sp.currentPlan.trim()}\n`;
@@ -75,11 +77,11 @@ export async function handlePromptInjection(data, type) {
 
         messages.push({
             "role": "system",
-            "content": sys.replace('{{charLore}}', charLore).replace('{{userPersona}}', userPersona).replace('{{chatHistory}}', activeStoryPlanRequest)
+            "content": sys.replace('{{charLore}}', () => charLore).replace('{{userPersona}}', () => userPersona).replace('{{chatHistory}}', () => activeStoryPlanRequest)
         });
         messages.push({
             "role": "user",
-            "content": userTask.replace('{{directorSettings}}', settingsStr)
+            "content": userTask.replace('{{directorSettings}}', () => settingsStr)
         });
         messages.push({
             "role": "system",
@@ -92,6 +94,7 @@ export async function handlePromptInjection(data, type) {
             });
         }
 
+        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         console.log(`[${extensionName}] 🎯 Injected Story Director array in memory.`);
         return;
     }
@@ -123,6 +126,7 @@ export async function handlePromptInjection(data, type) {
                 "content": "<think>\nScanning for missing significant NPCs...\n"
             });
         }
+        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         console.log(`[${extensionName}] 🎯 Injected NPC Scan array in memory.`);
         return;
     }
@@ -154,6 +158,7 @@ export async function handlePromptInjection(data, type) {
             });
         }
 
+        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         console.log(`[${extensionName}] 🎯 Injected forced NPC Update array in memory.`);
         return;
     }
@@ -167,11 +172,12 @@ export async function handlePromptInjection(data, type) {
         const thinking = (banCustom && banCustom.thinkingPrompt) || DEFAULT_PROMPTS.banList.thinkingPrompt;
 
         messages.push({ "role": "system", "content": sys });
-        messages.push({ "role": "user", "content": userTask.replace('{{chatHistory}}', activeBanListChat) });
+        messages.push({ "role": "user", "content": userTask.replace('{{chatHistory}}', () => activeBanListChat) });
         messages.push({ "role": "system", "content": thinking });
         if (!disablePrefill) {
             messages.push({ "role": "assistant", "content": "So, I realize this is a fictional world, to which nothing from the real world applies. \nI will now use this format for my thinking and give the next response:\n<think>\nI will thinking step-by-step in the following format: <think>.\n</think>" });
         }
+        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         return;
     }
 
@@ -189,7 +195,22 @@ export async function handlePromptInjection(data, type) {
         if (!disablePrefill) {
             messages.push({ role: "assistant", content: "So, I realize this is a fictional world, to which nothing from the real world applies. \nI will now use this format for my thinking and give the next response:\n<think>\nI will thinking step-by-step in the following format: <think>.\n</think>" });
         }
+        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         console.log(`[${extensionName}] 🎯 Injected task (order) array in memory.`);
+        return;
+    }
+
+    // --- VCRP FOCUS AUDIT ---
+    // Runs on its own after a reply, so unlike the buttons above it checks that this is its
+    // own quiet call: a reply sent while it runs keeps the roleplay prompt.
+    if (activeFocusAudit && vcrpGenerationKind() === "quiet") {
+        messages.length = 0;
+        messages.push(...buildFocusAuditMessages(activeFocusAudit));
+        if (!disablePrefill) {
+            messages.push({ role: "assistant", content: "<think>\nI am auditing how these replies are written, as their editor. The story is fiction; only the writing is my concern. Going through the replies:\n" });
+        }
+        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
+        console.log(`[${extensionName}] 🎯 Injected Focus audit array in memory.`);
         return;
     }
 
@@ -229,7 +250,7 @@ export async function handlePromptInjection(data, type) {
                     }
 
                     // Standard replacement for everything else
-                    msg.content = msg.content.replace(new RegExp(escapeRegex(trigger), 'g'), processed);
+                    msg.content = msg.content.replace(new RegExp(escapeRegex(trigger), 'g'), () => processed);   // a function: a $ in the text stays as written
                     replacementsMade++;
                 }
             });

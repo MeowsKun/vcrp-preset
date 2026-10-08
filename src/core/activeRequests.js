@@ -32,6 +32,10 @@ export function setActiveNpcScanRequest(v) { activeNpcScanRequest = v; }
 export let activeNpcUpdateRequest = null;
 export function setActiveNpcUpdateRequest(v) { activeNpcUpdateRequest = v; }
 
+// VCRP Focus audit: { text, card, items, checks, ... } (vcrp/focus/index.js).
+export let activeFocusAudit = null;
+export function setActiveFocusAudit(v) { activeFocusAudit = v; }
+
 // Manual "run this order" task: substituted into [[order]] placeholders.
 export let activeGenerationOrder = null;
 export function setActiveGenerationOrder(v) { activeGenerationOrder = v; }
@@ -58,6 +62,7 @@ export function isBackgroundGenerationActive() {
         activeStoryPlanRequest ||
         activeBanListChat ||
         activeNpcUpdateRequest ||
-        activeGenerationOrder
+        activeGenerationOrder ||
+        activeFocusAudit
     );
 }

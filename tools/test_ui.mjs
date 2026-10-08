@@ -105,6 +105,7 @@ p.addons = ["bold_npcs", "html", "color", "dn"];
 if (p.npcBank) { p.npcBank.enabled = true; p.npcBank.npcs = [{ name: "Mara", appearance: "tall", pfp: "" }]; }
 
 if (p.storyPlan) p.storyPlan.enabled = true;
+p.focus = { enabled: true, every: 20, checks: { drift: true, motifs: true, slop: true } };
 p.banList = ["no purple prose"];
 // Story Memory on, with a chapter, an arc, a fact and a chapter waiting for review.
 const memory = await imp("src/vcrp/memory/index.js");
@@ -184,6 +185,120 @@ for (let k = 0; k < memCount; k++) {
     check(capNow === 9000, `the safety cap is not saved (${capNow})`);
     clicks += 3;
     console.log("  ✓ Reply length (Story Memory off): drawn, and each control reaches its setting");
+}
+// Background calls: their price shows before sending (Story Director, NPC scan, NPC update),
+// "Only New Messages" reaches its setting, and the Memory tab counts them in what was spent.
+{
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ Background calls: ${what}`); } };
+    const failedBefore = failures;
+    const box = $("#ps_stage_content");
+    switchTab(tabsUI.findIndex(t => t.title === "Story Director"));
+    check(/^Sends about [\d.]+k tokens, roughly \$[\d.]+ on Claude Opus 5\.5\.$/.test(box.find("#sd_cost_estimate").text()), `Story Director estimate: "${box.find("#sd_cost_estimate").text()}"`);
+    p.npcBank.enabled = true; p.npcBank.npcs = [{ name: "Mara", appearance: "tall", pfp: "" }];   // the click pass cleared them
+    switchTab(tabsUI.findIndex(t => t.title === "NPCs Bank"));
+    check(/^Next scan: Sends about/.test(box.find("#npc_scan_estimate").text()), `NPC scan estimate: "${box.find("#npc_scan_estimate").text()}"`);
+    check(/Sends about/.test(box.find(".npc_force_update").first().attr("title") || ""), `NPC update estimate missing from its button (${box.find(".npc_force_update").length} buttons, title "${box.find(".npc_force_update").first().attr("title")}")`);
+    check(box.find("#npc_scan_new_only").is(":checked"), "Only New Messages is not on by default");
+    box.find("#npc_scan_new_only").prop("checked", false).trigger("change");
+    check(p.npcBank.scanNewOnly === false, "Only New Messages does not reach its setting");
+    p.npcBank.scanNewOnly = true;
+    seedMemory();
+    Object.assign(memory.memoryState(), { spend: { since: 0, replies: 2, replyCost: 0.4, tasks: 0, taskCost: 0, last: null, bgCalls: 1, bgCost: 0.1 } });
+    switchTab(memTab);
+    const spent = box.text().replace(/\s+/g, " ");
+    check(spent.includes("about $0.50") && spent.includes("1 VCRP task such as the Story Director and NPC scans ($0.10)"), `the Memory tab does not count background calls: ${(spent.match(/Spent in this chat.{0,200}/) || ["(no spend line)"])[0]}`);
+    clicks += 1;
+    if (failures === failedBefore) console.log("  ✓ Background calls: priced before sending, Only New Messages saved, counted in the Memory tab");
+}
+// Focus: an audit waiting for review is shown; approving puts the edited note live and keeps
+// its findings; the settings hold their limits; a finding can be forgotten.
+{
+    const focus = await imp("src/vcrp/focus/index.js");
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ Focus: ${what}`); } };
+    const failedBefore = failures;
+    const tick = () => new Promise(r => setTimeout(r, 5));
+    p.focus = { enabled: true, every: 20, checks: { drift: true, motifs: true, slop: true } };
+    Object.assign(focus.focusState(), {
+        note: "Old note.", noteAt: 1, nextId: 2, items: [{ id: "F1", kind: "motif", text: "the smirk", times: 2, last: 1 }],
+        pending: { recurring: ["F1"], findings: [{ kind: "slop", text: "air thick with <tension>" }], note: "New note.", at: 2, replies: 20 },
+    });
+    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    const box = $("#ps_stage_content");
+    check(box.find("#focus_pending_note").val() === "New note." && box.text().includes("came back: 3 times now") && box.text().includes("air thick with <tension>"), "the waiting audit is not shown in full");
+    box.find("#focus_pending_note").val("Edited note.");
+    box.find("#focus_approve").trigger("click"); await tick();
+    const st = focus.peekFocusState();
+    check(st.note === "Edited note." && !st.pending && st.items.find(i => i.id === "F1").times === 3 && st.items.length === 2, `approving: ${JSON.stringify(st)}`);
+    check(box.find("#focus_note").val() === "Edited note." && !box.find("#focus_approve").length, "not redrawn after approving");
+    check(box.text().includes("Also sent with it, as repeat offenders:") && box.text().includes("in the prompt"), "the repeat offender in the prompt is not shown");
+    box.find("#focus_standing").prop("checked", false).trigger("change");
+    check(p.focus.standing === false && !box.text().includes("Also sent with it"), "Keep repeat offenders does not switch off");
+    box.find("#focus_standing").prop("checked", true).trigger("change");
+    box.find("#focus_note").val("Hand-edited.").trigger("change"); await tick();
+    check(focus.peekFocusState().note === "Hand-edited.", "the live note cannot be edited");
+    box.find("#focus_every").val("3").trigger("change");
+    check(p.focus.every === 5, `every went below 5 (${p.focus.every})`);
+    for (const k of ["drift", "motifs", "slop"]) box.find(`#focus_check_${k}`).prop("checked", false).trigger("change");
+    check(p.focus.checks.slop === true && box.find("#focus_check_slop").is(":checked"), "all three checks could be turned off");
+    box.find(".focus_item_remove").first().trigger("click"); await tick();
+    check(focus.peekFocusState().items.length === 1, "a finding could not be forgotten");
+    box.find("#focus_clear_note").trigger("click"); await tick();
+    check(focus.peekFocusState().note === "" && !box.find("#focus_clear_note").length, "the note could not be taken out");
+    clicks += 6;
+    if (failures === failedBefore) console.log("  ✓ Focus: review, approve with edits, live note, limits, forgetting a finding");
+
+    // The plot focus: drawn and working with the drift audits off.
+    const plotBefore = failures;
+    p.focus.enabled = false;
+    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    check(box.find("#focus_plot_text").length === 1 && box.find("#focus_plot_status").text().startsWith("Off."), "the plot focus is not drawn with the audits off");
+    box.find("#focus_plot_on").prop("checked", true).trigger("change"); await tick();
+    check(/On, but empty/.test(box.find("#focus_plot_status").text()), `switched on empty: "${box.find("#focus_plot_status").text()}"`);
+    box.find("#focus_plot_text").val("The brass ring <and> who wants it").trigger("change"); await tick();
+    box.find("#focus_plot_strength").val("thread").trigger("change"); await tick();
+    box.find("#focus_plot_end").val("-4").trigger("change"); await tick();
+    const plot = focus.peekFocusState().plot;
+    check(plot.active && plot.text === "The brass ring <and> who wants it" && plot.strength === "thread" && plot.endAfter === 0, `the plot focus settings: ${JSON.stringify(plot)}`);
+    check(/until you switch it off/.test(box.find("#focus_plot_status").text()), "the status does not say it is on");
+    box.find("#focus_plot_end").val("12").trigger("change"); await tick();
+    check(/12 replies left/.test(box.find("#focus_plot_status").text()), `the count is not shown: "${box.find("#focus_plot_status").text()}"`);
+    check(/Enabled/.test(box.find(".mtab-header-badge").text()), "the tab badge ignores an active plot focus");
+    clicks += 6;
+    if (failures === plotBefore) console.log("  ✓ Plot focus: on/off, text, strength, count, status, works with the audits off");
+
+    // The prompt editor, with the audits off and on; typing saves the reader's text.
+    const editorBefore = failures;
+    check(box.find("#focus_prompt_editor textarea").length === 13, `the prompt editor (audits off): ${box.find("#focus_prompt_editor textarea").length} fields`);
+    p.focus.enabled = true;
+    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    check(box.find("#focus_prompt_editor textarea").length === 13, "the prompt editor is missing with the audits on");
+    box.find("#focus_prompt_editor .pe-enable-toggle").trigger("click");
+    box.find('#focus_prompt_editor textarea[data-key="checkSlop"]').val("- [slop] my own check").trigger("input");
+    check(p.focus.customPromptsEnabled === true && p.focus.customPrompts && p.focus.customPrompts.checkSlop === "- [slop] my own check", "an edit does not reach the profile");
+    box.find("#focus_prompt_editor .btn-reset-all").trigger("click");
+    check(p.focus.customPrompts === null, "Reset All Defaults does not clear the edits");
+    clicks += 3;
+    if (failures === editorBefore) console.log("  ✓ Focus prompts: editor drawn either way, edits saved, reset");
+}
+// What's new after an update: a card on Global Settings and a dot on the gear until "Got it".
+{
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ What's new: ${what}`); } };
+    const before = failures;
+    const gs = extension_settings.VCRP.globalSettings;
+    const gear = tabsUI.findIndex(t => t.title === "Global Settings");
+    switchTab(gear);
+    check(!$("#vcrp_whats_new").length, "shown on a fresh install");
+    delete gs.whatsNewSeen;
+    switchTab(gear);
+    check($("#vcrp_whats_new").length === 1 && /Import the preset again/.test($("#vcrp_whats_new").text()), "not shown after an update");
+    const dot = () => $(`#dot_${gear}`);
+    check(dot().length === 1 && dot().hasClass("has-notice"), "no dot on the settings gear");
+    $("#vcrp_whats_new_ok").trigger("click");
+    await new Promise(r => setTimeout(r, 5));
+    check(!$("#vcrp_whats_new").length && gs.whatsNewSeen, "Got it does not dismiss it");
+    check(!dot().hasClass("has-notice"), "the dot stays after Got it");
+    clicks += 1;
+    if (failures === before) console.log("  ✓ What's new: hidden on a fresh install, shown after an update, Got it dismisses it");
 }
 console.log(`  (${clicks} clicks across all tabs)`);
 await new Promise(r => setTimeout(r, 200)); // let async handlers settle

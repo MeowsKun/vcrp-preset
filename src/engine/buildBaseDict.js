@@ -30,6 +30,7 @@ import { resolveSlot } from "../core/sharedFragments.js";
 import { buildKnowledgebase } from "../vcrp/knowledgebase.js";
 import { buildAnimeMode } from "../vcrp/anime.js";
 import { vcrpMemoryEnabled, vcrpMemoryBlock, vcrpMemoryRecall, previewRecall } from "../vcrp/memory/index.js";
+import { vcrpFocusBlock, vcrpPlotFocusBlock } from "../vcrp/focus/index.js";
 
 export function buildBaseDict(isTokenCount = false) {
     const dict = {};
@@ -316,7 +317,7 @@ export function buildBaseDict(isTokenCount = false) {
             : DEFAULT_PROMPTS.storyPlan[key];
         if (planText && planText.trim() !== "") {
             const template = (spCustom && spCustom.injectionTemplate) || shippedPlan("injectionTemplate");
-            finalInjection += template.replace('{{planText}}', planText);
+            finalInjection += template.replace('{{planText}}', () => planText);
         }
 
         dict["[[storyplan]]"] = finalInjection.trim();
@@ -334,10 +335,15 @@ export function buildBaseDict(isTokenCount = false) {
         const banStr = localProfile.banList.map(b => `- ${b}`).join("\n");
         const banCustom = localProfile.banListCustomPromptsEnabled ? localProfile.banListCustomPrompts : null;
         const template = (banCustom && banCustom.injectionTemplate) || DEFAULT_PROMPTS.banList.injectionTemplate;
-        dict["[[banlist]]"] = template.replace('{{banItems}}', banStr);
+        dict["[[banlist]]"] = template.replace('{{banItems}}', () => banStr);
     } else {
         dict["[[banlist]]"] = "";
     }
+
+    // VCRP Focus: the approved correction, in the per-turn rules (after the chat, so the cache never sees it).
+    dict["[[focus]]"] = vcrpFocusBlock();
+    // VCRP Focus: the plot focus, last in the prompt (after the newest message, outside the cache).
+    dict["[[plotfocus]]"] = vcrpPlotFocusBlock();
 
     if (localProfile.thinkingV2 && dict["[[prefill]]"]) {
         dict["[[prefill]]"] = dict["[[prefill]]"].replace(/\n<think>[\s\S]*/, "\n<think>\n<think>");

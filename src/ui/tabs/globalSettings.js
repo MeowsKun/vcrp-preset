@@ -13,6 +13,7 @@ import { vcrpDetectPrefill, vcrpActiveModel } from "../../vcrp/generation.js";
 import { buildHealthCard, vcrpRefreshHealthBadge } from "../../vcrp/health.js";
 import { exportAllSettings, pickAndImportSettings } from "../../vcrp/settingsBackup.js";
 import { vcrpDedashChat, vcrpStoryIsEnglish } from "../../vcrp/dedash.js";
+import { hasUnseenWhatsNew, markWhatsNewSeen, whatsNewCardHtml } from "../../vcrp/whatsNew.js";
 
 // The version on the about card. One place, so it cannot fall out of step with
 // itself the way "v9" did once V10 shipped.
@@ -34,6 +35,7 @@ const SUBMIT_FORM_URL = "";
 const SETTINGS_NOTICE_ID = "submit-card-v10";
 
 export function hasUnseenSettingsNotice() {
+    if (hasUnseenWhatsNew()) return true;   // VCRP: an update's notice, until "Got it"
     if (!SUBMIT_FORM_URL) return false;
     const gs = extension_settings[extensionName] && extension_settings[extensionName].globalSettings;
     return Boolean(gs) && gs.settingsNoticeSeen !== SETTINGS_NOTICE_ID;
@@ -46,10 +48,10 @@ export function renderGlobalSettings(c) {
     // Opening the tab is what spends the notice. Cleared off the dock here rather
     // than waiting for the next switchTab, which would leave the dot lit while the
     // reader is already looking at the thing it was pointing to.
-    if (hasUnseenSettingsNotice()) {
+    if (SUBMIT_FORM_URL && gs.settingsNoticeSeen !== SETTINGS_NOTICE_ID) {
         gs.settingsNoticeSeen = SETTINGS_NOTICE_ID;
         saveSettingsDebounced();
-        $(".dock-icon.has-notice").removeClass("has-notice");
+        if (!hasUnseenWhatsNew()) $(".dock-icon.has-notice").removeClass("has-notice");
     }
 
     c.append(`
@@ -70,6 +72,16 @@ export function renderGlobalSettings(c) {
     `);
 
     const $content = $(`<div style="display:flex; flex-direction:column; gap:10px;"></div>`);
+
+    // ── WHAT'S NEW (VCRP): after an update, until "Got it" ──────────────────
+    if (hasUnseenWhatsNew()) {
+        $content.append(whatsNewCardHtml());
+        $content.find("#vcrp_whats_new_ok").on("click", () => {
+            markWhatsNewSeen();
+            $(".dock-icon.has-notice").removeClass("has-notice");
+            renderGlobalSettings(c);
+        });
+    }
 
     // ── SETUP CHECK (VCRP) ──────────────────────────────────────────────────
     $content.append(`<div class="wstyle-section-head green"><i class="fa-solid fa-stethoscope"></i> Setup Check</div>`);

@@ -62,8 +62,9 @@ import {
     STAT_FIELD_PACKS,
     STAT_FIELD_TYPES,
 } from "./src/features/blocks/registry.js";
-import { meguminCleanChatHistoryText, getChatForStoryDirector, getChatForNpcScan, escapeRegex } from "./src/engine/chatText.js";
+import { meguminCleanChatHistoryText, getChatForNpcScan, escapeRegex } from "./src/engine/chatText.js";
 import { useMeguminEngine } from "./src/engine/tasks.js";
+import { vcrpChatForStoryDirector } from "./src/vcrp/backgroundCosts.js";
 import { escapeHtmlAttr } from "./src/utils/html.js";
 import { downloadJsonFile } from "./src/utils/download.js";
 import { showKazumaProgress } from "./src/ui/progress.js";
@@ -94,6 +95,8 @@ import { handlePromptInjection } from "./src/engine/injection.js";
 import { vcrpSetGenerationType } from "./src/vcrp/generation.js";
 import { vcrpRefreshHealthBadge } from "./src/vcrp/health.js";
 import { vcrpMemoryAfterReply } from "./src/vcrp/memory/summarize.js";
+import { vcrpFocusAfterReply } from "./src/vcrp/focus/index.js";
+import { whatsNewToast } from "./src/vcrp/whatsNew.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpApplyReplyCap } from "./src/vcrp/replyLength.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
@@ -359,6 +362,7 @@ jQuery(async () => {
                 cleanGhostProfiles();
                 meguminCompactStoredPrompts();
                 discoverDefaultImages();
+                whatsNewToast();   // VCRP: once after an update that needs the preset re-imported
             });
             // VCRP: remember whether this is a reply, Continue, Impersonate or a quiet call.
             eventSource.on(event_types.GENERATION_STARTED, vcrpSetGenerationType);
@@ -396,6 +400,8 @@ jQuery(async () => {
             if (event_types.CHAT_COMPLETION_SETTINGS_READY) eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, vcrpApplyReplyCap);
             // VCRP budgeted memory: summarize the next stretch after a reply, when due.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryAfterReply);
+            // VCRP Focus: audit the recent replies for drift every N replies (after Story Memory).
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpFocusAfterReply);
             // IMAGE GEN AUTO-GEN & SWIPE TRIGGERS
             eventSource.on(event_types.MESSAGE_RECEIVED, async () => {
                 vcrpMemoryUpdateVisuals();
@@ -458,7 +464,7 @@ jQuery(async () => {
                             if (needsEvolve) {
                                 toastr.info("Auto-Evolving Narrative Directive...", "Story Director");
                                 setTimeout(async () => {
-                                    // getChatForStoryDirector() reads whatever chat is open
+                                    // vcrpChatForStoryDirector() reads whatever chat is open
                                     // NOW, so once the chat has moved this would evolve the
                                     // new chat's story into the old chat's plan. Checked here
                                     // as well so a switch during the 2s wait costs no call.
@@ -466,7 +472,7 @@ jQuery(async () => {
                                         console.debug(`[VCRP] Story Director auto-evolve skipped: it was queued for "${spIdentity}" but "${meguminActiveDataIdentity()}" is active now.`);
                                         return;
                                     }
-                                    const chatText = getChatForStoryDirector();
+                                    const chatText = vcrpChatForStoryDirector();
                                     if (chatText.length < 100) return;
                                     try {
                                         let output = sp.backend === "direct" ? await generateStoryPlanLogic(chatText) : await new Promise(r => useMeguminEngine(async () => r(await generateStoryPlanLogic(chatText))));

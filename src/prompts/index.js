@@ -15,3 +15,4 @@ export {
 export { storyPlanPrompts } from "./storyPlan.js";
 export { banListPrompts } from "./banList.js";
 export { npcBankPrompts } from "./npcBank.js";
+export { focusPrompts } from "./focus.js";

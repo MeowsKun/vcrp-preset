@@ -16,6 +16,7 @@ import { meguminOriginalActive } from "../engine/meguminOriginal.js";
 import { kbAlwaysOnStats, presetCarriesAlwaysSlot } from "./knowledgebase.js";
 import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "./cacheCheck.js";
 import { replyCapTokens } from "./replyLength.js";
+import { focusSettings, peekFocusState } from "./focus/index.js";
 
 // A preset is VCRP's if it carries the tags only VCRP/Megumin presets use (the name can be anything).
 const VCRP_TAG_RE = /\[\[(?:blocks|THINK|prompt1)\]\]/;
@@ -113,6 +114,18 @@ export function vcrpHealthCheck() {
     if (kbAlways.count && !presetCarriesAlwaysSlot()) {
         add("info", "Re-import the preset to cache always-on knowledgebase entries",
             `${kbAlways.count} always-on ${kbAlways.count === 1 ? "entry" : "entries"} (about ${kbAlways.tokens.toLocaleString()} tokens) go after the chat and are written to the cache again every turn. The current VCRP presets carry them before the chat, where they are read at a tenth of the price.`);
+    }
+
+    // Focus on a preset imported before its tags: the correction or the plot focus would never
+    // reach the model. Updating the extension does not update a preset already imported.
+    const focusOff = [];
+    const carries = tag => (cc.prompts || []).some(p => p && typeof p.content === "string" && p.content.includes(tag));
+    if (focusSettings().enabled && !carries("[[focus]]")) focusOff.push("the drift audits' correction");
+    const plot = peekFocusState() && peekFocusState().plot;
+    if (plot && plot.active && !carries("[[plotfocus]]")) focusOff.push("the plot focus");
+    if (focusOff.length) {
+        add("warn", `Re-import the preset: ${focusOff.join(" and ")} cannot reach the model`,
+            `The active preset was imported before Focus and has no place for it. Import "VCRP V10 Universal" (or "VCRP V10 Megumin Original") again from the extension's Presets folder and select it. Re-importing replaces your own edits to that preset.`);
     }
 
     // 6. Long chats: what decides whether a request is cheap or full price.

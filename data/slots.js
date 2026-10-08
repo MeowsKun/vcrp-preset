@@ -213,6 +213,10 @@ export const MEGUMIN_SLOT_REGISTRY = [
       hint: "VCRP: the always-on knowledgebase entries. Sits before the chat, so it is cached and changes only when an entry is edited." },
     { key: null, trigger: "[[ANIMEMODE]]", label: "Anime Mode", scope: "auto", group: "live", where: "Writing Style",
       hint: "VCRP: the anime/manga style rules, when Anime Mode is on." },
+    { key: null, trigger: "[[focus]]", label: "Focus", scope: "auto", group: "live", where: "Focus",
+      hint: "VCRP: the correction from the last approved Focus audit, when Focus is on. Sits after the chat history, so it never touches the cache." },
+    { key: null, trigger: "[[plotfocus]]", label: "Plot Focus", scope: "auto", group: "live", where: "Focus",
+      hint: "VCRP: what the story should revolve around, when the plot focus is on. Last in the prompt, after the newest message, so it never touches the cache." },
 ];
 
 // ── Derived views. Never hand-maintain these ────────────────────────────────

@@ -22,6 +22,7 @@ import { renderNpcBank } from "../features/npc/ui.js";
 import { renderMemoryTab } from "../vcrp/memory/ui.js";
 import { renderBlocksTab } from "../features/blocks/ui.js";
 import { renderKnowledgebase } from "../vcrp/knowledgebase.js";
+import { renderFocusTab } from "../vcrp/focus/ui.js";
 
 export const tabsUI = [
     { title: "PRESETS & COT", sub: "Choose the core preset and COT, and set the standing rules of the story.", icon: "fa-server", render: renderCoreAndCot },
@@ -30,6 +31,7 @@ export const tabsUI = [
     { title: "BLOCKS", sub: "What goes inside the master block, in what order, and how it looks.", icon: "fa-cubes", render: renderBlocksTab },
     { title: "Story Director", sub: "Direct the narrative. Shape what happens next.", icon: "fa-clapperboard", render: renderStoryPlanner },
     { title: "Dynamic Ban List", sub: "Scan and ban repetitive AI phrases.", icon: "fa-ban", render: renderBanList },
+    { title: "Focus", sub: "Audit the story every few replies for drift, repeated motifs and slop.", icon: "fa-crosshairs", render: renderFocusTab },
     { title: "NPCs Bank", sub: "Automatically extract and track significant NPCs in the story.", icon: "fa-address-book", render: renderNpcBank },
     { title: "Memory", sub: "Story Memory keeps long chats under your budget.", icon: "fa-memory", render: renderMemoryTab },
     { title: "Knowledgebase", sub: "Core world rules, lore, and trope guidance the AI always remembers.", icon: "fa-book-open", render: renderKnowledgebase },

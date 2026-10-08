@@ -120,6 +120,10 @@ export function vcrpApplyGenerationToDict(dict, dryRun) {
     // Impersonate writes AS {{user}}: the final reminder's "never write for {{user}}" would
     // contradict the request itself.
     if (gen === "impersonate" && "[[user]]" in dict) dict["[[user]]"] = "";
+    // Focus corrects how the replies are written; an impersonation writes {{user}}'s turn
+    // in the reader's own voice instead.
+    if (gen === "impersonate" && "[[focus]]" in dict) dict["[[focus]]"] = "";
+    if (gen === "impersonate" && "[[plotfocus]]" in dict) dict["[[plotfocus]]"] = "";   // the reader steers their own turn
     return gen;
 }
 

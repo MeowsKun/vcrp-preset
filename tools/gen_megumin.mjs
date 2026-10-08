@@ -177,14 +177,15 @@ const original = {
     "<lore>": upText("<lore>"),
     "</lore><user_persona>": upText("</lore><user_persona>"),
     // Removed features: Direct Language, Dice, Image Gen, MVU. Story Memory's recall and
-    // VCRP's knowledgebase and anime mode go where VCRP's preset has them; each is empty
-    // unless its feature is on.
+    // VCRP's knowledgebase, anime mode and Focus go where VCRP's preset has them; each is
+    // empty unless its feature is on.
     "Output RULES": edit(upText("Output RULES"), [
         ["Check the chat history.\n[[Direct]]\n[[DN]]", "Check the chat history.\n[[DN]]"],
-        ["[[npc list]]\n\n[[dice]]\n\n[[img1]]\n\n[[blocks]]", "[[npc list]]\n\n[[story_recall]]\n\n[[knowledgebase]]\n\n[[ANIMEMODE]]\n\n[[blocks]]"],
+        ["[[npc list]]\n\n[[dice]]\n\n[[img1]]\n\n[[blocks]]", "[[npc list]]\n\n[[story_recall]]\n\n[[knowledgebase]]\n\n[[ANIMEMODE]]\n\n[[focus]]\n\n[[blocks]]"],
         ["[[Language]]\n[[MVU]]\n", "[[Language]]\n"],
     ], "Output RULES"),
-    "</history>": upText("</history>"),
+    // The plot focus (VCRP Focus) closes the slot: the last thing the model reads.
+    "</history>": upText("</history>") + "[[plotfocus]]",
     // Off by default. The original, minus the one slur VCRP took out.
     "USER Consent": edit(upText("USER Consent"), [["gooner, nigga.....etc", "gooner.....etc"]], "USER Consent"),
 };

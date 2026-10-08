@@ -29,6 +29,7 @@ export const TAB_SYNC_KEYS = {
     "Story Director": ["storyPlan"],
     "Dynamic Ban List": ["banList", "banListBackend", "banListCustomPromptsEnabled", "banListCustomPrompts"],
     "NPCs Bank": ["npcBank"],
+    "Focus": ["focus"],
     "Memory": ["vcrpMemory"],
     "Knowledgebase": ["knowledgebase"]
 };

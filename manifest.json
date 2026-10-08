@@ -6,7 +6,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "MeowsKun",
-  "version": "10.0.0-vcrp.1",
+  "version": "10.0.0-vcrp.2",
   "generate_interceptor": "vcrp_memory_intercept",
   "homePage": "https://github.com/MeowsKun/vcrp-preset"
 }

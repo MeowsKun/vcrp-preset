@@ -29,6 +29,7 @@ import { escapeRegex } from "../utils/regex.js";
 import { ensureKnowledgebase } from "../vcrp/knowledgebase.js";
 import { ensureAnimeMode } from "../vcrp/anime.js";
 import { vcrpMemoryCheckChat, vcrpMemoryMigrateLegacy } from "../vcrp/memory/index.js";
+import { WHATS_NEW_ID } from "../vcrp/whatsNew.js";
 
 // Last chat_metadata stamp written, so an unchanged profile doesn't re-save.
 export let _lastSavedMetaStamp = "";
@@ -183,6 +184,8 @@ export function initProfile() {
             planMessageIndex: null
         },
         vcrpMemory: { enabled: false },
+        // VCRP Focus. The note and what audits flagged are the chat's (chat_metadata).
+        focus: { enabled: false, every: 20, checks: { drift: true, motifs: true, slop: true }, standing: true },
         npcBank: {
             enabled: false,
             oocTrigger: false,
@@ -206,7 +209,9 @@ export function initProfile() {
             promptPreview: false,
             enableUtilityPrefill: false,
             cleanDashes: true,
-            saveMode: "character"
+            saveMode: "character",
+            // A fresh install has nothing to re-import: the update notice is for updates.
+            whatsNewSeen: WHATS_NEW_ID
         };
     } else if (!extension_settings[extensionName].globalSettings.saveMode) {
         extension_settings[extensionName].globalSettings.saveMode = "character";

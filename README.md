@@ -49,7 +49,7 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 - **Engines:** V10 Ukiyo and V10 Shura (with Enhanced Dialogue), their CoTs and Thinking Cap variants,
   plus their **Megumin Original** versions (below).
 - **Tabs:** Presets & CoT (with Story Config), Writing Style (+ Anime Mode), Global Toggles & Add-ons,
-  Blocks, Story Director, Dynamic Ban List, NPCs Bank, Memory (Story Memory), Knowledgebase,
+  Blocks, Story Director, Dynamic Ban List, Focus, NPCs Bank, Memory (Story Memory), Knowledgebase,
   Global Settings, plus Dev Mode.
 - **Add-ons:** Bold NPCs, Immersive HTML, Dialogue Colors, Dialogue & Narration tags.
 
@@ -100,6 +100,17 @@ the size cap never trims it and a pinned chapter is never folded into an arc. Th
 keeps a running **spend estimate** for the chat (replies and background calls, from VCRP's own
 token counts; hidden reasoning SillyTavern never sees is not included).
 
+**Background calls** (Story Director, NPC scans and updates, the ban list, style generators) send
+a prompt of their own that is never cached, so on a long chat one can cost more than a few
+replies. Each shows what it will send and roughly what it costs beside its button (the NPC
+update's on its button's tooltip), and the spend estimate counts them apart from replies. With
+Story Memory on and chapters written, the Story Director reads the story memory (arcs, the
+gists before its window, the facts) and the last 30 messages instead of 100 raw ones or the
+whole chat. If the approved chapters end further back (some still waiting for review), it reads
+from where they end, so nothing falls in between. NPC Bank → Scanner Settings → **Only New Messages** (on by default): a scan reads
+only the messages since the last scan, plus four before them for context, up to the scan depth.
+An NPC update still reads the full scan depth.
+
 To see it work without waiting for a break, use **Testing** in the Memory tab: **Cut now** takes
 what the approved chapters cover out of the prompt (the next reply costs full price once),
 **Undo cut** puts it back, **Preview recall** shows which chapters your last messages plus the
@@ -110,6 +121,48 @@ before it. When something before the chat history changes from one turn to the n
 entry switching on and off, a `{{time}}` or `{{random}}` macro), the cache can only be read up to
 that point and the rest is written again at double price on every request. The check names the
 message where the prompt first changed and shows the text before and after.
+
+## Keeping long stories on track: Focus
+
+The **Focus** tab has two tools, each with its own switch.
+
+**Plot focus:** write what the story should revolve around ("the ring Mara pawned, and the
+people who want it back") and pick how hard it steers: a background thread, central, or
+driving. While it is on, it goes out with every reply as the last thing the model reads, right
+after your message (`[[plotfocus]]` closes the `</history>` slot in both presets). That part of
+the prompt is never cached, so it costs only its own hundred tokens or so, and the cache never
+notices it. It stays until you switch it off; "End after" can make it last a set number of
+replies instead (a swipe of the last one still gets it). Story Memory's recall looks for it too,
+so old chapters about it come back while it is on; drift audits check the story stays on it;
+the Story Director plans around it. Impersonate goes without it, and Story Memory's summaries
+never see it.
+
+**Drift audits:** long roleplays drift: characters lose their edges and start to sound alike,
+the same smirk or scent comes back every reply, stock phrasing piles up. An audit runs every few
+replies (20 by default) and writes the writer a short correction.
+
+- **What it checks** (each can be switched off): character drift against the character card and
+  how they have been written, repeated motifs (images, gestures, metaphors, scene endings), and slop.
+- **What it reads:** the replies since the last audit and your messages between them, the card,
+  and the list of what earlier audits flagged. Each audit says which of those came back, so a
+  motif that survives a correction is counted and named more firmly the next time.
+- **Review first:** the audit's findings and correction wait in the Focus tab. Edit the correction
+  if you like, then **Approve and use**, or **Discard**. Automatic audits hold while one waits.
+- **Where it goes:** the approved correction rides with every reply in the per-turn rules
+  (`[[focus]]` in Output RULES, both presets), after the chat history, so it never touches the
+  cache. It stays until the next approved audit replaces it; edit or remove it in the tab. An
+  Impersonate (the AI writing your turn) goes without it: it corrects the replies, not your voice.
+- **Edit the wording:** Focus → Advanced: Edit Prompts, like the Story Director's: the auditor,
+  each check, the correction's and the plot focus's text, and what each plot strength says.
+  Your edits are used while the editor's switch is on; a blank field falls back to the built-in
+  text, and Reset All Defaults puts it all back.
+- **Repeat offenders** (on by default): up to three findings that came back after a correction
+  (flagged in two audits or more) stay in the prompt under every new correction, so what an
+  earlier one fixed does not creep back when the next one leaves it out. Taking the correction
+  out of the prompt takes them out too; forgetting a finding drops it from the list.
+- **Cost:** each audit is a call of its own to your model, never cached, priced beside **Audit
+  now** and counted in the spend estimate: about $0.15 to $0.30 on Claude Opus at 20 replies.
+  Two failed audits in a row pause the automatic ones until an **Audit now** works.
 
 ## Megumin Original
 

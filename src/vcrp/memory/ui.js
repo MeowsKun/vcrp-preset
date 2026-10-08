@@ -36,11 +36,12 @@ function cacheCheckHtml(s) {
 // The running spend estimate, as one line of the meter. Empty until a request has been counted.
 function spendLine(st) {
     const s = st && st.spend;
-    if (!s || !(s.replies || s.tasks)) return "";
-    const total = s.replyCost + s.taskCost;
+    if (!s || !(s.replies || s.tasks || s.bgCalls)) return "";
+    const total = s.replyCost + s.taskCost + (s.bgCost || 0);
     const avg = s.replies ? s.replyCost / s.replies : 0;
     const last = s.last ? ` Last reply: about ${money(s.last.cost)}${s.last.cold ? " (cache cold)" : ""}.` : "";
-    return `<div style="margin-top:4px;"><b>Spent in this chat (estimate):</b> about ${money(total)} · ${s.replies} ${s.replies === 1 ? "reply" : "replies"} (${money(avg)} each)${s.tasks ? ` · ${s.tasks} background call${s.tasks === 1 ? "" : "s"} such as memory summaries (${money(s.taskCost)})` : ""}.${last}
+    const bg = s.bgCalls ? ` · ${s.bgCalls} VCRP task${s.bgCalls === 1 ? "" : "s"} such as the Story Director and NPC scans (${money(s.bgCost || 0)})` : "";
+    return `<div style="margin-top:4px;"><b>Spent in this chat (estimate):</b> about ${money(total)} · ${s.replies} ${s.replies === 1 ? "reply" : "replies"} (${money(avg)} each)${s.tasks ? ` · ${s.tasks} background call${s.tasks === 1 ? "" : "s"} such as memory summaries (${money(s.taskCost)})` : ""}${bg}.${last}
         <span style="opacity:.7;">From VCRP's own token counts; hidden reasoning SillyTavern never sees is not included.</span></div>`;
 }
 const money = n => `$${n.toFixed(n < 0.1 ? 3 : 2)}`;
@@ -217,7 +218,7 @@ export function renderVcrpMemoryPanel($c) {
             <button id="vmem_summarize" class="ps-modern-btn secondary" style="font-size:0.72rem;"><i class="fa-solid fa-feather"></i> Summarize now</button>
             <button id="vmem_refresh_shown" class="ps-modern-btn secondary" style="font-size:0.72rem;" title="Puts edited chapters and facts into the prompt now. The next request then costs full price once."><i class="fa-solid fa-arrows-rotate"></i> Update the prompt now</button>
             <button id="vmem_reset" class="ps-modern-btn secondary" style="font-size:0.72rem; color:#ef4444;"><i class="fa-solid fa-trash"></i> Reset this chat's memory</button>
-            ${st && st.spend && (st.spend.replies || st.spend.tasks) ? `<button id="vmem_spend_reset" class="ps-modern-btn secondary" style="font-size:0.72rem;" title="Starts the spend estimate over. The memory itself is not touched."><i class="fa-solid fa-coins"></i> Reset spend estimate</button>` : ""}
+            ${st && st.spend && (st.spend.replies || st.spend.tasks || st.spend.bgCalls) ? `<button id="vmem_spend_reset" class="ps-modern-btn secondary" style="font-size:0.72rem;" title="Starts the spend estimate over. The memory itself is not touched."><i class="fa-solid fa-coins"></i> Reset spend estimate</button>` : ""}
         </div></div>`);
     $c.find("#vmem_spend_reset").on("click", async () => {
         const stNow = memoryState();
