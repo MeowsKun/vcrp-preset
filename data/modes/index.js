@@ -9,8 +9,10 @@
 // Original pair is Megumin Suite's own V10 text, generated into data/megumin.js.
 import { modes_v10 } from "./v10.js";
 import { modes_megumin } from "../megumin.js";
+import { modes_pura } from "./pura.js";
 
 export const modes = [
     ...modes_v10,
     ...modes_megumin,
+    ...modes_pura,
 ];

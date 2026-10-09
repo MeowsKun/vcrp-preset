@@ -47,7 +47,7 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 ## What's included
 
 - **Engines:** V10 Ukiyo and V10 Shura (with Enhanced Dialogue), their CoTs and Thinking Cap variants,
-  plus their **Megumin Original** versions (below).
+  plus their **Megumin Original** versions, and the two **Pura Director** engines (below).
 - **Tabs:** Presets & CoT (with Story Config), Writing Style (+ Anime Mode), Global Toggles & Add-ons,
   Blocks, Story Director, Dynamic Ban List, Focus, NPCs Bank, Memory (Story Memory), Knowledgebase,
   Global Settings, plus Dev Mode.
@@ -183,6 +183,54 @@ Import the preset like the other one and pick a Megumin Original engine in PRESE
 Check notes a mismatched pair. Both versions are generated from the upstream commit by
 `node tools/gen_megumin.mjs`.
 
+## Pura Director
+
+Pura's Director Preset 16.0, by **Pura** ([platberlitz.github.io](https://platberlitz.github.io)),
+as two engines in PRESETS & COT, working with everything VCRP adds:
+
+- **Pura Director · Original:** Pura's writing text word for word, with Pura's own controls for
+  formatting, length, user control and genre. Story Config, the writing style and VCRP's "never
+  write for {{user}}" rule stand aside while it is selected.
+- **Pura Director · Adapted:** the same core, reworded only where VCRP's modules take over: Story
+  Config sets genre, tone, POV, pace, length, friction and explicitness, and VCRP's rule keeps
+  {{user}} yours. The rewordings are listed in `src/vcrp/pura/index.js`.
+
+Every Pura setting is in **PRESETS & COT → Pura Director**, shown while a Pura engine is selected:
+narration voices (one of eight, or a random one each reply), Friction, NSFW, Gooner and Nightmare
+modes, Director Instructions, Grounded Prose Rules, HTML objects, Diegetic Stats, the Name
+Randomiser, the scene randomisers (two at most) and Pura's optional reasoning help. Pura thinks
+without a CoT script, so the Reasoning (CoT) settings rest while it is selected.
+
+For the cache, VCRP assembles Pura's text itself instead of through `{{setvar}}` and `{{#if}}`:
+everything that holds still sits in the cached part, and everything that changes per request (a
+random voice, the randomisers, the name randomiser, Director Instructions with a `{{random}}` in
+them) goes after your newest message, where it never touches the cache.
+
+**Pura's trackers** are in the BLOCKS tab, in a group of their own, for any engine: NPC sheets,
+choices (plain or with hidden skill checks), the direction menu, the dating-sim relationship card,
+scene, time, pending events, achievements, reputation, inventory, status, secrets, off-screen,
+world detail, your stats and level-ups. They are drawn with Pura's own card designs. Their full
+rules go once in the cached part; each reply's block carries only their format. Most of them write
+only when something changes, so VCRP hands the model the newest entry of each from the whole chat
+every turn (an open event stays until it is resolved, a relationship card until it is severed).
+With Pura's NPC Sheets in the block, the NPC Bank and Pura work as one: the sheets become the
+bank's records (and the bank stops asking for dossiers of its own), Pura is told every turn who
+never gets a sheet (the card's own cast, you, the bank's ignored names) and who the bank already
+has, a tier upgrade fills in what a record still lacks without overwriting it, and a relationship
+change updates its "Read on the PC"; both show in the chat card and can be undone there.
+
+Where one of VCRP's blocks and a Pura tracker do the same job (Bonds and Relationships, World State
+and Scene or Time, CYOA and Choices, Character Sheet and Your Stats), both can be on, but the BLOCKS
+tab points it out: the model writes both every reply. The Pura panel does the same for VCRP's
+Immersive HTML add-on and Pura's HTML objects. Under Pura Original, the Memory tab's Reply length
+sets Pura's own length, and Thinking length rests (Pura has no CoT). Dev Mode does not copy a Pura
+engine: its text is built from the Pura Director panel.
+
+Both engines and the trackers are generated from Pura's own preset file by
+`node tools/gen_pura.mjs` (the upstream files are in `tools/upstream/pura/`). The only text
+changed is for the cache (the skill-check roll moves out of the cached rules) and a portrait lookup
+that only Pura's own frontend has (cards show the initial instead).
+
 ## Development
 
 - `node tools/link_check.mjs`: loads every module against a stubbed SillyTavern (catches broken imports).
@@ -192,6 +240,8 @@ Check notes a mismatched pair. Both versions are generated from the upstream com
 - `python tools/gen_skeleton.py`: regenerates `data/skeleton.js` (Dev Mode's layout view) after a preset edit.
 - `node tools/gen_megumin.mjs`: regenerates `data/megumin.js` and the Megumin Original preset from
   Megumin Suite V10 itself, after VCRP rewords a shared text or changes its preset layout.
+- `node tools/gen_pura.mjs`: regenerates `data/pura.js` (the Pura Director engines and trackers) from
+  Pura's preset in `tools/upstream/pura/`.
 - `node tools/sim_cost.mjs [--memory] [--npcs] [--model opus-4.6] [--direct]`: plays a 1000-message chat
   through the real prompt builder and prices every request under Claude's prompt caching.
 

@@ -11,6 +11,7 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { localProfile } from "../../core/state.js";
+import { PURA_BLOCKS } from "./puraBlocks.js";
 
 // -------------------------------------------------------------
 // BLOCK REGISTRY — one definition per block the <Blocks> envelope can carry
@@ -89,7 +90,8 @@ export const MEGUMIN_BLOCK_REGISTRY = [
         // described one in prose was the odd one out, and the model had to infer
         // the tag it was supposed to open from a mention of it mid-sentence.
         slot: `<New_NPC name="[Full Name]">\n[The full dossier goes here when this response introduces an NPC that earns one — follow the NPC DOSSIER rules above. Omit this whole tag otherwise.]\n</New_NPC>`,
-        requires: p => Boolean(p.npcBank && p.npcBank.enabled),
+        // Pura's NPC Sheets do this job when they are in the block (they feed the bank).
+        requires: p => Boolean(p.npcBank && p.npcBank.enabled) && !puraSheetsInStack(p),
         // Gated on [[npc_dossier2]] rather than [[npc_dossier]]. The latter now
         // also carries the UPDATE rules, which are injected whenever the bank has
         // anyone in it — so testing it would light this slot up even on a turn the
@@ -118,7 +120,9 @@ export const MEGUMIN_BLOCK_REGISTRY = [
         visibility: "open", builtin: true, system: true,
         source: "[[storytracker]]",
         requires: p => Boolean(p.storyPlan && p.storyPlan.enabled)
-    }
+    },
+    // VCRP: Pura's trackers (puraBlocks.js), drawn with Pura's own cards.
+    ...PURA_BLOCKS
 ];
 
 // Content written for the old format opens with <details><summary>…</summary>
@@ -331,6 +335,9 @@ export function meguminBuildSheetTemplate() {
         ...own
     ].filter(Boolean).join("\n");
 }
+
+/** Pura's NPC Sheets block is in the stack: it writes the dossiers the NPC Bank reads. */
+export const puraSheetsInStack = p => Boolean(p && p.blockStack && (p.blockStack.order || []).includes("pura_npc"));
 
 export function meguminBlockById(id) {
     return MEGUMIN_BLOCK_REGISTRY.find(b => b.id === id)

@@ -8,7 +8,7 @@
 import { extension_settings, saveSettingsDebounced } from "../../st.js";
 import { extensionName } from "../../core/constants.js";
 import { localProfile } from "../../core/state.js";
-import { engineLocksStyle, lockedStyleIdFor } from "../../core/engines.js";
+import { engineLocksStyle, lockedStyleIdFor, isPuraEngine, puraVariant } from "../../core/engines.js";
 import { getCharacterKey } from "../../core/keys.js";
 import { saveProfileToMemory, saveProfileDebounced } from "../../core/profile.js";
 import { fireRefreshHook, REFRESH } from "../../core/refreshHooks.js";
@@ -90,6 +90,11 @@ export function buildStoryConfigSection() {
     // still emits no line, so "off" is expressed per field rather than for the whole
     // block -- which is what people were reaching for the toggle to do anyway.
     sec.append(`<div class="cfg-master-desc" style="margin-bottom: 10px;">Standing settings for the whole story. Anything left on preset default is left to your preset.</div>`);
+    // VCRP: Pura Original carries its own formatting, length and genre instead.
+    const engineNow = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])].find(m => m.id === localProfile.mode);
+    if (puraVariant(engineNow) === "original") {
+        sec.append(`<div class="mtab-callout" style="margin-bottom:12px; border-color:rgba(236,72,153,0.4);"><i class="fa-solid fa-clapperboard" style="color:#ec4899;"></i><span><strong>Not sent with Pura Director · Original</strong>, which uses Pura's own formatting, length, genre and modes (Pura Director panel). Pick <strong>Pura Director · Adapted</strong> to steer Pura from here.</span></div>`);
+    }
 
     // ── GLOBAL SYNC OPT-OUT ──
     //
@@ -384,6 +389,11 @@ export function renderStoryConfig(c) {
             </div>
         </div>
     `);
+
+    // VCRP: a Pura engine tells its story in Pura's own narration voices instead.
+    if (isPuraEngine(activeEngineForStyle)) {
+        root.append(`<div class="mtab-callout" style="margin:0 0 12px; border-color:rgba(236,72,153,0.4);"><i class="fa-solid fa-clapperboard" style="color:#ec4899;"></i><span><strong>Not sent while a Pura engine is selected.</strong> Pura tells the story in its own narration voices: PRESETS &amp; COT → Pura Director. Your style here comes back when you switch engine.</span></div>`);
+    }
 
     // ── TWO COLUMN LAYOUT ──
     const layout = $(`<div class="ws-layout"></div>`);

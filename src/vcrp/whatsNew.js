@@ -12,12 +12,12 @@
 import { extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "../core/constants.js";
 
-export const WHATS_NEW_ID = "10.0.0-vcrp.2";
+export const WHATS_NEW_ID = "10.0.0-vcrp.3";
 
 const ITEMS = [
-    "<b>Focus tab.</b> A <b>plot focus</b> steers the story around something you choose; it goes last in every reply's prompt, after your message, where it never touches the cache. <b>Drift audits</b> every few replies catch character drift, repeated motifs and slop, and write a correction you approve first.",
-    "<b>Background calls</b> (Story Director, NPC scans, audits) show what they cost before you press the button, and count in the spend estimate. With Story Memory on, the Director reads the story memory instead of 100 raw messages; NPC scans read only what is new since the last one.",
-    "<b>Fixes.</b> A $ in your text reaches the prompt as written. An NPC scan no longer fills another chat's bank when you switch chats mid-scan.",
+    "<b>Pura Director engines.</b> Pura's Director Preset 16.0 (by Pura) as two engines in PRESETS &amp; COT: <b>Original</b>, word for word with Pura's own controls, and <b>Adapted</b>, which hands formatting, length and genre to Story Config. All of Pura's settings are in the new <b>Pura Director</b> panel there: voices, modes, scene randomisers, extras.",
+    "<b>Pura's trackers as blocks.</b> Seventeen of them (relationship cards, scene, time, events, NPC sheets, inventory, RPG stats...) in the BLOCKS tab, drawn with Pura's own cards, for any engine. VCRP keeps the latest of each in mind for the model, and Pura's NPC sheets fill the NPC Bank.",
+    "<b>Focus tab</b> (if you skipped 10.0.0-vcrp.2): a plot focus that steers the story around something you choose, and drift audits that catch character drift, repeated motifs and slop.",
 ];
 
 const settings = () => extension_settings[extensionName] && extension_settings[extensionName].globalSettings;
@@ -37,7 +37,7 @@ export function markWhatsNewSeen() {
 /** Once, when SillyTavern is ready: the one thing that needs doing. */
 export function whatsNewToast() {
     if (!hasUnseenWhatsNew() || typeof toastr === "undefined") return;
-    toastr.info("Import the VCRP preset again from the extension's Presets folder to use the new Focus tab. What's new: VCRP → Global Settings.", `VCRP updated to ${WHATS_NEW_ID}`, { timeOut: 20000, extendedTimeOut: 10000 });
+    toastr.info("Import the VCRP preset again from the extension's Presets folder to use the Pura Director engines, Pura's trackers and the Focus tab. What's new: VCRP → Global Settings.", `VCRP updated to ${WHATS_NEW_ID}`, { timeOut: 20000, extendedTimeOut: 10000 });
 }
 
 /** The card at the top of Global Settings, with a "Got it" button (#vcrp_whats_new_ok). */
@@ -48,7 +48,7 @@ export function whatsNewCardHtml() {
             ${ITEMS.map(i => `<div class="set-desc" style="margin:6px 0;">${i}</div>`).join("")}
             <div class="mtab-callout gold" style="margin:10px 0 0;">
                 <i class="fa-solid fa-file-import"></i>
-                <span><b>Import the preset again</b> (VCRP V10 Universal, or VCRP V10 Megumin Original) from the extension's Presets folder and select it. The Focus tab needs the new version's two tags; updating the extension does not update a preset you already imported. Re-importing replaces your own edits to that preset.</span>
+                <span><b>Import the preset again</b> (VCRP V10 Universal, or VCRP V10 Megumin Original) from the extension's Presets folder and select it. The new engines, trackers and Focus need the new version's tags; updating the extension does not update a preset you already imported. Re-importing replaces your own edits to that preset.</span>
             </div>
             <div style="margin-top:10px;"><button id="vcrp_whats_new_ok" class="ps-modern-btn primary" style="font-size:0.75rem;"><i class="fa-solid fa-check"></i> Got it</button></div>
         </div>`;

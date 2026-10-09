@@ -22,7 +22,7 @@ export const TAB_SYNC_KEYS = {
     // the outside — it looked like the switch was not saving at all: it stuck on
     // the profile you set it on and was off everywhere else, which is what a
     // setting that failed to write looks like to the reader.
-    "PRESETS & COT": ["mode", "model", "cotEnabled", "thinkEffort", "customThinkEffort", "thinkingV2", "storyConfig", "enhancedDialogue"],
+    "PRESETS & COT": ["mode", "model", "cotEnabled", "thinkEffort", "customThinkEffort", "thinkingV2", "storyConfig", "enhancedDialogue", "pura"],
     "Writing Style": ["activeStyleId", "aiRule", "customStyles", "dnRatio", "animeMode"],
     "Global Toggles & Add Ons": ["addons", "blocks", "userLanguage", "userPronouns", "onomatopoeia"],
     "BLOCKS": ["blockStack", "statBlocks", "blocks"],

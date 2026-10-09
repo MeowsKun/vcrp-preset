@@ -122,6 +122,18 @@ const seedMemory = () => {
 };
 seedMemory();
 await renderAll("all on");
+// Every tab again with a Pura engine and every Pura setting and tracker on.
+{
+    const keep = { mode: p.mode, pura: p.pura, order: [...p.blockStack.order] };
+    p.mode = "pura-original";
+    p.pura = { voice: "random", randomisers: ["chaos", "kink"], groundedProse: true, html: true, diegeticStats: true, nameRandomiser: true, reasoning: "procedure", friction: true, nsfw: true, gooner: true, nightmare: true, director: "Be bold." };
+    p.blockStack.order = [...p.blockStack.order, "pura_scene", "pura_relationship", "pura_npc", "pura_events", "pura_skill_choices", "pura_stats"];
+    await renderAll("pura on");
+    p.mode = "pura-adapted";
+    await renderAll("pura adapted");
+    Object.assign(p, { mode: keep.mode, pura: keep.pura });
+    p.blockStack.order = keep.order;
+}
 
 // Click every interactive element in every tab (re-rendering the tab before each click).
 const CLICKABLE = "button, .mtab-eng-card, .mtab-toggle-row, .ps-toggle-card, .ws-nav-btn, .ws-card, .ecard-opt, .kb_active_toggle, .kb-entry-header, .wstyle-filter-pill, [data-target]";
@@ -299,6 +311,88 @@ for (let k = 0; k < memCount; k++) {
     check(!dot().hasClass("has-notice"), "the dot stays after Got it");
     clicks += 1;
     if (failures === before) console.log("  ✓ What's new: hidden on a fresh install, shown after an update, Got it dismisses it");
+}
+// Pura Director: the panel appears with a Pura engine (Original with Pura's own controls,
+// Adapted without them), settings save, randomisers stop at two (the Director's Cut alone);
+// the BLOCKS tab lists Pura's trackers apart, and a reply's Pura block is drawn with Pura's card.
+{
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ Pura: ${what}`); } };
+    const before = failures;
+    const tick = () => new Promise(r => setTimeout(r, 5));
+    const box = $("#ps_stage_content");
+    const presetsTab = tabsUI.findIndex(t => t.title === "PRESETS & COT");
+    const keepMode = p.mode;
+    p.pura = {};
+    p.mode = "pura-original";
+    switchTab(presetsTab);
+    const btn = () => box.find('.ws-nav-btn[data-target="sec-pura"]');
+    check(btn().length === 1 && !/display:\s*none/.test(btn().attr("style") || ""), "no Pura Director button with a Pura engine selected");
+    btn().trigger("click");
+    check(box.find("#sec-pura").is(":visible") || box.find("#sec-pura").css("display") !== "none", "the Pura section does not open");
+    check(box.find("#pura_user").length === 1 && box.find("#pura_formatting").length === 1 && box.find("#pura_genre").length === 1, "Original: Pura's own controls missing");
+    box.find("#pura_voice").val("random").trigger("change");
+    box.find("#pura_formatting").prop("checked", false).trigger("change");
+    check(p.pura.voice === "random" && p.pura.formatting === false, `settings not saved: ${JSON.stringify(p.pura)}`);
+    box.find('.pura_rand[data-key="chaos"]').prop("checked", true).trigger("change"); await tick();
+    box.find('.pura_rand[data-key="pressure"]').prop("checked", true).trigger("change"); await tick();
+    check(JSON.stringify(p.pura.randomisers) === '["chaos","pressure"]' && box.find('.pura_rand[data-key="kink"]').is(":disabled"), `two randomisers, then the rest locked: ${JSON.stringify(p.pura.randomisers)}`);
+    box.find('.pura_rand[data-key="chaos"]').prop("checked", false).trigger("change"); await tick();
+    box.find('.pura_rand[data-key="pressure"]').prop("checked", false).trigger("change"); await tick();
+    box.find('.pura_rand[data-key="directorsCut"]').prop("checked", true).trigger("change"); await tick();
+    check(JSON.stringify(p.pura.randomisers) === '["directorsCut"]' && box.find('.pura_rand[data-key="chaos"]').is(":disabled"), "the Director's Cut stands alone");
+    p.mode = "pura-adapted";
+    switchTab(presetsTab);
+    btn().trigger("click");
+    check(box.find("#pura_user").length === 0 && box.find("#pura_formatting").length === 0 && box.find("#pura_voice").length === 1 && box.find("#pura_gooner").length === 1, "Adapted: Pura's formatting controls hidden, its own extras kept");
+    p.mode = "v10-core";
+    switchTab(presetsTab);
+    check(/display:\s*none/.test(btn().attr("style") || ""), "the Pura button shows with a VCRP engine");
+
+    // BLOCKS: Pura's trackers in a group of their own.
+    switchTab(tabsUI.findIndex(t => t.title === "BLOCKS"));
+    check(box.text().includes("Pura's trackers") && box.find(".blk-pool").last().find(".blk-add").length >= 17, `Pura's trackers not listed apart (${box.find(".blk-pool").last().find(".blk-add").length})`);
+
+    // A reply's Pura block, drawn with Pura's card.
+    const { extractBlocks, buildBlocksCard } = await imp("src/blocks/render.js");
+    const { meguminRenderRegistry } = await imp("src/features/blocks/registry.js");
+    const mes = "Prose.\n<Blocks>\n<Pura_Events>\n[EVENT|⚠️ THREAT|Okafor wants paying|Friday]\ncontext: the ring\n[/EVENT]\n</Pura_Events>\n</Blocks>";
+    const found = extractBlocks(mes, meguminRenderRegistry());
+    const card = buildBlocksCard(found, { document: w.document });
+    const html = card && (card.outerHTML || String(card));
+    check(found.length === 1 && /Okafor wants paying/.test(html || "") && /⏳ Friday/.test(html || ""), "a Pura block is not drawn with Pura's card");
+    // Reply length (Memory tab): Pura Original's own length; thinking length does not apply.
+    p.mode = "pura-original";
+    p.pura = { length: "flexible" };
+    switchTab(tabsUI.findIndex(t => t.title === "Memory"));
+    check(box.find("#vmem_len_pura").length === 1 && box.find("#vmem_len").length === 0 && box.find("#vmem_think").is(":disabled"), "Reply length: Pura Original's length row, thinking disabled");
+    box.find("#vmem_len_pura").val("short").trigger("change");
+    check(p.pura.length === "short", "Reply length: the story length does not reach Pura's setting");
+    p.mode = "pura-adapted";
+    switchTab(tabsUI.findIndex(t => t.title === "Memory"));
+    check(box.find("#vmem_len").length === 1 && box.find("#vmem_len_pura").length === 0 && box.find("#vmem_think").is(":disabled"), "Reply length: Adapted uses Story Config's length");
+
+    // Overlap hints: a block and its Pura twin together; VCRP's HTML add-on and Pura's HTML.
+    const keepOrder = [...p.blockStack.order];
+    p.blockStack.order = ["bonds", "pura_relationship", "pura_npc"];
+    switchTab(tabsUI.findIndex(t => t.title === "BLOCKS"));
+    check(box.find(".blk-overlap").length === 2 && /Relationships/.test(box.find(".blk-overlap").first().text() + box.find(".blk-overlap").last().text()), `overlap hints: ${box.find(".blk-overlap").length}`);
+    p.blockStack.order = keepOrder;
+    const keepAddons = p.addons;
+    p.addons = ["html"];
+    switchTab(presetsTab);
+    btn().trigger("click");
+    check(box.find("#pura_html_overlap").length === 1, "Pura panel: no note that VCRP's HTML add-on is on too");
+    p.addons = keepAddons;
+
+    // Dev Mode: no copy of a Pura engine on offer, and a note saying why.
+    const { renderDevMode } = await imp("src/ui/devmode.js");
+    renderDevMode("engines");
+    const stage = $("#ps_stage_content");
+    check(stage.find("#dev_pura_note").length === 1 && !/Pura Director/.test(stage.find(".dev-grid").last().text()), "Dev Mode: Pura engines offered for copying, or no note");
+
+    p.mode = keepMode;
+    clicks += 14;
+    if (failures === before) console.log("  ✓ Pura: panel per engine, settings saved, randomiser limits, BLOCKS group, Pura's card in the chat, reply length, overlap hints, Dev Mode");
 }
 console.log(`  (${clicks} clicks across all tabs)`);
 await new Promise(r => setTimeout(r, 200)); // let async handlers settle

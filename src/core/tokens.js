@@ -29,7 +29,7 @@ export function updateLiveTokenCount() {
         "[[npc list]]", "[[npc_dossier]]", "[[npc_dossier2]]",
         "[[img1]]", "[[img2]]",
         "[[storyplan]]", "[[storytracker]]", "[[storytracker2]]",
-        "[[banlist]]", "[[focus]]", "[[plotfocus]]",
+        "[[banlist]]", "[[focus]]", "[[plotfocus]]", "[[pura_late]]",
         // Both injection paths are built on every pass and only one of them ever
         // reaches the model, so counting both would roughly double the blocks.
         // The envelope is assembled FROM the per-block tags, which are counted

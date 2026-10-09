@@ -215,6 +215,12 @@ export const MEGUMIN_SLOT_REGISTRY = [
       hint: "VCRP: the anime/manga style rules, when Anime Mode is on." },
     { key: null, trigger: "[[focus]]", label: "Focus", scope: "auto", group: "live", where: "Focus",
       hint: "VCRP: the correction from the last approved Focus audit, when Focus is on. Sits after the chat history, so it never touches the cache." },
+    { key: null, trigger: "[[pura_system]]", label: "Pura: standing toggles", scope: "auto", group: "live", where: "PRESETS & COT",
+      hint: "VCRP: the Pura engines' HTML and Diegetic Stats, when on. End of Main 2, so it is cached." },
+    { key: null, trigger: "[[pura_late]]", label: "Pura: per-turn text", scope: "auto", group: "live", where: "PRESETS & COT",
+      hint: "VCRP: the Pura engines' Formatting, Grounded Prose, randomisers, random voice, name randomiser and reasoning help. After the newest message, never cached." },
+    { key: null, trigger: "[[block_rules]]", label: "Tracker Rules", scope: "auto", group: "live", where: "BLOCKS",
+      hint: "VCRP: the full rules of the Pura trackers in the block, sent once in the cached part. The block itself carries only their format." },
     { key: null, trigger: "[[plotfocus]]", label: "Plot Focus", scope: "auto", group: "live", where: "Focus",
       hint: "VCRP: what the story should revolve around, when the plot focus is on. Last in the prompt, after the newest message, so it never touches the cache." },
 ];
@@ -276,9 +282,10 @@ export function meguminEngineSlots() {
     return MEGUMIN_SLOT_REGISTRY.filter(s => !s.hidden && s.scope === "engine");
 }
 
-/** Engines Dev Mode offers as a starting point. */
+/** Engines Dev Mode offers as a starting point. The Pura Director engines are not: their text
+ *  is built from the Pura Director panel, so a copy would have nothing of its own to edit. */
 export function meguminIsDevEditableMode(mode) {
-    return !!mode && mode.devLegacy !== true;
+    return !!mode && mode.devLegacy !== true && !mode.pura;
 }
 
 export function meguminSlotByTrigger(trigger) {

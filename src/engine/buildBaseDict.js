@@ -20,7 +20,8 @@ import {
 import { DEFAULT_PROMPTS } from "../prompts/index.js";
 import { hardcodedLogic } from "../../data/database.js";
 import { applyEnhancedDialogue } from "../../data/modes/v10.js";
-import { buildBlocksEnvelope } from "../features/blocks/registry.js";
+import { buildBlocksEnvelope, meguminActiveBlocks, puraSheetsInStack } from "../features/blocks/registry.js";
+import { puraBlockRules } from "../features/blocks/puraBlocks.js";
 import { buildConfigBlock } from "../features/storyconfig/config.js";
 import { npcBuildTextFromData } from "../features/npc/data.js";
 import { npcBuildDossierPrompt, npcBuildUpdatePrompt } from "../features/npc/fields.js";
@@ -31,6 +32,8 @@ import { buildKnowledgebase } from "../vcrp/knowledgebase.js";
 import { buildAnimeMode } from "../vcrp/anime.js";
 import { vcrpMemoryEnabled, vcrpMemoryBlock, vcrpMemoryRecall, previewRecall } from "../vcrp/memory/index.js";
 import { vcrpFocusBlock, vcrpPlotFocusBlock } from "../vcrp/focus/index.js";
+import { applyPuraEngine } from "../vcrp/pura/index.js";
+import { vcrpGenerationKind, vcrpIsDryRun } from "../vcrp/generation.js";
 
 export function buildBaseDict(isTokenCount = false) {
     const dict = {};
@@ -246,6 +249,10 @@ export function buildBaseDict(isTokenCount = false) {
         dict["[[AI2]]"] = "";
     }
 
+    // VCRP: a Pura Director engine writes its own main prompt and its two tags, and stands
+    // the modules it overlaps aside. Before the CoT steps below, which it does not use.
+    applyPuraEngine(dict, activeEngine, isTokenCount || vcrpIsDryRun() ? "reply" : vcrpGenerationKind());
+
     // NEW: Inject Thinking Effort to the absolute top of whatever [[COT]] is currently active
     let effort = localProfile.thinkEffort || "unspecified";
     if (effort !== "unspecified" && dict["[[COT]]"]) {
@@ -457,7 +464,8 @@ export function buildBaseDict(isTokenCount = false) {
             knownNamesText = `[CRITICAL RULE: DO NOT generate a dossier for the following already-known or ignored characters: ${ignoredArr.join(", ")}]\n\n`;
         }
 
-        if (allowDossierInjection) {
+        // Pura's NPC Sheets block writes the dossiers instead, and the bank reads those.
+        if (allowDossierInjection && !puraSheetsInStack(localProfile)) {
             const nbPrompts = (localProfile.npcBank.customPromptsEnabled && localProfile.npcBank.customPrompts) ? localProfile.npcBank.customPrompts : DEFAULT_PROMPTS.npcBank;
 
             // Inject Ignore List alongside the Dossier Rules!
@@ -592,6 +600,8 @@ export function buildBaseDict(isTokenCount = false) {
     // <New_NPC> slot could never appear in the envelope no matter what the bank
     // was doing. Anything that populates a tag a block reads must run before
     // this line.
+    // The full rules of the Pura trackers in the stack, cached at the end of Main 2.
+    dict["[[block_rules]]"] = puraBlockRules(meguminActiveBlocks());
     dict["[[blocks]]"] = buildBlocksEnvelope(dict);
     // VCRP: earlier replies go out without their blocks (cache), so last turn's travel here.
     if (dict["[[blocks]]"]) {

@@ -2356,4 +2356,254 @@ console.log("37 ok plot focus (last in the prompt in both presets and all engine
 }
 console.log("38 ok Focus prompts editable (on/off, blank falls back, $-safe, stored as a diff) and the update notice (once, fresh installs skip it)");
 
+// 39. The Pura Director engines: Pura's text as written (Original) or reworded only where
+//     VCRP's modules take over (Adapted); per-request text never before the newest message;
+//     Pura's own settings in place of Story Config, the writing style and the CoT.
+{
+    const pura = await imp("src/vcrp/pura/index.js");
+    const P = await imp("data/pura.js");
+    const upstream = JSON.parse(readFileSync(join(REPO, "tools/upstream/pura/preset.json"), "utf8"));
+    const up = name => upstream.prompts.find(p => p.name === name).content;
+    const q = state.localProfile;
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const keep = { mode: q.mode, model: q.model, pura: q.pura, cfg: JSON.stringify(q.storyConfig), aiRule: q.aiRule, cot: q.cotEnabled };
+    const before = (msgs) => { const t = msgs.map(textOf); const i = t.lastIndexOf("latest user msg"); return t.slice(0, i).join("\n"); };
+    const after = (msgs) => { const t = msgs.map(textOf); const i = t.lastIndexOf("latest user msg"); return t.slice(i + 1).join("\n"); };
+
+    // The generated text is Pura's own.
+    assert.equal(P.PURA_MAIN, up("Director Main Prompt"), "the main prompt, character for character");
+    for (const [k, n] of [["scene", "Scene Tracker"], ["relationship", "Relationship Tracker"], ["events", "Pending Events Tracker"], ["npc", "NPC Profile Sheets"]]) {
+        assert(up(n).includes(P.PURA_TRACKERS[k]), `tracker ${k} as Pura wrote it`);
+    }
+    for (const k of ["camus", "kafka", "dickens"]) assert(up(Object.keys({})[0] || "Voice: Randomised").includes(P.PURA_VOICES[k].trim().slice(0, 60)) || upstream.prompts.some(p => (p.content || "").includes(P.PURA_VOICES[k])), `voice ${k} as Pura wrote it`);
+    for (const [a] of pura.PURA_ADAPTED_SWAPS) assert(P.PURA_MAIN.includes(a), `Adapted reword still finds its sentence: ${a.slice(0, 50)}`);
+
+    // ORIGINAL, Pura's defaults: the main prompt with the genre, Pura's Formatting last.
+    Object.assign(q, { mode: "pura-original", aiRule: "SOME WRITING STYLE RULE", cotEnabled: true, model: "cot-v10-ukiyo-english" });
+    q.storyConfig.length = "flexible";
+    q.pura = {};
+    let msgs = await run("VCRP V10 Universal.json");
+    let t = text(msgs);
+    assert.deepEqual(leftovers(msgs), [], "no tag left over");
+    assert(textOf(msgs[0]).startsWith("# Directive\n- Bob is the director.") && t.includes("## Genre\nAn immersive literary narrative") && t.includes("Begin using the following compendium:"), "Pura's main prompt, with Pura's genre, first in the prompt");
+    assert(!/\{\{#if|\{\{getvar|\{\{setvar/.test(t), "no Pura macros left");
+    assert(!t.includes("You are the narrator of an ongoing prose story") && !t.includes("Writer's Mind") && !t.includes("Open every reply with your own <think>"), "no VCRP engine text, no CoT");
+    assert(!t.includes("SOME WRITING STYLE RULE") && !t.includes("<config>") && !t.includes("NEVER write Bob's actions"), "the writing style, Story Config and VCRP's user rule stand aside");
+    assert(after(msgs).includes("### Formatting\nConsider all rules here absolute") && after(msgs).includes("Write for every character excluding Bob") && after(msgs).includes("Flexible length") && !t.includes("{{dialoguecolors}}"), "Pura's Formatting, after the newest message");
+    assert(!t.includes("[LANGUAGE RULE]"), "Pura's language line instead of VCRP's");
+
+    // Per-request text goes after the newest message; standing settings stay in the main prompt.
+    q.pura = { voice: "random", director: "Characters {{random::will::will not}} lie.", randomisers: ["chaos", "pressure"], nameRandomiser: true, reasoning: "procedure", groundedProse: true, html: true };
+    msgs = await run("VCRP V10 Universal.json");
+    assert(!/\{\{(random|roll)/.test(before(msgs)), "nothing that changes per request before the newest message (the cache)");
+    const late = after(msgs);
+    for (const s of ["{{random::\n# Prose Voice", "Keep narration influential", "Characters {{random::will::will not}} lie.", "### Chaos Mode", "### Scene Pressure Cocktail", "# New NPC Naming Rules", "### Reasoning Procedure", "# Grounded Prose Rules"]) {
+        assert(late.includes(s), `after the newest message: ${s.slice(0, 30)}`);
+    }
+    assert(before(msgs).includes("### HTML\n- Use inline HTML"), "HTML is a standing toggle, cached with Main 2");
+    q.pura = { voice: "camus", director: "Mara never apologises.", friction: true, nsfw: true, gooner: true, nightmare: true };
+    t = text(await run("VCRP V10 Universal.json"));
+    for (const s of ["In the style of Albert Camus", "seamless to the scene.", "### Friction Mode", "### NSFW Mode", "Gooner (Director-Authorized)", "### Difficulty Level: Nightmare", "Consider this a source of truth", "### Director Instructions\nMara never apologises."]) {
+        assert(before(await run("VCRP V10 Universal.json")).includes(s), `in the cached main prompt: ${s.slice(0, 30)}`);
+    }
+    q.pura = { main: "simplified" };
+    msgs = await run("VCRP V10 Universal.json");
+    assert(textOf(msgs[0]).startsWith("# Core\n") && !text(msgs).includes("### Formatting"), "Simplified: Pura's small-model prompt, no Formatting");
+    q.pura = { main: "simplified", voice: "random", director: "{{random::a::b}}", randomisers: ["chaos"] };
+    t = after(await run("VCRP V10 Universal.json"));
+    assert(!t.includes("# Prose Voice") && !t.includes("source of truth") && t.includes("### Chaos Mode"), "Simplified: no voice or Director Instructions (it carries none), randomisers still roll");
+    q.pura = { userControl: "director", length: "short" };
+    t = after(await run("VCRP V10 Universal.json"));
+    assert(t.includes("Never treat Bob as a character") && t.includes("End immediately after 3-5 short paragraphs."), "user control and length as picked");
+
+    // Generation kinds: an impersonation goes without Pura's late text, a Continue without the randomisers.
+    q.pura = { randomisers: ["chaos"], reasoning: "procedure" };
+    assert(!after(await run("VCRP V10 Universal.json", "impersonate")).includes("### Formatting"), "Impersonate: nothing from Pura after the message");
+    t = after(await run("VCRP V10 Universal.json", "continue"));
+    assert(t.includes("### Formatting") && !t.includes("### Chaos Mode") && !t.includes("Reasoning Procedure"), "Continue: Formatting stays, no new randomiser roll");
+
+    // ADAPTED: reworded where VCRP's modules take over.
+    Object.assign(q, { mode: "pura-adapted" });
+    q.pura = { friction: true, nsfw: true, genre: "Space opera", gooner: true };
+    msgs = await run("VCRP V10 Universal.json");
+    t = text(msgs);
+    assert.deepEqual(leftovers(msgs), [], "Adapted: no tag left over");
+    assert(t.includes("Leave Bob's dialogue, decisions, actions, and thoughts to the director.") && !t.includes("selected user-control mode"), "Adapted: VCRP's rule owns user control");
+    assert(t.includes("- The story config sets genre, tone, point of view, pace, length, friction and explicitness") && !t.includes("User-control rules apply across all modes"), "Adapted: Story Config is the frame");
+    assert(t.includes("# Formatting\n- No chapter headings.") && t.includes("- Place translations for"), "Adapted: Pura's house formatting rules kept");
+    assert(t.includes("<config>") && t.includes("NEVER write Bob's actions") && !t.includes("### Formatting\nConsider all rules"), "Adapted: Story Config and VCRP's rule are sent, Pura's Formatting is not");
+    assert(!t.includes("### Friction Mode") && !t.includes("### NSFW Mode") && !t.includes("Space opera") && t.includes("Gooner (Director-Authorized)"), "Adapted: friction, explicitness and genre are Story Config's; Gooner stays Pura's");
+
+    // Both presets, every engine, nothing left over; a VCRP engine gets no Pura text.
+    for (const mode of ["pura-original", "pura-adapted"]) for (const preset of ["VCRP V10 Universal.json", "VCRP V10 Megumin Original.json"]) {
+        Object.assign(q, { mode });
+        q.pura = { voice: "random", randomisers: ["kink"], html: true };
+        const m = await run(preset);
+        assert.deepEqual(leftovers(m), [], `${mode} on ${preset}`);
+        assert(!/\{\{(random|roll)/.test(before(m)), `${mode} on ${preset}: the cached part holds still`);
+    }
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english" });
+    t = text(await run("VCRP V10 Universal.json"));
+    assert(!t.includes("# Directive\n- Bob is the director") && !t.includes("Kink Randomizer") && t.includes("You are the narrator of an ongoing prose story"), "a VCRP engine: no Pura text, even with Pura settings saved");
+
+    // Setup Check: a preset imported before the Pura tags says so.
+    const presetJson = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V10 Universal", prompts: presetJson.prompts, prompt_order: presetJson.prompt_order, extensions: presetJson.extensions });
+    Object.assign(q, { mode: "pura-original" });
+    const warned = () => vcrpHealthCheck().items.some(i => /Re-import the preset: .*Pura engine/.test(i.title));
+    assert(!warned(), "the current preset: no warning");
+    chatCompletionSettings.prompts = presetJson.prompts.map(p => ({ ...p, content: String(p.content || "").replace("[[pura_late]]", "") }));
+    assert(warned(), "a preset from before Pura: re-import");
+    for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
+
+    Object.assign(q, { mode: keep.mode, model: keep.model, aiRule: keep.aiRule, cotEnabled: keep.cot });
+    q.pura = keep.pura;
+    q.storyConfig = JSON.parse(keep.cfg);
+}
+console.log("39 ok Pura Director engines (Pura's text as written, Adapted rewords, per-request text after the message, Pura settings, both presets)");
+
+// 40. Pura's trackers as blocks: rules cached once, formats per turn, the latest of each
+//     carried from the whole chat, drawn with Pura's own cards (escaped), NPC sheets into the bank.
+{
+    const bh = await imp("src/vcrp/blockHistory.js");
+    const { renderPura } = await imp("src/blocks/pura.js");
+    const { meguminFindNpcDossiers } = await imp("src/features/npc/data.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const q = state.localProfile;
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const keepOrder = JSON.stringify(q.blockStack.order);
+    // The cached part: everything up to the last reply already in the history (VCRP marks the
+    // last two replies). The block instructions come after it, just before the newest message.
+    const before = (msgs) => { const t = msgs.map(textOf); let i = t.length - 1; while (i >= 0 && !t[i].includes("Scene prose")) i--; return t.slice(0, i + 1).join("\n"); };
+    q.blockStack.order = ["world", "pura_scene", "pura_relationship", "pura_events", "pura_npc", "pura_skill_choices"];
+    meguminSyncLegacyBlockIds();
+
+    // Rules once, in the cached part; formats per turn, in the block; the roll never cached.
+    let msgs = await run("VCRP V10 Universal.json");
+    let t = text(msgs);
+    const cached = before(msgs);
+    assert(cached.includes("## Tracker rules") && cached.includes("### Scene Tracker\nMark scene transitions") && cached.includes("### Relationship Tracker (Dating Sim)") && cached.includes("### NPC Introduction"), "Pura's tracker rules, word for word, in the cached part");
+    assert(!/\{\{roll/.test(cached) && t.includes("The hidden d100 roll for this response is {{roll:1d100}}"), "the skill-check roll rides with the per-turn block, never cached");
+    assert(t.includes("<Pura_Scene>\n(When the location or time changes;") && t.includes("[SCENE|Location|Time|Weather/Atmosphere]") && t.includes("<World_State>"), "Pura's formats in the block, next to VCRP's own");
+    assert.deepEqual(leftovers(msgs), [], "no tag left over");
+
+    // The latest of each, from the whole chat.
+    const B = inner => `Scene prose.\n<Blocks>\n${inner}\n</Blocks>`;
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: B("<Pura_Scene>\n[SCENE|The Lantern|Night|Rain]\ndetail: neon on wet glass\n[/SCENE]\n</Pura_Scene>\n<Pura_Events>\n[EVENT|🎯 QUEST|Find the brass ring|Friday]\ncontext: pawned\n[/EVENT]\n[EVENT|⚠️ THREAT|Okafor wants paying|Soon]\ncontext: debt\n[/EVENT]\n</Pura_Events>\n<Pura_Relationship>\n[METER|Mara|Friendly|💚 STABLE|🌅 WARMING]\nroute: 🌱 Slow Burn\nheart: warm\n[/METER]\n</Pura_Relationship>\n<Pura_NPC>\n[NPC:MAJOR|Okafor]\nb: Ade Okafor | 50 | M | Pawnbroker\na: Heavy | Bald | Brown | Dark | Gold tooth | Cardigan\np: Patient | Slow | Greedy, kind | Taps the counter\nh: Ran the shop thirty years | Money | Owes the Voss family\nr: Holds Bob's ring | Mara's uncle\n[/NPC]\n</Pura_NPC>") });
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: B("<Pura_Scene>\n[SCENE|The Docks|Dawn|Fog]\ndetail: gulls\n[/SCENE]\n</Pura_Scene>\n<Pura_Events>\n[EVENT|✅ RESOLVED|Find the brass ring|Friday]\ncontext: found\n[/EVENT]\n</Pura_Events>") });
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: B("<Pura_Relationship>\n[METER|Jonah|Wary|❄️ COLD|🍂 COOLING]\nroute: ⚔️ Rivals\nheart: cold\n[/METER]\n</Pura_Relationship>\n<World_State>the docks</World_State>") });
+    const note = bh.previousBlocksNote();
+    assert(note.includes("[SCENE|The Docks|Dawn|Fog]") && !note.includes("The Lantern"), "Scene: the newest one");
+    assert(note.includes("Okafor wants paying") && !note.includes("Find the brass ring"), "Events: open ones carried, a resolved one dropped");
+    assert(note.includes("[METER|Mara|Friendly") && note.includes("[METER|Jonah|Wary"), "Relationships: the newest card per NPC, from any reply");
+    assert(note.includes("Sheets already written") && note.includes("Okafor (MAJOR)"), "NPC sheets: who already has one");
+    assert(note.includes("The blocks as they stood at the end of your last reply") && note.includes("<World_State>the docks</World_State>") && note.split("[METER|Jonah").length === 2, "last reply's own blocks once, the carried ones not twice");
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: B("<Pura_Relationship>\n[METER|Jonah|Nemesis|💀 SEVERED|🥀 FALLING OUT]\nroute: 🥀 Tragic\n[/METER]\n</Pura_Relationship>") });
+    assert(!bh.previousBlocksNote().includes("[METER|Jonah"), "a severed relationship retires");
+    msgs = await run("VCRP V10 Universal.json");
+    assert(!before(msgs).includes("Okafor wants paying") && text(msgs).includes("Okafor wants paying"), "the carried state goes after the chat, never cached");
+
+    // Pura's cards, escaped.
+    const card = renderPura("[METER|Mara <img src=x onerror=alert(1)>|Close|🔥 PASSIONATE|💗 HEART EVENT]\nroute: 🌱 Slow Burn\npath: Friendly > Close > Confidant\nheart: she saves him a stool\ntrust: her keys\nwant: honesty\nguard: pride\nlikes: rain\ndislikes: lies\ntell: she hums\nunsaid: stay\nmemory: The roof: they watched the storm\ndate: a walk home\nturn: he stayed\nnext: a confession\n[/METER]");
+    assert(card && card.includes("💞") && card.includes("ROUTE PROGRESS") && card.includes("KEEPSAKE MEMORY") && card.includes("Mara &lt;img src=x onerror=alert(1)&gt;") && !card.includes("<img") && !card.includes("/thumbnail/portrait"), "the dating-sim card, the model's text escaped, no Neconyan portrait lookup");
+    const choices = renderPura("[CHOICES]\n1. **[Speech 42/100]** Talk her down\n2. Run\n[/CHOICES]");
+    assert(choices.includes("<strong>[Speech 42/100]</strong>") && choices.includes("What will you do?") && !/class="pura-choice"[^>]*><span[^>]*><\/span><span[^>]*><\/span><\/div>/.test(choices), "choices: bold skills, empty rows removed");
+    assert.equal(renderPura("just prose, no tracker"), null, "no tracker: the plain card instead");
+    assert(renderPura("stray <b>text</b>\n[SCENE|A|B|C]\ndetail: d\n[/SCENE]").startsWith("stray &lt;b&gt;text&lt;/b&gt;"), "text outside a tracker is shown escaped");
+
+    // NPC sheets into the NPC Bank, which stops asking for its own dossiers.
+    const sheets = meguminFindNpcDossiers(chat[1].mes).filter(d => d.parsed);
+    assert(sheets.length === 1 && sheets[0].name === "Okafor" && sheets[0].parsed.age === "50" && sheets[0].parsed.role === "Pawnbroker" && sheets[0].parsed.background === "Ran the shop thirty years" && sheets[0].parsed.secrets === "Owes the Voss family", `a Pura sheet read into the bank's fields: ${JSON.stringify(sheets[0] && sheets[0].parsed)}`);
+    q.npcBank.enabled = true;
+    t = text(await run("VCRP V10 Universal.json"));
+    assert(!t.includes("<New_NPC") && !t.includes("[NPC Dossier block here]"), "with Pura's sheets in the block, the bank asks for no dossier of its own");
+    q.blockStack.order = ["world"]; meguminSyncLegacyBlockIds();
+    assert(text(await run("VCRP V10 Universal.json")).includes("<New_NPC"), "without them, it does");
+    q.npcBank.enabled = false;
+    t = text(await run("VCRP V10 Universal.json"));
+    assert(!t.includes("## Tracker rules") && !t.includes("Trackers still in effect"), "no Pura tracker in the stack: no rules, no carry");
+
+    chat.length = 0;
+    q.blockStack.order = JSON.parse(keepOrder); meguminSyncLegacyBlockIds();
+}
+console.log("40 ok Pura's trackers (rules cached once, formats per turn, roll uncached, latest of each carried, Pura's cards escaped, NPC sheets into the bank)");
+
+// 41. Pura alongside every VCRP module: all of them at once on both engines and both presets;
+//     the NPC Bank and Pura's NPC sheets as one system (skip list, roster, upgrades and
+//     relationship changes into the records, with undo); overlap pairs; Dev Mode.
+{
+    const pnpc = await imp("src/vcrp/pura/npc.js");
+    const { npcUndoHistoryEntry } = await imp("src/features/npc/updates.js");
+    const { npcCreateRecord } = await imp("src/features/npc/data.js");
+    const { blockTwinsInStack } = await imp("src/features/blocks/puraBlocks.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const { meguminIsDevEditableMode } = await imp("data/slots.js");
+    const focus = await imp("src/vcrp/focus/index.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const q = state.localProfile;
+    const keep = JSON.stringify({ mode: q.mode, addons: q.addons, order: q.blockStack.order, npcBank: q.npcBank, kb: q.knowledgebase.enabled, anime: q.animeMode.enabled, sp: q.storyPlan.enabled, ono: q.onomatopoeia, dn: q.dnRatio, pron: q.userPronouns, pura: q.pura });
+
+    // Everything on at once.
+    Object.assign(q, { addons: ["bold_npcs", "html", "color", "dn"], userPronouns: "male", onomatopoeia: { enabled: true }, dnRatio: { enabled: true, dialogue: 60 } });
+    q.knowledgebase.enabled = true; q.animeMode.enabled = true; q.storyPlan.enabled = true; q.storyPlan.currentPlan = "PLAN-TEXT: the ring resurfaces.";
+    q.banList = ["no purple prose"];
+    q.npcBank.enabled = true;
+    q.npcBank.npcs = [npcCreateRecord({ parsed: { role: "Pawnbroker" }, name: "Okafor" })];
+    q.npcBank.ignoredNames = "Fluffy";
+    q.blockStack.order = ["world", "bonds", "pura_npc", "pura_relationship", "pura_scene"]; meguminSyncLegacyBlockIds();
+    q.focus = { enabled: true, every: 20, checks: { drift: true, motifs: true, slop: true } };
+    Object.assign(focus.focusState(), { note: "FOCUS-NOTE: cut the smirk." });
+    await focus.setPlotFocus({ active: true, text: "PLOT-FOCUS: the brass ring" });
+    q.pura = { voice: "camus", randomisers: ["chaos"], groundedProse: true, html: true };
+    for (const mode of ["pura-original", "pura-adapted"]) for (const preset of ["VCRP V10 Universal.json", "VCRP V10 Megumin Original.json"]) {
+        q.mode = mode;
+        const msgs = await run(preset);
+        const t = text(msgs);
+        const tag = `${mode} on ${preset}`;
+        assert.deepEqual(leftovers(msgs), [], `${tag}: no tag left over`);
+        for (const [what, s] of [["Pura main", "Bob is the director"], ["Story Director", "PLAN-TEXT: the ring resurfaces."], ["Focus correction", "FOCUS-NOTE: cut the smirk."], ["plot focus", "PLOT-FOCUS: the brass ring"],
+            ["ban list", "no purple prose"], ["anime mode", "<anime_mode>"], ["pronouns", "Bob is male"], ["NPC list or updates", "Okafor"], ["blocks", "<World_State>"], ["Pura tracker", "<Pura_Relationship>"], ["Pura voice", "In the style of Albert Camus"], ["randomiser", "### Chaos Mode"]]) {
+            assert(t.includes(s), `${tag}: ${what} present`);
+        }
+        assert.equal(t.includes("<config>"), mode === "pura-adapted", `${tag}: Story Config only with Adapted`);
+    }
+
+    // The NPC Bank and Pura's sheets: who never gets a sheet, who already has one.
+    q.mode = "pura-original";
+    const env = text(await run("VCRP V10 Universal.json"));
+    assert(/Never write a sheet for: Alice, Bob, Fluffy/.test(env), "Pura is told the main cast and the ignored names");
+    assert(/Already in the NPC Bank[^\n]*: Okafor\./.test(env), "and who the bank already has");
+    const sheets = pnpc.puraFindNpcSheets("[NPC:MINOR|Alice]\nb: Alice | 25 | Barista\na: Short\np: Kind\n[/NPC]\n[NPC:MINOR|Fluffy]\nb: Fluffy | 3 | Cat\na: Grey\np: Lazy\n[/NPC]\n[NPC:MINOR|Jonah]\nb: Jonah | 40 | Sailor\na: Tall\np: Gruff\n[/NPC]");
+    assert.deepEqual(sheets.map(s => s.name), ["Jonah"], "a sheet for the card's character or an ignored name is never filed");
+
+    // An upgrade fills what the record lacks without overwriting; a relationship change updates the read; both undoable.
+    const okafor = q.npcBank.npcs[0];
+    const changes = pnpc.puraApplyNpcChanges("[NPC:UP|Okafor|MAJOR]\nb: Ade Okafor | 50 | M | Moneylender\na: Heavy | Bald | Brown | Dark | Gold tooth | Cardigan\np: Patient | Slow | Greedy | Taps\nh: Thirty years in the shop | Money | Owes the Voss family\nr: Holds the ring | Mara's uncle\n[/NPC]\n[NPC:REL|Okafor|no longer trusts Bob after the lie]\n[NPC:REL|Stranger|ignored]", { messageIndex: 7 });
+    assert(okafor.role === "Pawnbroker" && okafor.background === "Thirty years in the shop" && okafor.secrets === "Owes the Voss family" && okafor.age === "50", `upgrade: empty fields filled, the role kept: ${JSON.stringify(okafor)}`);
+    assert.equal(okafor.readOnPc, "no longer trusts Bob after the lie", "relationship change: Read on the PC updated");
+    assert(changes.applied.length >= 5 && changes.applied.every(e => okafor.history.some(h => h.id === e.id)), "every change in the record's history");
+    const bg = changes.applied.find(e => e.field === "background");
+    npcUndoHistoryEntry(bg.id);
+    assert.equal(okafor.background, "", "an upgrade's field can be undone");
+    assert.equal(pnpc.puraApplyNpcChanges("[NPC:UP|Nobody|MAJOR]\nb: x\n[/NPC]").applied.length, 0, "an upgrade for someone not on file changes nothing (the sheet pass files them)");
+
+    // Overlap pairs, and Dev Mode.
+    assert.deepEqual(blockTwinsInStack("pura_relationship", ["bonds", "pura_relationship"]), ["bonds"], "Relationships and Bonds are twins");
+    assert.deepEqual(blockTwinsInStack("world", ["world", "pura_scene", "pura_time", "pura_npc"]).sort(), ["pura_scene", "pura_time"], "World State and Scene/Time");
+    assert.deepEqual(blockTwinsInStack("pura_npc", ["world", "pura_npc"]), [], "no twin, no hint");
+    assert(!meguminIsDevEditableMode({ id: "pura-original", pura: "original" }) && meguminIsDevEditableMode({ id: "v10-core" }), "Dev Mode offers no copy of a Pura engine");
+
+    await focus.setPlotFocus({ active: false });
+    delete meta.vcrp_focus;
+    const k = JSON.parse(keep);
+    Object.assign(q, { mode: k.mode, addons: k.addons, npcBank: k.npcBank, onomatopoeia: k.ono, dnRatio: k.dn, userPronouns: k.pron, pura: k.pura });
+    q.knowledgebase.enabled = k.kb; q.animeMode.enabled = k.anime; q.storyPlan.enabled = k.sp; q.storyPlan.currentPlan = ""; q.banList = [];
+    q.blockStack.order = k.order; meguminSyncLegacyBlockIds();
+    q.focus = { enabled: false, every: 20, checks: { drift: true, motifs: true, slop: true } };
+}
+console.log("41 ok Pura with every VCRP module (all at once, both engines, both presets), NPC Bank and Pura's sheets as one system, overlap pairs, Dev Mode");
+
 console.log("\nALL FORK CHECKS PASSED");

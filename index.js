@@ -97,6 +97,7 @@ import { vcrpRefreshHealthBadge } from "./src/vcrp/health.js";
 import { vcrpMemoryAfterReply } from "./src/vcrp/memory/summarize.js";
 import { vcrpFocusAfterReply } from "./src/vcrp/focus/index.js";
 import { whatsNewToast } from "./src/vcrp/whatsNew.js";
+import { puraApplyNpcChanges } from "./src/vcrp/pura/npc.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpApplyReplyCap } from "./src/vcrp/replyLength.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
@@ -524,7 +525,7 @@ jQuery(async () => {
                                 if (!npcBank.npcs) npcBank.npcs = [];
                                 if (!npcBank.npcs.find(n => (n.name || "").trim().toLowerCase() === npcName.toLowerCase())) {
                                     // Parse structured fields from the raw block
-                                    const parsed = npcParseBlock(npcContent);
+                                    const parsed = dossier.parsed || npcParseBlock(npcContent);
                                     npcBank.npcs.push(npcCreateRecord({
                                         parsed,
                                         name: npcName,
@@ -556,6 +557,15 @@ jQuery(async () => {
                                 // broken for weeks.
                                 refused.forEach(r => console.debug(`[VCRP] NPC update declined for "${r.name}": ${r.reason}.`));
                             }
+
+                            // VCRP: Pura's tier upgrades and relationship changes, for NPCs already on file.
+                            const puraChanges = puraApplyNpcChanges(lastMsg.mes, { messageIndex: chat.length - 1 });
+                            if (puraChanges.applied.length) {
+                                added = true;
+                                const who = [...new Set(puraChanges.applied.map(e => e.npc))].join(", ");
+                                toastr.info(puraChanges.applied.map(e => `${e.label}: ${e.before ? "replaced" : "added"}`).join(" · "), `VCRP — ${who} updated`);
+                            }
+                            puraChanges.refused.forEach(r => console.debug(`[VCRP] Pura NPC change declined for "${r.name}": ${r.reason}.`));
 
                             if (added) saveProfileToMemory();
                             if (!matched && /New[ _]NPC/i.test(lastMsg.mes || "")) {

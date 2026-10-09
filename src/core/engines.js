@@ -30,6 +30,12 @@ export const isCoWriterEngine = m => !!m && (m.isCoWriter === true || String(m.i
 // so a Dev Mode clone of one stays original.
 export const isMeguminEngine = m => !!m && m.megumin === true;
 
+// The Pura Director pair (VCRP): Pura's Director Preset as an engine, word for word
+// ("original") or reworded where it clashes with VCRP's modules ("adapted"). Its text is
+// assembled from the reader's Pura settings rather than stored on the engine.
+export const isPuraEngine = m => !!m && (m.pura === "original" || m.pura === "adapted");
+export const puraVariant = m => (isPuraEngine(m) ? m.pura : null);
+
 // ── Behaviour, named for what it does ────────────────────────────────────────
 //
 // V10 inherits everything V9 does EXCEPT the Lean/Full render limits, which it

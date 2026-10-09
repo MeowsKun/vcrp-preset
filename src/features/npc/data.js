@@ -10,6 +10,7 @@ import { localProfile } from "../../core/state.js";
 import { memGetCachedKeywords } from "../../core/keywords.js";
 import { escapeRegex } from "../../utils/regex.js";
 import { npcFields, npcFieldByRole, npcBodyFields, npcVitalsFields } from "./fields.js";
+import { puraFindNpcSheets } from "../../vcrp/pura/npc.js";
 
 // -------------------------------------------------------------
 // STAGE 8.5: NPC BANK
@@ -95,6 +96,8 @@ export function meguminFindNpcDossiers(text) {
         }
         out.push({ name: name.replace(/\*\*/g, "").replace(/<\/?b>/ig, "").trim(), raw });
     }
+    // VCRP: Pura's NPC sheets, already read into the bank's fields (parsed).
+    out.push(...puraFindNpcSheets(text));
     if (out.length) return out;
 
     const legacyRe = /<details[^>]*>[\s\S]*?<summary[^>]*>.*?New NPC:\s*(.*?)<\/summary\s*>([\s\S]*?)<\/details\s*>/ig;

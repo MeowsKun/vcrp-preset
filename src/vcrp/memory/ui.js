@@ -23,6 +23,9 @@ import { storyChat, approvePending, discardPending, nextSpan, memorySummaryRunni
 import { FACT_CATEGORIES, formatFactChanges, applyFactChanges } from "./ledger.js";
 import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "../cacheCheck.js";
 import { storyConfigFields } from "../../features/storyconfig/config.js";
+import { activeEngine } from "../../engine/meguminOriginal.js";
+import { isPuraEngine, puraVariant } from "../../core/engines.js";
+import { puraSettings } from "../pura/index.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 
@@ -89,19 +92,32 @@ function renderReplyLength($c, s, budget, st, rerender) {
     const measuredCount = ((st && st.spend && st.spend.recentOut) || []).length;
     const avgCost = measured && budget ? measured * budget.price.output / 1e6 : null;
     const cap = Number(s.replyCap) || 0;
+    // VCRP: Pura Original sets its length in Pura's own Formatting rules, and no Pura engine
+    // uses VCRP's thinking steps.
+    const engine = activeEngine();
+    const pura = isPuraEngine(engine);
+    const puraOriginal = puraVariant(engine) === "original";
+    const ps = puraSettings();
+    const puraLengthLive = puraOriginal && ps.formatting && ps.main !== "simplified";
+    const storyLengthRow = puraOriginal
+        ? `<div class="mtab-setting-row"><div class="set-info"><div class="set-label">Story length</div><div class="set-desc">${puraLengthLive ? "Pura Director · Original's own length setting, sent with Pura's Formatting rules. The same setting as in the Pura Director panel." : "Pura's Formatting rules are off (or the Simplified prompt is on), so no length rule is sent. Turn Formatting on in the Pura Director panel to use this."}</div></div>
+            <select id="vmem_len_pura" class="ps-modern-input" style="width:170px;" ${puraLengthLive ? "" : "disabled"}>
+                ${[["flexible", "Flexible"], ["short", "Short (3-5 paragraphs)"], ["medium", "Medium (8-13 paragraphs)"], ["long", "Long (13+ paragraphs)"]].map(([v, l]) => `<option value="${v}" ${ps.length === v ? "selected" : ""}>${l}</option>`).join("")}
+            </select></div>`
+        : null;
     $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title blue"><i class="fa-solid fa-ruler-horizontal"></i> Reply length</div>
         <div style="font-size:0.75rem; line-height:1.55; margin-bottom:6px;">${measured
             ? `Your ${measuredCount ? `last ${measuredCount}` : "recent"} replies averaged about <b>${k(measured)} output tokens</b>${avgCost !== null ? ` (about ${money(avgCost)} each in output alone)` : ""}.${on ? " Story Memory's budget plans for that." : ""}`
             : (on ? `<span style="opacity:.75;">After a few replies, their measured length shows here, and Story Memory's budget plans for it.</span>` : `<span style="opacity:.75;">With Story Memory on, your replies' measured length shows here.</span>`)}
             <span style="opacity:.7;">Hidden reasoning SillyTavern never sees is not counted.</span></div>
-        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Story length</div><div class="set-desc">How long the story part of each reply runs. The same setting as Story Config's Length.</div></div>
+        ${storyLengthRow || `<div class="mtab-setting-row"><div class="set-info"><div class="set-label">Story length</div><div class="set-desc">How long the story part of each reply runs. The same setting as Story Config's Length.</div></div>
             <select id="vmem_len" class="ps-modern-input" style="width:170px;">
                 <option value="" ${!curLength ? "selected" : ""}>Default (no length rule)</option>
                 ${lengthOpts.map(o => `<option value="${esc(o.value)}" ${o.value === curLength ? "selected" : ""}>${esc(o.label)}</option>`).join("")}
                 ${customLength ? `<option value="${esc(curLength)}" selected>Custom (set in Story Config)</option>` : ""}
-            </select></div>
-        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Thinking length</div><div class="set-desc">The most words VCRP's visible thinking may take before the story starts. The same setting as Thinking Effort.</div></div>
-            <select id="vmem_think" class="ps-modern-input" style="width:170px;">
+            </select></div>`}
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Thinking length</div><div class="set-desc">${pura ? "Does not apply while a Pura Director engine is selected: Pura thinks without VCRP's thinking steps. The setting comes back when you switch engine." : "The most words VCRP's visible thinking may take before the story starts. The same setting as Thinking Effort."}</div></div>
+            <select id="vmem_think" class="ps-modern-input" style="width:170px;" ${pura ? "disabled" : ""}>
                 ${[["unspecified", "No limit"], ["100", "100 words"], ["250", "250 words"], ["450", "450 words"]].map(([v, l]) => `<option value="${v}" ${effort === v ? "selected" : ""}>${l}</option>`).join("")}
                 ${effort === "custom" ? `<option value="custom" selected>Custom: ${esc(localProfile.customThinkEffort || "")} words</option>` : ""}
             </select></div>
@@ -112,6 +128,11 @@ function renderReplyLength($c, s, budget, st, rerender) {
     $c.find("#vmem_len").on("change", function () {
         if (!localProfile.storyConfig) localProfile.storyConfig = {};
         localProfile.storyConfig.length = String($(this).val());
+        saveProfileToMemory();
+    });
+    $c.find("#vmem_len_pura").on("change", function () {
+        if (!localProfile.pura || typeof localProfile.pura !== "object") localProfile.pura = {};
+        localProfile.pura.length = String($(this).val());
         saveProfileToMemory();
     });
     $c.find("#vmem_think").on("change", function () {

@@ -170,10 +170,12 @@ function edit(text, swaps, name) {
 const original = {
     // Removed features: Death, Combat and Organic NPCs. VCRP's Bold NPCs add-on sits where they
     // did, and its always-on knowledgebase entries before the ban list, where VCRP's preset has them.
+    // The Pura engines' standing toggles and the tracker rules close the slot (both empty
+    // unless something is on), as in VCRP's preset.
     "Main 2": edit(upText("Main 2"), [
         ["[[prompt5]]\n\n[[death]]\n\n[[combat]]\n\n[[npc_events]]\n\n[[prompt6]]", "[[prompt5]]\n\n[[boldnpcs]]\n\n[[prompt6]]"],
         ["[[html]]\n\n<banlist>", "[[html]]\n\n[[knowledgebase_always]]\n\n<banlist>"],
-    ], "Main 2"),
+    ], "Main 2") + "[[pura_system]][[block_rules]]",
     "<lore>": upText("<lore>"),
     "</lore><user_persona>": upText("</lore><user_persona>"),
     // Removed features: Direct Language, Dice, Image Gen, MVU. Story Memory's recall and
@@ -184,8 +186,9 @@ const original = {
         ["[[npc list]]\n\n[[dice]]\n\n[[img1]]\n\n[[blocks]]", "[[npc list]]\n\n[[story_recall]]\n\n[[knowledgebase]]\n\n[[ANIMEMODE]]\n\n[[focus]]\n\n[[blocks]]"],
         ["[[Language]]\n[[MVU]]\n", "[[Language]]\n"],
     ], "Output RULES"),
-    // The plot focus (VCRP Focus) closes the slot: the last thing the model reads.
-    "</history>": upText("</history>") + "[[plotfocus]]",
+    // The Pura engines' per-turn text, then the plot focus (VCRP Focus), close the slot:
+    // the last things the model reads.
+    "</history>": upText("</history>") + "[[pura_late]][[plotfocus]]",
     // Off by default. The original, minus the one slur VCRP took out.
     "USER Consent": edit(upText("USER Consent"), [["gooner, nigga.....etc", "gooner.....etc"]], "USER Consent"),
 };

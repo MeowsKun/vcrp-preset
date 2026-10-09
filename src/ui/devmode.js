@@ -726,6 +726,8 @@ function renderEnginesList(c) {
         coreGrid.append(card);
     });
     c.append(coreGrid);
+    // VCRP: why the Pura Director engines are not in the list above.
+    c.append(`<div class="mtab-callout" id="dev_pura_note" style="margin-top:12px; border-color:rgba(236,72,153,0.4);"><i class="fa-solid fa-clapperboard" style="color:#ec4899;"></i><span><strong>The Pura Director engines are not edited here.</strong> Their text is assembled from Pura's own preset and your settings in PRESETS &amp; COT → Pura Director (voices, modes, Director Instructions and the rest), so a copy would have nothing of its own to edit. Pura's wording itself comes from tools/upstream/pura and tools/gen_pura.mjs.</span></div>`);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -921,6 +923,11 @@ function renderEngineEditor(c) {
     const rerender = () => renderDevMode("editor");
 
     $("#ps_stage_sub").text("The real prompt, in the real order. Gold panels belong to this engine; green ones are shared add-ons.");
+    // VCRP: an engine copied from a Pura Director engine (or imported with its flag) is still
+    // built from the Pura Director panel; the text boxes below do not reach the prompt.
+    if (modeData && modeData.pura) {
+        c.append(`<div class="mtab-callout" id="dev_pura_engine_note" style="margin-bottom:12px; border-color:rgba(236,72,153,0.4);"><i class="fa-solid fa-clapperboard" style="color:#ec4899;"></i><span><strong>This is a Pura Director engine.</strong> Its text is assembled from Pura's preset and your settings in PRESETS &amp; COT → Pura Director, so edits to the engine text here do not reach the prompt.</span></div>`);
+    }
 
     const $bar = $(`
         <div class="dev-bar">

@@ -19,6 +19,7 @@ import {
     normalizeBlockBody, blockTagFromName, validateCustomBlock, meguminSyncLegacyBlockIds,
 } from "./registry.js";
 import { meguminScheduleBlocksRefresh } from "./chat.js";
+import { blockTwinsInStack } from "./puraBlocks.js";
 import { meguminSlotByTrigger } from "../../../data/slots.js";
 import { hasSharedFragment } from "../../core/sharedFragments.js";
 
@@ -70,6 +71,8 @@ export function renderBlocksTab(c) {
 
     inStack.forEach((b, i) => {
         const off = typeof b.requires === "function" && !b.requires(localProfile);
+        // VCRP: one of VCRP's blocks and its Pura twin in together: both get written every reply.
+        const twins = blockTwinsInStack(b.id, stack.order).map(id => meguminBlockById(id)).filter(Boolean);
         const row = $(`
             <div class="blk-row ${off ? 'blk-row-off' : ''}"${b.desc ? ` title="${escapeHtmlAttr(b.desc)}"` : ""}>
                 <div class="blk-row-main">
@@ -77,6 +80,7 @@ export function renderBlocksTab(c) {
                     <div>
                         <div class="blk-name">${b.label}${b.builtin ? "" : ` <span class="blk-custom-flag">custom</span>`}${editedFlag(b)}</div>
                         <div class="blk-tag">&lt;${b.tag}&gt;${off ? " — its feature is switched off, so it is not sent" : ""}</div>
+                        ${twins.length ? `<div class="blk-overlap" style="font-size:0.68rem; color:#f59e0b; margin-top:2px;"><i class="fa-solid fa-clone"></i> Does the same job as ${twins.map(t => escapeHtmlAttr(t.label)).join(" and ")}, also in the block: the AI writes both every reply. Keep one.</div>` : ""}
                     </div>
                 </div>
                 <div class="blk-row-actions">
@@ -166,19 +170,29 @@ export function renderBlocksTab(c) {
     left.append(`<div class="wstyle-section-head green" style="margin-top:18px;"><i class="fa-solid fa-plus"></i> Add a block</div>`);
     const pool = $(`<div class="blk-pool"></div>`);
     if (!available.length) pool.append(`<div class="blk-empty">Every block is already in.</div>`);
-    available.forEach(b => {
+    // VCRP: Pura's trackers in a group of their own, after VCRP's blocks.
+    const addChip = (b, host) => {
         const chip = $(`<button class="blk-add"${b.desc ? ` title="${escapeHtmlAttr(b.desc)}"` : ""}><span>${b.emoji || "📦"}</span> ${b.label}${editedFlag(b)}</button>`);
         chip.on("click", () => {
             if (b.preferFirst) stack.order.unshift(b.id); else stack.order.push(b.id);
             meguminSyncLegacyBlockIds();
             saveProfileToMemory(); renderBlocksTab(c);
         });
-        pool.append(chip);
-    });
+        host.append(chip);
+    };
+    available.filter(b => b.group !== "pura").forEach(b => addChip(b, pool));
     const newBtn = $(`<button class="blk-add blk-add-new"><i class="fa-solid fa-wand-magic-sparkles"></i> Create custom block</button>`);
     newBtn.on("click", () => renderCustomBlockEditor(c, null));
     pool.append(newBtn);
     left.append(pool);
+    const puraAvailable = available.filter(b => b.group === "pura");
+    if (puraAvailable.length) {
+        left.append(`<div class="wstyle-section-head" style="margin-top:14px; color:#ec4899;"><i class="fa-solid fa-clapperboard"></i> Pura's trackers</div>
+            <div class="blk-sub-desc" style="margin-bottom:6px;">From Pura's Director Preset, drawn with Pura's own cards, for any engine. Most write only when something changes; VCRP hands the latest of each back every turn. Their full rules ride once in the cached part of the prompt.</div>`);
+        const puraPool = $(`<div class="blk-pool"></div>`);
+        puraAvailable.forEach(b => addChip(b, puraPool));
+        left.append(puraPool);
+    }
 
     // ── PREVIEW ──
     right.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-eye"></i> Preview</div>`);

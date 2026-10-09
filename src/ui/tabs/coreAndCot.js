@@ -5,7 +5,8 @@
 import { extension_settings, saveSettingsDebounced, Popup, POPUP_TYPE } from "../../st.js";
 import { extensionName } from "../../core/constants.js";
 import { localProfile, currentTab } from "../../core/state.js";
-import { lockedStyleIdFor, isV10Engine } from "../../core/engines.js";
+import { lockedStyleIdFor, isV10Engine, isPuraEngine, puraVariant } from "../../core/engines.js";
+import { renderPuraPanel } from "../../vcrp/pura/ui.js";
 import { saveProfileToMemory, saveProfileDebounced } from "../../core/profile.js";
 import { fireRefreshHook, REFRESH } from "../../core/refreshHooks.js";
 import { hardcodedLogic } from "../../../data/database.js";
@@ -77,6 +78,8 @@ export function renderCoreAndCot(c) {
         "v10-core": "The storyteller. Ukiyo is the looser of the two — a teller with a temperament, spinning the world and its history, following whatever in the scene is most alive. It trades a little polish for invention: the prose wanders, reaches for an image, and occasionally overreaches. Pick it for atmosphere, momentum and a world that feels told rather than composed. Neither V10 is a downgrade of the other — run a few scenes on each and keep the one that sounds like the story you want to read.",
         "v10-shura": "The writer. Shura is the stricter of the two — no slop, no AI tells, no line that exists to manage the scene. Every character is the protagonist of their own story, acting from their own values, and none of them is a villain in their own eyes; there is no objective right or wrong for the narration to take sides on. Pick it for prose that reads like a book and a cast that drives the story itself. Neither V10 is a downgrade of the other — run a few scenes on each and keep the one that sounds like the story you want to read.",
         "v10-ukiyo-megumin": "Megumin Suite's own V10 Ukiyo, word for word, for RP that reads exactly the way it did on Megumin. Its engine text, thinking steps and Enhanced Dialogue are the originals, and so is the wording of your writing style, add-ons and Story Config while it is selected. The dash cleaner pauses. Pair it with the \"VCRP V10 Megumin Original\" preset. Story Memory works the same as on every VCRP engine.",
+        "pura-original": "Pura's Director Preset 16.0 (by Pura), word for word: grounded, character-driven co-writing where {{user}} directs the scene. Pura's own formatting, length, user-control, genre and modes, set in the Pura Director panel; Story Config and the writing style stand aside. Thinks without a CoT script. Works with Story Memory, Focus, the NPC Bank and every block, Pura's trackers among them.",
+        "pura-adapted": "Pura's Director core, reworded only where VCRP's modules take over: Story Config sets genre, tone, POV, pace, length, friction and explicitness, and VCRP's rule keeps {{user}} yours. Pura's voices, randomisers, extras and modes stay in the Pura Director panel. Thinks without a CoT script. Works with Story Memory, Focus, the NPC Bank and every block, Pura's trackers among them.",
         "v10-shura-megumin": "Megumin Suite's own V10 Shura, word for word, for RP that reads exactly the way it did on Megumin. Its engine text, thinking steps and Enhanced Dialogue are the originals, and so is the wording of your writing style, add-ons and Story Config while it is selected. The dash cleaner pauses. Pair it with the \"VCRP V10 Megumin Original\" preset. Story Memory works the same as on every VCRP engine.",
     };
 
@@ -123,6 +126,11 @@ export function renderCoreAndCot(c) {
     const btnConfig = $(`<button class="ws-nav-btn" data-target="sec-config"><span style="display:flex; align-items:center; gap:10px;"><i class="fa-solid fa-sliders" style="color: var(--gold);"></i> Story Config</span> <span style="display:flex; align-items:center; gap:6px;"><span class="ws-new-pill">✨ New</span>${cfgCount > 0 ? `<span class="ws-badge">${cfgCount}</span>` : ''}</span></button>`);
     sidebar.append(btnConfig);
 
+    // VCRP: the Pura Director panel, while a Pura engine is selected.
+    const puraOn = isPuraEngine(activeEng);
+    const btnPura = $(`<button class="ws-nav-btn" data-target="sec-pura" style="${puraOn ? "" : "display:none;"}"><span style="display:flex; align-items:center; gap:10px;"><i class="fa-solid fa-clapperboard" style="color:#ec4899;"></i> Pura Director</span></button>`);
+    sidebar.append(btnPura);
+
     const btnCot = $(`<button class="ws-nav-btn" data-target="sec-cot"><span style="display:flex; align-items:center; gap:10px; color: ${localProfile.cotEnabled ? 'var(--text-main)' : 'var(--text-muted)'};"><i class="fa-solid fa-brain" style="color: ${localProfile.cotEnabled ? '#a855f7' : ''};"></i> Reasoning (CoT)</span> <span style="font-size: 0.6rem; font-weight: bold; color: ${localProfile.cotEnabled ? '#10b981' : '#ef4444'};">${localProfile.cotEnabled ? 'ON' : 'OFF'}</span></button>`);
     sidebar.append(btnCot);
 
@@ -132,6 +140,7 @@ export function renderCoreAndCot(c) {
     const secOfficial = $(`<div class="ws-section" id="sec-official"></div>`);
     const secCustom = $(`<div class="ws-section" id="sec-custom" style="display:none;"></div>`);
     const secCot = $(`<div class="ws-section" id="sec-cot" style="display:none;"></div>`);
+    const secPura = $(`<div class="ws-section" id="sec-pura" style="display:none;"></div>`);
     const secConfig = buildStoryConfigSection().hide();
 
     // ==========================================
@@ -256,6 +265,15 @@ export function renderCoreAndCot(c) {
     secCot.append(`<h3 style="margin-top: 0; color: #a855f7; font-size: 1.1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;"><i class="fa-solid fa-brain"></i> Chain of Thought (Reasoning)</h3>`);
 
     if (localProfile.cotEnabled === undefined) localProfile.cotEnabled = true;
+
+    if (isPuraEngine(activeEng)) {
+        secCot.append(`
+            <div class="mtab-callout" style="margin-bottom:20px; border-color:rgba(236,72,153,0.4);">
+                <i class="fa-solid fa-clapperboard" style="color:#ec4899;"></i>
+                <span><strong>Pura thinks without a CoT script.</strong> While a Pura engine is selected, nothing below is sent; the model's own reasoning does the work, and Pura's optional nudges are in the Pura Director panel. Your choices here come back when you switch engine.</span>
+            </div>
+        `);
+    }
 
     const cotToggle = $(`
         <div class="mtab-toggle-row ${localProfile.cotEnabled ? 'active' : ''}" style="margin-bottom: 20px; border-color: ${localProfile.cotEnabled ? '#a855f7' : 'var(--border-color)'}; cursor: pointer;">
@@ -416,14 +434,15 @@ export function renderCoreAndCot(c) {
     }
 
     // --- ASSEMBLE ---
-    mainArea.append(secOfficial).append(secCustom).append(secCot).append(secConfig);
+    if (puraOn) renderPuraPanel(secPura, puraVariant(activeEng), () => renderCoreAndCot(c));
+    mainArea.append(secOfficial).append(secCustom).append(secCot).append(secConfig).append(secPura);
     layout.append(mainArea);
     root.append(layout);
     c.append(root);
 
     // ── NAVIGATION LOGIC ──
-    const navButtons = [btnOfficial, btnCustom, btnCot, btnConfig];
-    const sections = [secOfficial, secCustom, secCot, secConfig];
+    const navButtons = [btnOfficial, btnCustom, btnCot, btnConfig, btnPura];
+    const sections = [secOfficial, secCustom, secCot, secConfig, secPura];
 
     const switchSection = (targetId) => {
         navButtons.forEach(btn => {
@@ -440,7 +459,8 @@ export function renderCoreAndCot(c) {
     btnCustom.on('click', () => switchSection('sec-custom'));
     btnCot.on('click', () => switchSection('sec-cot'));
     btnConfig.on('click', () => switchSection('sec-config'));
+    btnPura.on('click', () => switchSection('sec-pura'));
 
-    // Trigger initial state
-    switchSection(activeSubTab);
+    // Trigger initial state (the Pura panel only while a Pura engine is selected)
+    switchSection(activeSubTab === "sec-pura" && !puraOn ? "sec-official" : activeSubTab);
 }

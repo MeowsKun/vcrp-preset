@@ -319,7 +319,7 @@ export function renderNpcBank(c) {
                 const npcContent = dossier.raw;
                 if (!localProfile.npcBank.npcs) localProfile.npcBank.npcs = [];
                 if (!localProfile.npcBank.npcs.find(n => (n.name || "").trim().toLowerCase() === npcName.toLowerCase())) {
-                    const parsed = npcParseBlock(npcContent);
+                    const parsed = dossier.parsed || npcParseBlock(npcContent);
                     localProfile.npcBank.npcs.push(npcCreateRecord({ parsed, name: npcName, messageIndex: msgIndex }));
                     addedCount++;
                 }

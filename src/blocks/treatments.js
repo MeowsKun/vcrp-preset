@@ -22,6 +22,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { esc, renderBody, renderStatLine } from "./text.js";
+import { PURA_TREATMENT } from "./pura.js";
+import { PURA_BLOCK_IDS } from "../features/blocks/puraBlocks.js";
 
 // The inline formatter renderStatLine expects. Same shape as the one inside
 // renderBody, kept here so a treatment can format a fragment without going
@@ -1016,5 +1018,8 @@ export const BLOCK_TREATMENTS = {
 
     world:   { parse: parseWorldState, render: renderWorldState, cls: "meg-ws-pane" },
     chatter: { parse: parseChatter,    render: renderChatter,    cls: "meg-chat-pane" },
-    sheet:   { parse: parseSheet,      render: renderSheet,      cls: "meg-sheet-pane" }
+    sheet:   { parse: parseSheet,      render: renderSheet,      cls: "meg-sheet-pane" },
+
+    // VCRP: Pura's trackers, drawn with Pura's own cards.
+    ...Object.fromEntries(PURA_BLOCK_IDS.map(id => [id, PURA_TREATMENT]))
 };
