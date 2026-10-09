@@ -20,6 +20,7 @@ import { focusSettings, peekFocusState } from "./focus/index.js";
 import { isPuraEngine } from "../core/engines.js";
 import { activeEngine } from "../engine/meguminOriginal.js";
 import { meguminActiveBlocks } from "../features/blocks/registry.js";
+import { toneRulesText } from "./toneRules.js";
 
 // A preset is VCRP's if it carries the tags only VCRP/Megumin presets use (the name can be anything).
 const VCRP_TAG_RE = /\[\[(?:blocks|THINK|prompt1)\]\]/;
@@ -129,6 +130,7 @@ export function vcrpHealthCheck() {
     // The Pura engines and Pura's trackers have tags of their own.
     if (isPuraEngine(activeEngine()) && !(carries("[[pura_late]]") && carries("[[pura_system]]"))) focusOff.push("the Pura engine's settings");
     if (meguminActiveBlocks().some(b => b && b.puraRules) && !carries("[[block_rules]]")) focusOff.push("Pura's tracker rules");
+    if (toneRulesText("reply") && !carries("[[pura_late]]")) focusOff.push("your Tone Rules");
     if (focusOff.length) {
         add("warn", `Re-import the preset: ${focusOff.join(" and ")} cannot reach the model`,
             `The active preset was imported before this version and has no place for it. Import "VCRP V10 Universal" (or "VCRP V10 Megumin Original") again from the extension's Presets folder and select it. Re-importing replaces your own edits to that preset.`);

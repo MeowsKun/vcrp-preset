@@ -47,6 +47,12 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 - **Sideways scrolling on mobile:** scrolling sideways on the blocks card, or on anything wide in
   a reply that scrolls (an HTML object, a table), no longer counts as a swipe (which regenerated
   the last reply). Swiping anywhere else works as before.
+- **Tone Rules** (Global Toggles & Add-ons, and the Pura Director panel; the same text in both):
+  your own rules for the story's overall tone, saved with each chat. While on, they go after your
+  newest message on every reply and Continue (not Impersonate), with any engine, the Megumin
+  Original ones included, and they win where Story Config's Narration Tone or the engine's own
+  style disagree. With a Pura engine and Pura's Dead Dove Escalation rolled, they sit right under
+  it; otherwise on their own. No preset re-import needed.
 - **Tense** in Story Config: present or past. Left on default it sends nothing and each engine
   keeps its own (Megumin's Story Config has no tense, so the Megumin Original engines only get one
   if you pick it).

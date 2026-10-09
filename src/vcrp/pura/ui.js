@@ -13,6 +13,7 @@ import {
     puraSettings, puraIsVolatile, puraFormatting, PURA_VOICE_LABELS, PURA_RANDOMISER_LABELS, PURA_MAX_RANDOMISERS,
 } from "./index.js";
 import { settingCostLabel, puraEngineCostLabel } from "./costs.js";
+import { renderToneRulesPanel } from "../toneRulesUi.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 
@@ -100,6 +101,9 @@ export function renderPuraPanel(sec, variant, rerender) {
         const blocked = !on && (cut || (k === "directorsCut" && randomCount > 0) || randomCount >= PURA_MAX_RANDOMISERS);
         panel.append(`<label style="display:flex; align-items:center; gap:8px; margin:4px 0; font-size:0.8rem; opacity:${blocked ? 0.5 : 1};"><input type="checkbox" class="pura_rand" data-key="${k}" ${on ? "checked" : ""} ${blocked ? "disabled" : ""} /> ${esc(label)} <span class="pura-cost" style="font-size:0.66rem; opacity:0.75;">(${esc(settingCostLabel(PURA_RANDOMISERS[k], { fresh: true }))})</span></label>`);
     });
+
+    // VCRP: this chat's Tone Rules, under the randomisers (they follow Dead Dove Escalation).
+    renderToneRulesPanel(panel, { where: "pura" });
 
     panel.append(`<div class="mtab-panel-title gold" style="margin-top:14px;"><i class="fa-solid fa-brain"></i> Thinking</div>`);
     panel.append(ROW("", "Reasoning help", "Pura has no CoT script; the model's own reasoning does the work. These are Pura's optional nudges, sent after your message." + `<div class="pura-cost" style="font-size:0.66rem; opacity:0.8; margin-top:2px;"><i class="fa-solid fa-coins"></i> Reasoning Procedure ${esc(settingCostLabel(PURA_TOGGLES.reasoningProcedure, { fresh: true }))}; Anti-Overthinking ${esc(settingCostLabel(PURA_TOGGLES.antiOverthinking, { fresh: true }))}</div>`,

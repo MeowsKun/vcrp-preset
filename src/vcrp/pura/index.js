@@ -26,6 +26,7 @@
 
 import { localProfile } from "../../core/state.js";
 import { isPuraEngine, puraVariant } from "../../core/engines.js";
+import { toneRulesText } from "../toneRules.js";
 import {
     PURA_MAIN, PURA_SIMPLIFIED, PURA_VARS, PURA_USER_CONTROL, PURA_LENGTHS, PURA_VOICES,
     PURA_FORMATTING, PURA_TOGGLES, PURA_RANDOMISERS,
@@ -177,7 +178,7 @@ export function puraFormatting(s = puraSettings(), language = "") {
  * randomisers, the name randomiser and the reasoning help shape a fresh reply, so a
  * Continue goes without them; an Impersonate (the reader's own turn) goes without any.
  */
-export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { language = "" } = {}) {
+export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { language = "", tone = "" } = {}) {
     if (gen === "impersonate") return "";
     const fresh = gen === "reply";
     // Pura's Simplified prompt carries none of the main prompt's settings (voice, genre,
@@ -191,7 +192,14 @@ export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { lang
     const director = String(s.director || "").trim();
     if (full && director && puraIsVolatile(director)) parts.push(`Consider this a source of truth for any plausible contradictory instructions:\n${directorVar(director)}`);
     if (variant === "original" && full && s.genreOn && String(s.genre || "").trim() && puraIsVolatile(s.genre)) parts.push(`## Genre\n${String(s.genre).trim()}`);
-    if (fresh) for (const k of s.randomisers) parts.push(PURA_RANDOMISERS[k]);
+    // The reader's Tone Rules (vcrp/toneRules.js): right under Dead Dove Escalation when it
+    // is rolled this reply, otherwise on their own where it would have been.
+    let toneSent = !tone;
+    if (fresh) for (const k of s.randomisers) {
+        parts.push(PURA_RANDOMISERS[k]);
+        if (k === "deadDove" && !toneSent) { parts.push(tone); toneSent = true; }
+    }
+    if (!toneSent) parts.push(tone);
     if (fresh && s.reasoning === "procedure") parts.push(PURA_TOGGLES.reasoningProcedure);
     if (fresh && s.reasoning === "antiOverthinking") parts.push(PURA_TOGGLES.antiOverthinking);
     return parts.length ? `\n\n${parts.join("\n\n")}` : "";
@@ -203,9 +211,11 @@ export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { lang
  * engine gets the two tags empty.
  */
 export function applyPuraEngine(dict, engine, gen = "reply") {
+    // The reader's Tone Rules ride in the same slot after the newest message, for every engine.
+    const tone = toneRulesText(gen);
     if (!isPuraEngine(engine)) {
         dict["[[pura_system]]"] = "";
-        dict["[[pura_late]]"] = "";
+        dict["[[pura_late]]"] = tone ? `\n\n${tone}` : "";
         return;
     }
     const variant = puraVariant(engine);
@@ -215,7 +225,7 @@ export function applyPuraEngine(dict, engine, gen = "reply") {
     dict["[[prompt1]]"] = puraMainPrompt(variant, s);
     dict["[prompt1]"] = dict["[[prompt1]]"];
     dict["[[pura_system]]"] = puraSystemBlock(s);
-    dict["[[pura_late]]"] = puraLateBlock(variant, gen, s, { language });
+    dict["[[pura_late]]"] = puraLateBlock(variant, gen, s, { language, tone });
     // Pura thinks Pura's way: no CoT script, no CoT prefill. Its voices replace the
     // writing style, and it carries no model acknowledgements.
     dict["[[COT]]"] = "";

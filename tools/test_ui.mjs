@@ -457,6 +457,28 @@ for (let k = 0; k < memCount; k++) {
     Object.assign(p, { mode: keepMode, pura: keepPura });
     p.blockStack.order = keepOrder;
 
+    // Tone Rules: this chat's, in Global Toggles & Add Ons and in the Pura panel (the same text).
+    delete meta.vcrp_tone;
+    switchTab(globalTab);
+    check(box.find("#global_tone_panel").length === 1 && box.find("#global_tone_closed").length === 1 && !box.find("#global_tone_text").length, "Tone Rules without a chat open: no 'open a chat' note");
+    ctx.chatId = "chat-1";
+    switchTab(globalTab);
+    box.find("#global_tone_on").prop("checked", true).trigger("change");
+    box.find("#global_tone_text").val("Bleak. No rescues.").trigger("input"); await tick();
+    check(meta.vcrp_tone && meta.vcrp_tone.enabled === true && meta.vcrp_tone.text === "Bleak. No rescues.", `Tone Rules not saved with the chat: ${JSON.stringify(meta.vcrp_tone)}`);
+    check(/sent fresh every reply/.test(box.find("#global_tone_cost").text()), "Tone Rules: no cost line");
+    const keepToneMode = p.mode;
+    p.mode = "pura-adapted";
+    switchTab(tabsUI.findIndex(t => t.title === "PRESETS & COT"));
+    box.find('.ws-nav-btn[data-target="sec-pura"]').trigger("click");
+    check(box.find("#pura_tone_text").val() === "Bleak. No rescues." && box.find("#pura_tone_on").is(":checked") && /Dead Dove Escalation/.test(box.find("#pura_tone_panel").text()), "the Pura panel does not show the same Tone Rules");
+    box.find("#pura_tone_text").val("Grim, always.").trigger("input"); await tick();
+    switchTab(globalTab);
+    check(box.find("#global_tone_text").val() === "Grim, always." && meta.vcrp_tone.text === "Grim, always.", "an edit in the Pura panel does not reach Global Toggles");
+    p.mode = keepToneMode;
+    delete ctx.chatId;
+    delete meta.vcrp_tone;
+
     // Wide content in a message: a touch on it never reaches the swipe gesture; ordinary text does.
     const { vcrpInstallSwipeGuard } = await imp("src/vcrp/swipeGuard.js");
     const chatEl = w.document.getElementById("chat");
@@ -477,7 +499,7 @@ for (let k = 0; k < memCount; k++) {
     w.document.removeEventListener("touchstart", saw);
     chatEl.innerHTML = keepChat;
     clicks += 5;
-    if (failures === before) console.log("  ✓ Dialogue Colors list (shown with the add-on, change, forget, forget all), Story Config's Tense, Pura cost hints (panel summary live, each setting, BLOCKS lines), wide content keeps its sideways scroll from the swipe gesture");
+    if (failures === before) console.log("  ✓ Dialogue Colors list (shown with the add-on, change, forget, forget all), Story Config's Tense, Pura cost hints (panel summary live, each setting, BLOCKS lines), Tone Rules (per chat, same text in both places), wide content keeps its sideways scroll from the swipe gesture");
 }
 console.log(`  (${clicks} clicks across all tabs)`);
 await new Promise(r => setTimeout(r, 200)); // let async handlers settle

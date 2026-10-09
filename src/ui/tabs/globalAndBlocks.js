@@ -12,6 +12,7 @@ import { hardcodedLogic } from "../../../data/database.js";
 import { meguminSlotByTrigger } from "../../../data/slots.js";
 import { hasSharedFragment } from "../../core/sharedFragments.js";
 import { renderDialogueColorsPanel } from "../../vcrp/dialogueColorsUi.js";
+import { renderToneRulesPanel } from "../../vcrp/toneRulesUi.js";
 
 // "You have rewritten this one in Dev Mode."
 //
@@ -196,6 +197,9 @@ export function renderGlobalAndBlocks(c) {
     });
     addonGrid.append(onoCard);
     c.append(addonGrid);
+
+    // VCRP: this chat's Tone Rules, for every engine (the Pura panel shows the same).
+    renderToneRulesPanel(c, { where: "global" });
 
     // VCRP: this chat's locked dialogue colors, while the add-on is on.
     if (localProfile.addons.includes("color")) renderDialogueColorsPanel(c, () => fireRefreshHook(REFRESH.SWITCH_TAB));

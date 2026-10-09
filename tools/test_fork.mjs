@@ -2812,4 +2812,71 @@ console.log("42 ok fixes from play: Dialogue Colors locked per character (learne
 }
 console.log("43 ok readable dialogue colors (contrast with the theme, apart from colors taken, the reader's pick kept), Pura cost hints (average rolls, cached/fresh/written priced on the selected model, trackers measured from the chat)");
 
+// 44. Tone Rules: the reader's own tone rules for a chat, after the newest message with every
+//     engine; right under Pura's Dead Dove Escalation when it is rolled, otherwise on their own.
+{
+    const P = await imp("data/pura.js");
+    const { modes_megumin } = await imp("data/megumin.js");
+    const tone = await imp("src/vcrp/toneRules.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { mode: q.mode, model: q.model, pura: q.pura };
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const split = msgs => { const t = msgs.map(textOf); const i = t.lastIndexOf("latest user msg"); return { before: t.slice(0, i).join("\n"), after: t.slice(i + 1).join("\n") }; };
+    const RULES = "Bleak and unsentimental. No rescues, no last-minute mercy.";
+
+    meta.vcrp_tone = { enabled: true, text: RULES };
+    for (const [mode, preset] of [["v10-core", "VCRP V10 Universal.json"], [modes_megumin[0].id, "VCRP V10 Megumin Original.json"], ["pura-adapted", "VCRP V10 Universal.json"], ["pura-original", "VCRP V10 Megumin Original.json"]]) {
+        Object.assign(q, { mode });
+        q.pura = {};
+        const msgs = await run(preset);
+        const { before, after } = split(msgs);
+        assert(after.includes(`${tone.TONE_HEADER}\n\n${RULES}`) && !before.includes(RULES), `${mode} on ${preset}: the rules after the newest message, never cached`);
+        assert.deepEqual(leftovers(msgs), [], `${mode}: no tag left over`);
+    }
+
+    // Pura: right under Dead Dove Escalation when it is rolled; on their own otherwise.
+    Object.assign(q, { mode: "pura-adapted" });
+    q.pura = { randomisers: ["deadDove", "chaos"], reasoning: "procedure" };
+    let t = split(await run("VCRP V10 Universal.json")).after;
+    const at = s => t.indexOf(s);
+    assert(at("### Dead Dove Escalation") >= 0 && at("### Dead Dove Escalation") < at("### Tone Rules") && at("### Tone Rules") < at("### Chaos Mode"), "under Dead Dove, before the next randomiser");
+    q.pura = { randomisers: ["chaos", "deadDove"] };
+    t = split(await run("VCRP V10 Universal.json")).after;
+    assert(at("### Chaos Mode") < at("### Dead Dove Escalation") && at("### Dead Dove Escalation") < at("### Tone Rules"), "under Dead Dove wherever it is in the roll");
+    q.pura = { randomisers: ["chaos"], reasoning: "procedure" };
+    t = split(await run("VCRP V10 Universal.json")).after;
+    assert(at("### Chaos Mode") < at("### Tone Rules") && t.split("### Tone Rules").length === 2 && !t.includes("### Dead Dove"), "no Dead Dove: on their own, once");
+    q.pura = { randomisers: ["deadDove"] };
+    t = split(await run("VCRP V10 Universal.json", "continue")).after;
+    assert(t.includes("### Tone Rules") && !t.includes("### Dead Dove"), "Continue: no fresh roll, the rules still there");
+    assert(!split(await run("VCRP V10 Universal.json", "impersonate")).after.includes("### Tone Rules"), "Impersonate: the reader's own turn, no rules");
+    Object.assign(q, { mode: "v10-core" });
+    assert(split(await run("VCRP V10 Universal.json", "continue")).after.includes("### Tone Rules") && !text(await run("VCRP V10 Universal.json", "impersonate")).includes("### Tone Rules"), "a VCRP engine: Continue yes, Impersonate no");
+
+    // Off, or empty: nothing.
+    meta.vcrp_tone = { enabled: false, text: RULES };
+    assert(!text(await run("VCRP V10 Universal.json")).includes("### Tone Rules"), "off: nothing sent (the text kept)");
+    meta.vcrp_tone = { enabled: true, text: "   " };
+    assert(!text(await run("VCRP V10 Universal.json")).includes("### Tone Rules"), "empty: nothing sent");
+    assert.equal(tone.toneRulesText("quiet"), "", "a background call: none");
+
+    // Per chat: saved with the chat's metadata; a preset without the slot is flagged.
+    tone.setToneRules({ enabled: true, text: "Grim." });
+    assert(meta.vcrp_tone.enabled && meta.vcrp_tone.text === "Grim.", "saved with the chat");
+    const presetJson = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V10 Universal", prompts: presetJson.prompts, prompt_order: presetJson.prompt_order, extensions: presetJson.extensions });
+    const warned = () => vcrpHealthCheck().items.some(i => /Re-import the preset: .*your Tone Rules/.test(i.title));
+    assert(!warned(), "the current preset: no warning");
+    chatCompletionSettings.prompts = presetJson.prompts.map(p => ({ ...p, content: String(p.content || "").replace("[[pura_late]]", "") }));
+    assert(warned(), "a preset without the slot after the newest message: re-import");
+    for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
+
+    delete meta.vcrp_tone;
+    Object.assign(q, { mode: keep.mode, model: keep.model, pura: keep.pura });
+}
+console.log("44 ok Tone Rules (per chat, after the newest message with every engine and both presets, under Dead Dove when rolled, on their own otherwise, Continue yes, Impersonate and background calls no, Setup Check)");
+
 console.log("\nALL FORK CHECKS PASSED");
