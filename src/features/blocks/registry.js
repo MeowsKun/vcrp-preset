@@ -11,7 +11,7 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { localProfile } from "../../core/state.js";
-import { PURA_BLOCKS } from "./puraBlocks.js";
+import { PURA_BLOCKS, PURA_NOTES_BLOCK } from "./puraBlocks.js";
 
 // -------------------------------------------------------------
 // BLOCK REGISTRY — one definition per block the <Blocks> envelope can carry
@@ -121,8 +121,10 @@ export const MEGUMIN_BLOCK_REGISTRY = [
         source: "[[storytracker]]",
         requires: p => Boolean(p.storyPlan && p.storyPlan.enabled)
     },
-    // VCRP: Pura's trackers (puraBlocks.js), drawn with Pura's own cards.
-    ...PURA_BLOCKS
+    // VCRP: Pura's trackers (puraBlocks.js), drawn with Pura's own cards, and the
+    // Notes tab for what a Pura engine says out of character.
+    ...PURA_BLOCKS,
+    PURA_NOTES_BLOCK
 ];
 
 // Content written for the old format opens with <details><summary>…</summary>

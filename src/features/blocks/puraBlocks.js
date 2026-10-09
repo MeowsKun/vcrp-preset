@@ -186,6 +186,24 @@ export const PURA_BLOCKS = DEFS.map(d => ({
 
 export const PURA_BLOCK_IDS = PURA_BLOCKS.map(b => b.id);
 
+// What Pura asks to be said out of character (the Kink randomiser's "((OOC: state the kinks
+// rolled))"), and any ((OOC: …)) a Pura engine writes into the story: a tab of the card
+// instead (vcrp/pura/tidy.js moves stray ones). A system block, on with a Pura engine; the
+// model is asked for it only on a turn whose Pura text asks for an OOC note. It is this
+// reply's note only: never carried into the next turn's blocks (`transient`).
+// Whether a Pura engine is on is handed in by vcrp/pura/tidy.js, which knows the engines.
+let engineOn = p => /^pura-/.test(String((p && p.mode) || ""));
+export function setPuraEngineOn(fn) { engineOn = fn; }
+
+export const PURA_NOTES_BLOCK = {
+    id: "pura_notes", tag: "Pura_Notes", label: "Notes (OOC)", emoji: "📝", icon: "fa-note-sticky", color: "#a0a0b8",
+    desc: "Pura: what the model says out of character (an OOC note, the kinks a randomiser rolled), kept out of the story.",
+    visibility: "open", builtin: true, system: true, transient: true, group: "pura",
+    slot: "<Pura_Notes>\n[Anything you were asked to say out of character this turn goes here, without the (( )), never in the story text. Omit this whole tag otherwise.]\n</Pura_Notes>",
+    requires: p => { try { return Boolean(engineOn(p)); } catch (e) { return false; } },
+    slotRequires: dict => /\(\(\s*OOC\b/i.test(String(dict["[[pura_late]]"] || "")),
+};
+
 /** The rules of the Pura trackers in the stack, for [[block_rules]] (cached). "" with none. */
 export function puraBlockRules(activeBlocks) {
     const rules = (activeBlocks || []).filter(b => b && b.puraRules && PURA_TRACKERS[b.puraRules]).map(b => PURA_TRACKERS[b.puraRules]);

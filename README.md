@@ -36,6 +36,12 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 - **Clean Em Dashes** (Global Settings, on by default): takes the em dashes out of each new reply,
   a comma in narration and an ellipsis in speech, leaving the thinking, trackers and blocks alone.
   English stories only. **Clean This Chat** does the same for every earlier reply in the open chat.
+- **Dialogue Colors that stay put:** each character keeps the color they first spoke in for the
+  whole chat. The add-on asks for the speaker's name on each colored line, tells the model the
+  colors already taken (after the chat, so never cached), and corrects a reply that gives a known
+  character another color. The Megumin Original engines keep Megumin's own wording.
+- **Blocks on mobile:** scrolling sideways on the blocks card no longer counts as a swipe (which
+  regenerated the last reply).
 - User Consent block without the slur in its example list; Megumin's feedback form and donation
   details removed from the About card (it links to the original project instead).
 - **Trimmed:** Side Panel, Image Generation (ComfyUI, incl. NPC portrait generation and NPC image
@@ -219,6 +225,13 @@ never gets a sheet (the card's own cast, you, the bank's ignored names) and who 
 has, a tier upgrade fills in what a record still lacks without overwriting it, and a relationship
 change updates its "Read on the PC"; both show in the chat card and can be undone there.
 
+Pura's own text puts some trackers in the story (a sheet right after an NPC's introduction, the
+scene at the top); here each of those sentences names the tracker's block instead. A tracker the
+model still writes in the story is moved into its block as the reply arrives (the thinking is left
+alone, and nothing is added twice), and older replies reach the model without it. With a Pura
+engine, a note out of character (`((OOC: …))`, which the Kink randomiser asks for) goes to a Notes
+tab of the card, unless your own message was out of character: then the answer stays in the story.
+
 Where one of VCRP's blocks and a Pura tracker do the same job (Bonds and Relationships, World State
 and Scene or Time, CYOA and Choices, Character Sheet and Your Stats), both can be on, but the BLOCKS
 tab points it out: the model writes both every reply. The Pura panel does the same for VCRP's
@@ -228,8 +241,9 @@ engine: its text is built from the Pura Director panel.
 
 Both engines and the trackers are generated from Pura's own preset file by
 `node tools/gen_pura.mjs` (the upstream files are in `tools/upstream/pura/`). The only text
-changed is for the cache (the skill-check roll moves out of the cached rules) and a portrait lookup
-that only Pura's own frontend has (cards show the initial instead).
+changed is for the cache (the skill-check roll moves out of the cached rules), the sentences that
+place a tracker in the story (they name its block instead), and a portrait lookup that only Pura's
+own frontend has (cards show the initial instead).
 
 ## Development
 

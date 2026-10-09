@@ -465,6 +465,7 @@ BUILD
 - Under 25 lines.
 - Never wrap it in \`\`\` fences. It must render.
 </render>`,
+    "color": `- Dialogue Colors: Assign a distinct, readable hex color to every character using: <font color="#HEXCODE">"Dialogue here"</font>. Once assigned, a character's color is LOCKED for the entire story.`,
     "dn": `- Narration must be between <narration>.........</narration>. and dialogue must be between <dialogue >.........</dialogue > and you can interwoven them throughout the response.`,
 };
 

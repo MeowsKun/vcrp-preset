@@ -360,6 +360,16 @@ for (let k = 0; k < memCount; k++) {
     const card = buildBlocksCard(found, { document: w.document });
     const html = card && (card.outerHTML || String(card));
     check(found.length === 1 && /Okafor wants paying/.test(html || "") && /⏳ Friday/.test(html || ""), "a Pura block is not drawn with Pura's card");
+    // The card keeps its touches: a sideways scroll on it never reaches SillyTavern's swipe gesture.
+    w.document.body.appendChild(card);
+    let swipeSaw = 0;
+    const saw = () => { swipeSaw++; };
+    for (const type of ["touchstart", "touchmove", "touchend"]) w.document.addEventListener(type, saw);
+    const inner = card.querySelector("*") || card;
+    for (const type of ["touchstart", "touchmove", "touchend"]) inner.dispatchEvent(new w.Event(type, { bubbles: true }));
+    for (const type of ["touchstart", "touchmove", "touchend"]) w.document.removeEventListener(type, saw);
+    card.remove();
+    check(card.getAttribute("data-swipe-ignore") === "true" && swipeSaw === 0, `the blocks card lets a touch through to the swipe gesture (${swipeSaw})`);
     // Reply length (Memory tab): Pura Original's own length; thinking length does not apply.
     p.mode = "pura-original";
     p.pura = { length: "flexible" };
@@ -392,7 +402,7 @@ for (let k = 0; k < memCount; k++) {
 
     p.mode = keepMode;
     clicks += 14;
-    if (failures === before) console.log("  ✓ Pura: panel per engine, settings saved, randomiser limits, BLOCKS group, Pura's card in the chat, reply length, overlap hints, Dev Mode");
+    if (failures === before) console.log("  ✓ Pura: panel per engine, settings saved, randomiser limits, BLOCKS group, Pura's card in the chat (touches kept from the swipe gesture), reply length, overlap hints, Dev Mode");
 }
 console.log(`  (${clicks} clicks across all tabs)`);
 await new Promise(r => setTimeout(r, 200)); // let async handlers settle

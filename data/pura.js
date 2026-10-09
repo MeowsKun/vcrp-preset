@@ -619,7 +619,7 @@ Rules:
 };
 export const PURA_TRACKERS = {
     "npc": `### NPC Introduction
-When introducing a new named NPC for the first time, append a character sheet immediately after their narrative introduction using the appropriate tier, using this EXACT format with no additional formatting:
+When introducing a new named NPC for the first time, write a character sheet for them in its tag inside <Blocks>, never in the story text, using the appropriate tier, using this EXACT format with no additional formatting:
 
 MAJOR - Recurring characters, antagonists, love interests, plot-critical figures
 [NPC:MAJOR|Name]
@@ -648,20 +648,20 @@ p: One-line Personality Summary
 
 NPC Sheet Rules:
 - Sheets appear ONCE per NPC at first significant appearance
-- Place sheet AFTER narrative introduction, BEFORE continuing action
+- Place the sheet in its tag inside <Blocks>, never in the story text
 - Use pipe | separators between data points
 - Never forget the opening and closing tags
 - If NPC tier upgrades (Minor→Support→Major), use: [NPC:UP|Name|NEW_TIER] with new fields [/NPC]
 
-For returning NPCs in busy scenes, use quick reference:
+For returning NPCs in busy scenes, use quick reference (in the same tag inside <Blocks>, never in the story text):
 [NPC:REF|Name|visual cue|current mood]
 Do not add [/NPC] to this.
 
-For relationship changes mid-story:
+For relationship changes mid-story (in the same tag inside <Blocks>, never in the story text):
 [NPC:REL|Name|change description]
 Do not add [/NPC] to this.`,
     "choices": `### CYOA Choices
-End EVERY response with the EXACT formatting with no modifications and without leaving out any tags. Place this after every single other formatting when applicable at the very end of the scene message. This is strictly from {{user}}’s perspective.
+Write this in EVERY response with the EXACT formatting with no modifications and without leaving out any tags. Place it in its tag inside <Blocks>, never in the story text. This is strictly from {{user}}’s perspective.
 
 3-7 numbered options:
 [CHOICES]
@@ -671,7 +671,7 @@ End EVERY response with the EXACT formatting with no modifications and without l
 [/CHOICES]`,
     "skillChoices": `## CYOA Choices with Skill Checks
 
-Maintain a setting-specific CYOA choice tracker from {{user}}'s perspective. When meaningful player agency is needed, output this block at the very end of the response:
+Maintain a setting-specific CYOA choice tracker from {{user}}'s perspective. When meaningful player agency is needed, output this block in its tag inside <Blocks>, never in the story text:
 
 [CHOICES]
 1. **[Skill 0/100]** Action description
@@ -681,7 +681,7 @@ Maintain a setting-specific CYOA choice tracker from {{user}}'s perspective. Whe
 
 Rules:
 - Output 3–7 choices only.
-- The [CHOICES] block must be the final part of every response.
+- The [CHOICES] block must be in its tag inside <Blocks> in every response, never in the story text.
 - Write each choice as something {{user}} can do, say, inspect, threaten, negotiate, fight, sneak, craft, repair, analyze, decode, heal, or otherwise attempt.
 - Each choice must begin with a tag and target value: [Skill/Perk/Stat/Reputation/Item/Condition 0/100].
 - Examples: [Speech 42/100], [Stealth 80/100], [Medicine 25/100], [Analysis 70/100], [Strength 60/100], [Local Reputation 50/100], [Has Lockpick 30/100], [Injured 15/100].
@@ -706,7 +706,7 @@ If user choice is completely different or deviates, base the check on the approp
 
 Narrate the outcome naturally. Do not explain the mechanics or reveal the roll unless instructed. The choice must meaningfully affect the next scene. Failure still moves the story forward with consequences.`,
     "directions": `### Direction Menu
-End every response with exactly 4 plot-direction prompts for {{user}}.
+Write exactly 4 plot-direction prompts for {{user}} in every response, in its tag inside <Blocks>.
 
 These are dramatic pivots, not safe continuations. Each option names a distinct, compelling way the next beat could escalate, rupture, complicate, or transform the scene.
 
@@ -733,7 +733,7 @@ Rules:
 - All 4 options stay connected to the current scene.
 - One or two short lines maximum per option.
 - Vivid, specific, and charged.
-- Place this block at the absolute end of the response after all other formatting.
+- Place this block in its tag inside <Blocks>, never in the story text.
 - Use this EXACT format:
 
 [DIRECTIONS]
@@ -788,7 +788,7 @@ Rules:
 - Let relationships stall, cool and slide backwards. Neglect, broken promises and small slights all cost something.
 - Condition is the emotional weather of the bond and may shift while the stage stays put, such as Close and ⚡ VOLATILE after a fight.
 - Next names a concrete threshold (a confession, a rescue, a kept secret, a shared meal in silence), never a vague feeling. When the stage moves, write a new threshold.
-- Show a record once when an NPC first matters, then again only when it changes. Place records after the narrative.
+- Show a record once when an NPC first matters, then again only when it changes. Place records in their tag inside <Blocks>, never in the story text.
 - 💀 SEVERED ends the relationship: show that record one final time, then retire it.
 
 Format law: one [METER] block per NPC, every field on its own line in the order above, each label written exactly as shown and followed by a colon, pipes only in the header line, path rungs separated by >. Reproduce this shape exactly, every time. The renderer matches this exact shape and draws the record as a card.`,
@@ -800,7 +800,7 @@ detail: one-line sensory detail that informs the current environment
 [/SCENE]
 
 Rules:
-- Appears at the TOP of responses where setting shifts
+- Appears inside <Blocks> (never in the story text) in responses where setting shifts
 - Never repeat if location/time has not changed
 - Time can be specific (3:47 PM) or atmospheric (late afternoon, the golden hour before dusk)
 - Weather/Atmosphere is a brief mood descriptor (humid, tense, festive)
@@ -813,7 +813,7 @@ note: explain the time context
 [/TIME]
 
 Rules:
-- Time appears at the TOP of responses when time shifts without a location change
+- Time appears inside <Blocks> (never in the story text) when time shifts without a location change
 - If both location and time change, use Scene Tracker and Time Tracker together
 - Day format: "Day 1," "Day 47," etc.
 - Day of week: Monday, Tuesday, etc., or "Unknown" if not established
@@ -829,7 +829,7 @@ context: MANDATORY; explain the stakes or origin
 Type options: 🎯 QUEST | 💬 PROMISE | ⏰ DEADLINE | ⚠️ THREAT | 🎉 SOCIAL | 💡 OPPORTUNITY | ❌ FAILED | ✅ RESOLVED
 
 Rules:
-- Events appear AFTER narrative content
+- Events appear inside <Blocks> (never in the story text)
 - Only show events that were ADDED, UPDATED, or RESOLVED this scene
 - Mark resolved/failed events once, then remove them
 - Deadline can be specific (Friday 3 PM) or vague (soon, eventually)
@@ -844,7 +844,7 @@ unlocked: MANDATORY; explain what triggered it; NEVER leave empty
 Rarity options: ★ COMMON | ★★ UNCOMMON | ★★★ RARE | ★★★★ EPIC | ★★★★★ LEGENDARY | 💀 SECRET
 
 Rules:
-- Achievements appear AFTER narrative content
+- Achievements appear inside <Blocks> (never in the story text)
 - MAXIMUM one achievement per scene; most scenes have none
 - Achievements must feel earned, never automatic
 - NEVER output an empty unlocked line`,
@@ -858,7 +858,7 @@ cause: MANDATORY; explain what triggered this reputation shift
 Direction options: 📈 RISING | 📉 FALLING | 🔄 MIXED | 🆕 NEW
 
 Rules:
-- Reputation appears AFTER narrative content when public perception changes
+- Reputation appears inside <Blocks> (never in the story text) when public perception changes
 - Source can be a named NPC, a group (e.g., "Freshmen," "Faculty"), or a location (e.g., "The dorm floor")
 - Perception is what they think; a short phrase, not necessarily accurate
 - Only show reputations that CHANGED or were ESTABLISHED this scene
@@ -873,7 +873,7 @@ note: MANDATORY; explain origin or significance
 Action options: ➕ GAINED | ➖ LOST | 🔄 USED | 💔 BROKEN | 🎁 GIVEN
 
 Rules:
-- Items appear AFTER narrative content when inventory changes
+- Items appear inside <Blocks> (never in the story text) when inventory changes
 - Only show items that CHANGED this scene
 - Do not track currency, consumables, or mundane objects unless plot-relevant`,
     "status": `### Status & Conditions
@@ -886,7 +886,7 @@ note: MANDATORY; explain the cause or context
 Severity options: 🟢 MILD | 🟡 MODERATE | 🔴 SEVERE | ⚫ CRITICAL | ✅ CLEARED
 
 Rules:
-- Status appears AFTER narrative content when a condition is gained, worsened, improved, or cleared
+- Status appears inside <Blocks> (never in the story text) when a condition is gained, worsened, improved, or cleared
 - Only show statuses that CHANGED this scene
 - Character can be {{user}} or any NPC
 - Condition is the specific state (e.g., "Exhausted," "Drunk," "Paranoid," "Bleeding")
@@ -899,14 +899,14 @@ context: MANDATORY; explain the stakes or origin
 [/SECRET]
 
 Rules:
-- Secrets appear AFTER narrative content when new information asymmetry is established or knowledge spreads
+- Secrets appear inside <Blocks> (never in the story text) when new information asymmetry is established or knowledge spreads
 - Owner is the character who holds or hides the information
 - "Who Else Knows" can be "No one," a list of names, or "Public"
 - Only show secrets that were ESTABLISHED, REVEALED, or SPREAD this scene`,
     "parallel": `### Parallel Off-Screen Tracker
 The world moves off-screen. Track absent characters, world motion, rumor flow, shifting relationships, and subplot pressure that will later intersect with {{user}}.
 
-Use this exact format every scene:
+Use this exact format every scene, inside <Blocks>:
 
 [PARALLEL|Scope|Relevance]
 - Character 1: brief development
@@ -925,7 +925,7 @@ Rules:
     "world": `### World Detail
 Add 1 small world detail per scene that may later matter to {{user}} as setup, constraint, opportunity, or complication.
 
-Use this exact format at the end of the response:
+Use this exact format inside <Blocks>, never in the story text:
 
 [WORLD|Category|Location or Context]
 detail: (max 50 words)
@@ -941,7 +941,7 @@ Rules:
 - Expand the world in a new direction; support future plot development.`,
     "stats": `# Persona-Based Stat Generator
 
-**AT THE BEGINNING OF CONTEXT, IF NO \`[USER_STATS]\` ARE FOUND, OUTPUT ONE FIRST BEFORE PROCEEDING WITH THE SCENE.**
+**AT THE BEGINNING OF CONTEXT, IF NO \`[USER_STATS]\` ARE FOUND, OUTPUT ONE IN ITS TAG INSIDE <Blocks>, NEVER IN THE STORY TEXT.**
 
 Create and maintain a persistent fictional RPG stat sheet for {{user}} using persona, RP context, and internal random rolls. Ensure to output this only once and change only whenever it is earned. This is for gameplay flavor only; keep it fun, tactful, playable, and nonjudgmental.
 

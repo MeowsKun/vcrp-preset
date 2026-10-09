@@ -293,6 +293,18 @@ function renderTreated(b, opts) {
 // Shared by the chat and by the preview in the BLOCKS tab — a preview rendered
 // by different code from the chat is worse than no preview, because it is
 // confidently wrong.
+// VCRP: on a phone, SillyTavern reads a sideways swipe anywhere on the last message as
+// "next swipe", which on the newest reply means generating a new one. Scrolling the card's
+// tab strip, or a wide card, sideways is exactly that gesture, so a reader could start a
+// regeneration by trying to see the next tab. The card keeps its touches to itself: the
+// strip still scrolls, and SillyTavern's gesture detector (listening on the document)
+// never sees a swipe that started here. data-swipe-ignore is the detector's own opt-out.
+function guardSwipes(card) {
+    card.setAttribute("data-swipe-ignore", "true");
+    const keep = e => e.stopPropagation();
+    for (const type of ["touchstart", "touchmove", "touchend"]) card.addEventListener(type, keep, { passive: true });
+}
+
 export function buildBlocksCard(blocks, opts = {}) {
     const doc = opts.document || document;
     // `omit` is what the side panel has taken over. A block the panel is showing
@@ -306,6 +318,7 @@ export function buildBlocksCard(blocks, opts = {}) {
     card.className = CARD_CLASS;
     card.setAttribute("data-meg-blocks", "1");
     if (opts.preview) card.classList.add("meg-blocks-preview");
+    guardSwipes(card);
     if (!shown.length) {
         // Every block in this message is set to hidden. The remnants are hidden
         // from the chat too, so the reader simply sees nothing — which is what

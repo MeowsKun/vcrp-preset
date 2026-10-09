@@ -2372,8 +2372,15 @@ console.log("38 ok Focus prompts editable (on/off, blank falls back, $-safe, sto
 
     // The generated text is Pura's own.
     assert.equal(P.PURA_MAIN, up("Director Main Prompt"), "the main prompt, character for character");
+    // The trackers too, bar the sentences that placed one in the story: those name its block.
     for (const [k, n] of [["scene", "Scene Tracker"], ["relationship", "Relationship Tracker"], ["events", "Pending Events Tracker"], ["npc", "NPC Profile Sheets"]]) {
-        assert(up(n).includes(P.PURA_TRACKERS[k]), `tracker ${k} as Pura wrote it`);
+        const lines = P.PURA_TRACKERS[k].split("\n");
+        const placed = lines.filter(l => l.includes("inside <Blocks>"));
+        assert(placed.length >= 1 && placed.length <= 4, `tracker ${k} names its block (${placed.length})`);
+        for (const l of lines.filter(l => !placed.includes(l))) assert(up(n).includes(l), `tracker ${k} as Pura wrote it: ${l.slice(0, 50)}`);
+    }
+    for (const [k, t] of Object.entries(P.PURA_TRACKERS)) {
+        assert(!/at the TOP of responses|AFTER narrative|at the very end of|absolute end of the response|immediately after their narrative|BEFORE PROCEEDING WITH THE SCENE|Place records after the narrative/.test(t), `tracker ${k}: no placement in the story left`);
     }
     for (const k of ["camus", "kafka", "dickens"]) assert(up(Object.keys({})[0] || "Voice: Randomised").includes(P.PURA_VOICES[k].trim().slice(0, 60)) || upstream.prompts.some(p => (p.content || "").includes(P.PURA_VOICES[k])), `voice ${k} as Pura wrote it`);
     for (const [a] of pura.PURA_ADAPTED_SWAPS) assert(P.PURA_MAIN.includes(a), `Adapted reword still finds its sentence: ${a.slice(0, 50)}`);
@@ -2605,5 +2612,112 @@ console.log("40 ok Pura's trackers (rules cached once, formats per turn, roll un
     q.focus = { enabled: false, every: 20, checks: { drift: true, motifs: true, slop: true } };
 }
 console.log("41 ok Pura with every VCRP module (all at once, both engines, both presets), NPC Bank and Pura's sheets as one system, overlap pairs, Dev Mode");
+
+// 42. Fixes from play: Dialogue Colors that stay put, and Pura's trackers (and OOC notes)
+//     moved out of the story into <Blocks>, on arrival and in the history.
+{
+    const colors = await imp("src/vcrp/dialogueColors.js");
+    const tidy = await imp("src/vcrp/pura/tidy.js");
+    const bh = await imp("src/vcrp/blockHistory.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const { meguminFindNpcDossiers } = await imp("src/features/npc/data.js");
+    const { modes_megumin, MEGUMIN_ADDONS } = await imp("data/megumin.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const before = (msgs) => { const t = msgs.map(textOf); let i = t.length - 1; while (i >= 0 && !t[i].includes("Scene prose")) i--; return t.slice(0, i + 1).join("\n"); };
+    const keep = { mode: q.mode, addons: q.addons, order: JSON.stringify(q.blockStack.order), pura: q.pura };
+
+    // Dialogue Colors: the first color a character speaks in is theirs for the chat.
+    const names = {};
+    let r = colors.lockReplyColors(`<think><font color="#000000" title="Mara">x</font></think>\n<font color="#ff69b4" title="Mara">"Hi."</font> <font color="#4169e1" title="Jonah">"Yo."</font>`, names);
+    assert(!r.changed && names.mara.color === "#ff69b4" && names.jonah.color === "#4169e1", "colors learned from the reply, the thinking ignored");
+    r = colors.lockReplyColors(`<font color="#87cefa" title="Mara">"Again."</font> <font color='#4169E1' title="jonah">"Same."</font> <font color="#123456">"No name."</font>`, names);
+    assert(r.changed && r.text.includes(`<font color="#ff69b4" title="Mara">`) && r.text.includes("#4169E1") && r.text.includes(`<font color="#123456">`), "a known character gets their color back; the same color in capitals and a line with no name are left alone");
+    q.addons = [...new Set([...(q.addons || []), "color"])];
+    for (const k of Object.keys(meta)) delete meta[k];
+    chat.length = 0;
+    const said = c => `<font color="${c}" title="Mara">"Line."</font>`;
+    chat.push({ is_user: true, mes: "hi" }, { is_user: false, mes: said("#ff69b4"), swipes: [said("#ff69b4")], swipe_id: 0 });
+    colors.vcrpDialogueColorsOnReply(1, "normal");
+    chat.push({ is_user: true, mes: "hi" }, { is_user: false, mes: said("#00ff00"), swipes: ["an older swipe", said("#00ff00")], swipe_id: 1 });
+    colors.vcrpDialogueColorsOnReply(3, "normal");
+    assert(chat[3].mes === said("#ff69b4") && chat[3].swipes[1] === chat[3].mes && chat[3].swipes[0] === "an older swipe", "the reply and its swipe corrected, other swipes untouched");
+    let msgs = await run("VCRP V10 Universal.json");
+    assert(text(msgs).includes("Colors already taken in this story") && text(msgs).includes("Mara #ff69b4") && !before(msgs).includes("Mara #ff69b4"), "the taken colors go with the add-on's rule, never cached");
+    assert(text(msgs).includes(`title="Character Name"`), "the add-on asks for the speaker's name");
+    q.mode = modes_megumin[0].id;
+    msgs = await run("VCRP V10 Universal.json");
+    assert(!text(msgs).includes(`title="Character Name"`) && text(msgs).includes(MEGUMIN_ADDONS.color.trim().slice(0, 80)), `the Megumin mirror (${q.mode}) keeps Megumin's own color wording`);
+    q.mode = keep.mode;
+    q.addons = keep.addons;
+    for (const k of Object.keys(meta)) delete meta[k];
+
+    // Pura's trackers back in their blocks.
+    q.mode = "pura-adapted";
+    q.blockStack.order = ["pura_npc", "pura_scene", "pura_choices", "world"];
+    meguminSyncLegacyBlockIds();
+    const blocks = tidy.puraTidyBlocks();
+    assert.deepEqual(blocks.map(b => b.id), ["pura_npc", "pura_scene", "pura_choices"], "the tidy looks for the Pura trackers in the stack");
+    const sheet = "[NPC:MAJOR|Mara]\nb: Mara Voss | 24 | F | Barista\na: Slim | Red | Green | Pale | Freckles | Apron\np: Warm | Quick | Kind, sharp | Hums\nh: Grew up here | Money | Debt\nr: Bob's neighbour | Okafor's niece\n[/NPC]";
+    const scene = "[SCENE|Café|Noon|Sun]\ndetail: steam\n[/SCENE]";
+    const reply = `<think>[NPC:MAJOR|Draft] plan [/NPC] ((OOC: draft))</think>\nMara wiped the counter.\n\n\`\`\`\n${sheet}\n\`\`\`\n\nShe looked up. [NPC:REF|Okafor|gold tooth|impatient] He waited.\n\n((OOC: Kinks rolled: praise, teasing.))\n\n<Blocks>\n<World_State>the café</World_State>\n<Pura_Choices>\n[CHOICES]\n1. Order\n[/CHOICES]\n</Pura_Choices>\n</Blocks>\n<Pura_Scene>\n${scene}\n</Pura_Scene>`;
+    let out = tidy.puraTidyText(reply, { blocks, notes: true });
+    assert.equal(out.text, `<think>[NPC:MAJOR|Draft] plan [/NPC] ((OOC: draft))</think>\nMara wiped the counter.\n\nShe looked up. He waited.\n\n<Blocks>\n<World_State>the café</World_State>\n<Pura_Choices>\n[CHOICES]\n1. Order\n[/CHOICES]\n</Pura_Choices>\n<Pura_NPC>\n${sheet}\n[NPC:REF|Okafor|gold tooth|impatient]\n</Pura_NPC>\n<Pura_Scene>\n${scene}\n</Pura_Scene>\n<Pura_Notes>\nKinks rolled: praise, teasing.\n</Pura_Notes>\n</Blocks>`, "a sheet, a quick reference, a loose tag and an OOC note into <Blocks>; the thinking and the story otherwise as written");
+    assert(out.changed && out.moved.Pura_NPC === 2 && out.moved.Pura_Scene === 1 && out.moved.Pura_Notes === 1, "what moved, counted");
+    assert(meguminFindNpcDossiers(out.text).some(d => d.name === "Mara"), "the NPC Bank still finds the sheet");
+    assert.deepEqual(tidy.puraTidyText(out.text, { blocks, notes: true }), { text: out.text, changed: false, moved: {} }, "a tidy reply is left exactly as it is");
+    out = tidy.puraTidyText(`Prose.\n\n${scene}\n\n<Blocks>\n<Pura_Scene>\n${scene}\n</Pura_Scene>\n</Blocks>`, { blocks });
+    assert.equal(out.text, `Prose.\n\n<Blocks>\n<Pura_Scene>\n${scene}\n</Pura_Scene>\n</Blocks>`, "an entry the block already has is not added twice");
+    out = tidy.puraTidyText(`Prose.\n\n[SCENE|Roof|Dusk|Wind]\ndetail: gulls\n\nMore prose.`, { blocks });
+    assert.equal(out.text, "Prose.\n\nMore prose.\n\n<Blocks>\n<Pura_Scene>\n[SCENE|Roof|Dusk|Wind]\ndetail: gulls\n</Pura_Scene>\n</Blocks>", "no closing tag: the header's own lines, to the blank line; the envelope made");
+    out = tidy.puraTidyText("She waved. ((OOC: the kinks)) Then left.", { blocks, notes: false });
+    assert(!out.changed, "no Pura engine (notes off): an OOC note stays where it is");
+
+    // On arrival: the reply and its swipe; the reader's own OOC question keeps its answer in the story.
+    chat.length = 0;
+    const story = `Mara wiped the counter.\n\n${sheet}\n\n((OOC: Kinks rolled: praise.))`;
+    chat.push({ is_user: true, mes: "I walk in." }, { is_user: false, mes: story, swipes: [story], swipe_id: 0 });
+    tidy.vcrpPuraTidyOnReply(1, "normal");
+    assert(chat[1].mes.startsWith("Mara wiped the counter.\n\n<Blocks>\n<Pura_NPC>") && chat[1].mes.includes("<Pura_Notes>\nKinks rolled: praise.\n</Pura_Notes>") && chat[1].swipes[0] === chat[1].mes, "the reply tidied as it arrives, its swipe too");
+    chat.push({ is_user: true, mes: "((OOC: why did she leave?))" }, { is_user: false, mes: "((OOC: She was scared of Okafor.))", swipes: ["((OOC: She was scared of Okafor.))"], swipe_id: 0 });
+    tidy.vcrpPuraTidyOnReply(3, "normal");
+    assert(chat[3].mes === "((OOC: She was scared of Okafor.))", "an answer to the reader's OOC question stays in the story");
+    tidy.vcrpPuraTidyOnReply(0, "first_message");
+
+    // The history: a tracker an older reply left in its story goes with the blocks, the same every turn.
+    const hist = [
+        { role: "assistant", content: `Prose.\n\n${scene}\n\nMore prose.` },
+        { role: "user", content: "go" },
+        { role: "assistant", content: [{ type: "text", text: `Prose.\n\n${sheet}\n<Blocks>\n<World_State>x</World_State>\n</Blocks>` }] },
+        { role: "user", content: "go" },
+        { role: "assistant", content: "Plain prose." },
+        { role: "assistant", content: `Being continued.\n\n${scene}` },
+    ];
+    bh.stripHistoryBlocks(hist);
+    assert(hist[0].content === "Prose.\n\nMore prose." && hist[2].content[0].text === "Prose." && hist[4].content === "Plain prose." && hist[5].content.includes("[SCENE|"), "older replies lose their stray trackers with their blocks; a reply being continued keeps everything");
+
+    // The Notes tab: asked for only on a turn whose Pura text asks for an OOC note; never carried.
+    q.pura = { randomisers: ["kink"] };
+    msgs = await run("VCRP V10 Universal.json");
+    assert(text(msgs).includes("<Pura_Notes>") && !before(msgs).includes("<Pura_Notes>"), "the Kink randomiser on: the Notes tab is in the block instructions, after the chat");
+    q.pura = {};
+    msgs = await run("VCRP V10 Universal.json");
+    assert(!text(msgs).includes("<Pura_Notes>"), "no OOC asked for: no Notes tab asked for");
+    q.mode = keep.mode;
+    msgs = await run("VCRP V10 Universal.json");
+    assert(!text(msgs).includes("<Pura_Notes>"), "a VCRP engine: no Notes tab");
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose.\n<Blocks>\n<Pura_Notes>\nkinks: praise\n</Pura_Notes>\n<World_State>the docks</World_State>\n</Blocks>" });
+    assert(bh.lastBlocksState().includes("<World_State>the docks</World_State>") && !bh.lastBlocksState().includes("kinks"), "last turn's notes are not carried into the next");
+    chat[1].mes = "Prose.\n<Blocks>\n<Pura_Notes>\nkinks: praise\n</Pura_Notes>\n</Blocks>";
+    assert.equal(bh.lastBlocksState(), "", "a reply whose only block was its notes carries nothing");
+
+    chat.length = 0;
+    q.blockStack.order = JSON.parse(keep.order);
+    q.pura = keep.pura;
+    meguminSyncLegacyBlockIds();
+}
+console.log("42 ok fixes from play: Dialogue Colors locked per character (learned, enforced, told, never cached, Megumin's wording kept), Pura's trackers and OOC notes moved into <Blocks> (on arrival, deduped, thinking untouched, the reader's OOC answered in place), stray trackers out of the history, the Notes tab");
 
 console.log("\nALL FORK CHECKS PASSED");

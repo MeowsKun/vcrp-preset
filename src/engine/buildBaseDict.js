@@ -33,6 +33,7 @@ import { buildAnimeMode } from "../vcrp/anime.js";
 import { vcrpMemoryEnabled, vcrpMemoryBlock, vcrpMemoryRecall, previewRecall } from "../vcrp/memory/index.js";
 import { vcrpFocusBlock, vcrpPlotFocusBlock } from "../vcrp/focus/index.js";
 import { applyPuraEngine } from "../vcrp/pura/index.js";
+import { colorLockNote } from "../vcrp/dialogueColors.js";
 import { vcrpGenerationKind, vcrpIsDryRun } from "../vcrp/generation.js";
 
 export function buildBaseDict(isTokenCount = false) {
@@ -88,6 +89,8 @@ export function buildBaseDict(isTokenCount = false) {
         const item = hardcodedLogic.addons.find(a => a.id === aId);
         if (item) dict[item.trigger] = megumin ? meguminAddonText(item.id, item.content) : item.content;
     });
+    // VCRP: the colors each character already has, so they stay the same reply to reply.
+    if (dict["[[COLOR]]"]) dict["[[COLOR]]"] += colorLockNote();
 
 
     // Stage 5 Defaults (Format Blocks)

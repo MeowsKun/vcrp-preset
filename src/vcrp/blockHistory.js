@@ -14,8 +14,9 @@
 
 import { getContext } from "../st.js";
 import { vcrpWithoutSwipedReply } from "./generation.js";
-import { meguminActiveBlocks } from "../features/blocks/registry.js";
+import { meguminActiveBlocks, MEGUMIN_BLOCK_REGISTRY } from "../features/blocks/registry.js";
 import { puraEntries } from "../features/blocks/puraBlocks.js";
+import { puraTidyBlocks, puraTidyText } from "./pura/tidy.js";
 
 const BLOCKS_PAIRED = /\s*<Blocks\b[^>]*>[\s\S]*?<\/Blocks\s*>/gi;
 const BLOCKS_OPEN = /\s*<Blocks\b[^>]*>[\s\S]*$/i;   // a reply cut off inside its blocks
@@ -24,17 +25,23 @@ const strip = s => String(s).replace(BLOCKS_PAIRED, "").replace(BLOCKS_OPEN, "")
 
 /**
  * Removes <Blocks> from every assistant message in the prompt except a trailing one (a
- * reply being continued, or a prefill). Changes the messages in place.
+ * reply being continued, or a prefill). Changes the messages in place. A Pura tracker an
+ * older reply wrote in its story goes with them (vcrp/pura/tidy.js), the same every turn.
  */
 export function stripHistoryBlocks(messages) {
     if (!Array.isArray(messages)) return;
     const last = messages.length - 1;
+    const pura = puraTidyBlocks();
+    const clean = s => {
+        const t = pura.length ? puraTidyText(s, { blocks: pura }).text : s;
+        return /<Blocks\b/i.test(t) ? strip(t) : s;
+    };
     messages.forEach((m, i) => {
         if (!m || m.role !== "assistant" || i === last) return;
         if (typeof m.content === "string") {
-            if (/<Blocks\b/i.test(m.content)) m.content = strip(m.content);
+            m.content = clean(m.content);
         } else if (Array.isArray(m.content)) {
-            m.content = m.content.map(p => (p && p.type === "text" && /<Blocks\b/i.test(p.text || "")) ? { ...p, text: strip(p.text) } : p);
+            m.content = m.content.map(p => (p && p.type === "text" && typeof p.text === "string") ? { ...p, text: clean(p.text) } : p);
         }
     });
 }
@@ -46,7 +53,13 @@ export function lastBlocksState() {
     const reply = [...vcrpWithoutSwipedReply(chat)].reverse().find(m => !m.is_user);
     if (!reply || typeof reply.mes !== "string") return "";
     const found = reply.mes.match(/<Blocks\b[^>]*>[\s\S]*?<\/Blocks\s*>/gi);
-    return found ? found[found.length - 1].trim() : "";
+    if (!found) return "";
+    // A block that holds only that reply's note (Pura's Notes) is not state to carry.
+    let state = found[found.length - 1].trim();
+    const transient = MEGUMIN_BLOCK_REGISTRY.filter(b => b.transient && b.tag);
+    if (!transient.some(b => state.includes(`<${b.tag}`))) return state;
+    for (const b of transient) state = state.replace(new RegExp(`\\s*<${b.tag}\\b[^>]*>[\\s\\S]*?<\\/${b.tag}\\s*>`, "gi"), "");
+    return /<Blocks\b[^>]*>\s*<\w/i.test(state) ? state : "";
 }
 
 /** What the per-turn block instructions add: last turn's blocks, as the starting point. */

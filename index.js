@@ -98,6 +98,8 @@ import { vcrpMemoryAfterReply } from "./src/vcrp/memory/summarize.js";
 import { vcrpFocusAfterReply } from "./src/vcrp/focus/index.js";
 import { whatsNewToast } from "./src/vcrp/whatsNew.js";
 import { puraApplyNpcChanges } from "./src/vcrp/pura/npc.js";
+import { vcrpDialogueColorsOnReply } from "./src/vcrp/dialogueColors.js";
+import { vcrpPuraTidyOnReply } from "./src/vcrp/pura/tidy.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpApplyReplyCap } from "./src/vcrp/replyLength.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
@@ -395,6 +397,11 @@ jQuery(async () => {
             // Dash cleaner first, so every handler after it (the tracker capture,
             // Story Memory) sees the reply as it will stay in the history.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDedashOnReply);
+            // Dialogue Colors: each character keeps the color they first spoke in.
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDialogueColorsOnReply);
+            // Pura: a tracker written in the story (or a ((OOC)) note) moves into <Blocks>,
+            // before the NPC Bank and Story Memory read the reply.
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpPuraTidyOnReply);
             // Story Memory's spend estimate: the reply's output, added to its request.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryCountReply);
             // Reply length: the safety cap on the request itself (where SillyTavern has the event).

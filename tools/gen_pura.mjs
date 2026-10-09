@@ -9,9 +9,10 @@
 // VCRP assembles the pieces itself instead of through {{setvar}}/{{getvar}}/{{#if}}, so
 // they no longer depend on the order SillyTavern evaluates a preset in.
 //
-// The only text changed here is for the cache: the skill-check roll ({{roll:1d100}}) is
-// taken out of the tracker's rules, which sit in the cached part of the prompt, and goes
-// with the per-turn block instructions instead. The renderers drop a portrait lookup that
+// The only text changed here is for the cache and the blocks: the skill-check roll
+// ({{roll:1d100}}) is taken out of the tracker's rules, which sit in the cached part of the
+// prompt, and goes with the per-turn block instructions instead; and the sentences that place
+// a tracker in the story text say its block instead (PLACEMENT). The renderers drop a portrait lookup that
 // only exists in Neconyan (Pura's own frontend); the card shows the initial instead, as
 // Pura's own notes say it does elsewhere.
 //
@@ -133,6 +134,45 @@ const trackers = {
     levelUp: clean(byName("Level-Up Companion")),
 };
 for (const [k, v] of Object.entries(trackers)) if (/\{\{(random|roll|pick)\b/.test(v)) fail(`tracker ${k} still carries a per-request macro`);
+
+// Where each tracker goes. Pura writes them inline in the story; here every one is a block,
+// in its own tag inside <Blocks>. A sentence that put a tracker in the story text ("append a
+// sheet after their introduction", "at the TOP of responses") told the model a second place
+// for it, and it went there, so each one says the block instead.
+const IN_BLOCKS = "in its tag inside <Blocks>, never in the story text";
+const PLACEMENT = {
+    npc: [
+        ["append a character sheet immediately after their narrative introduction using", `write a character sheet for them ${IN_BLOCKS}, using`],
+        ["- Place sheet AFTER narrative introduction, BEFORE continuing action", `- Place the sheet ${IN_BLOCKS}`],
+        ["For returning NPCs in busy scenes, use quick reference:", "For returning NPCs in busy scenes, use quick reference (in the same tag inside <Blocks>, never in the story text):"],
+        ["For relationship changes mid-story:", "For relationship changes mid-story (in the same tag inside <Blocks>, never in the story text):"],
+    ],
+    choices: [
+        ["End EVERY response with the EXACT formatting with no modifications and without leaving out any tags. Place this after every single other formatting when applicable at the very end of the scene message.",
+            `Write this in EVERY response with the EXACT formatting with no modifications and without leaving out any tags. Place it ${IN_BLOCKS}.`],
+    ],
+    skillChoices: [
+        ["output this block at the very end of the response:", `output this block ${IN_BLOCKS}:`],
+        ["- The [CHOICES] block must be the final part of every response.", "- The [CHOICES] block must be in its tag inside <Blocks> in every response, never in the story text."],
+    ],
+    directions: [
+        ["End every response with exactly 4 plot-direction prompts for {{user}}.", "Write exactly 4 plot-direction prompts for {{user}} in every response, in its tag inside <Blocks>."],
+        ["- Place this block at the absolute end of the response after all other formatting.", `- Place this block ${IN_BLOCKS}.`],
+    ],
+    relationship: [["Place records after the narrative.", "Place records in their tag inside <Blocks>, never in the story text."]],
+    scene: [["- Appears at the TOP of responses where setting shifts", "- Appears inside <Blocks> (never in the story text) in responses where setting shifts"]],
+    time: [["- Time appears at the TOP of responses when time shifts", "- Time appears inside <Blocks> (never in the story text) when time shifts"]],
+    events: [["AFTER narrative content", "inside <Blocks> (never in the story text)"]],
+    achievements: [["AFTER narrative content", "inside <Blocks> (never in the story text)"]],
+    reputation: [["AFTER narrative content", "inside <Blocks> (never in the story text)"]],
+    items: [["AFTER narrative content", "inside <Blocks> (never in the story text)"]],
+    status: [["AFTER narrative content", "inside <Blocks> (never in the story text)"]],
+    secrets: [["AFTER narrative content", "inside <Blocks> (never in the story text)"]],
+    parallel: [["Use this exact format every scene:", "Use this exact format every scene, inside <Blocks>:"]],
+    world: [["Use this exact format at the end of the response:", "Use this exact format inside <Blocks>, never in the story text:"]],
+    stats: [["OUTPUT ONE FIRST BEFORE PROCEEDING WITH THE SCENE.", "OUTPUT ONE IN ITS TAG INSIDE <Blocks>, NEVER IN THE STORY TEXT."]],
+};
+for (const [k, pairs] of Object.entries(PLACEMENT)) for (const [a, b] of pairs) trackers[k] = swap(trackers[k], a, b, `tracker ${k}`);
 
 // ── The renderers ────────────────────────────────────────────────────────────
 // Prompt-side trims are VCRP's job now (it keeps every block out of the history the
