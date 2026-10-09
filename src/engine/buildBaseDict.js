@@ -255,7 +255,7 @@ export function buildBaseDict(isTokenCount = false) {
 
     // VCRP: a Pura Director engine writes its own main prompt and its two tags, and stands
     // the modules it overlaps aside. Before the CoT steps below, which it does not use.
-    applyPuraEngine(dict, activeEngine, isTokenCount || vcrpIsDryRun() ? "reply" : vcrpGenerationKind());
+    applyPuraEngine(dict, activeEngine, isTokenCount || vcrpIsDryRun() ? "reply" : vcrpGenerationKind(), { record: !(isTokenCount || vcrpIsDryRun()) });
 
     // NEW: Inject Thinking Effort to the absolute top of whatever [[COT]] is currently active
     let effort = localProfile.thinkEffort || "unspecified";

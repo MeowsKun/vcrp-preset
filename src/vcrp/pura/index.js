@@ -27,6 +27,9 @@
 import { localProfile } from "../../core/state.js";
 import { isPuraEngine, puraVariant } from "../../core/engines.js";
 import { toneRulesText } from "../toneRules.js";
+import { getContext } from "../../st.js";
+import { vcrpGenerationRaw } from "../generation.js";
+import { rollSession, rollsReuseFor, setPendingRolls } from "./rolls.js";
 import {
     PURA_MAIN, PURA_SIMPLIFIED, PURA_VARS, PURA_USER_CONTROL, PURA_LENGTHS, PURA_VOICES,
     PURA_FORMATTING, PURA_TOGGLES, PURA_RANDOMISERS,
@@ -70,6 +73,8 @@ export const PURA_DEFAULTS = {
     groundedProse: false, html: false, diegeticStats: false, nameRandomiser: false,
     randomisers: [],
     reasoning: "",           // "" | "procedure" | "antiOverthinking"
+    showRolls: true,         // each reply's rolls in its Notes tab (rolls.js)
+    keepRolls: false,        // a swipe or regenerate of the latest reply rolls nothing new
 };
 
 /** The profile's Pura settings, complete. */
@@ -178,17 +183,20 @@ export function puraFormatting(s = puraSettings(), language = "") {
  * randomisers, the name randomiser and the reasoning help shape a fresh reply, so a
  * Continue goes without them; an Impersonate (the reader's own turn) goes without any.
  */
-export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { language = "", tone = "" } = {}) {
+export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { language = "", tone = "", roll = null } = {}) {
     if (gen === "impersonate") return "";
     const fresh = gen === "reply";
+    // Pura's {{random}} lists: rolled by VCRP on a real request (rolls.js), so each reply can
+    // say what it got; otherwise left for SillyTavern to roll as it sends.
+    const rolled = (key, label, text) => (typeof roll === "function" ? roll(key, label, text) : text);
     // Pura's Simplified prompt carries none of the main prompt's settings (voice, genre,
     // Director Instructions, Formatting); its separate toggles still apply.
     const full = !(variant === "original" && s.main === "simplified");
     const parts = [];
     if (s.groundedProse) parts.push(PURA_TOGGLES.groundedProse);
     if (variant === "original" && s.formatting && full) parts.push(puraFormatting(s, language));
-    if (fresh && s.nameRandomiser) parts.push(PURA_TOGGLES.nameRandomiser);
-    if (full && s.voice === "random") parts.push(voiceLine(PURA_VOICES.random));
+    if (fresh && s.nameRandomiser) parts.push(rolled("names", "Name Randomiser", PURA_TOGGLES.nameRandomiser));
+    if (full && s.voice === "random") parts.push(voiceLine(rolled("voice", "Narration voice", PURA_VOICES.random)));
     const director = String(s.director || "").trim();
     if (full && director && puraIsVolatile(director)) parts.push(`Consider this a source of truth for any plausible contradictory instructions:\n${directorVar(director)}`);
     if (variant === "original" && full && s.genreOn && String(s.genre || "").trim() && puraIsVolatile(s.genre)) parts.push(`## Genre\n${String(s.genre).trim()}`);
@@ -196,7 +204,7 @@ export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { lang
     // is rolled this reply, otherwise on their own where it would have been.
     let toneSent = !tone;
     if (fresh) for (const k of s.randomisers) {
-        parts.push(PURA_RANDOMISERS[k]);
+        parts.push(rolled(k, PURA_RANDOMISER_LABELS[k] || k, PURA_RANDOMISERS[k]));
         if (k === "deadDove" && !toneSent) { parts.push(tone); toneSent = true; }
     }
     if (!toneSent) parts.push(tone);
@@ -206,14 +214,34 @@ export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { lang
 }
 
 /**
+ * The picks to make again this request: a Continue keeps the random voice of the reply it
+ * continues; with "Swipes keep the rolls" on, a swipe or regenerate of the latest reply
+ * keeps all of its rolls. {} otherwise (everything rolled fresh).
+ */
+function puraRollReuse(gen, s) {
+    const chat = ((getContext() || {}).chat) || [];
+    if (gen === "continue") {
+        const kept = rollsReuseFor(chat.length - 1);
+        return kept.voice ? { voice: kept.voice } : {};
+    }
+    if (!s.keepRolls) return {};
+    // A swipe leaves the reply it replaces in the chat; a regenerate has removed it already.
+    const raw = vcrpGenerationRaw();
+    if (raw === "swipe") return rollsReuseFor(chat.length - 1);
+    if (raw === "regenerate") return rollsReuseFor(chat.length);
+    return {};
+}
+
+/**
  * Called by the dict builder once the engine's slots are filled: a Pura engine writes its
  * own [[prompt1]] and its two tags, and stands VCRP's overlapping modules aside. Any other
  * engine gets the two tags empty.
  */
-export function applyPuraEngine(dict, engine, gen = "reply") {
+export function applyPuraEngine(dict, engine, gen = "reply", { record = false } = {}) {
     // The reader's Tone Rules ride in the same slot after the newest message, for every engine.
     const tone = toneRulesText(gen);
     if (!isPuraEngine(engine)) {
+        if (record && gen === "reply") setPendingRolls(null);
         dict["[[pura_system]]"] = "";
         dict["[[pura_late]]"] = tone ? `\n\n${tone}` : "";
         return;
@@ -225,7 +253,15 @@ export function applyPuraEngine(dict, engine, gen = "reply") {
     dict["[[prompt1]]"] = puraMainPrompt(variant, s);
     dict["[prompt1]"] = dict["[[prompt1]]"];
     dict["[[pura_system]]"] = puraSystemBlock(s);
-    dict["[[pura_late]]"] = puraLateBlock(variant, gen, s, { language, tone });
+    // A real request (`record`) rolls Pura's {{random}} lists itself and keeps what came up,
+    // for the reply's Notes tab (rolls.js). A Continue keeps the voice the reply began in.
+    const session = record && (gen === "reply" || gen === "continue") ? rollSession(puraRollReuse(gen, s)) : null;
+    dict["[[pura_late]]"] = puraLateBlock(variant, gen, s, { language, tone, roll: session ? session.roll : null });
+    if (record && gen === "reply") {
+        // Where the reply will land: a swipe replaces the last message, anything else adds one.
+        const chat = ((getContext() || {}).chat) || [];
+        setPendingRolls(session.rolls, vcrpGenerationRaw() === "swipe" ? chat.length - 1 : chat.length);
+    }
     // Pura thinks Pura's way: no CoT script, no CoT prefill. Its voices replace the
     // writing style, and it carries no model acknowledgements.
     dict["[[COT]]"] = "";

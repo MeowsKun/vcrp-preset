@@ -101,6 +101,9 @@ export function renderPuraPanel(sec, variant, rerender) {
         const blocked = !on && (cut || (k === "directorsCut" && randomCount > 0) || randomCount >= PURA_MAX_RANDOMISERS);
         panel.append(`<label style="display:flex; align-items:center; gap:8px; margin:4px 0; font-size:0.8rem; opacity:${blocked ? 0.5 : 1};"><input type="checkbox" class="pura_rand" data-key="${k}" ${on ? "checked" : ""} ${blocked ? "disabled" : ""} /> ${esc(label)} <span class="pura-cost" style="font-size:0.66rem; opacity:0.75;">(${esc(settingCostLabel(PURA_RANDOMISERS[k], { fresh: true }))})</span></label>`);
     });
+    // VCRP: what each reply rolled (rolls.js).
+    panel.append(ROW("", "Show each reply's rolls", "What the randomisers, the random voice and the Name Randomiser rolled, in the reply's Notes tab. Never sent back to the model.", CHECK("pura_show_rolls", s.showRolls)));
+    panel.append(ROW("", "Swipes keep the rolls", "A swipe or regenerate of the latest reply writes it again with the same rolls instead of rolling new ones. A Continue always keeps the reply's voice.", CHECK("pura_keep_rolls", s.keepRolls)));
 
     // VCRP: this chat's Tone Rules, under the randomisers (they follow Dead Dove Escalation).
     renderToneRulesPanel(panel, { where: "pura" });
@@ -120,6 +123,7 @@ export function renderPuraPanel(sec, variant, rerender) {
     val("pura_genre_on", "genreOn"); val("pura_voice", "voice"); val("pura_friction", "friction"); val("pura_nsfw", "nsfw");
     val("pura_gooner", "gooner"); val("pura_nightmare", "nightmare"); val("pura_grounded", "groundedProse"); val("pura_html", "html");
     val("pura_stats", "diegeticStats"); val("pura_names", "nameRandomiser"); val("pura_reasoning", "reasoning");
+    val("pura_show_rolls", "showRolls"); val("pura_keep_rolls", "keepRolls");
     panel.find("#pura_genre").on("change", function () { save({ genre: String($(this).val() || "") }); refreshCosts(); });
     panel.find("#pura_director").on("input", function () {
         if (!localProfile.pura) localProfile.pura = {};

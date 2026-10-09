@@ -32,6 +32,11 @@ export function vcrpGenerationKind() {
     return currentGen;
 }
 
+/** SillyTavern's own name for the generation: "normal", "swipe", "regenerate", "continue" … */
+export function vcrpGenerationRaw() {
+    return currentRaw;
+}
+
 /**
  * The chat as the reply being written will follow it. On a swipe, SillyTavern leaves the
  * reply being replaced in the chat (it only drops it from the prompt), so anything scanning

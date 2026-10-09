@@ -52,7 +52,12 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   newest message on every reply and Continue (not Impersonate), with any engine, the Megumin
   Original ones included, and they win where Story Config's Narration Tone or the engine's own
   style disagree. With a Pura engine and Pura's Dead Dove Escalation rolled, they sit right under
-  it; otherwise on their own. No preset re-import needed.
+  it; otherwise on their own. Focus's drift audits check the replies against them too (tone
+  drift). No preset re-import needed.
+- **VCRP Quick** (SillyTavern's wand menu, by the chat input): a small panel to switch this chat's
+  Tone Rules and plot focus on or off, and, with a Pura engine, Pura's scene randomisers (Dead
+  Dove Escalation among them, two at most), without opening the VCRP window. A SillyTavern
+  without the wand menu gets a small button under VCRP's own instead.
 - **Tense** in Story Config: present or past. Left on default it sends nothing and each engine
   keeps its own (Megumin's Story Config has no tense, so the Megumin Original engines only get one
   if you pick it).
@@ -163,6 +168,8 @@ replies (20 by default) and writes the writer a short correction.
 
 - **What it checks** (each can be switched off): character drift against the character card and
   how they have been written, repeated motifs (images, gestures, metaphors, scene endings), and slop.
+  While a plot focus is on, plot drift; while the chat's Tone Rules are on, tone drift (the replies
+  softening or straying from the rules).
 - **What it reads:** the replies since the last audit and your messages between them, the card,
   and the list of what earlier audits flagged. Each audit says which of those came back, so a
   motif that survives a correction is counted and named more firmly the next time.
@@ -230,6 +237,13 @@ For the cache, VCRP assembles Pura's text itself instead of through `{{setvar}}`
 everything that holds still sits in the cached part, and everything that changes per request (a
 random voice, the randomisers, the name randomiser, Director Instructions with a `{{random}}` in
 them) goes after your newest message, where it never touches the cache.
+
+**Each reply's rolls:** Pura's randomisers, the random voice and the Name Randomiser are lists that
+roll one pick per reply. VCRP rolls them itself on a real reply (the same uniform pick SillyTavern
+would make) and adds what came up to that reply's Notes tab ("🎲 Rolled this reply"), never sent
+back to the model. A Continue keeps the voice the reply began in. With **Swipes keep the rolls** on
+(Pura Director panel), a swipe or regenerate of the latest reply writes it again with the same
+rolls. A list in your own Director Instructions is left for SillyTavern to roll.
 
 **Pura's trackers** are in the BLOCKS tab, in a group of their own, for any engine: NPC sheets,
 choices (plain or with hidden skill checks), the direction menu, the dating-sim relationship card,

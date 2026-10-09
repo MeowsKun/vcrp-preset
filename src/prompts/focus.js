@@ -28,6 +28,8 @@ Put an earlier finding that came back under <recurring> by its number, not under
     checkSlop: "- [slop] Slop. Stock phrasing and AI habits piling up: purple prose, \"a mix of X and Y\", \"something shifted\", air \"thick with\" something, eyes that \"darken\", ozone, held breaths, hedging, filler, therapy-speak, the same sentence shapes over and over.",
     checkPlot: "- [plot] Plot drift. The story is meant to revolve around the plot focus above ({{strength}}). Has it wandered off: scenes that never touch it, the thread dropped for long stretches, side plots taking over, or it being settled off-page? A background thread only needs to surface now and then; a driving one should move in nearly every reply.",
     plotNote: " For plot drift, say how to turn the story back toward the plot focus from where it stands now.",
+    checkTone: "- [tone] Tone drift. The reader set the tone rules above for this story, and they govern it. Do these replies keep to them, or has the tone slipped: softening where the rules say it stays hard, mercy, rescues or comfort the rules rule out, a lighter or darker register than they ask for, consequences undone or glossed over? Quote where it slips.",
+    toneNote: " For tone drift, say plainly what the tone rules require and where the replies fell short of them.",
 
     correctionTemplate: "[FOCUS]\nAn editor audited the recent replies for drift. Apply these corrections from now on, without mentioning them:\n{{note}}{{standing}}",
     standingIntro: "Earlier audits kept finding these. Keep them out:",

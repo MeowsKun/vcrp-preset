@@ -37,6 +37,7 @@ import { backgroundEstimate } from "../backgroundCosts.js";
 import { vcrpWithoutSwipedReply } from "../generation.js";
 import { registerRecallQuery } from "../memory/index.js";
 import { DEFAULT_PROMPTS } from "../../prompts/index.js";
+import { toneRules } from "../toneRules.js";
 
 const META = "vcrp_focus";
 const MIN_REPLIES = 3;        // fewer than this is not enough to call anything a pattern
@@ -118,6 +119,8 @@ export function focusAuditInput() {
         checks: s.checks,
         items: ((st && st.items) || []).map(i => ({ id: i.id, kind: i.kind, text: i.text, times: i.times })),
         plot: plotFocusActive(st) ? { text: st.plot.text.trim(), strength: plotStrength(st.plot).label } : null,
+        // The chat's Tone Rules (vcrp/toneRules.js), while they are on: checked like the plot focus.
+        tone: (() => { const t = toneRules(); return t.enabled && t.text.trim() ? t.text.trim() : null; })(),
     };
 }
 
@@ -126,7 +129,7 @@ export function focusEstimate() {
     const input = focusAuditInput();
     if (!input) return null;
     const items = input.items.map(i => i.text).join("\n");
-    return backgroundEstimate(estimateTokens(input.text + input.card + items + (input.plot ? input.plot.text : "")) + AUDIT_FIXED);
+    return backgroundEstimate(estimateTokens(input.text + input.card + items + (input.plot ? input.plot.text : "") + (input.tone || "")) + AUDIT_FIXED);
 }
 
 // ── The audit prompt ─────────────────────────────────────────────────────────
@@ -151,33 +154,37 @@ const fill = (text, values) => String(text || "").replace(/\{\{(\w+)\}\}/g, (m, 
 /** The messages an audit sends: its own prompt, not the roleplay's. */
 export function buildFocusAuditMessages(input) {
     const checks = Object.keys(CHECK_KEY).filter(k => input.checks[k]);
-    const kinds = [...checks.map(k => `[${KIND_OF[k]}]`), ...(input.plot ? ["[plot]"] : [])].join(", ");
+    const kinds = [...checks.map(k => `[${KIND_OF[k]}]`), ...(input.plot ? ["[plot]"] : []), ...(input.tone ? ["[tone]"] : [])].join(", ");
     const flagged = input.items.length
         ? input.items.map(i => `${i.id} [${i.kind}] ${i.text} (flagged ${i.times} time${i.times === 1 ? "" : "s"})`).join("\n")
         : "None yet. This is the first audit.";
     const lines = [
         ...checks.map(k => fill(focusPrompt(CHECK_KEY[k]), { char: input.charName })),
         ...(input.plot ? [fill(focusPrompt("checkPlot"), { strength: input.plot.strength.toLowerCase(), char: input.charName })] : []),
+        ...(input.tone ? [fill(focusPrompt("checkTone"), { char: input.charName })] : []),
     ];
+    // The tone's note rides in the {{plotNote}} token, so an audit task edited before the
+    // Tone Rules existed still asks for it.
     const task = fill(focusPrompt("auditTask"), {
-        char: input.charName, checks: lines.join("\n"), kinds, plotNote: input.plot ? focusPrompt("plotNote") : "",
+        char: input.charName, checks: lines.join("\n"), kinds,
+        plotNote: (input.plot ? focusPrompt("plotNote") : "") + (input.tone ? focusPrompt("toneNote") : ""),
     });
     return [
         { role: "system", content: focusPrompt("auditSystem") },
-        { role: "user", content: `<character_card>\n${input.card || "No character card."}\n</character_card>\n\n${input.plot ? `<plot_focus>\n${input.plot.text}\n</plot_focus>\n\n` : ""}<earlier_findings>\n${flagged}\n</earlier_findings>\n\n<replies>\n${input.text}\n</replies>` },
+        { role: "user", content: `<character_card>\n${input.card || "No character card."}\n</character_card>\n\n${input.plot ? `<plot_focus>\n${input.plot.text}\n</plot_focus>\n\n` : ""}${input.tone ? `<tone_rules>\n${input.tone}\n</tone_rules>\n\n` : ""}<earlier_findings>\n${flagged}\n</earlier_findings>\n\n<replies>\n${input.text}\n</replies>` },
         { role: "user", content: task },
     ];
 }
 
-/** The audit's answer as { recurring, findings, note }; null when it is not one. `plot`: plot drift was asked for. */
-export function parseFocusAudit(raw, checks = focusSettings().checks, { plot = false } = {}) {
+/** The audit's answer as { recurring, findings, note }; null when it is not one. `plot`, `tone`: plot or tone drift was asked for. */
+export function parseFocusAudit(raw, checks = focusSettings().checks, { plot = false, tone = false } = {}) {
     // Anything up to a closing thinking tag is the model thinking, prefilled or not.
     const text = String(raw || "").replace(/^[\s\S]*<\/think(?:ing)?\s*>/i, "");
     const tag = t => { const m = text.match(new RegExp(`<${t}>([\\s\\S]*?)</${t}\\s*>`, "i")); return m ? m[1].trim() : null; };
     // The note comes last: one cut off by the length limit is still a note.
     const note = tag("note") ?? ((text.match(/<note>([\s\S]*)$/i) || [])[1] || null)?.trim() ?? null;
     if (note === null) return null;
-    const allowed = new Set([...Object.keys(KIND_OF).filter(k => checks[k]).map(k => KIND_OF[k]), ...(plot ? ["plot"] : [])]);
+    const allowed = new Set([...Object.keys(KIND_OF).filter(k => checks[k]).map(k => KIND_OF[k]), ...(plot ? ["plot"] : []), ...(tone ? ["tone"] : [])]);
     const findings = (tag("findings") || "").split("\n").map(findingOf).filter(f => f && allowed.has(f.kind));
     const recurring = [...new Set([...(tag("recurring") || "").matchAll(/\bF\d+\b/gi)].map(m => m[0].toUpperCase()))];
     // A label the model put in front of the note is not part of it.
@@ -188,9 +195,9 @@ export function parseFocusAudit(raw, checks = focusSettings().checks, { plot = f
 // A finding line, however the model dressed it: "- [motif] x", "- **[MOTIF]** x", "1) Motif: x",
 // "- **Repeated motif** - x". The kind needs its brackets or a separator after it, so a finding
 // that merely starts with the word ("Plot points dropped") is not misread.
-const KIND_WORD = "character drift|plot drift|repeated motifs?|drift|motifs?|slop|plot";
+const KIND_WORD = "character drift|plot drift|tone drift|repeated motifs?|drift|motifs?|slop|plot|tone";
 const FINDING_RE = new RegExp(`^\\s*(?:[-*•]|\\d+[.)])?\\s*[*_]*\\s*(?:\\[\\s*(${KIND_WORD})\\s*\\]\\s*[*_]*\\s*[:\\-–—]?|(${KIND_WORD})\\s*[*_]*\\s*[:\\-–—])\\s*(.+?)\\s*$`, "i");
-const KIND_NAME = w => { w = w.toLowerCase(); return /plot/.test(w) ? "plot" : /drift/.test(w) ? "drift" : /motif/.test(w) ? "motif" : "slop"; };
+const KIND_NAME = w => { w = w.toLowerCase(); return /tone/.test(w) ? "tone" : /plot/.test(w) ? "plot" : /drift/.test(w) ? "drift" : /motif/.test(w) ? "motif" : "slop"; };
 function findingOf(line) {
     const m = String(line).match(FINDING_RE);
     if (!m) return null;
@@ -242,7 +249,7 @@ export async function runFocusAudit() {
     }
     const st = focusState();
     if (raw === "") return { status: "aborted", reason: "stopped" };
-    const parsed = raw === null ? null : parseFocusAudit(raw, input.checks, { plot: !!input.plot });
+    const parsed = raw === null ? null : parseFocusAudit(raw, input.checks, { plot: !!input.plot, tone: !!input.tone });
     if (!parsed) {
         st.failures = (st.failures || 0) + 1;
         await save(); changed();

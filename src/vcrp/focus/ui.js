@@ -9,6 +9,7 @@ import { syncPromptsGlobally } from "../../core/sync.js";
 import { DEFAULT_PROMPTS } from "../../prompts/index.js";
 import { renderPromptEditor } from "../../ui/promptEditor.js";
 import { escapeHtmlAttr } from "../../utils/html.js";
+import { toneRules } from "../toneRules.js";
 import {
     FOCUS_CHECKS, FOCUS_MIN_REPLIES, FOCUS_MAX_FAILURES, focusSettings, peekFocusState, repliesSinceAudit, focusEstimate, focusStanding,
     focusAuditRunning, runFocusAudit, approveFocusAudit, discardFocusAudit, setFocusNote, removeFocusItem, resetFocus,
@@ -17,7 +18,7 @@ import {
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 const when = t => (t ? new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
-const KIND_COLOR = { drift: "#f59e0b", motif: "#a855f7", slop: "#ef4444", plot: "#2dd4bf" };
+const KIND_COLOR = { drift: "#f59e0b", motif: "#a855f7", slop: "#ef4444", plot: "#2dd4bf", tone: "#e11d48" };
 const kindBadge = k => `<span style="display:inline-block; min-width:44px; text-align:center; font-size:0.62rem; font-weight:700; text-transform:uppercase; padding:1px 6px; border-radius:6px; margin-right:6px; color:${KIND_COLOR[k] || "var(--text-muted)"}; background:rgba(255,255,255,0.06);">${esc(k)}</span>`;
 
 let shown = null;   // the container the tab is drawn in, redrawn when an audit lands
@@ -192,6 +193,7 @@ export function renderFocusTab(c) {
                 <div class="set-info"><div class="set-label">${esc(d.label)}</div><div class="set-desc">${esc(d.desc)}</div></div>
                 <input type="checkbox" id="focus_check_${k}" ${s.checks[k] ? "checked" : ""} />
             </div>`).join("")}
+            <div class="set-desc" id="focus_tone_line" style="margin:6px 0 0;"><i class="fa-solid fa-skull" style="color:#e11d48;"></i> ${toneRules().enabled && toneRules().text.trim() ? "<b>Tone drift</b> is checked too: this chat's Tone Rules are on, so each audit reads them and flags replies that soften or stray from them." : "Tone drift is checked too while this chat's Tone Rules are on (Global Toggles &amp; Add Ons)."}</div>
             <div class="mtab-setting-row" style="padding-bottom:0; border:none;">
                 <div class="set-info"><div class="set-label">Keep repeat offenders</div><div class="set-desc">Up to 3 findings that came back after a correction (flagged in 2 or more audits) stay in the prompt alongside every new correction, so what an earlier one fixed does not creep back when the next one leaves it out. A few dozen tokens a reply; never touches the cache.</div></div>
                 <input type="checkbox" id="focus_standing" ${s.standing ? "checked" : ""} />
@@ -289,6 +291,8 @@ function focusPromptEditor(f) {
             { key: "checkSlop", label: "Check: slop", hint: "Start the line with <code>[slop]</code>." },
             { key: "checkPlot", label: "Check: plot drift (when a plot focus is on)", hint: "Tokens: <code>{{strength}}</code>. Start the line with <code>[plot]</code>." },
             { key: "plotNote", label: "Audit: extra line for plot drift", hint: "Added to the note's instructions while a plot focus is on." },
+            { key: "checkTone", label: "Check: tone drift (when this chat's Tone Rules are on)", hint: "Tokens: <code>{{char}}</code>. Start the line with <code>[tone]</code>. The rules themselves are sent above it, as &lt;tone_rules&gt;." },
+            { key: "toneNote", label: "Audit: extra line for tone drift", hint: "Added to the note's instructions while the Tone Rules are on (through the <code>{{plotNote}}</code> token)." },
             { key: "correctionTemplate", label: "Correction in the prompt", hint: "Tokens: <code>{{note}}</code>, <code>{{standing}}</code> (the repeat offenders, when there are any)." },
             { key: "standingIntro", label: "Repeat offenders: heading", hint: "The line above the repeat offenders." },
             { key: "plotTemplate", label: "Plot focus in the prompt", hint: "Tokens: <code>{{plot}}</code>, <code>{{strength}}</code>, <code>{{user}}</code>. Sent last, after your message." },

@@ -21,52 +21,14 @@ import { memoryBudgetSettings, estimateTokens } from "../memory/index.js";
 import { vcrpActiveModel, vcrpWithoutSwipedReply } from "../generation.js";
 import { carriedTrackerState } from "../blockHistory.js";
 import { puraSettings, puraMainPrompt, puraSystemBlock, puraLateBlock } from "./index.js";
+import { expectedText } from "./macros.js";
 
 const RECENT = 20;   // replies a tracker's written size is measured over
 
 // ── Sizes ────────────────────────────────────────────────────────────────────
 
-// The index just after the }} closing the macro that opens at `at`, or -1.
-function macroEnd(s, at) {
-    let depth = 0;
-    for (let j = at; j < s.length - 1; j++) {
-        if (s[j] === "{" && s[j + 1] === "{") { depth++; j++; } else if (s[j] === "}" && s[j + 1] === "}") { depth--; j++; if (depth === 0) return j + 1; }
-    }
-    return -1;
-}
-// `body` split on `sep` outside any nested {{…}}.
-function splitTop(body, sep) {
-    const parts = [];
-    let depth = 0, cur = "";
-    for (let j = 0; j < body.length; j++) {
-        if (body.startsWith("{{", j)) { depth++; cur += "{{"; j++; continue; }
-        if (body.startsWith("}}", j)) { depth--; cur += "}}"; j++; continue; }
-        if (depth === 0 && body.startsWith(sep, j)) { parts.push(cur); cur = ""; j += sep.length - 1; continue; }
-        cur += body[j];
-    }
-    parts.push(cur);
-    return parts;
-}
-
-/** The text a request carries: each {{random}} as its average-length option, a {{roll}} as a number. */
-export function expectedText(text) {
-    const s = String(text || "");
-    let out = "", i = 0;
-    for (;;) {
-        const at = s.indexOf("{{random", i);
-        if (at < 0) { out += s.slice(i); break; }
-        out += s.slice(i, at);
-        const end = macroEnd(s, at);
-        if (end < 0) { out += s.slice(at); break; }
-        const inner = s.slice(at + 2, end - 2);
-        const colons = /^random\s*::/.test(inner);
-        const opts = splitTop(inner.replace(/^random\s*::?/, ""), colons ? "::" : ",").map(expectedText);
-        const avg = opts.reduce((n, o) => n + o.length, 0) / Math.max(1, opts.length);
-        out += opts.reduce((best, o) => (Math.abs(o.length - avg) < Math.abs(best.length - avg) ? o : best), opts[0] || "");
-        i = end;
-    }
-    return out.replace(/\{\{roll[^}]*\}\}/g, "50");
-}
+// A randomiser counts as one average roll (see macros.js).
+export { expectedText };
 
 export const tokensOf = text => estimateTokens(expectedText(text));
 

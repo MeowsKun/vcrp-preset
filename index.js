@@ -100,7 +100,10 @@ import { whatsNewToast } from "./src/vcrp/whatsNew.js";
 import { puraApplyNpcChanges } from "./src/vcrp/pura/npc.js";
 import { vcrpDialogueColorsOnReply } from "./src/vcrp/dialogueColors.js";
 import { vcrpPuraTidyOnReply } from "./src/vcrp/pura/tidy.js";
+import { vcrpPuraRollsOnReply } from "./src/vcrp/pura/rolls.js";
+import { puraSettings } from "./src/vcrp/pura/index.js";
 import { vcrpInstallSwipeGuard } from "./src/vcrp/swipeGuard.js";
+import { vcrpInstallQuickPanel, refreshQuickPanel } from "./src/vcrp/quickPanel.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpApplyReplyCap } from "./src/vcrp/replyLength.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
@@ -373,6 +376,10 @@ jQuery(async () => {
             // VCRP: a sideways scroll inside wide content in a message is not a swipe.
             vcrpInstallSwipeGuard();
             [event_types.APP_READY, event_types.CHAT_CHANGED].forEach(evt => { if (evt) eventSource.on(evt, () => vcrpInstallSwipeGuard()); });
+            // VCRP Quick: Tone Rules, the plot focus and Pura's randomisers from the wand menu.
+            vcrpInstallQuickPanel(undefined, { fallback: false });
+            if (event_types.APP_READY) eventSource.on(event_types.APP_READY, () => vcrpInstallQuickPanel());
+            if (event_types.CHAT_CHANGED) eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(() => { vcrpInstallQuickPanel(); refreshQuickPanel(); }, 250));
             // VCRP: keep the setup-problem dot on the VCRP button current.
             [event_types.APP_READY, event_types.CHAT_CHANGED, event_types.OAI_PRESET_CHANGED_AFTER, event_types.MAIN_API_CHANGED,
                 event_types.CHATCOMPLETION_SOURCE_CHANGED, event_types.CHATCOMPLETION_MODEL_CHANGED, event_types.SETTINGS_UPDATED]
@@ -402,6 +409,9 @@ jQuery(async () => {
             // first, so the dash cleaner (which leaves blocks alone) never rewrites one: its
             // "| — |" placeholders and dashed fields stay as the model wrote them.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpPuraTidyOnReply);
+            // Pura: what this reply's randomisers rolled, in its Notes tab (after the tidy,
+            // which may have made that tab already).
+            eventSource.on(event_types.MESSAGE_RECEIVED, (id, type) => vcrpPuraRollsOnReply(id, type, { show: puraSettings().showRolls }));
             // Dash cleaner next, so every handler after it (the tracker capture,
             // Story Memory) sees the reply as it will stay in the history.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDedashOnReply);

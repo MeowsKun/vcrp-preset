@@ -280,10 +280,10 @@ for (let k = 0; k < memCount; k++) {
 
     // The prompt editor, with the audits off and on; typing saves the reader's text.
     const editorBefore = failures;
-    check(box.find("#focus_prompt_editor textarea").length === 13, `the prompt editor (audits off): ${box.find("#focus_prompt_editor textarea").length} fields`);
+    check(box.find("#focus_prompt_editor textarea").length === 15, `the prompt editor (audits off): ${box.find("#focus_prompt_editor textarea").length} fields`);
     p.focus.enabled = true;
     switchTab(tabsUI.findIndex(t => t.title === "Focus"));
-    check(box.find("#focus_prompt_editor textarea").length === 13, "the prompt editor is missing with the audits on");
+    check(box.find("#focus_prompt_editor textarea").length === 15, "the prompt editor is missing with the audits on");
     box.find("#focus_prompt_editor .pe-enable-toggle").trigger("click");
     box.find('#focus_prompt_editor textarea[data-key="checkSlop"]').val("- [slop] my own check").trigger("input");
     check(p.focus.customPromptsEnabled === true && p.focus.customPrompts && p.focus.customPrompts.checkSlop === "- [slop] my own check", "an edit does not reach the profile");
@@ -479,6 +479,58 @@ for (let k = 0; k < memCount; k++) {
     delete ctx.chatId;
     delete meta.vcrp_tone;
 
+    // VCRP Quick (wand menu): Tone Rules, the plot focus and Pura's randomisers.
+    const quick = await imp("src/vcrp/quickPanel.js");
+    const menu = w.document.createElement("div");
+    menu.id = "extensionsMenu";
+    w.document.body.appendChild(menu);
+    quick.vcrpInstallQuickPanel(w.document);
+    quick.vcrpInstallQuickPanel(w.document);
+    check(menu.querySelectorAll("#vcrp_quick_wand").length === 1 && !w.document.getElementById("vcrp_quick_fab"), "VCRP Quick: not in the wand menu once");
+    ctx.chatId = "chat-2";
+    meta.vcrp_tone = { enabled: false, text: "Bleak." };
+    delete meta.vcrp_focus;   // an earlier check leaves a plot focus on
+    const keepQuick = { mode: p.mode, pura: p.pura };
+    p.mode = "v10-core";
+    w.document.getElementById("vcrp_quick_wand").click();
+    const q$ = sel => w.document.querySelector(`#vcrp_quick_overlay ${sel}`);
+    check(q$(".vcrp-quick-card") && !q$("#vcrp_quick_tone").checked && /appear here while a Pura Director engine/.test(q$(".vcrp-quick-card").textContent), "VCRP Quick: not open, or wrong with a VCRP engine");
+    q$("#vcrp_quick_tone").click(); await tick();
+    check(meta.vcrp_tone.enabled === true && q$("#vcrp_quick_tone").checked, "VCRP Quick: Tone Rules not switched on");
+    q$("#vcrp_quick_plot").click(); await tick(); await tick();
+    const { peekFocusState } = await imp("src/vcrp/focus/index.js");
+    check(peekFocusState() && peekFocusState().plot && peekFocusState().plot.active === true, "VCRP Quick: plot focus not switched on");
+    p.mode = "pura-adapted";
+    p.pura = { randomisers: [] };
+    quick.refreshQuickPanel(w.document);
+    const chip = k => q$(`.vcrp_quick_rand[data-key="${k}"]`);
+    check(w.document.querySelectorAll("#vcrp_quick_overlay .vcrp_quick_rand").length === 8, "VCRP Quick: Pura's randomisers missing with a Pura engine");
+    chip("deadDove").click(); await tick();
+    chip("chaos").click(); await tick();
+    check(JSON.stringify(p.pura.randomisers) === '["deadDove","chaos"]' && chip("kink").disabled && chip("directorsCut").disabled, `VCRP Quick: randomiser limits (${JSON.stringify(p.pura.randomisers)})`);
+    chip("deadDove").click(); await tick();
+    check(JSON.stringify(p.pura.randomisers) === '["chaos"]' && !chip("kink").disabled, "VCRP Quick: unticking does not free a slot");
+    q$("#vcrp_quick_close").click();
+    check(!w.document.getElementById("vcrp_quick_overlay"), "VCRP Quick: Close does not close it");
+    quick.openQuickPanel(w.document);
+    w.document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape" }));
+    check(!w.document.getElementById("vcrp_quick_overlay"), "VCRP Quick: Escape does not close it");
+    const bare = w.document.implementation.createHTMLDocument("bare");
+    quick.vcrpInstallQuickPanel(bare, { fallback: false });
+    check(!bare.getElementById("vcrp_quick_fab"), "VCRP Quick: a button before SillyTavern is ready (its menu may still come)");
+    quick.vcrpInstallQuickPanel(bare);
+    check(bare.getElementById("vcrp_quick_fab"), "VCRP Quick: no button when SillyTavern has no wand menu");
+    const late = bare.createElement("div");
+    late.id = "extensionsMenu";
+    bare.body.appendChild(late);
+    quick.vcrpInstallQuickPanel(bare);
+    check(!bare.getElementById("vcrp_quick_fab") && late.querySelector("#vcrp_quick_wand"), "VCRP Quick: a wand menu that turns up later does not take over from the button");
+    menu.remove();
+    Object.assign(p, keepQuick);
+    delete ctx.chatId;
+    delete meta.vcrp_tone;
+    delete meta.vcrp_focus;
+
     // Wide content in a message: a touch on it never reaches the swipe gesture; ordinary text does.
     const { vcrpInstallSwipeGuard } = await imp("src/vcrp/swipeGuard.js");
     const chatEl = w.document.getElementById("chat");
@@ -499,7 +551,7 @@ for (let k = 0; k < memCount; k++) {
     w.document.removeEventListener("touchstart", saw);
     chatEl.innerHTML = keepChat;
     clicks += 5;
-    if (failures === before) console.log("  ✓ Dialogue Colors list (shown with the add-on, change, forget, forget all), Story Config's Tense, Pura cost hints (panel summary live, each setting, BLOCKS lines), Tone Rules (per chat, same text in both places), wide content keeps its sideways scroll from the swipe gesture");
+    if (failures === before) console.log("  ✓ Dialogue Colors list (shown with the add-on, change, forget, forget all), Story Config's Tense, Pura cost hints (panel summary live, each setting, BLOCKS lines), Tone Rules (per chat, same text in both places), VCRP Quick (wand menu, Tone Rules, plot focus, Pura's randomisers and their limits), wide content keeps its sideways scroll from the swipe gesture");
 }
 console.log(`  (${clicks} clicks across all tabs)`);
 await new Promise(r => setTimeout(r, 200)); // let async handlers settle

@@ -2416,9 +2416,12 @@ console.log("38 ok Focus prompts editable (on/off, blank falls back, $-safe, sto
     msgs = await run("VCRP V10 Universal.json");
     assert(!/\{\{(random|roll)/.test(before(msgs)), "nothing that changes per request before the newest message (the cache)");
     const late = after(msgs);
-    for (const s of ["{{random::\n# Prose Voice", "Keep narration influential", "Characters {{random::will::will not}} lie.", "### Chaos Mode", "### Scene Pressure Cocktail", "# New NPC Naming Rules", "### Reasoning Procedure", "# Grounded Prose Rules"]) {
+    for (const s of ["# Prose Voice\nIn the style of", "Keep narration influential", "Characters {{random::will::will not}} lie.", "### Chaos Mode", "### Scene Pressure Cocktail", "# New NPC Naming Rules", "### Reasoning Procedure", "# Grounded Prose Rules"]) {
         assert(late.includes(s), `after the newest message: ${s.slice(0, 30)}`);
     }
+    // Pura's own lists are rolled by VCRP (so a reply can say what it got); the reader's own
+    // {{random}} in Director Instructions is left for SillyTavern.
+    assert((late.match(/\{\{random/g) || []).length === 1, `only the reader's own {{random}} left to SillyTavern: ${(late.match(/\{\{random/g) || []).length}`);
     assert(before(msgs).includes("### HTML\n- Use inline HTML"), "HTML is a standing toggle, cached with Main 2");
     q.pura = { voice: "camus", director: "Mara never apologises.", friction: true, nsfw: true, gooner: true, nightmare: true };
     t = text(await run("VCRP V10 Universal.json"));
@@ -2932,5 +2935,123 @@ console.log("44 ok Tone Rules (per chat, after the newest message with every eng
     meguminSyncLegacyBlockIds();
 }
 console.log("45 ok bug sweep: reply handlers in order (a tracker's dashes kept, the story's cleaned)");
+
+// 46. Tone Rules in Focus, and each reply's rolls (Pura's {{random}} lists rolled by VCRP).
+{
+    const focus = await imp("src/vcrp/focus/index.js");
+    const macros = await imp("src/vcrp/pura/macros.js");
+    const rolls = await imp("src/vcrp/pura/rolls.js");
+    const { buildBaseDict } = await imp("src/engine/buildBaseDict.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const after = ms => { const t = ms.map(textOf); return t.slice(t.lastIndexOf("latest user msg") + 1).join("\n"); };
+    const keep = { mode: q.mode, pura: q.pura, focus: q.focus };
+    for (const k of Object.keys(meta)) delete meta[k];
+
+    // Focus reads the chat's Tone Rules while they are on, and flags tone drift.
+    q.focus = { enabled: true, every: 5, checks: { drift: true, motifs: true, slop: true } };
+    chat.length = 0;
+    for (let i = 0; i < 5; i++) chat.push({ is_user: true, name: "Bob", mes: `I push on, scene ${i}.` }, { is_user: false, name: "Alice", mes: `Alice answers at length in scene ${i}, and at the end she softens and forgives him, and someone rescues them both just in time.` });
+    assert.equal(focus.focusAuditInput().tone, null, "no Tone Rules: no tone check");
+    meta.vcrp_tone = { enabled: true, text: "Bleak. No rescues, no mercy." };
+    const input = focus.focusAuditInput();
+    assert.equal(input.tone, "Bleak. No rescues, no mercy.", "the chat's Tone Rules go to the audit");
+    const audit = focus.buildFocusAuditMessages(input);
+    assert(audit[1].content.includes("<tone_rules>\nBleak. No rescues, no mercy.\n</tone_rules>") && audit[2].content.includes("- [tone] Tone drift.") && audit[2].content.includes("[slop], [tone]") && audit[2].content.includes("For tone drift, say plainly"), "the audit reads the rules, checks tone drift and says how to correct it");
+    const parsed = focus.parseFocusAudit("<recurring>none</recurring>\n<findings>\n- [tone] A rescue in the last scene\n- **Tone drift**: Alice forgives too easily\n- [motif] the same sigh\n</findings>\n<note>Keep it bleak: no rescues.</note>", input.checks, { tone: true });
+    assert.deepEqual(parsed.findings.map(f => f.kind), ["tone", "tone", "motif"], `tone findings read in either form: ${JSON.stringify(parsed.findings)}`);
+    assert.deepEqual(focus.parseFocusAudit("<findings>\n- [tone] x\n</findings>\n<note>n</note>", input.checks).findings, [], "a tone finding without Tone Rules on is not kept");
+    meta.vcrp_tone.enabled = false;
+    assert(!focus.buildFocusAuditMessages(focus.focusAuditInput())[2].content.includes("[tone]"), "Tone Rules off: no tone check");
+    delete meta.vcrp_tone;
+    q.focus = keep.focus;
+
+    // Rolling: the same uniform pick SillyTavern makes, with what was picked.
+    let r = macros.rollRandoms("a {{random::x::y::z}} b {{random::p::q}}", { rng: () => 0.5 });
+    assert(r.text === "a y b q" && r.picks.map(p => p.index).join() === "1,1", `a roll: ${JSON.stringify(r)}`);
+    assert.equal(macros.rollRandoms("a {{random::x::y::z}} b {{random::p::q}}", { reuse: [2, 0] }).text, "a z b p", "picked again from the indices kept");
+    r = macros.rollRandoms("{{random::A {{random::1::2}}::B}} {{random:c, d}}", { reuse: [0, 1, 1] });
+    assert(r.text === "A 2 d" && r.picks.length === 3, `nested lists and the comma form: ${r.text}`);
+    assert.equal(macros.rollRandoms("{{random::x::y}}", { reuse: [7], rng: () => 0 }).text, "x", "an index out of range (the list changed) is rolled fresh");
+    assert.equal(macros.pickLabel("\n# Prose Voice\nIn the style of Albert Camus:\nMaintain…"), "In the style of Albert Camus:", "a pick's label: its first line that is not a heading");
+
+    // A real Pura reply: its lists rolled by VCRP, what came up kept until the reply arrives.
+    q.mode = "pura-adapted";
+    q.pura = { randomisers: ["deadDove", "chaos"], voice: "random", nameRandomiser: true };
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" });
+    let msgs = await run("VCRP V10 Universal.json");
+    let got = rolls.pendingRolls();
+    assert(got && got.rolls.map(x => x.key).join() === "names,voice,deadDove,chaos" && got.rolls.every(x => x.picks.length), `the rolls kept: ${got && got.rolls.map(x => x.key)}`);
+    const late = after(msgs);
+    const dove = got.rolls.find(x => x.key === "deadDove");
+    assert(!/\{\{random/.test(late) && late.includes(dove.picks[0].text.replace(/…$/, "").slice(0, 40)), "Pura's lists went out rolled, and the rolls are the ones sent");
+    const voice = got.rolls.find(x => x.key === "voice").picks[0].text;
+    buildBaseDict(true);
+    assert.equal(rolls.pendingRolls(), got, "a token count rolls nothing and keeps nothing");
+
+    // The reply arrives: its rolls in its Notes tab, kept with the chat.
+    const reply = "Prose.\n<Blocks>\n<World_State>the docks</World_State>\n</Blocks>";
+    chat.push({ is_user: false, mes: reply, swipes: [reply], swipe_id: 0 });
+    rolls.vcrpPuraRollsOnReply(1, "normal", { show: true });
+    assert(chat[1].mes.includes(`<World_State>the docks</World_State>\n<Pura_Notes>\n${rolls.ROLLS_HEAD}\nName Randomiser:\n- `) && chat[1].mes.includes("Dead Dove Escalation:\n- ") && chat[1].mes.endsWith("</Pura_Notes>\n</Blocks>") && chat[1].swipes[0] === chat[1].mes, `the Notes tab: ${chat[1].mes}`);
+    assert(meta.vcrp_rolls_last && meta.vcrp_rolls_last.index === 1 && rolls.pendingRolls() === null, "kept with the chat; nothing left waiting");
+    rolls.vcrpPuraRollsOnReply(1, "normal", { show: true });
+    assert.equal(chat[1].mes.split(rolls.ROLLS_HEAD).length, 2, "never added twice");
+
+    // A Continue keeps the reply's voice (it used to roll a new one mid-reply) and rolls nothing else.
+    msgs = await run("VCRP V10 Universal.json", "continue");
+    assert(after(msgs).includes(voice.replace(/…$/, "")) && !after(msgs).includes("### Dead Dove") && rolls.pendingRolls() === null, "Continue: the same voice, no new rolls");
+
+    // Swipes: new rolls by default; the same ones with "Swipes keep the rolls" (and on a regenerate).
+    const indices = rs => JSON.stringify(rs.map(x => [x.key, x.picks.map(p => p.index)]));
+    q.pura.keepRolls = true;
+    await run("VCRP V10 Universal.json", "swipe");
+    assert.equal(indices(rolls.pendingRolls().rolls), indices(meta.vcrp_rolls_last.rolls), "a swipe keeps the rolls");
+    const kept = chat.pop();
+    await run("VCRP V10 Universal.json", "regenerate");
+    assert.equal(indices(rolls.pendingRolls().rolls), indices(meta.vcrp_rolls_last.rolls), "a regenerate keeps the rolls");
+    chat.push(kept);
+    q.pura.keepRolls = false;
+    let differs = false;
+    for (let i = 0; i < 12 && !differs; i++) { await run("VCRP V10 Universal.json", "swipe"); differs = indices(rolls.pendingRolls().rolls) !== indices(meta.vcrp_rolls_last.rolls); }
+    assert(differs, "without it a swipe rolls again");
+
+    // A request that failed leaves its rolls waiting: a Continue of the reply before it must not take them.
+    chat.push({ is_user: true, mes: "go" });
+    await run("VCRP V10 Universal.json");
+    const failed = rolls.pendingRolls();
+    chat.pop();
+    const before1 = chat[1].mes, keptBefore = JSON.stringify(meta.vcrp_rolls_last);
+    rolls.vcrpPuraRollsOnReply(1, "continue", { show: true });
+    assert(chat[1].mes === before1 && JSON.stringify(meta.vcrp_rolls_last) === keptBefore && rolls.pendingRolls() === failed, "a failed request's rolls go to no other reply");
+
+    // A reply cut off inside its blocks gets its rolls once a Continue finishes it; shown only when asked.
+    const cut = "Prose.\n<Blocks>\n<World_State>the do";
+    chat.push({ is_user: true, mes: "go" });
+    await run("VCRP V10 Universal.json");
+    chat.push({ is_user: false, mes: cut, swipes: [cut], swipe_id: 0 });
+    rolls.vcrpPuraRollsOnReply(3, "normal", { show: true });
+    assert(chat[3].mes === cut && rolls.pendingRolls(), "cut off: nothing added yet, the rolls wait");
+    chat[3].mes += "cks</World_State>\n</Blocks>";
+    rolls.vcrpPuraRollsOnReply(3, "continue", { show: true });
+    assert(chat[3].mes.includes(rolls.ROLLS_HEAD) && meta.vcrp_rolls_last.index === 3, "the Continue that finishes it adds them");
+    chat.push({ is_user: true, mes: "go" });
+    await run("VCRP V10 Universal.json");
+    chat.push({ is_user: false, mes: "Prose only." });
+    rolls.vcrpPuraRollsOnReply(5, "normal", { show: false });
+    assert(chat[5].mes === "Prose only." && meta.vcrp_rolls_last.index === 5, "Show rolls off: kept for a swipe, not shown");
+
+    // Another engine: nothing rolled, nothing kept.
+    q.mode = "v10-core";
+    await run("VCRP V10 Universal.json");
+    assert.equal(rolls.pendingRolls(), null, "a VCRP engine: no rolls");
+
+    chat.length = 0;
+    for (const k of Object.keys(meta)) delete meta[k];
+    Object.assign(q, { mode: keep.mode, pura: keep.pura });
+}
+console.log("46 ok Tone Rules in Focus (read, checked, flagged as tone), each reply's rolls (rolled by VCRP, in the Notes tab, Continue keeps the voice, swipes keep them when asked, cut-off replies wait)");
 
 console.log("\nALL FORK CHECKS PASSED");
