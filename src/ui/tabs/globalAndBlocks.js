@@ -11,6 +11,7 @@ import { fireRefreshHook, REFRESH } from "../../core/refreshHooks.js";
 import { hardcodedLogic } from "../../../data/database.js";
 import { meguminSlotByTrigger } from "../../../data/slots.js";
 import { hasSharedFragment } from "../../core/sharedFragments.js";
+import { renderDialogueColorsPanel } from "../../vcrp/dialogueColorsUi.js";
 
 // "You have rewritten this one in Dev Mode."
 //
@@ -34,7 +35,7 @@ export function renderGlobalAndBlocks(c) {
     c.empty();
 
     const addonDescriptions = {
-        "color": "Each character's dialogue is color-coded for easy visual parsing.",
+        "color": "Each character's dialogue is color-coded for easy visual parsing, one color per character for the whole chat (listed below while it is on).",
         "dn": "Forces dialogue and narration to be wrapped in their respective XML tags. Useful for specific Models for better narration style adherence. <b>Not recommended on V10</b> — the tags fight that engine's own prose rules.",
         "html": "When a character reads something — a phone screen, a letter, a sign — the AI draws the thing itself as HTML instead of describing it. Rare by design: one per reply at most, and most replies have none.",
         "bold_npcs": "NPCs chase their own goals, never hover or act halfway, and never bend just to please you. Can clash with the V10 engines' subtler rules and with Enhanced Dialogue, so try it before keeping it on."
@@ -195,6 +196,9 @@ export function renderGlobalAndBlocks(c) {
     });
     addonGrid.append(onoCard);
     c.append(addonGrid);
+
+    // VCRP: this chat's locked dialogue colors, while the add-on is on.
+    if (localProfile.addons.includes("color")) renderDialogueColorsPanel(c, () => fireRefreshHook(REFRESH.SWITCH_TAB));
 
     // Custom Engine Settings (Addons)
     if (activeMode && activeMode.customToggles) {

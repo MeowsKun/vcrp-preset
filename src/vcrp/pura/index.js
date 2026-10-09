@@ -96,22 +96,33 @@ export function puraFill(template, vars) {
 // Each swap names one sentence; a swap whose sentence is gone from Pura's text fails the
 // tests, so an upstream rewrite cannot quietly leave a clash behind.
 const FORMATTING_KEEP = /^- (No chapter headings\.|Never wrap narration in asterisks\.|Always wrap dialogue in quotation marks|Place translations for)/;
+// Moving between minds within a scene: only true to an omniscient point of view.
+const FORMATTING_ROTATE = /^- Within multiple characters in a scene, rotate inner thoughts/;
 export const PURA_ADAPTED_SWAPS = [
     // VCRP's own rule keeps {{user}}'s hands off: no "user-control mode" to select.
     ["Follow the selected user-control mode; if none is supplied, leave {{user}}'s dialogue, decisions, actions, and thoughts to the director.",
         "Leave {{user}}'s dialogue, decisions, actions, and thoughts to the director."],
-    // Story Config is where genre, tone, POV, pace, length, friction and explicitness live.
+    // Story Config is where genre, tone, POV, tense, pace, length, friction and explicitness live.
     ["- Genre changes atmosphere and conventions; narration voices change narrative delivery.",
-        "- The story config sets genre, tone, point of view, pace, length, friction and explicitness: treat it as the frame of every scene.\n- Genre changes atmosphere and conventions; narration voices change narrative delivery."],
+        "- The story config sets genre, tone, point of view, tense, pace, length, friction and explicitness: treat it as the frame of every scene.\n- Genre changes atmosphere and conventions; narration voices change narrative delivery."],
     ["- User-control rules apply across all modes. Current explicit director instructions", "- Current explicit director instructions"],
 ];
-export function puraAdaptedMain() {
+/** Story Config's values for Adapted where the reader left a field on default: Pura's own. */
+export const PURA_ADAPTED_CONFIG = { tense: "present" };
+
+/** Story Config's point of view lets the narration move between minds within a scene. */
+export function puraPovOmniscient(cfg = localProfile && localProfile.storyConfig) {
+    return /omniscient/i.test(String((cfg && cfg.pov) || ""));
+}
+
+export function puraAdaptedMain({ omniscient = false } = {}) {
     let t = PURA_MAIN;
     for (const [a, b] of PURA_ADAPTED_SWAPS) t = t.split(a).join(b);
     // The house formatting rules VCRP has no setting for, word for word from Pura's
     // Formatting; the rest of it (POV, tense, language, length, user control) is Story
-    // Config's and VCRP's now.
-    const keep = PURA_FORMATTING.split("\n").filter(l => FORMATTING_KEEP.test(l));
+    // Config's and VCRP's now. Pura's rotating inner thoughts come along when Story Config's
+    // point of view is omniscient (a limited one forbids changing heads mid-scene).
+    const keep = PURA_FORMATTING.split("\n").filter(l => FORMATTING_KEEP.test(l) || (omniscient && FORMATTING_ROTATE.test(l)));
     return t.replace("\n{{#if .genre}}", `\n\n# Formatting\n${keep.join("\n")}\n{{#if .genre}}`);
 }
 
@@ -140,7 +151,7 @@ export function puraMainPrompt(variant, s = puraSettings()) {
         });
         return puraFill(PURA_MAIN, vars);
     }
-    return puraFill(puraAdaptedMain(), vars);
+    return puraFill(puraAdaptedMain({ omniscient: puraPovOmniscient() }), vars);
 }
 
 /** [[pura_system]]: Pura's standing toggles that belong with the system prompt (cached). */

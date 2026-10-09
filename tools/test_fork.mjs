@@ -2436,10 +2436,34 @@ console.log("38 ok Focus prompts editable (on/off, blank falls back, $-safe, sto
     t = text(msgs);
     assert.deepEqual(leftovers(msgs), [], "Adapted: no tag left over");
     assert(t.includes("Leave Bob's dialogue, decisions, actions, and thoughts to the director.") && !t.includes("selected user-control mode"), "Adapted: VCRP's rule owns user control");
-    assert(t.includes("- The story config sets genre, tone, point of view, pace, length, friction and explicitness") && !t.includes("User-control rules apply across all modes"), "Adapted: Story Config is the frame");
+    assert(t.includes("- The story config sets genre, tone, point of view, tense, pace, length, friction and explicitness") && !t.includes("User-control rules apply across all modes"), "Adapted: Story Config is the frame");
     assert(t.includes("# Formatting\n- No chapter headings.") && t.includes("- Place translations for"), "Adapted: Pura's house formatting rules kept");
     assert(t.includes("<config>") && t.includes("NEVER write Bob's actions") && !t.includes("### Formatting\nConsider all rules"), "Adapted: Story Config and VCRP's rule are sent, Pura's Formatting is not");
     assert(!t.includes("### Friction Mode") && !t.includes("### NSFW Mode") && !t.includes("Space opera") && t.includes("Gooner (Director-Authorized)"), "Adapted: friction, explicitness and genre are Story Config's; Gooner stays Pura's");
+
+    // Tense: Story Config's; left on default, Adapted keeps Pura's present tense (the profile untouched).
+    const keepCfg = { tense: q.storyConfig.tense, pov: q.storyConfig.pov };
+    q.storyConfig.tense = "";
+    assert(t.includes("- tense: present tense. Narrate as it happens") && q.storyConfig.tense === "", "Adapted: tense on default is Pura's present tense, the profile left on default");
+    q.storyConfig.tense = "past";
+    t = text(await run("VCRP V10 Universal.json"));
+    assert(t.includes("- tense: past tense. Narrate as already happened") && !t.includes("- tense: present"), "Adapted: a tense picked in Story Config wins");
+    // Pura's rotating inner thoughts: only with an omniscient point of view.
+    const ROTATE = "- Within multiple characters in a scene, rotate inner thoughts";
+    assert(!t.includes(ROTATE), "Adapted: no rotating inner thoughts under a limited point of view (the default)");
+    q.storyConfig.pov = "third omniscient";
+    t = text(await run("VCRP V10 Universal.json"));
+    assert(t.includes(`- Never wrap narration in asterisks.\n${ROTATE}`) && t.includes("third person omniscient. Access to every interior"), "Adapted: an omniscient point of view brings Pura's rotating inner thoughts, in Pura's order");
+    Object.assign(q, { mode: "pura-original" });
+    t = text(await run("VCRP V10 Universal.json"));
+    assert(!t.includes("- tense:") && t.includes("present tense, third person omniscient POV"), "Original: Story Config's tense stands aside for Pura's own");
+    Object.assign(q, { mode: "v10-core" });
+    q.storyConfig.tense = "";
+    assert(!text(await run("VCRP V10 Universal.json")).includes("- tense:"), "a VCRP engine: tense on default sends nothing");
+    q.storyConfig.tense = "past";
+    assert(text(await run("VCRP V10 Universal.json")).includes("- tense: past tense"), "a VCRP engine: a tense picked is sent");
+    Object.assign(q, { mode: "pura-adapted" });
+    Object.assign(q.storyConfig, keepCfg);
 
     // Both presets, every engine, nothing left over; a VCRP engine gets no Pura text.
     for (const mode of ["pura-original", "pura-adapted"]) for (const preset of ["VCRP V10 Universal.json", "VCRP V10 Megumin Original.json"]) {
@@ -2630,9 +2654,9 @@ console.log("41 ok Pura with every VCRP module (all at once, both engines, both 
 
     // Dialogue Colors: the first color a character speaks in is theirs for the chat.
     const names = {};
-    let r = colors.lockReplyColors(`<think><font color="#000000" title="Mara">x</font></think>\n<font color="#ff69b4" title="Mara">"Hi."</font> <font color="#4169e1" title="Jonah">"Yo."</font>`, names);
+    let r = colors.lockReplyColors(`<think><font color="#000000" title="Mara">x</font></think>\n<font color="#ff69b4" title="Mara">"Hi."</font> <font color="#4169e1" title="Jonah">"Yo."</font>`, names, { readable: false });
     assert(!r.changed && names.mara.color === "#ff69b4" && names.jonah.color === "#4169e1", "colors learned from the reply, the thinking ignored");
-    r = colors.lockReplyColors(`<font color="#87cefa" title="Mara">"Again."</font> <font color='#4169E1' title="jonah">"Same."</font> <font color="#123456">"No name."</font>`, names);
+    r = colors.lockReplyColors(`<font color="#87cefa" title="Mara">"Again."</font> <font color='#4169E1' title="jonah">"Same."</font> <font color="#123456">"No name."</font>`, names, { readable: false });
     assert(r.changed && r.text.includes(`<font color="#ff69b4" title="Mara">`) && r.text.includes("#4169E1") && r.text.includes(`<font color="#123456">`), "a known character gets their color back; the same color in capitals and a line with no name are left alone");
     q.addons = [...new Set([...(q.addons || []), "color"])];
     for (const k of Object.keys(meta)) delete meta[k];
@@ -2719,5 +2743,73 @@ console.log("41 ok Pura with every VCRP module (all at once, both engines, both 
     meguminSyncLegacyBlockIds();
 }
 console.log("42 ok fixes from play: Dialogue Colors locked per character (learned, enforced, told, never cached, Megumin's wording kept), Pura's trackers and OOC notes moved into <Blocks> (on arrival, deduped, thinking untouched, the reader's OOC answered in place), stray trackers out of the history, the Notes tab");
+
+// 43. Readable dialogue colors, and what Pura's settings and trackers cost.
+{
+    const colors = await imp("src/vcrp/dialogueColors.js");
+    const costs = await imp("src/vcrp/pura/costs.js");
+    const P = await imp("data/pura.js");
+    const { meguminSyncLegacyBlockIds, meguminBlockById } = await imp("src/features/blocks/registry.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { mode: q.mode, order: JSON.stringify(q.blockStack.order), pura: q.pura };
+
+    // Readable colors: made readable as they are locked, in the reply too; the reader's own pick kept.
+    const rn = {};
+    let r = colors.lockReplyColors(`<font color="#000080" title="Navy">"Hi."</font> <font color="#ff6ab5" title="Rose">"Yo."</font> <font color="#ff69b4" title="Pink">"Hey."</font> <font color="#ff1493" title="Deep">"Ho."</font>`, rn);
+    assert(r.changed && rn.navy.color !== "#000080" && colors.contrastRatio(rn.navy.color, colors.DARK_BG) >= 4.5 && r.text.includes(`<font color="${rn.navy.color}" title="Navy">`), "a navy too dark for a dark theme is lightened, in the reply too");
+    assert(rn.rose.color === "#ff6ab5" && rn.pink.color !== "#ff69b4" && rn.deep.color === "#ff1493", "a color all but the same as one taken is turned until it stands apart; a different pink is left alone");
+    const light = {};
+    colors.lockReplyColors(`<font color="#ffd700" title="Gold">"Hi."</font>`, light, { background: colors.LIGHT_BG });
+    assert(colors.contrastRatio(light.gold.color, colors.LIGHT_BG) >= 4.5 && colors.contrastRatio("#ffd700", colors.LIGHT_BG) < 2, "on a light theme a pale color is darkened");
+    assert.equal(colors.readableColor("#87CEFA", { taken: ["#ff69b4"] }), "#87cefa", "a color that already reads and stands apart is kept");
+    const themed = color => ({ defaultView: { getComputedStyle: () => ({ getPropertyValue: () => color }) }, documentElement: {} });
+    assert(colors.themeBackground(themed("rgb(220, 220, 210)")) === colors.DARK_BG && colors.themeBackground(themed("rgba(30, 30, 30, 1)")) === colors.LIGHT_BG && colors.themeBackground(null) === colors.DARK_BG, "the theme read from SillyTavern's text color (dark when unknown)");
+    meta.vcrp_colors = { names: { mara: { name: "Mara", color: "#ff69b4" } } };
+    assert(colors.setLockedColor("mara", "#000080") && meta.vcrp_colors.names.mara.color === "#000080", "a color set in the list is kept as set");
+    delete meta.vcrp_colors;
+
+    // Sizes: a randomiser counts as an average roll, not its whole list.
+    assert.equal(costs.expectedText("A {{random::aaaa::bb::cccccc}} B {{roll:1d100}}"), "A aaaa B 50", "a {{random}} as its average option, a {{roll}} as a number");
+    assert.equal(costs.expectedText("{{random::x {{user}} y::zz::w}}"), "zz", "options split outside nested macros");
+    const raw = P.PURA_RANDOMISERS.pressure.length, sent = costs.expectedText(P.PURA_RANDOMISERS.pressure).length;
+    assert(sent < raw * 0.8 && !/\{\{random/.test(costs.expectedText(P.PURA_RANDOMISERS.pressure)), `the Pressure Cocktail as one roll (${sent} of ${raw} characters)`);
+
+    // Prices: the selected model's (Claude Opus 5.5 here).
+    assert(costs.puraPrice() && costs.puraPrice().label === "Claude Opus 5.5", "the selected model's price");
+    const gp = costs.settingCostLabel(P.PURA_TOGGLES.groundedProse, { fresh: true });
+    assert(/^≈ \d[\d,]* tokens, sent fresh every reply \(\$0\.\d+ a reply\)$/.test(gp), `Grounded Prose: ${gp}`);
+    assert(/cached \(.* a reply once cached\)$/.test(costs.settingCostLabel(P.PURA_TOGGLES.html)), "a cached setting says so");
+    assert(costs.costOf({ fresh: 1e6 }) === 4 && costs.costOf({ cached: 1e6 }) === 0.2 && costs.costOf({ written: 1e6 }) === 20, "fresh, cached and written tokens at Opus 5.5's input, read and output prices");
+    q.mode = "pura-adapted";
+    q.pura = {};
+    const base = costs.puraEngineCost("adapted");
+    q.pura = { html: true, groundedProse: true, randomisers: ["pressure"] };
+    const more = costs.puraEngineCost("adapted");
+    assert(more.cached > base.cached && more.fresh > base.fresh + costs.tokensOf(P.PURA_TOGGLES.groundedProse) * 0.9 && more.cost > base.cost, "the panel's summary follows the settings: HTML cached, Grounded Prose and a roll fresh");
+    assert(/≈ [\d,]+ tokens cached and ≈ [\d,]+ sent fresh every reply, about \$[\d.]+ a reply once cached on Claude Opus 5\.5/.test(costs.puraEngineCostLabel("adapted")), "the summary line");
+
+    // Trackers: rules cached, format and carried state fresh, what it writes measured from the chat.
+    q.blockStack.order = ["pura_scene", "pura_choices"];
+    meguminSyncLegacyBlockIds();
+    const scene = meguminBlockById("pura_scene");
+    chat.length = 0;
+    const S = (where) => `Prose.\n<Blocks>\n<Pura_Scene>\n[SCENE|${where}|Night|Rain]\ndetail: neon on wet glass and the hum of a vending machine\n[/SCENE]\n</Pura_Scene>\n</Blocks>`;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: S("The Lantern") }, { is_user: true, mes: "go" }, { is_user: false, mes: "Prose only." },
+        { is_user: true, mes: "go" }, { is_user: false, mes: S("The Docks") }, { is_user: true, mes: "go" }, { is_user: false, mes: "Prose only." });
+    const tc = costs.trackerCost(scene);
+    assert(tc.rules > 50 && tc.format > 10 && tc.carried > 0 && tc.written.seen === 2 && tc.written.of === 4 && Math.abs(tc.written.perReply - tc.written.avg / 2) < 0.01, `Scene: ${JSON.stringify({ ...tc, written: tc.written })}`);
+    assert(tc.cost > 0 && Math.abs(tc.cost - costs.costOf({ fresh: tc.format + tc.carried, cached: tc.rules, written: tc.written.perReply })) < 1e-12, "a tracker's cost per reply");
+    const label = costs.trackerCostLabel(scene);
+    assert(/^≈ \$[\d.]+ a reply · sends \d+ tokens \(\d+ of carried state\), writes ~\d+ in 2 of the last 4 replies · rules [\d,]+ cached$/.test(label), `Scene's line: ${label}`);
+    assert(/writes: no replies yet|not written in the last/.test(costs.trackerCostLabel(meguminBlockById("pura_choices"))), "a tracker not written yet says so");
+    assert(costs.trackersCost([scene, meguminBlockById("pura_choices"), meguminBlockById("world")]) > tc.cost, "the trackers in the block together (VCRP's own blocks not counted)");
+
+    chat.length = 0;
+    Object.assign(q, { mode: keep.mode, pura: keep.pura });
+    q.blockStack.order = JSON.parse(keep.order);
+    meguminSyncLegacyBlockIds();
+}
+console.log("43 ok readable dialogue colors (contrast with the theme, apart from colors taken, the reader's pick kept), Pura cost hints (average rolls, cached/fresh/written priced on the selected model, trackers measured from the chat)");
 
 console.log("\nALL FORK CHECKS PASSED");

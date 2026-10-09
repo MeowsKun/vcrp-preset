@@ -404,6 +404,81 @@ for (let k = 0; k < memCount; k++) {
     clicks += 14;
     if (failures === before) console.log("  ✓ Pura: panel per engine, settings saved, randomiser limits, BLOCKS group, Pura's card in the chat (touches kept from the swipe gesture), reply length, overlap hints, Dev Mode");
 }
+// The Dialogue Colors list (Global Toggles & Add Ons, with the add-on on), Story Config's
+// Tense field, and wide content in a message keeping a sideways scroll from the swipe gesture.
+{
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ Colors / Tense / wide content: ${what}`); } };
+    const before = failures;
+    const tick = () => new Promise(r => setTimeout(r, 5));
+    const box = $("#ps_stage_content");
+    const meta = globalThis.__ST__.chat_metadata;
+    const keepAddons = p.addons;
+    const globalTab = tabsUI.findIndex(t => t.title === "Global Toggles & Add Ons");
+    p.addons = (p.addons || []).filter(a => a !== "color");
+    meta.vcrp_colors = { names: { mara: { name: "Mara", color: "#ff69b4" }, jonah: { name: "Jonah", color: "#abc" } } };
+    switchTab(globalTab);
+    check(box.find("#vcrp_colors_panel").length === 0, "the colors list shows with the add-on off");
+    p.addons = [...p.addons, "color"];
+    switchTab(globalTab);
+    const rows = () => box.find(".vcrp-color-row");
+    check(rows().length === 2 && /Mara/.test(box.find("#vcrp_colors_panel").text()) && rows().last().find(".vcrp-color-pick").val() === "#aabbcc", `the list (${rows().length} rows)`);
+    rows().first().find(".vcrp-color-pick").val("#00ff00").trigger("change"); await tick();
+    check(meta.vcrp_colors.names.mara.color === "#00ff00", "a new color does not reach the chat's lock");
+    rows().last().find(".vcrp-color-forget").trigger("click"); await tick();
+    check(!meta.vcrp_colors.names.jonah && rows().length === 1, "Forget does not forget");
+    meta.vcrp_colors.names.jonah = { name: "Jonah", color: "#123456" };
+    switchTab(globalTab);
+    box.find("#vcrp_colors_forget_all").trigger("click"); await tick();
+    check(Object.keys(meta.vcrp_colors.names).length === 0 && box.find("#vcrp_colors_empty").length === 1, "Forget all does not empty the list");
+    p.addons = keepAddons;
+    delete meta.vcrp_colors;
+
+    // Story Config: the Tense field.
+    switchTab(tabsUI.findIndex(t => t.title === "PRESETS & COT"));
+    check(box.find('.cfg-row[data-key="tense"]').length === 1 && /Tense/.test(box.find('.cfg-row[data-key="tense"]').text()), "no Tense field in Story Config");
+
+    // Pura cost hints: the panel's summary (live) and each setting's line; each Pura tracker's line in BLOCKS.
+    const keepMode = p.mode, keepPura = p.pura, keepOrder = [...p.blockStack.order];
+    p.mode = "pura-adapted";
+    p.pura = {};
+    switchTab(tabsUI.findIndex(t => t.title === "PRESETS & COT"));
+    box.find('.ws-nav-btn[data-target="sec-pura"]').trigger("click");
+    const total = () => box.find("#pura_cost_total").text();
+    const first = total();
+    check(/tokens cached and ≈ [\d,]+ sent fresh every reply, about \$[\d.]+ a reply once cached on Claude Opus 5\.5/.test(first), `the panel's cost summary: ${first.slice(0, 120)}`);
+    check(box.find("#pura_panel .pura-cost").length >= 12 && /Grounded Prose[\s\S]*sent fresh every reply/.test(box.find("#pura_panel").text()), `cost lines: ${box.find("#pura_panel .pura-cost").length}`);
+    box.find("#pura_grounded").prop("checked", true).trigger("change"); await tick();
+    check(total() !== first, "the summary does not follow a setting");
+    box.find("#pura_voice").val("random").trigger("change"); await tick();
+    check(/sent fresh every reply/.test(box.find("#pura_cost_voice").text()), "the voice's line does not follow the pick");
+    p.blockStack.order = ["pura_scene", "world"];
+    switchTab(tabsUI.findIndex(t => t.title === "BLOCKS"));
+    check(box.find(".blk-cost").length === 1 && /rules [\d,]+ cached/.test(box.find(".blk-cost").text()) && /Pura's trackers here: ≈ \$/.test(box.find("#blk_pura_cost").text()), `BLOCKS cost lines: ${box.find(".blk-cost").length}`);
+    Object.assign(p, { mode: keepMode, pura: keepPura });
+    p.blockStack.order = keepOrder;
+
+    // Wide content in a message: a touch on it never reaches the swipe gesture; ordinary text does.
+    const { vcrpInstallSwipeGuard } = await imp("src/vcrp/swipeGuard.js");
+    const chatEl = w.document.getElementById("chat");
+    const keepChat = chatEl.innerHTML;
+    chatEl.innerHTML = `<div class="mes"><div class="mes_text"><p id="sg_plain">Prose.</p><div id="sg_wide" style="overflow-x:auto;"><span id="sg_in">A wide terminal</span></div><div id="sg_clip" style="overflow-x:hidden;"><span id="sg_clip_in">clipped</span></div><div id="sg_fits" style="overflow-x:auto;"><span id="sg_fits_in">fits</span></div></div></div><div id="sg_outside" style="overflow-x:auto;"><span id="sg_out_in">x</span></div>`;
+    for (const id of ["sg_wide", "sg_clip", "sg_outside"]) {
+        const el = w.document.getElementById(id);
+        Object.defineProperty(el, "scrollWidth", { value: 900, configurable: true });
+        Object.defineProperty(el, "clientWidth", { value: 360, configurable: true });
+    }
+    check(vcrpInstallSwipeGuard(w.document) && vcrpInstallSwipeGuard(w.document) && chatEl.getAttribute("data-vcrp-swipe-guard") === "1", "the guard does not install on the chat");
+    let seen = 0;
+    const saw = () => { seen++; };
+    w.document.addEventListener("touchstart", saw);
+    const touch = id => { seen = 0; w.document.getElementById(id).dispatchEvent(new w.Event("touchstart", { bubbles: true })); return seen; };
+    check(touch("sg_in") === 0, "a touch on wide content that scrolls reaches the swipe gesture");
+    check(touch("sg_plain") === 1 && touch("sg_clip_in") === 1 && touch("sg_fits_in") === 1 && touch("sg_out_in") === 1, "a touch on ordinary text, clipped or fitting content, or outside a message no longer reaches the swipe gesture");
+    w.document.removeEventListener("touchstart", saw);
+    chatEl.innerHTML = keepChat;
+    clicks += 5;
+    if (failures === before) console.log("  ✓ Dialogue Colors list (shown with the add-on, change, forget, forget all), Story Config's Tense, Pura cost hints (panel summary live, each setting, BLOCKS lines), wide content keeps its sideways scroll from the swipe gesture");
+}
 console.log(`  (${clicks} clicks across all tabs)`);
 await new Promise(r => setTimeout(r, 200)); // let async handlers settle
 if (errors.length) console.log("  late console.error:", errors.slice(-3).join(" | ").slice(0, 400));

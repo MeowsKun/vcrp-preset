@@ -39,9 +39,17 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 - **Dialogue Colors that stay put:** each character keeps the color they first spoke in for the
   whole chat. The add-on asks for the speaker's name on each colored line, tells the model the
   colors already taken (after the chat, so never cached), and corrects a reply that gives a known
-  character another color. The Megumin Original engines keep Megumin's own wording.
-- **Blocks on mobile:** scrolling sideways on the blocks card no longer counts as a swipe (which
-  regenerated the last reply).
+  character another color. The Megumin Original engines keep Megumin's own wording. A color is
+  made readable as it is locked: lightened or darkened until it reads against your theme, and
+  turned when it is all but the same as a color already taken. While the add-on is on, Global
+  Toggles & Add-ons lists this chat's colors: change one (kept exactly as you set it), or forget
+  it and the model picks again.
+- **Sideways scrolling on mobile:** scrolling sideways on the blocks card, or on anything wide in
+  a reply that scrolls (an HTML object, a table), no longer counts as a swipe (which regenerated
+  the last reply). Swiping anywhere else works as before.
+- **Tense** in Story Config: present or past. Left on default it sends nothing and each engine
+  keeps its own (Megumin's Story Config has no tense, so the Megumin Original engines only get one
+  if you pick it).
 - User Consent block without the slur in its example list; Megumin's feedback form and donation
   details removed from the About card (it links to the original project instead).
 - **Trimmed:** Side Panel, Image Generation (ComfyUI, incl. NPC portrait generation and NPC image
@@ -198,8 +206,10 @@ as two engines in PRESETS & COT, working with everything VCRP adds:
   formatting, length, user control and genre. Story Config, the writing style and VCRP's "never
   write for {{user}}" rule stand aside while it is selected.
 - **Pura Director · Adapted:** the same core, reworded only where VCRP's modules take over: Story
-  Config sets genre, tone, POV, pace, length, friction and explicitness, and VCRP's rule keeps
-  {{user}} yours. The rewordings are listed in `src/vcrp/pura/index.js`.
+  Config sets genre, tone, POV, tense, pace, length, friction and explicitness, and VCRP's rule keeps
+  {{user}} yours. Tense left on default stays Pura's present tense, and Pura's rotating inner
+  thoughts come along when Story Config's point of view is third omniscient (the limited ones
+  forbid changing heads mid-scene). The rewordings are listed in `src/vcrp/pura/index.js`.
 
 Every Pura setting is in **PRESETS & COT → Pura Director**, shown while a Pura engine is selected:
 narration voices (one of eight, or a random one each reply), Friction, NSFW, Gooner and Nightmare
@@ -231,6 +241,13 @@ model still writes in the story is moved into its block as the reply arrives (th
 alone, and nothing is added twice), and older replies reach the model without it. With a Pura
 engine, a note out of character (`((OOC: …))`, which the Kink randomiser asks for) goes to a Notes
 tab of the card, unless your own message was out of character: then the answer stays in the story.
+
+**What it costs:** the Pura panel shows, at the top, what Pura's text comes to with your settings
+(tokens cached and sent fresh every reply, priced on your model), and under each extra, mode,
+randomiser and voice what it adds when on. In BLOCKS, each Pura tracker in the block shows its
+cost per reply: its format and carried state (sent fresh), what it writes (measured from the
+chat's last 20 replies; output is the dearest part), and its rules (cached). A randomiser counts
+as one average roll, not the whole list it rolls from.
 
 Where one of VCRP's blocks and a Pura tracker do the same job (Bonds and Relationships, World State
 and Scene or Time, CYOA and Choices, Character Sheet and Your Stats), both can be on, but the BLOCKS

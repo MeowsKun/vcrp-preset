@@ -10,7 +10,7 @@
 import { getContext, extension_settings, substituteParams } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
-import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine } from "../core/engines.js";
+import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine, puraVariant } from "../core/engines.js";
 import { meguminStyleRule, meguminAddonText, meguminPlanTemplate } from "./meguminOriginal.js";
 import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING } from "../../data/megumin.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
@@ -32,7 +32,7 @@ import { buildKnowledgebase } from "../vcrp/knowledgebase.js";
 import { buildAnimeMode } from "../vcrp/anime.js";
 import { vcrpMemoryEnabled, vcrpMemoryBlock, vcrpMemoryRecall, previewRecall } from "../vcrp/memory/index.js";
 import { vcrpFocusBlock, vcrpPlotFocusBlock } from "../vcrp/focus/index.js";
-import { applyPuraEngine } from "../vcrp/pura/index.js";
+import { applyPuraEngine, PURA_ADAPTED_CONFIG } from "../vcrp/pura/index.js";
 import { colorLockNote } from "../vcrp/dialogueColors.js";
 import { vcrpGenerationKind, vcrpIsDryRun } from "../vcrp/generation.js";
 
@@ -62,7 +62,8 @@ export function buildBaseDict(isTokenCount = false) {
     dict["[[count]]"] = "";
 
     // Story Config (<config> block). Empty when the config is off or every field is on Default.
-    dict["[[config]]"] = buildConfigBlock(localProfile.storyConfig, { original: megumin });
+    // VCRP: Pura Director · Adapted hands its tense to Story Config; left on default, Pura's own.
+    dict["[[config]]"] = buildConfigBlock(localProfile.storyConfig, { original: megumin, fallback: puraVariant(activeEngine) === "adapted" ? PURA_ADAPTED_CONFIG : null });
 
     // 2. STANDARD STAGE SELECTIONS (Stage 2, 4, 5, 6)
 

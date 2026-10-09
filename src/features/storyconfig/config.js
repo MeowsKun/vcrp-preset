@@ -75,6 +75,17 @@ export const storyConfigFields = [
               value: "third person limited, roving. The focal character MAY change between scenes, NEVER within one. Each scene commits to a vantage and holds it to the end" }
         ]
     },
+    // VCRP: Megumin's Story Config has no tense. Left on default it sends nothing, so each
+    // engine keeps its own (Pura Director · Adapted falls back to Pura's present tense).
+    {
+        key: "tense", tag: "tense", label: "Tense", icon: "fa-clock-rotate-left", color: "#6366f1", type: "select",
+        hint: "Present or past narration. Left on default, the engine keeps its own (Pura Director · Adapted: present tense, as Pura writes).",
+        customPlaceholder: "e.g. past tense, present for flashbacks",
+        options: [
+            { label: "present", value: `present tense. Narrate as it happens ("she turns", not "she turned"); dialogue and memories keep their natural tenses` },
+            { label: "past", value: `past tense. Narrate as already happened ("she turned", not "she turns"); dialogue keeps its natural tense` }
+        ]
+    },
     {
         key: "focus", tag: "focus", label: "Focus", icon: "fa-crosshairs", color: "#eab308", type: "text",
         placeholder: "e.g. the camera follows Maya",
@@ -315,13 +326,16 @@ export function countActiveConfigFields(cfg) {
 //
 // `original` (a Megumin Original engine) sends Megumin's wording of the shipped options
 // and notes. A value the reader typed is sent as typed either way.
-export function buildConfigBlock(cfg, { original = false } = {}) {
+// `fallback` gives an engine's own value for a field left on default ({ tense: "present" }),
+// sent as that option's sentence; the profile is not changed.
+export function buildConfigBlock(cfg, { original = false, fallback = null } = {}) {
     if (!cfg) return "";
 
     normalizeStoryConfig(cfg);
     const lines = [];
     storyConfigFields.forEach(f => {
         let raw = cfg[f.key];
+        if ((!raw || String(raw).trim() === "") && fallback && fallback[f.key]) raw = upgradeConfigValue(f, fallback[f.key]);
         if (!raw || String(raw).trim() === "") return;
         raw = String(raw).trim();
         if (original && Object.prototype.hasOwnProperty.call(MEGUMIN_CONFIG.values, raw)) raw = MEGUMIN_CONFIG.values[raw];

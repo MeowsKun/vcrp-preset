@@ -20,6 +20,7 @@ import {
 } from "./registry.js";
 import { meguminScheduleBlocksRefresh } from "./chat.js";
 import { blockTwinsInStack } from "./puraBlocks.js";
+import { trackerCostLabel, trackersCost, usd, puraPrice } from "../../vcrp/pura/costs.js";
 import { meguminSlotByTrigger } from "../../../data/slots.js";
 import { hasSharedFragment } from "../../core/sharedFragments.js";
 
@@ -81,6 +82,7 @@ export function renderBlocksTab(c) {
                         <div class="blk-name">${b.label}${b.builtin ? "" : ` <span class="blk-custom-flag">custom</span>`}${editedFlag(b)}</div>
                         <div class="blk-tag">&lt;${b.tag}&gt;${off ? " — its feature is switched off, so it is not sent" : ""}</div>
                         ${twins.length ? `<div class="blk-overlap" style="font-size:0.68rem; color:#f59e0b; margin-top:2px;"><i class="fa-solid fa-clone"></i> Does the same job as ${twins.map(t => escapeHtmlAttr(t.label)).join(" and ")}, also in the block: the AI writes both every reply. Keep one.</div>` : ""}
+                        ${b.group === "pura" && b.puraRules && !off ? `<div class="blk-cost" style="font-size:0.66rem; opacity:0.8; margin-top:2px;"><i class="fa-solid fa-coins"></i> ${escapeHtmlAttr(trackerCostLabel(b))}</div>` : ""}
                     </div>
                 </div>
                 <div class="blk-row-actions">
@@ -165,6 +167,12 @@ export function renderBlocksTab(c) {
         }
     });
     left.append(list);
+
+    // VCRP: what Pura's trackers in the block come to, together (vcrp/pura/costs.js).
+    const puraTotal = trackersCost(inStack.filter(b => !(typeof b.requires === "function" && !b.requires(localProfile))));
+    if (puraTotal != null) {
+        left.append(`<div class="blk-sub-desc" id="blk_pura_cost" style="margin:6px 0 0;"><i class="fa-solid fa-coins"></i> Pura's trackers here: ≈ ${escapeHtmlAttr(usd(puraTotal))} a reply together, on ${escapeHtmlAttr(puraPrice().label)}. What a tracker writes is measured from this chat's last 20 replies once it has appeared; rules are cached, formats and carried state are sent fresh.</div>`);
+    }
 
     // ── AVAILABLE ──
     left.append(`<div class="wstyle-section-head green" style="margin-top:18px;"><i class="fa-solid fa-plus"></i> Add a block</div>`);

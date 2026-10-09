@@ -100,6 +100,7 @@ import { whatsNewToast } from "./src/vcrp/whatsNew.js";
 import { puraApplyNpcChanges } from "./src/vcrp/pura/npc.js";
 import { vcrpDialogueColorsOnReply } from "./src/vcrp/dialogueColors.js";
 import { vcrpPuraTidyOnReply } from "./src/vcrp/pura/tidy.js";
+import { vcrpInstallSwipeGuard } from "./src/vcrp/swipeGuard.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpApplyReplyCap } from "./src/vcrp/replyLength.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
@@ -369,6 +370,9 @@ jQuery(async () => {
             });
             // VCRP: remember whether this is a reply, Continue, Impersonate or a quiet call.
             eventSource.on(event_types.GENERATION_STARTED, vcrpSetGenerationType);
+            // VCRP: a sideways scroll inside wide content in a message is not a swipe.
+            vcrpInstallSwipeGuard();
+            [event_types.APP_READY, event_types.CHAT_CHANGED].forEach(evt => { if (evt) eventSource.on(evt, () => vcrpInstallSwipeGuard()); });
             // VCRP: keep the setup-problem dot on the VCRP button current.
             [event_types.APP_READY, event_types.CHAT_CHANGED, event_types.OAI_PRESET_CHANGED_AFTER, event_types.MAIN_API_CHANGED,
                 event_types.CHATCOMPLETION_SOURCE_CHANGED, event_types.CHATCOMPLETION_MODEL_CHANGED, event_types.SETTINGS_UPDATED]
