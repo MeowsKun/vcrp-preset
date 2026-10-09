@@ -116,8 +116,8 @@ function renderReplyLength($c, s, budget, st, rerender) {
                 ${lengthOpts.map(o => `<option value="${esc(o.value)}" ${o.value === curLength ? "selected" : ""}>${esc(o.label)}</option>`).join("")}
                 ${customLength ? `<option value="${esc(curLength)}" selected>Custom (set in Story Config)</option>` : ""}
             </select></div>`}
-        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Thinking length</div><div class="set-desc">${pura ? "Does not apply while a Pura Director engine is selected: Pura thinks without VCRP's thinking steps. The setting comes back when you switch engine." : "The most words VCRP's visible thinking may take before the story starts. The same setting as Thinking Effort."}</div></div>
-            <select id="vmem_think" class="ps-modern-input" style="width:170px;" ${pura ? "disabled" : ""}>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Thinking length</div><div class="set-desc">${pura ? "The most words the Pura engine's &lt;think&gt; block may take before the story starts (it has no thinking steps of its own). The same setting as Thinking Effort." : "The most words VCRP's visible thinking may take before the story starts. The same setting as Thinking Effort."}</div></div>
+            <select id="vmem_think" class="ps-modern-input" style="width:170px;">
                 ${[["unspecified", "No limit"], ["100", "100 words"], ["250", "250 words"], ["450", "450 words"]].map(([v, l]) => `<option value="${v}" ${effort === v ? "selected" : ""}>${l}</option>`).join("")}
                 ${effort === "custom" ? `<option value="custom" selected>Custom: ${esc(localProfile.customThinkEffort || "")} words</option>` : ""}
             </select></div>

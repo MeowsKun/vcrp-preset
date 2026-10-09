@@ -53,7 +53,7 @@ export function renderPuraPanel(sec, variant, rerender) {
             <span>Pura's Director Preset 16.0, by Pura (<a href="https://platberlitz.github.io" target="_blank" rel="noopener">platberlitz.github.io</a>). ${original
                 ? "<b>Original</b> sends Pura's writing text word for word, with Pura's own formatting, length, user-control and genre settings below; Story Config and the writing style stand aside."
                 : "<b>Adapted</b> keeps Pura's writing core but hands genre, tone, POV, tense, pace, length, friction and explicitness to <b>Story Config</b> (tense left on default stays Pura's present tense), and user control to VCRP's own rule."}
-            Pura thinks without a CoT script. Pura's trackers are in the <b>BLOCKS</b> tab, in the Pura group, and work with every engine.</span>
+            Pura has no CoT script: it thinks in its own &lt;think&gt; block, drawn in the Thinking box. Pura's trackers are in the <b>BLOCKS</b> tab, in the Pura group, and work with every engine.</span>
         </div>`);
 
     sec.append(`<div class="mtab-callout" id="pura_cost_total" style="margin-bottom:16px;"><i class="fa-solid fa-coins"></i><span>${esc(puraEngineCostLabel(variant))}</span></div>`);
@@ -106,7 +106,7 @@ export function renderPuraPanel(sec, variant, rerender) {
     renderToneRulesPanel(panel, { where: "pura" });
 
     panel.append(`<div class="mtab-panel-title gold" style="margin-top:14px;"><i class="fa-solid fa-brain"></i> Thinking</div>`);
-    panel.append(ROW("", "Reasoning help", "Pura has no CoT script; the model's own reasoning does the work. These are Pura's optional nudges, sent after your message." + `<div class="pura-cost" style="font-size:0.66rem; opacity:0.8; margin-top:2px;"><i class="fa-solid fa-coins"></i> Reasoning Procedure ${esc(settingCostLabel(PURA_TOGGLES.reasoningProcedure, { fresh: true }))}; Anti-Overthinking ${esc(settingCostLabel(PURA_TOGGLES.antiOverthinking, { fresh: true }))}</div>`,
+    panel.append(ROW("", "Reasoning help", "Pura has no CoT script: it thinks in its own &lt;think&gt; block. These are Pura's optional nudges for that thinking, sent after your message." + `<div class="pura-cost" style="font-size:0.66rem; opacity:0.8; margin-top:2px;"><i class="fa-solid fa-coins"></i> Reasoning Procedure ${esc(settingCostLabel(PURA_TOGGLES.reasoningProcedure, { fresh: true }))}; Anti-Overthinking ${esc(settingCostLabel(PURA_TOGGLES.antiOverthinking, { fresh: true }))}</div>`,
         SELECT("pura_reasoning", { "": "None", procedure: "Reasoning Procedure", antiOverthinking: "Anti-Overthinking" }, s.reasoning)));
 
     sec.append(panel);

@@ -220,8 +220,11 @@ as two engines in PRESETS & COT, working with everything VCRP adds:
 Every Pura setting is in **PRESETS & COT → Pura Director**, shown while a Pura engine is selected:
 narration voices (one of eight, or a random one each reply), Friction, NSFW, Gooner and Nightmare
 modes, Director Instructions, Grounded Prose Rules, HTML objects, Diegetic Stats, the Name
-Randomiser, the scene randomisers (two at most) and Pura's optional reasoning help. Pura thinks
-without a CoT script, so the Reasoning (CoT) settings rest while it is selected.
+Randomiser, the scene randomisers (two at most) and Pura's optional reasoning help. Pura has no
+CoT script: it opens each reply with its own `<think>` block like every engine (drawn in the
+Thinking box, kept out of the history), with Pura's reasoning help, if picked, as what it works
+through. The CoT switch still turns it on or off and Thinking length still caps it; the CoT scripts
+themselves rest while a Pura engine is selected.
 
 For the cache, VCRP assembles Pura's text itself instead of through `{{setvar}}` and `{{#if}}`:
 everything that holds still sits in the cached part, and everything that changes per request (a
@@ -261,7 +264,7 @@ Where one of VCRP's blocks and a Pura tracker do the same job (Bonds and Relatio
 and Scene or Time, CYOA and Choices, Character Sheet and Your Stats), both can be on, but the BLOCKS
 tab points it out: the model writes both every reply. The Pura panel does the same for VCRP's
 Immersive HTML add-on and Pura's HTML objects. Under Pura Original, the Memory tab's Reply length
-sets Pura's own length, and Thinking length rests (Pura has no CoT). Dev Mode does not copy a Pura
+sets Pura's own length, and Thinking length caps Pura's `<think>` block. Dev Mode does not copy a Pura
 engine: its text is built from the Pura Director panel.
 
 Both engines and the trackers are generated from Pura's own preset file by

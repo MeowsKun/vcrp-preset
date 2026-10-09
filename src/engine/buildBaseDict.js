@@ -10,7 +10,7 @@
 import { getContext, extension_settings, substituteParams } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
-import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine, puraVariant } from "../core/engines.js";
+import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine, isPuraEngine, puraVariant } from "../core/engines.js";
 import { meguminStyleRule, meguminAddonText, meguminPlanTemplate } from "./meguminOriginal.js";
 import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING } from "../../data/megumin.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
@@ -307,6 +307,16 @@ export function buildBaseDict(isTokenCount = false) {
         dict["[[THINK]]"] = "Open every reply with your own <think> block: work through what follows for this scene, close it with </think>, then write the reply.\n"
             + wrapper.split("{Thinking}").join(dict["[[COT]]"]);
         dict["[[COT]]"] = "";
+    } else if (localProfile.cotEnabled !== false && isPuraEngine(activeEngine)) {
+        // VCRP: a Pura engine has no CoT script, but thinks in the same <think> block as
+        // every engine. On a model that cannot be prefilled (Claude 4.6+), nothing else made
+        // it think in tags: its reasoning landed in the reply itself, outside the Thinking box
+        // and never stripped from the history. Pura's Reasoning help, when picked, is what it
+        // works through (sent after the newest message, in [[pura_late]]). The Thinking length
+        // and the knowledgebase and Anime mode reminders apply as they do to the CoT.
+        const cap = effort !== "unspecified" ? `Your Thinking must not be more than ${effort === "custom" ? (localProfile.customThinkEffort || "100") : effort} words.` : "";
+        dict["[[THINK]]"] = ["Open every reply with your own <think> block: think the scene through, close it with </think>, then write the reply.", cap, vcrpKb.cotNote, vcrpAnime.cotNote]
+            .filter(Boolean).join("\n");
     } else {
         dict["[[THINK]]"] = "";
     }

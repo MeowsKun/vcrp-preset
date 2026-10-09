@@ -2394,7 +2394,19 @@ console.log("38 ok Focus prompts editable (on/off, blank falls back, $-safe, sto
     assert.deepEqual(leftovers(msgs), [], "no tag left over");
     assert(textOf(msgs[0]).startsWith("# Directive\n- Bob is the director.") && t.includes("## Genre\nAn immersive literary narrative") && t.includes("Begin using the following compendium:"), "Pura's main prompt, with Pura's genre, first in the prompt");
     assert(!/\{\{#if|\{\{getvar|\{\{setvar/.test(t), "no Pura macros left");
-    assert(!t.includes("You are the narrator of an ongoing prose story") && !t.includes("Writer's Mind") && !t.includes("Open every reply with your own <think>"), "no VCRP engine text, no CoT");
+    assert(!t.includes("You are the narrator of an ongoing prose story") && !t.includes("Writer's Mind") && !t.includes("work through what follows for this scene"), "no VCRP engine text, no CoT script");
+    // Thinking: the same <think> block as every engine (a model that cannot be prefilled
+    // otherwise wrote its reasoning into the reply), switched and capped like the CoT.
+    const THINK = "Open every reply with your own <think> block: think the scene through, close it with </think>, then write the reply.";
+    const cachedPart = ms => { const all = ms.map(textOf); let i = all.length - 1; while (i >= 0 && !all[i].includes("Scene prose")) i--; return all.slice(0, i + 1).join("\n"); };
+    assert(t.includes(THINK) && !cachedPart(msgs).includes(THINK), "Pura thinks in a <think> block (asked in Output RULES, after the cached part)");
+    q.thinkEffort = "250";
+    assert(text(await run("VCRP V10 Universal.json")).includes(`${THINK}\nYour Thinking must not be more than 250 words.`), "Thinking length caps it");
+    q.thinkEffort = "unspecified";
+    assert(!text(await run("VCRP V10 Universal.json", "continue")).includes(THINK) && !text(await run("VCRP V10 Universal.json", "impersonate")).includes(THINK), "Continue and Impersonate: not told to think");
+    q.cotEnabled = false;
+    assert(!text(await run("VCRP V10 Universal.json")).includes(THINK), "the CoT switch off: no thinking");
+    q.cotEnabled = true;
     assert(!t.includes("SOME WRITING STYLE RULE") && !t.includes("<config>") && !t.includes("NEVER write Bob's actions"), "the writing style, Story Config and VCRP's user rule stand aside");
     assert(after(msgs).includes("### Formatting\nConsider all rules here absolute") && after(msgs).includes("Write for every character excluding Bob") && after(msgs).includes("Flexible length") && !t.includes("{{dialoguecolors}}"), "Pura's Formatting, after the newest message");
     assert(!t.includes("[LANGUAGE RULE]"), "Pura's language line instead of VCRP's");

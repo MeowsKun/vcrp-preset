@@ -374,12 +374,12 @@ for (let k = 0; k < memCount; k++) {
     p.mode = "pura-original";
     p.pura = { length: "flexible" };
     switchTab(tabsUI.findIndex(t => t.title === "Memory"));
-    check(box.find("#vmem_len_pura").length === 1 && box.find("#vmem_len").length === 0 && box.find("#vmem_think").is(":disabled"), "Reply length: Pura Original's length row, thinking disabled");
+    check(box.find("#vmem_len_pura").length === 1 && box.find("#vmem_len").length === 0 && !box.find("#vmem_think").is(":disabled"), "Reply length: Pura Original's length row, thinking length live");
     box.find("#vmem_len_pura").val("short").trigger("change");
     check(p.pura.length === "short", "Reply length: the story length does not reach Pura's setting");
     p.mode = "pura-adapted";
     switchTab(tabsUI.findIndex(t => t.title === "Memory"));
-    check(box.find("#vmem_len").length === 1 && box.find("#vmem_len_pura").length === 0 && box.find("#vmem_think").is(":disabled"), "Reply length: Adapted uses Story Config's length");
+    check(box.find("#vmem_len").length === 1 && box.find("#vmem_len_pura").length === 0 && !box.find("#vmem_think").is(":disabled"), "Reply length: Adapted uses Story Config's length, thinking length live");
 
     // Overlap hints: a block and its Pura twin together; VCRP's HTML add-on and Pura's HTML.
     const keepOrder = [...p.blockStack.order];
