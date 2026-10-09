@@ -44,5 +44,8 @@ export function renderToneRulesPanel(container, { where = "global" } = {}) {
         setToneRules({ text: t.text }, { soon: true });
         box.find(`#${id("cost")}`).html(t.text.trim() ? `<i class="fa-solid fa-coins"></i> ${esc(cost())}` : "");
     });
+    // Typing saves after a pause; leaving the box saves at once, before you can leave the
+    // chat, so the last words never miss this chat's save.
+    box.find(`#${id("text")}`).on("change", function () { setToneRules({ text: String($(this).val() || "") }); });
     container.append(box);
 }

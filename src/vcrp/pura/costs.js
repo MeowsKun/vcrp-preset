@@ -129,10 +129,24 @@ function measuredWritten(block, replies = RECENT) {
     return { seen: sizes.length, of: recent.length, avg, perReply: avg * sizes.length / recent.length };
 }
 
+// The carried state is read from the whole chat. One BLOCKS tab draw asks for it once per
+// tracker (and again for the total), so it is read once and reused for a moment: on a long
+// chat on a phone, reading it a dozen times over made the tab slow to open.
+let carriedMemo = null;
+function carriedState() {
+    const chat = ((getContext() || {}).chat) || [];
+    const last = chat.length ? chat[chat.length - 1] : null;
+    const stamp = `${chat.length}|${last ? String(last.mes || "").length : 0}|${((localProfile && localProfile.blockStack && localProfile.blockStack.order) || []).join(",")}`;
+    if (carriedMemo && carriedMemo.stamp === stamp && Date.now() - carriedMemo.at < 2000) return carriedMemo.state;
+    const state = carriedTrackerState();
+    carriedMemo = { stamp, at: Date.now(), state };
+    return state;
+}
+
 // The tokens of a tracker's state handed back every turn (see blockHistory.js).
 function carriedTokens(block) {
     let state = [];
-    try { state = carriedTrackerState(); } catch (e) { return 0; }
+    try { state = carriedState(); } catch (e) { return 0; }
     const mine = state.find(x => x.block && x.block.id === block.id);
     if (!mine) return 0;
     if (mine.names) return estimateTokens(mine.names.join(", "));

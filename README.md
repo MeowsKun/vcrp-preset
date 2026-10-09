@@ -244,7 +244,9 @@ change updates its "Read on the PC"; both show in the chat card and can be undon
 Pura's own text puts some trackers in the story (a sheet right after an NPC's introduction, the
 scene at the top); here each of those sentences names the tracker's block instead. A tracker the
 model still writes in the story is moved into its block as the reply arrives (the thinking is left
-alone, and nothing is added twice), and older replies reach the model without it. With a Pura
+alone, nothing is added twice, and a forgotten closing tag is added), and older replies reach the
+model without it. Only a tracker that starts its own line moves ("[TIME]" inside a sentence is the
+story's), and a reply cut off inside a block is left as it is until a Continue finishes it. With a Pura
 engine, a note out of character (`((OOC: …))`, which the Kink randomiser asks for) goes to a Notes
 tab of the card, unless your own message was out of character: then the answer stays in the story.
 

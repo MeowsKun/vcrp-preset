@@ -200,6 +200,7 @@ export const PURA_NOTES_BLOCK = {
     desc: "Pura: what the model says out of character (an OOC note, the kinks a randomiser rolled), kept out of the story.",
     visibility: "open", builtin: true, system: true, transient: true, group: "pura",
     slot: "<Pura_Notes>\n[Anything you were asked to say out of character this turn goes here, without the (( )), never in the story text. Omit this whole tag otherwise.]\n</Pura_Notes>",
+    previewNote: "[Only appears when the model says something out of character.]",
     requires: p => { try { return Boolean(engineOn(p)); } catch (e) { return false; } },
     slotRequires: dict => /\(\(\s*OOC\b/i.test(String(dict["[[pura_late]]"] || "")),
 };

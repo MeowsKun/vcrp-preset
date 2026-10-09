@@ -287,7 +287,8 @@ export function renderBlocksPreview(host) {
 
     const registry = meguminRenderRegistry();
     const active = meguminActiveBlocks();
-    if (!active.length) {
+    // VCRP: a tab that only holds a reply's own note (Pura's Notes) is no block to preview alone.
+    if (!active.some(b => !b.transient)) {
         host.innerHTML = `<div class="blk-empty">No blocks in the master block, so nothing is sent and nothing is drawn.</div>`;
         return;
     }
@@ -304,7 +305,7 @@ export function renderBlocksPreview(host) {
     const sample = "<Blocks>\n" + active.map(b => {
         // Same three sources the envelope uses, so the preview cannot drift.
         let raw;
-        if (b.slot) raw = "[Only appears when the story introduces a new NPC.]";
+        if (b.slot) raw = b.previewNote || "[Only appears when the story introduces a new NPC.]";
         else if (typeof b.build === "function") raw = b.build();
         else if (b.source) raw = dict[b.source] || "";
         else raw = b.content || "";

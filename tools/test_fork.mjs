@@ -2694,7 +2694,14 @@ console.log("41 ok Pura with every VCRP module (all at once, both engines, both 
     out = tidy.puraTidyText(`Prose.\n\n${scene}\n\n<Blocks>\n<Pura_Scene>\n${scene}\n</Pura_Scene>\n</Blocks>`, { blocks });
     assert.equal(out.text, `Prose.\n\n<Blocks>\n<Pura_Scene>\n${scene}\n</Pura_Scene>\n</Blocks>`, "an entry the block already has is not added twice");
     out = tidy.puraTidyText(`Prose.\n\n[SCENE|Roof|Dusk|Wind]\ndetail: gulls\n\nMore prose.`, { blocks });
-    assert.equal(out.text, "Prose.\n\nMore prose.\n\n<Blocks>\n<Pura_Scene>\n[SCENE|Roof|Dusk|Wind]\ndetail: gulls\n</Pura_Scene>\n</Blocks>", "no closing tag: the header's own lines, to the blank line; the envelope made");
+    assert.equal(out.text, "Prose.\n\nMore prose.\n\n<Blocks>\n<Pura_Scene>\n[SCENE|Roof|Dusk|Wind]\ndetail: gulls\n[/SCENE]\n</Pura_Scene>\n</Blocks>", "no closing tag: the header's own lines, to the blank line, closed for Pura's card; the envelope made");
+    // Found in the sweep: cut-off replies left alone, bold taken off, a tracker word in a sentence kept.
+    for (const cutOff of ["Prose.\n\n<Pura_Scene>\n[SCENE|Roof|Dusk|Wind]\ndetail: gul", `Prose.\n\n${sheet}\n\n<Blocks>\n<Pura_Scene>\n[SCENE|Roof|Dusk|Wind]\ndetail: gul`]) {
+        assert(!tidy.puraTidyText(cutOff, { blocks, notes: true }).changed, `a reply cut off inside a block is left as it is: ${cutOff.slice(0, 40)}`);
+    }
+    out = tidy.puraTidyText("Prose.\n\n**[NPC:MINOR|Ann]**\nb: Ann | 30 | Clerk\n**[/NPC]**\n\nMore prose.", { blocks });
+    assert.equal(out.text, "Prose.\n\nMore prose.\n\n<Blocks>\n<Pura_NPC>\n[NPC:MINOR|Ann]\nb: Ann | 30 | Clerk\n[/NPC]\n</Pura_NPC>\n</Blocks>", "a bolded sheet moves without its bold");
+    assert(!tidy.puraTidyText("The phone showed [TIME] in grey. A [SCENE] sticker. [NPC:REF] alone.", { blocks: [...blocks, ...(await imp("src/features/blocks/puraBlocks.js")).PURA_BLOCKS.filter(b => b.id === "pura_time")] }).changed, "a tracker word inside a sentence, or a reference without its fields, stays in the story");
     out = tidy.puraTidyText("She waved. ((OOC: the kinks)) Then left.", { blocks, notes: false });
     assert(!out.changed, "no Pura engine (notes off): an OOC note stays where it is");
 
@@ -2878,5 +2885,40 @@ console.log("43 ok readable dialogue colors (contrast with the theme, apart from
     Object.assign(q, { mode: keep.mode, model: keep.model, pura: keep.pura });
 }
 console.log("44 ok Tone Rules (per chat, after the newest message with every engine and both presets, under Dead Dove when rolled, on their own otherwise, Continue yes, Impersonate and background calls no, Setup Check)");
+
+// 45. Bug sweep: the reply handlers in index.js's order (the tidy before the dash cleaner, so
+//     a tracker's "| — |" placeholders are never rewritten), and the BLOCKS cost lines read
+//     the chat's carried state once per draw.
+{
+    const src = readFileSync(join(REPO, "index.js"), "utf8");
+    const order = [...src.matchAll(/eventSource\.on\(event_types\.MESSAGE_RECEIVED, (\w+)\)/g)].map(m => m[1]);
+    assert.deepEqual(order.slice(0, 3), ["vcrpPuraTidyOnReply", "vcrpDedashOnReply", "vcrpDialogueColorsOnReply"], `reply handler order: ${order.join(", ")}`);
+    const tidy = await imp("src/vcrp/pura/tidy.js");
+    const { vcrpDedashOnReply } = await imp("src/vcrp/dedash.js");
+    const colors = await imp("src/vcrp/dialogueColors.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { mode: q.mode, addons: q.addons, order: JSON.stringify(q.blockStack.order) };
+    q.mode = "pura-adapted";
+    q.addons = [...new Set([...(q.addons || []), "color"])];
+    q.blockStack.order = ["pura_npc", "pura_events"];
+    meguminSyncLegacyBlockIds();
+    for (const k of Object.keys(meta)) delete meta[k];
+    chat.length = 0;
+    const reply = `<font color="#ff69b4" title="Mara">"Hi."</font> She smiled — slowly.\n\n[NPC:MINOR|Ann]\nb: Ann | 30 — 35 | Clerk\na: Thin | — | Grey\n[/NPC]\n\n[EVENT|⚠️ THREAT|Okafor wants paying|—]\ncontext: the ring\n[/EVENT]`;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: reply, swipes: [reply], swipe_id: 0 });
+    for (const handler of [tidy.vcrpPuraTidyOnReply, vcrpDedashOnReply, colors.vcrpDialogueColorsOnReply]) handler(1, "normal");
+    const out = chat[1].mes;
+    assert(out.startsWith(`<font color="#ff69b4" title="Mara">"Hi."</font> She smiled, slowly.`), `the story's dashes cleaned: ${out.slice(0, 80)}`);
+    assert(out.includes("b: Ann | 30 — 35 | Clerk\na: Thin | — | Grey") && out.includes("[EVENT|⚠️ THREAT|Okafor wants paying|—]"), `the trackers' dashes kept, inside <Blocks>: ${out}`);
+    assert(chat[1].swipes[0] === out && meta.vcrp_colors && meta.vcrp_colors.names.mara, "the swipe follows; the color learned");
+    for (const k of Object.keys(meta)) delete meta[k];
+    chat.length = 0;
+    Object.assign(q, { mode: keep.mode, addons: keep.addons });
+    q.blockStack.order = JSON.parse(keep.order);
+    meguminSyncLegacyBlockIds();
+}
+console.log("45 ok bug sweep: reply handlers in order (a tracker's dashes kept, the story's cleaned)");
 
 console.log("\nALL FORK CHECKS PASSED");

@@ -112,6 +112,7 @@ export const MEGUMIN_BLOCK_REGISTRY = [
         // updates to nobody is tokens spent on a block that can never be filled.
         slot: `<NPC_Update name="[Exact name as it appears in the NPC bank]">\n[The changed lines go here when this response changed something already on file — follow the NPC UPDATES rules above. Omit this whole tag otherwise.]\n</NPC_Update>`,
         requires: p => Boolean(p.npcBank && p.npcBank.enabled && (p.npcBank.npcs || []).length > 0),
+        previewNote: "[Only appears when a reply changes something already in the NPC Bank.]",
         slotRequires: dict => Boolean(String(dict["[[npc_updates]]"] || "").trim())
     },
     {

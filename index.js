@@ -398,14 +398,15 @@ jQuery(async () => {
             eventSource.on(event_types.MORE_MESSAGES_LOADED, vcrpMemoryUpdateVisuals);
             // A deleted message may be one a chapter was anchored to: repair, then redraw.
             eventSource.on(event_types.MESSAGE_DELETED, vcrpMemoryOnMessageDeleted);
-            // Dash cleaner first, so every handler after it (the tracker capture,
+            // Pura: a tracker written in the story (or a ((OOC)) note) moves into <Blocks>
+            // first, so the dash cleaner (which leaves blocks alone) never rewrites one: its
+            // "| — |" placeholders and dashed fields stay as the model wrote them.
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpPuraTidyOnReply);
+            // Dash cleaner next, so every handler after it (the tracker capture,
             // Story Memory) sees the reply as it will stay in the history.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDedashOnReply);
             // Dialogue Colors: each character keeps the color they first spoke in.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDialogueColorsOnReply);
-            // Pura: a tracker written in the story (or a ((OOC)) note) moves into <Blocks>,
-            // before the NPC Bank and Story Memory read the reply.
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpPuraTidyOnReply);
             // Story Memory's spend estimate: the reply's output, added to its request.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryCountReply);
             // Reply length: the safety cap on the request itself (where SillyTavern has the event).

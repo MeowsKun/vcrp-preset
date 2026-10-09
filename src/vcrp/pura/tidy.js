@@ -47,26 +47,48 @@ function afterThinking(text) {
     return at;
 }
 
-// One tracker's entries in a stretch of story text, as [{ start, end }]: from the header
-// ([NPC:MAJOR|Name], or a bare [NPC]) to its [/NPC]. With no closing tag, a header alone on
-// its line takes the lines under it, to the next blank line; one inside a sentence goes alone.
+// An entry as it goes into its block: without the bold a model may wrap its header or closing
+// tag in, and with the closing tag Pura's card needs when the model forgot it.
+function entryText(raw, fam, closed) {
+    const t = String(raw).trim()
+        .replace(/^([ \t]*)(?:\*\*|__)(?=\[)/gm, "$1")
+        .replace(/(\])(?:\*\*|__)([ \t]*)$/gm, "$1$2");
+    return closed || HEADER_ONLY.has(fam) ? t : `${t}\n[/${fam}]`;
+}
+
+// One tracker's entries in a stretch of story text, as [{ start, end, body }]: from the header
+// ([NPC:MAJOR|Name], or a bare [NPC]) to its [/NPC]. A header must start its line, the way
+// Pura writes them: "[TIME]" inside a sentence is the story's own text. With no closing tag,
+// a header alone on its line takes the lines under it, to the next blank line. A quick
+// reference or a relationship change ([NPC:REF|…], [NPC:REL|…]) is one bracket, wherever it
+// sits, and only with its fields.
 function strayEntries(text, block) {
     const markers = [...new Set([...block.markers, ...block.markers.map(family)])];
-    const re = new RegExp(`\\[(${markers.map(escRe).join("|")})(?:\\|[^\\]\\n\\r]*)?\\]`, "g");
+    const re = new RegExp(`\\[(${markers.map(escRe).join("|")})(\\|[^\\]\\n\\r]*)?\\]`, "g");
     const heads = [];
     let m;
-    while ((m = re.exec(text)) !== null) heads.push({ at: m.index, end: m.index + m[0].length, marker: m[1] });
+    while ((m = re.exec(text)) !== null) heads.push({ at: m.index, end: m.index + m[0].length, marker: m[1], fields: Boolean(m[2]) });
+    const startsLine = at => /^[ \t]*(?:\*\*|__)?$/.test(text.slice(text.lastIndexOf("\n", at - 1) + 1, at));
     return heads.map((h, i) => {
-        if (HEADER_ONLY.has(h.marker)) return { start: h.at, end: h.end };
+        if (HEADER_ONLY.has(h.marker)) return h.fields ? { start: h.at, end: h.end, body: text.slice(h.at, h.end) } : null;
+        if (!startsLine(h.at)) return null;
         const rest = text.slice(h.end, i + 1 < heads.length ? heads[i + 1].at : text.length);
         const fam = family(h.marker);
         const close = rest.search(new RegExp(`\\[\\/${escRe(fam)}\\]`));
-        if (close >= 0) return { start: h.at, end: h.end + close + fam.length + 3 };
-        if (!/^[ \t]*\r?\n/.test(rest)) return { start: h.at, end: h.end };
+        if (close >= 0) {
+            const end = h.end + close + fam.length + 3;
+            return { start: h.at, end, body: entryText(text.slice(h.at, end), fam, true) };
+        }
+        if (!/^(?:\*\*|__)?[ \t]*(?:\r?\n|$)/.test(rest)) return null;
         const blank = rest.search(/\n[ \t]*\r?\n/);
-        return { start: h.at, end: h.end + (blank >= 0 ? blank : rest.length) };
-    });
+        const end = h.end + (blank >= 0 ? blank : rest.length);
+        return { start: h.at, end, body: entryText(text.slice(h.at, end), fam, false) };
+    }).filter(Boolean);
 }
+
+// Some tag in `tags` opened in this text and never closed: a reply cut off mid-block.
+const opensUnclosed = (text, tags) => tags.some(tag =>
+    (String(text).match(new RegExp(`<${tag}\\b[^>]*>`, "gi")) || []).length > (String(text).match(new RegExp(`<\\/${tag}\\s*>`, "gi")) || []).length);
 
 // A whole <Tag>…</Tag>, as [{ start, end, body }].
 function tagSpans(text, tag) {
@@ -126,6 +148,12 @@ export function puraTidyText(text, { blocks = [], notes = false } = {}) {
     let envText = env ? env[0] : "";
     let pre = env ? tail.slice(0, env.index) : tail;
     let post = env ? tail.slice(env.index + envText.length) : "";
+    const tags = [...blocks.map(b => b.tag), ...(notes ? [PURA_NOTES_BLOCK.tag] : [])];
+
+    // A reply cut off inside its blocks is left as it is: anything moved would land inside
+    // the unfinished block. A Continue finishes it, and the tidy runs on the finished reply.
+    if (env && !/<\/Blocks\s*>$/i.test(envText)) return none;
+    if (opensUnclosed(pre, tags) || opensUnclosed(post, tags)) return none;
 
     const found = new Map();
     const sweep = (tag, spansOf) => {
@@ -134,7 +162,6 @@ export function puraTidyText(text, { blocks = [], notes = false } = {}) {
         const pieces = [...a.pieces, ...b.pieces];
         if (pieces.length) found.set(tag, [...(found.get(tag) || []), ...pieces]);
     };
-    const tags = [...blocks.map(b => b.tag), ...(notes ? [PURA_NOTES_BLOCK.tag] : [])];
     // Whole tags first, so the entries inside one are not taken twice.
     for (const tag of tags) sweep(tag, s => tagSpans(s, tag));
     for (const b of blocks) sweep(b.tag, s => strayEntries(s, b));
