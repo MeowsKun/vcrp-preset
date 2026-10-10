@@ -5,6 +5,7 @@
 // small panel with:
 //   - a direction for the next reply only (oneShot.js);
 //   - this chat's Tone Rules, on or off;
+//   - "Existing cast only": no new characters while it is on (castLock.js);
 //   - the plot focus, on or off;
 //   - with a Pura engine selected, Pura's scene randomisers (Dead Dove Escalation among
 //     them), with the same rules as the Pura Director panel: two at most, the Director's
@@ -24,6 +25,7 @@ import { toneRules, setToneRules, toneChatOpen } from "./toneRules.js";
 import { peekFocusState, setPlotFocus, PLOT_DEFAULTS, plotFocusRemaining } from "./focus/index.js";
 import { puraSettings, PURA_RANDOMISER_LABELS, PURA_MAX_RANDOMISERS } from "./pura/index.js";
 import { oneShot, setOneShot } from "./oneShot.js";
+import { castLockOn, setCastLock } from "./castLock.js";
 import { getContext } from "../st.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
@@ -109,6 +111,7 @@ function quickHtml() {
         <textarea id="vcrp_quick_shot" class="vcrp-quick-shot" rows="3" placeholder="e.g. She finally tells him about the ring." ${open ? "" : "disabled"}>${esc(shot.text)}</textarea>
         <div class="vcrp-quick-shot-row"><span id="vcrp_quick_shot_desc">${shotDesc}</span>${open && shot.text.trim() ? `<button type="button" class="vcrp-quick-close" id="vcrp_quick_shot_clear">Clear</button>` : ""}</div>
         ${SWITCH("vcrp_quick_tone", open && tone.enabled, "Tone Rules", toneDesc, !open)}
+        ${SWITCH("vcrp_quick_cast", open && castLockOn(), "Existing cast only", open ? "No new characters: the story stays with the ones already in it (unnamed background aside), and twists that call for someone new use an existing character." : "Open a chat first.", !open)}
         ${SWITCH("vcrp_quick_plot", open && plot.active, "Plot focus", plotDesc, !open)}
         ${pura ? `<div class="vcrp-quick-sub">Pura's scene randomisers <span>(two at most; the Director's Cut alone)</span></div>
         <div class="vcrp-quick-chips" id="vcrp_quick_rands">${puraRandomisersHtml()}</div>` : `<div class="vcrp-quick-sub muted">Pura's scene randomisers appear here while a Pura Director engine is selected.</div>`}
@@ -133,6 +136,7 @@ function wire(card, doc) {
     on("#vcrp_quick_shot", "change", e => setOneShot(e.target.value));
     on("#vcrp_quick_shot_clear", "click", () => { setOneShot(""); redraw(); });
     on("#vcrp_quick_tone", "change", e => { setToneRules({ enabled: e.target.checked }); redraw(); });
+    on("#vcrp_quick_cast", "change", e => { setCastLock(e.target.checked); redraw(); });
     on("#vcrp_quick_plot", "change", async e => { await setPlotFocus({ active: e.target.checked }); redraw(); });
     card.querySelectorAll(".vcrp_quick_rand").forEach(box => box.addEventListener("change", () => {
         const k = box.getAttribute("data-key");

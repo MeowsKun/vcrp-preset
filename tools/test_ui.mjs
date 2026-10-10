@@ -511,6 +511,10 @@ for (let k = 0; k < memCount; k++) {
     check(meta.vcrp_oneshot.text === "" && q$("#vcrp_quick_shot").value === "", "VCRP Quick: Clear does not empty the one-shot direction");
     q$("#vcrp_quick_tone").click(); await tick();
     check(meta.vcrp_tone.enabled === true && q$("#vcrp_quick_tone").checked, "VCRP Quick: Tone Rules not switched on");
+    q$("#vcrp_quick_cast").click(); await tick();
+    check(meta.vcrp_cast_lock && meta.vcrp_cast_lock.enabled === true && q$("#vcrp_quick_cast").checked, "VCRP Quick: Existing cast only not switched on");
+    q$("#vcrp_quick_cast").click(); await tick();
+    check(meta.vcrp_cast_lock.enabled === false, "VCRP Quick: Existing cast only not switched off");
     q$("#vcrp_quick_plot").click(); await tick(); await tick();
     const { peekFocusState } = await imp("src/vcrp/focus/index.js");
     check(peekFocusState() && peekFocusState().plot && peekFocusState().plot.active === true, "VCRP Quick: plot focus not switched on");

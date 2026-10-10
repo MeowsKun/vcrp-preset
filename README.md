@@ -58,6 +58,13 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   Tone Rules and plot focus on or off, and, with a Pura engine, Pura's scene randomisers (Dead
   Dove Escalation among them, two at most), without opening the VCRP window. A SillyTavern
   without the wand menu gets a small button under VCRP's own instead.
+- **Existing cast only** (VCRP Quick, per chat): for scenes that should stay with the characters
+  and threads already in the story. While on, every reply is told not to introduce anyone new
+  (unnamed background people may still be scenery), and reminded who is already there (the card's
+  character or group, you, the NPC Bank). It goes after Pura's randomisers, so a twist that calls
+  for someone new (Grounded Complication, Chaos Mode, the Director's Cut) uses an existing
+  character instead, and Pura's Name Randomiser rests. Any engine; replies and Continue, not
+  Impersonate.
 - **One-shot direction** (VCRP Quick, "Next reply only"): a steer for the next reply alone ("she
   finally tells him about the ring"). It goes out after your message with any engine, never
   written into the chat, and empties once that reply arrives; a swipe, regenerate or Continue of
@@ -301,6 +308,9 @@ own frontend has (cards show the initial instead).
 - `node tools/test_fork.mjs`: builds real prompts from the preset and checks the prompt interceptor.
 - `node tools/test_ui.mjs`: renders every tab and clicks every button in a simulated browser
   (one-time setup: `cd tools && npm install`).
+- `node tools/test_cache.mjs`: plays real turns with everything on, the history built from the chat
+  with the preset's own regex applied as SillyTavern does, and checks that each request reads back
+  what the last one cached, byte for byte (swipes, Continue and Story Memory's summary calls too).
 - `python tools/gen_skeleton.py`: regenerates `data/skeleton.js` (Dev Mode's layout view) after a preset edit.
 - `node tools/gen_megumin.mjs`: regenerates `data/megumin.js` and the Megumin Original preset from
   Megumin Suite V10 itself, after VCRP rewords a shared text or changes its preset layout.

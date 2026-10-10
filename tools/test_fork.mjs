@@ -3225,4 +3225,75 @@ console.log("47 ok one-shot direction (next reply only, after the newest message
 }
 console.log("48 ok the whole reply pipeline in index.js's order (cost and Story Memory measure the reply as written; one-shot used; tidy, rolls, dash cleaner and colors in turn)");
 
+// 49. Existing cast only: no new characters while it is on, with every engine; it overrides
+//     Pura's randomisers that call for someone new, and the Name Randomiser rests.
+{
+    const cast = await imp("src/vcrp/castLock.js");
+    const { modes_megumin } = await imp("data/megumin.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const split = ms => { const t = ms.map(textOf); const i = t.lastIndexOf("latest user msg"); return { cached: t.slice(0, i).join("\n"), after: t.slice(i + 1).join("\n") }; };
+    const keep = { mode: q.mode, pura: q.pura, bank: JSON.stringify(q.npcBank) };
+    for (const k of Object.keys(meta)) delete meta[k];
+    q.npcBank = { ...(q.npcBank || {}), enabled: true, npcs: [{ name: "Mara" }, { name: "Okafor" }] };
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" });
+
+    assert(!text(await run("VCRP V10 Universal.json")).includes(cast.CAST_LOCK_HEADER), "off: nothing sent");
+    cast.setCastLock(true);
+    assert(meta.vcrp_cast_lock.enabled === true && cast.castLockOn(), "saved with the chat");
+    for (const [mode, preset] of [["v10-core", "VCRP V10 Universal.json"], [modes_megumin[0].id, "VCRP V10 Megumin Original.json"], ["pura-original", "VCRP V10 Universal.json"]]) {
+        Object.assign(q, { mode });
+        q.pura = {};
+        const { after } = split(await run(preset));
+        assert(after.includes(cast.CAST_LOCK_HEADER) && after.includes("Do not introduce any new character"), `${mode}: after the newest message`);
+    }
+    const { after: v10 } = split(await run("VCRP V10 Universal.json"));
+    assert(v10.includes("Characters already in the story include: Alice, Bob, Mara, Okafor (and anyone else who has already appeared)."), `the cast named: the card's character, you, the NPC Bank`);
+
+    // Pura: after the randomisers (it overrides the ones that bring someone in); the Name Randomiser rests.
+    q.mode = "pura-adapted";
+    q.pura = { randomisers: ["chaos", "complication"], nameRandomiser: true, reasoning: "procedure" };
+    let late = split(await run("VCRP V10 Universal.json")).after;
+    assert(late.indexOf("### Chaos Mode") < late.indexOf(cast.CAST_LOCK_HEADER) && late.indexOf("### Grounded Complication") < late.indexOf(cast.CAST_LOCK_HEADER) && late.indexOf(cast.CAST_LOCK_HEADER) < late.indexOf("### Reasoning Procedure"), "Pura: after the randomisers, before the reasoning help");
+    assert(late.includes("give that part to an existing character") && !late.includes("# New NPC Naming Rules"), "it overrides the arrivals, and the Name Randomiser is not sent");
+    cast.setCastLock(false);
+    late = split(await run("VCRP V10 Universal.json")).after;
+    assert(!late.includes(cast.CAST_LOCK_HEADER) && late.includes("# New NPC Naming Rules"), "off again: the Name Randomiser comes back");
+    cast.setCastLock(true);
+    assert(split(await run("VCRP V10 Universal.json", "continue")).after.includes(cast.CAST_LOCK_HEADER), "Continue: still on");
+    assert(!text(await run("VCRP V10 Universal.json", "impersonate")).includes(cast.CAST_LOCK_HEADER), "Impersonate: your turn, not sent");
+    assert.equal(cast.castLockText("quiet"), "", "background calls: none");
+
+    // A preset without the slot is flagged.
+    const presetJson = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V10 Universal", prompts: presetJson.prompts.map(p => ({ ...p, content: String(p.content || "").replace("[[pura_late]]", "") })), prompt_order: presetJson.prompt_order, extensions: presetJson.extensions });
+    assert(vcrpHealthCheck().items.some(i => /Re-import the preset: .*Existing cast only/.test(i.title)), "a preset without the slot: re-import");
+    for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
+
+    chat.length = 0;
+    for (const k of Object.keys(meta)) delete meta[k];
+    Object.assign(q, { mode: keep.mode, pura: keep.pura, npcBank: JSON.parse(keep.bank) });
+}
+console.log("49 ok Existing cast only (per chat, every engine, the cast named, after Pura's randomisers, Name Randomiser rests, Continue yes, Impersonate no, Setup Check)");
+
+// 50. The cache: an older reply ends the same whoever took its blocks out. The preset's own
+//     "Blocks cleanup" regex reaches replies three deep and leaves the blank lines before the
+//     blocks; VCRP's strip took them too, so a reply's text changed the turn it went three deep.
+{
+    const bh = await imp("src/vcrp/blockHistory.js");
+    const withBlocks = [{ role: "assistant", content: "Prose ends here.\n\n<Blocks>\n<World_State>x</World_State>\n</Blocks>" }, { role: "user", content: "go" }, { role: "system", content: "rules" }];
+    const presetStripped = [{ role: "assistant", content: "Prose ends here.\n\n" }, { role: "user", content: "go" }, { role: "system", content: "rules" }];
+    const parts = [{ role: "assistant", content: [{ type: "text", text: "Prose ends here.\n\n" }] }, { role: "user", content: "go" }, { role: "system", content: "rules" }];
+    bh.stripHistoryBlocks(withBlocks); bh.stripHistoryBlocks(presetStripped); bh.stripHistoryBlocks(parts);
+    assert(withBlocks[0].content === "Prose ends here." && presetStripped[0].content === "Prose ends here." && parts[0].content[0].text === "Prose ends here.", `the same reply, the same text, whoever stripped it: ${JSON.stringify([withBlocks[0].content, presetStripped[0].content])}`);
+    const being = [{ role: "user", content: "go" }, { role: "assistant", content: "Being continued.\n\n" }];
+    bh.stripHistoryBlocks(being);
+    assert.equal(being[1].content, "Being continued.\n\n", "a reply being continued (the last message) is left exactly as it is");
+}
+console.log("50 ok the cache: an older reply ends the same every turn, whoever took its blocks out (the preset's regex three deep, or VCRP)");
+
 console.log("\nALL FORK CHECKS PASSED");

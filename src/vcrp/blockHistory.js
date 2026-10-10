@@ -32,9 +32,14 @@ export function stripHistoryBlocks(messages) {
     if (!Array.isArray(messages)) return;
     const last = messages.length - 1;
     const pura = puraTidyBlocks();
+    // Whoever takes a reply's blocks out, it must end the same every turn. The preset's own
+    // "Blocks cleanup" regex reaches replies three deep and leaves the blank lines before the
+    // blocks; this strip took them too. So a reply ended "…prose" for two turns and
+    // "…prose\n\n" from the third: its text changed, and the cache missed from it on. Every
+    // older reply ends at its last character now, either way.
     const clean = s => {
         const t = pura.length ? puraTidyText(s, { blocks: pura }).text : s;
-        return /<Blocks\b/i.test(t) ? strip(t) : s;
+        return strip(t).replace(/\s+$/, "");
     };
     messages.forEach((m, i) => {
         if (!m || m.role !== "assistant" || i === last) return;
