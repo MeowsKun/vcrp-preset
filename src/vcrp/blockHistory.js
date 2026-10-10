@@ -51,15 +51,13 @@ export function stripHistoryBlocks(messages) {
     });
 }
 
-/** The latest reply's blocks, complete, or "" when it has none. A reply being swiped does not count. */
-export function lastBlocksState() {
-    let chat = [];
-    try { chat = ((getContext() || {}).chat || []).filter(m => !m.is_system); } catch (e) { return ""; }
-    const reply = [...vcrpWithoutSwipedReply(chat)].reverse().find(m => !m.is_user);
-    if (!reply || typeof reply.mes !== "string") return "";
-    const found = reply.mes.match(/<Blocks\b[^>]*>[\s\S]*?<\/Blocks\s*>/gi);
+const LOOKBACK_REPLIES = 6;   // how far back a reply without blocks is looked past
+
+// One reply's complete blocks, minus any that only hold that reply's own note (Pura's Notes);
+// "" when it has none.
+function blocksOf(mes) {
+    const found = String(mes || "").match(/<Blocks\b[^>]*>[\s\S]*?<\/Blocks\s*>/gi);
     if (!found) return "";
-    // A block that holds only that reply's note (Pura's Notes) is not state to carry.
     let state = found[found.length - 1].trim();
     const transient = MEGUMIN_BLOCK_REGISTRY.filter(b => b.transient && b.tag);
     if (!transient.some(b => state.includes(`<${b.tag}`))) return state;
@@ -67,10 +65,32 @@ export function lastBlocksState() {
     return /<Blocks\b[^>]*>\s*<\w/i.test(state) ? state : "";
 }
 
+/**
+ * The latest complete blocks, as { state, back }: from the latest reply, or, when it wrote none
+ * (the length limit cut it off before them, or the model left them out), from the latest one of
+ * the few before it that did, `back` replies earlier. A reply being swiped does not count.
+ */
+export function lastBlocksInfo() {
+    let chat = [];
+    try { chat = ((getContext() || {}).chat || []).filter(m => !m.is_system); } catch (e) { return { state: "", back: 0 }; }
+    const replies = [...vcrpWithoutSwipedReply(chat)].reverse().filter(m => !m.is_user && typeof m.mes === "string").slice(0, LOOKBACK_REPLIES);
+    for (let i = 0; i < replies.length; i++) {
+        const state = blocksOf(replies[i].mes);
+        if (state) return { state, back: i };
+    }
+    return { state: "", back: 0 };
+}
+
+/** The latest complete blocks, or "" when none of the last few replies has any. */
+export function lastBlocksState() {
+    return lastBlocksInfo().state;
+}
+
 /** What the per-turn block instructions add: last turn's blocks, as the starting point. */
 export function previousBlocksNote() {
     const carried = carriedTrackerNote();
-    let state = lastBlocksState();
+    const info = lastBlocksInfo();
+    let state = info.state;
     // The trackers that carry their state are in their own section below, newest of each
     // from the whole chat; listing last turn's copy too would send them twice.
     if (state && carried) {
@@ -78,7 +98,7 @@ export function previousBlocksNote() {
         if (!/<Blocks\b[^>]*>\s*<\w/i.test(state)) state = "";
     }
     const parts = [];
-    if (state) parts.push(`The blocks as they stood at the end of your last reply. Write this reply's blocks from there: carry forward what this scene does not change.\n${state}`);
+    if (state) parts.push(`${info.back ? "The blocks as they stood at the end of an earlier reply (the last one wrote none)." : "The blocks as they stood at the end of your last reply."} Write this reply's blocks from there: carry forward what this scene does not change.\n${state}`);
     if (carried) parts.push(carried);
     return parts.join("\n\n");
 }

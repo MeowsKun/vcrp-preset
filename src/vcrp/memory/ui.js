@@ -27,6 +27,7 @@ import { activeEngine } from "../../engine/meguminOriginal.js";
 import { isPuraEngine, puraVariant } from "../../core/engines.js";
 import { puraSettings } from "../pura/index.js";
 import { costBadgesOn, setCostBadges } from "../replyCost.js";
+import { replyBudget } from "../replyLength.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 
@@ -122,7 +123,12 @@ function renderReplyLength($c, s, budget, st, rerender) {
                 ${[["unspecified", "No limit"], ["100", "100 words"], ["250", "250 words"], ["450", "450 words"]].map(([v, l]) => `<option value="${v}" ${effort === v ? "selected" : ""}>${l}</option>`).join("")}
                 ${effort === "custom" ? `<option value="custom" selected>Custom: ${esc(localProfile.customThinkEffort || "")} words</option>` : ""}
             </select></div>
-        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Safety cap (tokens)</div><div class="set-desc">Stops a reply at this many tokens, thinking included. It does not make replies shorter: one that reaches it is cut off mid-sentence. Set it well above a normal reply${measured ? ` (about ${k(measured * 2)}, twice your average)` : " (about twice your average)"}, so only a runaway one stops. 0 = off; SillyTavern's Max Response Length still applies.</div></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Safety cap (tokens)</div><div class="set-desc">A hard limit on each reply, thinking and blocks included: it can never go over. While it is set, the model is told its room and the story's share of it in words, so it plans to finish inside it. A reply that still reaches it ends on its last full sentence (Continue writes the rest), and the next reply carries the last complete blocks. A cap close to your normal reply${measured ? ` (about ${k(measured)})` : ""} gets reached more often. 0 = off; SillyTavern's Max Response Length still applies.${(() => {
+                const b = replyBudget();
+                if (!b) return "";
+                const split = [`the story about ${b.storyWords} words`, b.thinkingWords ? `the thinking about ${b.thinkingWords} words` : "", b.blocks ? `the blocks about ${b.blocks} tokens` : ""].filter(Boolean);
+                return `<br><span style="opacity:.85;">At ${b.cap.toLocaleString("en-US")}: ${split.join(", ")}.</span>`;
+            })()}</div></div>
             <input id="vmem_cap_reply" type="number" min="0" max="64000" step="500" class="ps-modern-input" style="width:90px;" value="${cap}"></div>
         ${cap && measured && cap < measured * 1.3 ? `<div style="font-size:0.72rem; color:#f59e0b; margin-top:4px;"><i class="fa-solid fa-triangle-exclamation"></i> The cap is close to your average reply: many replies will be cut off.</div>` : ""}
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Show each reply's cost</div><div class="set-desc">A small estimate under each reply's avatar (green: the cache was warm; amber: cold, the prompt written in full). Tap it for the breakdown: read from the cache, written to it, sent fresh, written by the model. Works with Story Memory on or off.</div></div>

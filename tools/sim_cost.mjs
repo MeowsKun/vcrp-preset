@@ -24,7 +24,12 @@
 //   --target USD     the memory's per-request target (default 0.30)
 //   --npcs           NPC Bank on with six NPCs whose names come and go in the chat, so the
 //                    retrieved-NPC list changes from turn to turn
-//   --engine ID      ukiyo | shura (default ukiyo)
+//   --engine ID      ukiyo | shura | pura-adapted | pura-original (default ukiyo)
+//   --extras         everything added since the Pura engines, on: Pura's random voice, two
+//                    randomisers, Grounded Prose and HTML; five Pura trackers in the block,
+//                    which the replies write (so the carried state and their output are real);
+//                    Tone Rules, Existing cast only, a one-shot direction every fourth turn,
+//                    Dialogue Colors, a Focus correction and a plot focus
 //   --budget USD     the per-request ceiling to report against (default 0.30)
 //   --tokfactor F    Claude tokens per cl100k token; the newer Claude tokenizer runs larger (default 1.15)
 //   --seed N         chat/timing randomness (default 7)
@@ -62,6 +67,7 @@ const TARGET = +opt("target", 0.30);
 const NPCS = !!opt("npcs", false);
 const NPC_NAMES = ["Mara", "Jonah", "Ilse", "Teo", "Ruth", "Dez"];
 const ENGINE = opt("engine", "ukiyo");
+const EXTRAS = !!opt("extras", false);
 const ORIGINAL = !!opt("original", false);   // the Megumin Original engine and preset
 // Whose cache markers: "vcrp" (the last two replies, VCRP's default on OpenRouter + Claude)
 // or "st" (SillyTavern's cachingAtDepth). Direct Anthropic always uses SillyTavern's.
@@ -107,11 +113,19 @@ function textOfTokens(target, tag) {
 }
 const t0 = Date.UTC(2026, 9, 1, 18);
 const chat = [{ is_user: false, name: "Alice", send_date: new Date(t0).toISOString(), mes: textOfTokens(between(350, 600), "greeting") }];
+// --extras: the Pura trackers a reply writes, inside its <Blocks> (stripped from the history,
+// but written as output, and read back as the carried state).
+const trackerBlocks = i => `\n\n<Blocks>\n<Pura_Scene>\n[SCENE|The Lantern|Night ${i}|Rain]\ndetail: ${textOfTokens(18, `scene${i}`)}\n[/SCENE]\n</Pura_Scene>\n`
+    + (i % 6 === 2 ? `<Pura_Events>\n[EVENT|🎯 QUEST|Errand ${i}|Friday]\ncontext: ${textOfTokens(20, `event${i}`)}\n[/EVENT]\n</Pura_Events>\n` : "")
+    + (i % 4 === 2 ? `<Pura_Relationship>\n[METER|${NPC_NAMES[i % NPC_NAMES.length]}|Friendly|💚 STABLE|🌅 WARMING]\nroute: Slow Burn\nheart: ${textOfTokens(15, `heart${i}`)}\nmemory: ${textOfTokens(20, `mem${i}`)}\nnext: ${textOfTokens(10, `next${i}`)}\n[/METER]\n</Pura_Relationship>\n` : "")
+    + (i % 10 === 4 ? `<Pura_NPC>\n[NPC:MINOR|Extra${i}]\nb: Extra${i} | 30 | Regular\na: ${textOfTokens(12, `npc${i}`)}\np: ${textOfTokens(10, `npcp${i}`)}\n[/NPC]\n</Pura_NPC>\n` : "")
+    + `<Pura_Choices>\n[CHOICES]\n1. ${textOfTokens(10, `c1${i}`)}\n2. ${textOfTokens(10, `c2${i}`)}\n3. ${textOfTokens(10, `c3${i}`)}\n[/CHOICES]\n</Pura_Choices>\n</Blocks>`;
 for (let i = 1; i < N; i++) {
     const user = i % 2 === 1;
     let mes = textOfTokens(user ? between(40, 160) : between(350, 600), `m${i}`);
     // A scene's cast drifts: each reply names one or two of the NPCs.
     if (NPCS && !user) mes += " " + [0, 1].map(() => NPC_NAMES[Math.floor(rand() * NPC_NAMES.length)]).join(" and ") + " were there.";
+    if (EXTRAS && !user) mes += trackerBlocks(i);
     chat.push({ is_user: user, name: user ? "Bob" : "Alice", send_date: new Date(t0 + i * 1000).toISOString(), mes });
 }
 // Seconds between one request and the next: a few minutes of reading and writing, an
@@ -163,8 +177,22 @@ const { meguminCleanChatHistoryText } = await imp("src/engine/chatText.js");
 initProfile();
 Object.assign(state.localProfile, ENGINE === "shura"
     ? (ORIGINAL ? { mode: "v10-shura-megumin", model: "cot-meg-shura-english" } : { mode: "v10-shura", model: "cot-v10-shura-english" })
-    : (ORIGINAL ? { mode: "v10-ukiyo-megumin", model: "cot-meg-ukiyo-english" } : { mode: "v10-core", model: "cot-v10-ukiyo-english" }),
+    : /^pura-/.test(ENGINE) ? { mode: ENGINE, model: "cot-v10-ukiyo-english" }
+        : (ORIGINAL ? { mode: "v10-ukiyo-megumin", model: "cot-meg-ukiyo-english" } : { mode: "v10-core", model: "cot-v10-ukiyo-english" }),
     { cotEnabled: true });
+if (EXTRAS) {
+    const p = state.localProfile;
+    p.pura = { voice: "random", randomisers: ["deadDove", "chaos"], groundedProse: true, html: true };
+    p.blockStack.order = ["pura_npc", "pura_scene", "pura_relationship", "pura_events", "pura_choices"];
+    (await imp("src/features/blocks/registry.js")).meguminSyncLegacyBlockIds();
+    p.addons = [...new Set([...(p.addons || []), "color"])];
+    p.focus = { enabled: true, every: 20, checks: { drift: true, motifs: true, slop: true } };
+    chat_metadata.vcrp_tone = { enabled: true, text: "Bleak and unsentimental. Violence lands hard and stays; no rescues, no softening, no last-minute mercy. Humour only ever as gallows humour." };
+    chat_metadata.vcrp_cast_lock = { enabled: true };
+    chat_metadata.vcrp_focus = { note: "Stop ending scenes on a held breath; vary the closing beats. Mara's speech has gone soft: keep her clipped and sardonic.", items: [], plot: { active: true, text: "The ring Mara pawned, and the people who want it back.", strength: "central", endAfter: 0 } };
+    chat_metadata.vcrp_colors = { names: { alice: { name: "Alice", color: "#ff69b4" }, bob: { name: "Bob", color: "#87cefa" }, mara: { name: "Mara", color: "#ffd700" } } };
+}
+const oneShot = EXTRAS ? await imp("src/vcrp/oneShot.js") : null;
 if (NPCS) {
     state.localProfile.npcBank.enabled = true;
     state.localProfile.npcBank.npcs = NPC_NAMES.map(name => ({ name, appearance: `${name}'s look, described in two plain sentences.`, role: "regular at the Lantern", agenda: `what ${name} wants this week` }));
@@ -341,12 +369,14 @@ for (let t = 1; t < N; t += 2) {            // each user message triggers one re
     if (plan && plan.limit === "verbatim floor") overFloor++;
     if (plan && plan.limit === "summaries") overSummaries++;
     const history = fitContext(core.filter(m => !(m.extra && m.extra[IGNORE])));
+    if (oneShot && rows.length % 4 === 0) oneShot.setOneShot("She finally tells him about the ring, and it costs her.");
     const msgs = buildPrompt(history);
     await handlePromptInjection({ chat: msgs, dryRun: false });
     const replyText = chat[t + 1] ? chat[t + 1].mes : "";
     const reply = replyText ? tokens(replyText) : 450;
     const r = price1(msgs, now, reply + VISIBLE_COT + HIDDEN_THINKING);
     rows.push({ msg: t + 1, inHistory: history.length, cut: !!(plan && plan.cut), ...r });
+    if (oneShot) oneShot.setOneShot("");   // used up by the reply
     if (MEMORY && t + 1 >= ENABLE_AT && chat[t + 1]) summarizeAfterReply(chat.slice(0, t + 2), msgs, replyText, now + 60000);
     now += gapAfter(rows.length) * 1000;
 }
@@ -355,7 +385,7 @@ for (let t = 1; t < N; t += 2) {            // each user message triggers one re
 const q = (arr, p) => { const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const costs = rows.map(r => r.cost);
 const sum = a => a.reduce((x, y) => x + y, 0);
-const label = `${MEMORY ? `MEMORY on${ENABLE_AT ? ` from msg ${ENABLE_AT}` : ""} (target $${TARGET}) · ` : ""}${NPCS ? "NPC Bank on · " : ""}${MODEL} · ${TTL} cache · depth ${DEPTH} · ${Number.isFinite(CONTEXT) ? `context ${CONTEXT}` : "no context limit"} · ${DIRECT ? "direct Anthropic" : NOFIX ? "OpenRouter WITHOUT the fix" : "OpenRouter"} · ${ENGINE}${ORIGINAL ? " · Megumin Original" : ""} · markers: ${MARKS === "st" ? "SillyTavern" : "VCRP"}${EXACT ? " · exact-match provider (Bedrock)" : ""}`;
+const label = `${MEMORY ? `MEMORY on${ENABLE_AT ? ` from msg ${ENABLE_AT}` : ""} (target $${TARGET}) · ` : ""}${NPCS ? "NPC Bank on · " : ""}${MODEL} · ${TTL} cache · depth ${DEPTH} · ${Number.isFinite(CONTEXT) ? `context ${CONTEXT}` : "no context limit"} · ${DIRECT ? "direct Anthropic" : NOFIX ? "OpenRouter WITHOUT the fix" : "OpenRouter"} · ${ENGINE}${ORIGINAL ? " · Megumin Original" : ""}${EXTRAS ? " · EXTRAS (Pura trackers, randomisers, Tone Rules, cast lock, one-shot, Focus, plot focus, colors)" : ""} · markers: ${MARKS === "st" ? "SillyTavern" : "VCRP"}${EXACT ? " · exact-match provider (Bedrock)" : ""}`;
 console.log(`\n${label}`);
 console.log(`${rows.length} requests over ${N} messages · replies $${sum(costs).toFixed(2)}${MEMORY ? ` + memory upkeep $${upkeep.cost.toFixed(2)} (${upkeep.calls} calls) = $${(sum(costs) + upkeep.cost).toFixed(2)}` : ""}`);
 console.log(`per request: mean $${(sum(costs) / costs.length).toFixed(3)} · median $${q(costs, 0.5).toFixed(3)} · p90 $${q(costs, 0.9).toFixed(3)} · max $${Math.max(...costs).toFixed(3)}`);
@@ -373,6 +403,6 @@ if (MEMORY) {
 const worst = [...rows].sort((a, b) => b.cost - a.cost).slice(0, 3);
 console.log(`\nmost expensive: ${worst.map(r => `msg ${r.msg} $${r.cost.toFixed(3)} (${r.total} tok${r.cut ? ", cut" : ""})`).join(" · ")}`);
 mkdirSync(join(REPO, "tools", "out"), { recursive: true });
-const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}${ORIGINAL ? "_original" : ""}_${MARKS}${EXACT ? "_exact" : ""}.csv`);
+const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}${ORIGINAL ? "_original" : ""}${/^pura-/.test(ENGINE) ? `_${ENGINE}` : ""}${EXTRAS ? "_extras" : ""}_${MARKS}${EXACT ? "_exact" : ""}.csv`);
 writeFileSync(file, "msg,in_history,prompt_tokens,read,write,plain,cost,cut\n" + rows.map(r => [r.msg, r.inHistory, r.total, r.read, r.write, r.plain, r.cost.toFixed(4), r.cut ? 1 : 0].join(",")).join("\n"));
 console.log(`per-request rows: ${file}`);

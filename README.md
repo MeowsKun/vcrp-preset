@@ -4,6 +4,9 @@ A SillyTavern extension + chat-completion presets for adult, uncensored roleplay
 chain of thought, story configuration, tracker blocks, NPC bank, memory, knowledgebase and more,
 all in one install.
 
+**New here, or just updated?** The [quick guide](docs/quick-guide.md) walks through the newest
+features in a few minutes: VCRP Quick, Tone Rules, reply length and costs, Pura's extras.
+
 VCRP is based on **[Megumin Suite](https://github.com/Arif-salah/Megumin-Suite) V10 by
 KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)
 (see `License`). VCRP is likewise non-commercial.
@@ -131,9 +134,13 @@ chapters the first time each chat is opened.
 
 **Reply length** (Memory tab): a reply's length is most of what it costs once the cache works.
 The panel shows your recent replies' measured size (Story Memory's budget plans for it), and
-sets the story's length (Story Config's Length) and the thinking's (Thinking Effort). A safety
-cap in tokens stops a runaway reply; set it well above a normal one, since a reply that reaches
-it is cut off.
+sets the story's length (Story Config's Length) and the thinking's (Thinking Effort). The
+**safety cap** is a hard limit in tokens: a reply can never go over it, thinking and blocks
+included. While it is set, the model is told its room and the story's share of it in words
+(after the thinking and what your blocks take), so it plans to finish inside it; the panel shows
+that split. A reply that still reaches the cap mid-sentence ends on its last full sentence
+(Continue writes the rest), and the next reply carries the last complete blocks. For a reply of
+about 2,000 tokens: Story length 450–550 words, Thinking length 250 words, a cap of 2,000.
 
 **Pin** a fact or a chapter (the pin button beside it) to keep it in the memory text for good:
 the size cap never trims it and a pinned chapter is never folded into an arc. The meter also

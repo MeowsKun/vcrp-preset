@@ -142,6 +142,8 @@ export function puraTidyText(text, { blocks = [], notes = false } = {}) {
     if (!blocks.length && !notes) return none;
     const split = afterThinking(src);
     const head = src.slice(0, split), tail = src.slice(split);
+    // Thinking opened and never closed (the length limit cut it): all of it is thinking.
+    if (/<think(?:ing)?\b[^>]*>/i.test(tail)) return none;
 
     // The envelope, closed or cut off; the story is everything around it.
     const env = tail.match(/<Blocks\b[^>]*>[\s\S]*?(?:<\/Blocks\s*>|$)/i);

@@ -3158,12 +3158,12 @@ console.log("47 ok one-shot direction (next reply only, after the newest message
     const order = [...src.matchAll(/eventSource\.on\(event_types\.MESSAGE_RECEIVED, (\(id, type\) => )?(\w+)/g)].map(m => m[2]);
     const mods = {
         vcrpCostOnReply: await imp("src/vcrp/replyCost.js"), vcrpOneShotOnReply: await imp("src/vcrp/oneShot.js"),
-        vcrpMemoryCountReply: await imp("src/vcrp/memory/index.js"), vcrpPuraTidyOnReply: await imp("src/vcrp/pura/tidy.js"),
+        vcrpMemoryCountReply: await imp("src/vcrp/memory/index.js"), vcrpCutOnReply: await imp("src/vcrp/replyCut.js"), vcrpPuraTidyOnReply: await imp("src/vcrp/pura/tidy.js"),
         vcrpPuraRollsOnReply: await imp("src/vcrp/pura/rolls.js"), vcrpDedashOnReply: await imp("src/vcrp/dedash.js"),
         vcrpDialogueColorsOnReply: await imp("src/vcrp/dialogueColors.js"),
     };
     const pipeline = order.filter(n => mods[n]);
-    assert.deepEqual(pipeline, ["vcrpCostOnReply", "vcrpOneShotOnReply", "vcrpMemoryCountReply", "vcrpPuraTidyOnReply", "vcrpPuraRollsOnReply", "vcrpDedashOnReply", "vcrpDialogueColorsOnReply"], `the reply handlers, in order: ${pipeline.join(", ")}`);
+    assert.deepEqual(pipeline, ["vcrpCostOnReply", "vcrpOneShotOnReply", "vcrpMemoryCountReply", "vcrpCutOnReply", "vcrpPuraTidyOnReply", "vcrpPuraRollsOnReply", "vcrpDedashOnReply", "vcrpDialogueColorsOnReply"], `the reply handlers, in order: ${pipeline.join(", ")}`);
     const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
     const { estimateTokens } = mods.vcrpMemoryCountReply;
     const q = state.localProfile;
@@ -3295,5 +3295,109 @@ console.log("49 ok Existing cast only (per chat, every engine, the cast named, a
     assert.equal(being[1].content, "Being continued.\n\n", "a reply being continued (the last message) is left exactly as it is");
 }
 console.log("50 ok the cache: an older reply ends the same every turn, whoever took its blocks out (the preset's regex three deep, or VCRP)");
+
+// 51. The graceful hard cap: the model told its room (the story's share in words), a reply cut
+//     mid-sentence ending on its last full sentence, and the last complete blocks carried when
+//     the latest reply wrote none.
+{
+    const len = await imp("src/vcrp/replyLength.js");
+    const cutMod = await imp("src/vcrp/replyCut.js");
+    const bh = await imp("src/vcrp/blockHistory.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const q = state.localProfile;
+    const g = extension_settings.VCRP.globalSettings;
+    const keep = { budget: JSON.stringify(g.memoryBudget || null), effort: q.thinkEffort, cot: q.cotEnabled, mode: q.mode, pura: q.pura, order: JSON.stringify(q.blockStack.order) };
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const split = ms => { const t = ms.map(textOf); const i = t.lastIndexOf("latest user msg"); return { before: t.slice(0, i).join("\n"), after: t.slice(i + 1).join("\n") }; };
+    chat.length = 0;
+    q.mode = "v10-core"; q.cotEnabled = true; q.thinkEffort = "unspecified";
+    q.blockStack.order = ["world"];
+    meguminSyncLegacyBlockIds();
+
+    // No cap: no line.
+    g.memoryBudget = { ...(g.memoryBudget || {}), replyCap: 0 };
+    assert.equal(len.replyBudgetText("reply"), "", "no cap: nothing said");
+    assert(!text(await run("VCRP V10 Universal.json")).includes("### Length limit"), "no cap: nothing sent");
+    // A cap of 2,000: the story's share after the thinking (~250 words when none is set) and the blocks (~300 tokens typical).
+    g.memoryBudget.replyCap = 2000;
+    let t = len.replyBudgetText("reply");
+    assert(t.includes("has room for about 2,000 tokens") && t.includes("Keep the story to about 850 words, keep the thinking to about 250 words") && t.includes("overrides any longer length"), `the line: ${t}`);
+    q.thinkEffort = "100";
+    t = len.replyBudgetText("reply");
+    assert(t.includes("about 1000 words") && !t.includes("keep the thinking"), `with Thinking length set, its own rule caps it: ${t}`);
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: `Prose.\n<Blocks>\n<World_State>${"x ".repeat(1400)}</World_State>\n</Blocks>` });
+    assert(len.replyBudget().blocks > 600 && len.replyBudget().storyWords <= 600,`the blocks as this chat writes them: ${JSON.stringify(len.replyBudget())}`);
+    chat.length = 0;
+    let msgs = await run("VCRP V10 Universal.json");
+    const parts = split(msgs);
+    assert(parts.after.includes("### Length limit") && !parts.before.includes("### Length limit"), "sent after the newest message, never cached");
+    assert(!text(await run("VCRP V10 Universal.json", "continue")).includes("### Length limit") && !text(await run("VCRP V10 Universal.json", "impersonate")).includes("### Length limit"), "Continue and Impersonate: not sent");
+    q.mode = "pura-adapted"; q.pura = { randomisers: ["chaos"], reasoning: "procedure" };
+    const late = split(await run("VCRP V10 Universal.json")).after;
+    assert(late.indexOf("### Chaos Mode") < late.indexOf("### Length limit") && late.indexOf("### Length limit") < late.indexOf("### Reasoning Procedure"), "Pura: after the randomisers, before the reasoning help");
+    q.mode = "v10-core";
+
+    // Cut off: trimmed to the last full sentence; a colored line it leaves open is closed.
+    assert.deepEqual(cutMod.cutReply("<think>plan</think>\nMara smiled. She turned toward the door and"), { text: "<think>plan</think>\nMara smiled.", where: "story" }, "mid-sentence: back to the last full sentence");
+    assert.equal(cutMod.cutReply(`She waited. <font color="#fff" title="Mara">"I know. I`).text, `She waited. <font color="#fff" title="Mara">"I know.</font>`, "an open colored line is closed");
+    for (const clean of ["She left.", `"Wait—"`, `<font color="#fff" title="Mara">"Fine"</font>`, "*She smiled.*", "Prose.\n<Blocks>\n<World_State>x</World_State>\n</Blocks>"]) {
+        assert.equal(cutMod.cutReply(clean), null, `ends cleanly, left alone: ${clean.slice(0, 30)}`);
+    }
+    assert.equal(cutMod.cutReply("<think>still planning the").where, "thinking", "cut in the thinking: left as is");
+    assert.equal(cutMod.cutReply("Prose.\n<Blocks>\n<World_State>half").where, "blocks", "cut in the blocks: left as is");
+    // A reply cut while thinking: the tidy, the rolls and the colors leave it alone too.
+    const thinking = `<think>Plan: Ann arrives.\n[NPC:MINOR|Ann]\nb: Ann | 30 | Clerk\n[/NPC]\n<font color="#123456" title="Ann">"x"</font> and then`;
+    const { PURA_BLOCKS: PB } = await imp("src/features/blocks/puraBlocks.js");
+    assert(!(await imp("src/vcrp/pura/tidy.js")).puraTidyText(thinking, { blocks: PB.filter(b => b.id === "pura_npc"), notes: true }).changed, "the tidy leaves an unfinished thinking alone");
+    assert.equal((await imp("src/vcrp/pura/rolls.js")).withRollsNote(thinking, [{ key: "chaos", label: "Chaos Mode", picks: [{ index: 0, text: "x" }] }]), null, "the rolls wait");
+    const learned = {};
+    assert(!(await imp("src/vcrp/dialogueColors.js")).lockReplyColors(thinking, learned).changed && !learned.ann, "no color learned from thinking");
+    assert.equal(cutMod.cutReply("Prose done.\n\n<Pura_Scene>\n[SCENE|Roof|Dusk|Wind]\ndetail: half. And the").where, "blocks","cut inside a tracker tag outside the envelope: left as is, not trimmed into a half-open tag");
+    // The blocks' share is what the model writes: VCRP's own rolls notes are not counted.
+    g.memoryBudget.replyCap = 2000;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: `Prose.\n<Blocks>\n<World_State>small</World_State>\n<Pura_Notes>\n🎲 Rolled this reply\n${"- a long roll line\n".repeat(80)}</Pura_Notes>\n</Blocks>` });
+    assert(len.replyBudget().blocks < 30, `the Notes tab is not counted in the blocks' share: ${len.replyBudget().blocks}`);
+    chat.length = 0;
+    // A preset without the slot after the newest message is flagged while a cap is set.
+    const presetJson = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V10 Universal", prompts: presetJson.prompts.map(p => ({ ...p, content: String(p.content || "").replace("[[pura_late]]", "") })), prompt_order: presetJson.prompt_order, extensions: presetJson.extensions });
+    assert(vcrpHealthCheck().items.some(i => /Re-import the preset: .*length limit/.test(i.title)), "a cap with a preset that has no slot for its line: re-import");
+    for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
+    // Only a reply that reached the limit: the cap, or SillyTavern's own Max Response Length.
+    g.memoryBudget.replyCap = 200;
+    const long = `${"She crossed the room and set the cup down beside him. ".repeat(14)}Then she turned and`;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: long, swipes: [long], swipe_id: 0 });
+    cutMod.vcrpCutOnReply(1, "normal");
+    assert(chat[1].mes.endsWith("beside him.") && chat[1].swipes[0] === chat[1].mes, "a reply at the limit, cut mid-sentence: trimmed, its swipe too");
+    g.memoryBudget.replyCap = 5000;
+    chat[1].mes = long;
+    cutMod.vcrpCutOnReply(1, "normal");
+    assert.equal(chat[1].mes, long, "far under the limit: an unfinished-looking ending is the model's own, left alone");
+    g.memoryBudget.replyCap = 0;
+    chatCompletionSettings.openai_max_tokens = 200;
+    cutMod.vcrpCutOnReply(1, "normal");
+    assert(chat[1].mes.endsWith("beside him."), "SillyTavern's own Max Response Length counts as the limit too");
+    delete chatCompletionSettings.openai_max_tokens;
+
+    // The next turn: the last complete blocks, when the latest reply wrote none.
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose.\n<Blocks>\n<World_State>the docks, night</World_State>\n</Blocks>" },
+        { is_user: true, mes: "go" }, { is_user: false, mes: "Prose cut short." });
+    const info = bh.lastBlocksInfo();
+    assert(info.state.includes("the docks, night") && info.back === 1, `the blocks from the reply before: ${JSON.stringify(info)}`);
+    assert(bh.previousBlocksNote().includes("The blocks as they stood at the end of an earlier reply (the last one wrote none).") && bh.previousBlocksNote().includes("the docks, night"), "said as such");
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose.\n<Blocks>\n<World_State>the pier, dawn</World_State>\n</Blocks>" });
+    assert(bh.lastBlocksInfo().back === 0 && bh.previousBlocksNote().includes("at the end of your last reply") && !bh.previousBlocksNote().includes("the docks"), "the latest reply's own when it has them");
+
+    chat.length = 0;
+    g.memoryBudget = JSON.parse(keep.budget) || undefined;
+    if (!g.memoryBudget) delete g.memoryBudget;
+    Object.assign(q, { thinkEffort: keep.effort, cotEnabled: keep.cot, mode: keep.mode, pura: keep.pura });
+    q.blockStack.order = JSON.parse(keep.order);
+    meguminSyncLegacyBlockIds();
+}
+console.log("51 ok graceful hard cap (the room told in words after thinking and blocks, after the newest message, replies only; a cut reply ends on its last full sentence; the last complete blocks carried)");
 
 console.log("\nALL FORK CHECKS PASSED");

@@ -164,7 +164,9 @@ const attr = (attrs, name) => { const m = String(attrs).match(new RegExp(`\\b${n
  */
 export function lockReplyColors(text, names, { background = DARK_BG, readable = true } = {}) {
     let changed = false;
-    // Thinking is the model's own scratch space: leave it alone.
+    // Thinking is the model's own scratch space: leave it alone. Opened and never closed (the
+    // length limit cut it), the whole reply is thinking.
+    if (/<think(?:ing)?\b[^>]*>/i.test(String(text)) && !/<\/think(?:ing)?\s*>/i.test(String(text))) return { text: String(text), changed: false };
     const thinkEnd = String(text).search(/<\/think(?:ing)?\s*>/i);
     const from = thinkEnd >= 0 ? thinkEnd : 0;
     const head = String(text).slice(0, from), tail = String(text).slice(from);

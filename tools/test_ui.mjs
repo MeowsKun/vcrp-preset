@@ -195,6 +195,9 @@ for (let k = 0; k < memCount; k++) {
     box.find("#vmem_cap_reply").val("9000").trigger("change");
     const capNow = (((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).replyCap;
     check(capNow === 9000, `the safety cap is not saved (${capNow})`);
+    check(/At 9,000: the story about \d+ words(, the thinking about \d+ words)?, the blocks about \d+ tokens\./.test(box.text()) && !/about 0 words/.test(box.text()), "the cap's split (story, thinking, blocks) is not shown");
+    box.find("#vmem_cap_reply").val("0").trigger("change");
+    check(!/At [\d,]+: the story about/.test(box.text()), "the split is shown with no cap");
     clicks += 3;
     console.log("  ✓ Reply length (Story Memory off): drawn, and each control reaches its setting");
 }

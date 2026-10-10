@@ -66,6 +66,7 @@ export function withRollsNote(mes, rolls) {
     const re = /<\/think(?:ing)?\s*>/gi;
     while ((m = re.exec(s)) !== null) split = m.index + m[0].length;
     const head = s.slice(0, split), tail = s.slice(split);
+    if (/<think(?:ing)?\b[^>]*>/i.test(tail)) return null;   // cut while thinking: wait, like a cut-off block
     const count = r => (tail.match(r) || []).length;
     if (count(/<Blocks\b[^>]*>/gi) > count(/<\/Blocks\s*>/gi) || count(/<Pura_\w+\b[^>]*>/gi) > count(/<\/Pura_\w+\s*>/gi)) return null;
     const note = rollsNote(rolls);

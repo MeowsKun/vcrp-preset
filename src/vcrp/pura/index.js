@@ -29,6 +29,7 @@ import { isPuraEngine, puraVariant } from "../../core/engines.js";
 import { toneRulesText } from "../toneRules.js";
 import { oneShotText } from "../oneShot.js";
 import { castLockText } from "../castLock.js";
+import { replyBudgetText } from "../replyLength.js";
 import { getContext } from "../../st.js";
 import { vcrpGenerationRaw } from "../generation.js";
 import { rollSession, rollsReuseFor, setPendingRolls } from "./rolls.js";
@@ -185,7 +186,7 @@ export function puraFormatting(s = puraSettings(), language = "") {
  * randomisers, the name randomiser and the reasoning help shape a fresh reply, so a
  * Continue goes without them; an Impersonate (the reader's own turn) goes without any.
  */
-export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { language = "", tone = "", cast = "", direction = "", roll = null } = {}) {
+export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { language = "", tone = "", cast = "", direction = "", budget = "", roll = null } = {}) {
     if (gen === "impersonate") return "";
     const fresh = gen === "reply";
     // Pura's {{random}} lists: rolled by VCRP on a real request (rolls.js), so each reply can
@@ -216,6 +217,8 @@ export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { lang
     // call for someone new.
     if (cast) parts.push(cast);
     if (direction) parts.push(direction);
+    // The length limit, with a safety cap set (vcrp/replyLength.js): last before the reasoning help.
+    if (budget) parts.push(budget);
     if (fresh && s.reasoning === "procedure") parts.push(PURA_TOGGLES.reasoningProcedure);
     if (fresh && s.reasoning === "antiOverthinking") parts.push(PURA_TOGGLES.antiOverthinking);
     return parts.length ? `\n\n${parts.join("\n\n")}` : "";
@@ -250,11 +253,12 @@ export function applyPuraEngine(dict, engine, gen = "reply", { record = false } 
     // message, for every engine.
     const tone = toneRulesText(gen);
     const cast = castLockText(gen);
+    const budget = replyBudgetText(gen);
     const direction = oneShotText(gen, { record });
     if (!isPuraEngine(engine)) {
         if (record && gen === "reply") setPendingRolls(null);
         dict["[[pura_system]]"] = "";
-        const late = [tone, cast, direction].filter(Boolean).join("\n\n");
+        const late = [tone, cast, direction, budget].filter(Boolean).join("\n\n");
         dict["[[pura_late]]"] = late ? `\n\n${late}` : "";
         return;
     }
@@ -268,7 +272,7 @@ export function applyPuraEngine(dict, engine, gen = "reply", { record = false } 
     // A real request (`record`) rolls Pura's {{random}} lists itself and keeps what came up,
     // for the reply's Notes tab (rolls.js). A Continue keeps the voice the reply began in.
     const session = record && (gen === "reply" || gen === "continue") ? rollSession(puraRollReuse(gen, s)) : null;
-    dict["[[pura_late]]"] = puraLateBlock(variant, gen, s, { language, tone, cast, direction, roll: session ? session.roll : null });
+    dict["[[pura_late]]"] = puraLateBlock(variant, gen, s, { language, tone, cast, direction, budget, roll: session ? session.roll : null });
     if (record && gen === "reply") {
         // Where the reply will land: a swipe replaces the last message, anything else adds one.
         const chat = ((getContext() || {}).chat) || [];

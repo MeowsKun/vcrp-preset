@@ -106,6 +106,7 @@ import { vcrpInstallSwipeGuard } from "./src/vcrp/swipeGuard.js";
 import { vcrpInstallQuickPanel, refreshQuickPanel } from "./src/vcrp/quickPanel.js";
 import { vcrpCostOnReply, drawCostBadge, drawAllCostBadges } from "./src/vcrp/replyCost.js";
 import { vcrpOneShotOnReply } from "./src/vcrp/oneShot.js";
+import { vcrpCutOnReply } from "./src/vcrp/replyCut.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpApplyReplyCap } from "./src/vcrp/replyLength.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
@@ -419,6 +420,8 @@ jQuery(async () => {
             // Story Memory's spend estimate: the reply's output, added to its request. Measured
             // here, before the rolls' notes are added to the reply: its size plans the budget.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryCountReply);
+            // VCRP: a reply the length limit cut off mid-sentence ends on its last full sentence.
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpCutOnReply);
             // Pura: a tracker written in the story (or a ((OOC)) note) moves into <Blocks>
             // first, so the dash cleaner (which leaves blocks alone) never rewrites one: its
             // "| — |" placeholders and dashed fields stay as the model wrote them.
