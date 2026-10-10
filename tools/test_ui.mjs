@@ -494,7 +494,21 @@ for (let k = 0; k < memCount; k++) {
     p.mode = "v10-core";
     w.document.getElementById("vcrp_quick_wand").click();
     const q$ = sel => w.document.querySelector(`#vcrp_quick_overlay ${sel}`);
+    // Its own look, whatever style.css the phone has cached: a full-screen layer, the card at the bottom.
+    const ov = w.document.getElementById("vcrp_quick_overlay");
+    check(ov && ov.style.position === "fixed" && ov.style.top === "0px" && ov.style.bottom === "0px" && ov.style.alignItems === "flex-end" && q$(".vcrp-quick-card").style.maxWidth === "420px" && w.document.getElementById("vcrp-quick-style"), "VCRP Quick: the panel does not carry its own placement and styles");
+    check(menu.style.display === "none" || w.$(menu).css("display") === "none", "VCRP Quick: the wand menu is left open behind the panel");
     check(q$(".vcrp-quick-card") && !q$("#vcrp_quick_tone").checked && /appear here while a Pura Director engine/.test(q$(".vcrp-quick-card").textContent), "VCRP Quick: not open, or wrong with a VCRP engine");
+    // The one-shot direction box: typing keeps it for the next reply; Clear empties it.
+    const shotBox = q$("#vcrp_quick_shot");
+    shotBox.value = "She finally tells him.";
+    shotBox.dispatchEvent(new w.Event("input", { bubbles: true }));
+    shotBox.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await tick();
+    check(meta.vcrp_oneshot && meta.vcrp_oneshot.text === "She finally tells him." && /Goes out with your next reply/.test(q$("#vcrp_quick_shot_desc").textContent), "VCRP Quick: the one-shot direction is not kept");
+    quick.refreshQuickPanel(w.document);
+    q$("#vcrp_quick_shot_clear").click(); await tick();
+    check(meta.vcrp_oneshot.text === "" && q$("#vcrp_quick_shot").value === "", "VCRP Quick: Clear does not empty the one-shot direction");
     q$("#vcrp_quick_tone").click(); await tick();
     check(meta.vcrp_tone.enabled === true && q$("#vcrp_quick_tone").checked, "VCRP Quick: Tone Rules not switched on");
     q$("#vcrp_quick_plot").click(); await tick(); await tick();
@@ -531,6 +545,24 @@ for (let k = 0; k < memCount; k++) {
     delete meta.vcrp_tone;
     delete meta.vcrp_focus;
 
+    // Each reply's cost: its badge under the avatar, and the switch in the Memory tab.
+    const cost = await imp("src/vcrp/replyCost.js");
+    const chatBox = w.document.getElementById("chat");
+    const keepBox = chatBox.innerHTML;
+    chatBox.innerHTML = `<div class="mes" mesid="1"><div class="mesAvatarWrapper"><div class="avatar"></div></div><div class="mes_block"><div class="mes_text">x</div></div></div>`;
+    chat[1].extra = { vcrp_cost: { total: 0.0123, output: 800, parts: 1, cold: false, model: "Claude Opus 5.5", tokens: { read: 30000, write: 2000, plain: 500 }, pieces: { read: 0.006, write: 0.002, plain: 0.0002, output: 0.0041 } } };
+    cost.drawCostBadge(1, w.document);
+    cost.drawCostBadge(1, w.document);
+    const badge = () => chatBox.querySelectorAll(".mesAvatarWrapper .vcrp-cost-badge");
+    check(badge().length === 1 && badge()[0].textContent === "≈ $0.012" && /cache warm/.test(badge()[0].title), `the cost badge: ${badge().length} ${badge()[0] && badge()[0].textContent}`);
+    switchTab(tabsUI.findIndex(t => t.title === "Memory"));
+    box.find("#vmem_cost_badges").prop("checked", false).trigger("change");
+    check(badge().length === 0, "switching the cost off does not take the badges away");
+    box.find("#vmem_cost_badges").prop("checked", true).trigger("change");
+    check(badge().length === 1, "switching the cost on does not bring the badges back");
+    chatBox.innerHTML = keepBox;
+    delete chat[1].extra;
+
     // Wide content in a message: a touch on it never reaches the swipe gesture; ordinary text does.
     const { vcrpInstallSwipeGuard } = await imp("src/vcrp/swipeGuard.js");
     const chatEl = w.document.getElementById("chat");
@@ -551,7 +583,7 @@ for (let k = 0; k < memCount; k++) {
     w.document.removeEventListener("touchstart", saw);
     chatEl.innerHTML = keepChat;
     clicks += 5;
-    if (failures === before) console.log("  ✓ Dialogue Colors list (shown with the add-on, change, forget, forget all), Story Config's Tense, Pura cost hints (panel summary live, each setting, BLOCKS lines), Tone Rules (per chat, same text in both places), VCRP Quick (wand menu, Tone Rules, plot focus, Pura's randomisers and their limits), wide content keeps its sideways scroll from the swipe gesture");
+    if (failures === before) console.log("  ✓ Dialogue Colors list (shown with the add-on, change, forget, forget all), Story Config's Tense, Pura cost hints (panel summary live, each setting, BLOCKS lines), Tone Rules (per chat, same text in both places), VCRP Quick (wand menu, one-shot direction, Tone Rules, plot focus, Pura's randomisers and their limits), each reply's cost badge and its switch, wide content keeps its sideways scroll from the swipe gesture");
 }
 console.log(`  (${clicks} clicks across all tabs)`);
 await new Promise(r => setTimeout(r, 200)); // let async handlers settle

@@ -24,6 +24,7 @@ import { buildBaseDict } from "./buildBaseDict.js";
 import { meguminAllSlotTriggers } from "../../data/slots.js";
 import { vcrpApplyGenerationToDict, vcrpFinalizeMessages, vcrpGenerationKind } from "../vcrp/generation.js";
 import { buildFocusAuditMessages, plotFocusForDirector } from "../vcrp/focus/index.js";
+import { vcrpCostAfterPrompt, vcrpCostRequestCancelled } from "../vcrp/replyCost.js";
 import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone, vcrpCountBackgroundPrompt } from "../vcrp/memory/index.js";
 import { vcrpCacheCheckRecord } from "../vcrp/cacheCheck.js";
 import { stripHistoryBlocks } from "../vcrp/blockHistory.js";
@@ -290,6 +291,7 @@ export async function handlePromptInjection(data, type) {
         vcrpFinalizeMessages(messages, vcrpGen, s => (typeof substituteParams === 'function' ? substituteParams(s) : s));
         vcrpMemoryShapeTask(messages);
         vcrpMemoryAfterPrompt(messages, data?.dryRun === true);
+        vcrpCostAfterPrompt(messages, data?.dryRun === true);   // VCRP: each reply's cost badge
     }
 
     // --- INJECT NPC PORTRAITS AS MULTIMODAL IMAGES ---
@@ -361,6 +363,7 @@ export async function handlePromptInjection(data, type) {
         if (!confirmed) {
             messages.length = 0; // Empty the payload
             vcrpMemoryRequestCancelled(); // VCRP: nothing went out, so no cache was warmed
+            vcrpCostRequestCancelled();
             toastr.info("Generation cancelled by user.");
             
             // FIX: Explicitly tell SillyTavern to abort to prevent Auto-Retry loops.

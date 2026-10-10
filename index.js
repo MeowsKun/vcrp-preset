@@ -104,6 +104,8 @@ import { vcrpPuraRollsOnReply } from "./src/vcrp/pura/rolls.js";
 import { puraSettings } from "./src/vcrp/pura/index.js";
 import { vcrpInstallSwipeGuard } from "./src/vcrp/swipeGuard.js";
 import { vcrpInstallQuickPanel, refreshQuickPanel } from "./src/vcrp/quickPanel.js";
+import { vcrpCostOnReply, drawCostBadge, drawAllCostBadges } from "./src/vcrp/replyCost.js";
+import { vcrpOneShotOnReply } from "./src/vcrp/oneShot.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpApplyReplyCap } from "./src/vcrp/replyLength.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
@@ -378,6 +380,11 @@ jQuery(async () => {
             [event_types.APP_READY, event_types.CHAT_CHANGED].forEach(evt => { if (evt) eventSource.on(evt, () => vcrpInstallSwipeGuard()); });
             // VCRP Quick: Tone Rules, the plot focus and Pura's randomisers from the wand menu.
             vcrpInstallQuickPanel(undefined, { fallback: false });
+            // VCRP: each reply's cost badge, drawn with the message and kept up as it changes.
+            [event_types.CHARACTER_MESSAGE_RENDERED, event_types.MESSAGE_SWIPED, event_types.MESSAGE_UPDATED, event_types.MESSAGE_EDITED]
+                .forEach(evt => { if (evt) eventSource.on(evt, id => drawCostBadge(id)); });
+            [event_types.CHAT_CHANGED, event_types.MORE_MESSAGES_LOADED]
+                .forEach(evt => { if (evt) eventSource.on(evt, () => setTimeout(() => drawAllCostBadges(), 300)); });
             if (event_types.APP_READY) eventSource.on(event_types.APP_READY, () => vcrpInstallQuickPanel());
             if (event_types.CHAT_CHANGED) eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(() => { vcrpInstallQuickPanel(); refreshQuickPanel(); }, 250));
             // VCRP: keep the setup-problem dot on the VCRP button current.
@@ -405,6 +412,10 @@ jQuery(async () => {
             eventSource.on(event_types.MORE_MESSAGES_LOADED, vcrpMemoryUpdateVisuals);
             // A deleted message may be one a chapter was anchored to: repair, then redraw.
             eventSource.on(event_types.MESSAGE_DELETED, vcrpMemoryOnMessageDeleted);
+            // VCRP: each reply's cost, measured on the reply as the model wrote it (before
+            // anything below adds to it), and the one-shot direction used up by its reply.
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpCostOnReply);
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpOneShotOnReply);
             // Pura: a tracker written in the story (or a ((OOC)) note) moves into <Blocks>
             // first, so the dash cleaner (which leaves blocks alone) never rewrites one: its
             // "| — |" placeholders and dashed fields stay as the model wrote them.

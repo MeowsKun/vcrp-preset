@@ -2907,7 +2907,9 @@ console.log("44 ok Tone Rules (per chat, after the newest message with every eng
 {
     const src = readFileSync(join(REPO, "index.js"), "utf8");
     const order = [...src.matchAll(/eventSource\.on\(event_types\.MESSAGE_RECEIVED, (\w+)\)/g)].map(m => m[1]);
-    assert.deepEqual(order.slice(0, 3), ["vcrpPuraTidyOnReply", "vcrpDedashOnReply", "vcrpDialogueColorsOnReply"], `reply handler order: ${order.join(", ")}`);
+    const at = name => order.indexOf(name);
+    assert(at("vcrpCostOnReply") === 0 && at("vcrpPuraTidyOnReply") < at("vcrpDedashOnReply") && at("vcrpDedashOnReply") < at("vcrpDialogueColorsOnReply") && at("vcrpPuraTidyOnReply") > 0,
+        `reply handler order (the cost measured first, on the reply as written; the tidy before the dash cleaner): ${order.join(", ")}`);
     const tidy = await imp("src/vcrp/pura/tidy.js");
     const { vcrpDedashOnReply } = await imp("src/vcrp/dedash.js");
     const colors = await imp("src/vcrp/dialogueColors.js");
@@ -3053,5 +3055,100 @@ console.log("45 ok bug sweep: reply handlers in order (a tracker's dashes kept, 
     Object.assign(q, { mode: keep.mode, pura: keep.pura });
 }
 console.log("46 ok Tone Rules in Focus (read, checked, flagged as tone), each reply's rolls (rolled by VCRP, in the Notes tab, Continue keeps the voice, swipes keep them when asked, cut-off replies wait)");
+
+// 47. One-shot direction (the next reply only) and each reply's cost.
+{
+    const shot = await imp("src/vcrp/oneShot.js");
+    const cost = await imp("src/vcrp/replyCost.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
+    const after = ms => { const t = ms.map(textOf); return t.slice(t.lastIndexOf("latest user msg") + 1).join("\n"); };
+    const cachedPart = ms => { const t = ms.map(textOf); let i = t.length - 1; while (i >= 0 && !t[i].includes("Scene prose")) i--; return t.slice(0, i + 1).join("\n"); };
+    const keep = { mode: q.mode, pura: q.pura };
+    for (const k of Object.keys(meta)) delete meta[k];
+    const STEER = "She finally tells him about the ring.";
+    const has = ms => after(ms).includes(`${shot.ONESHOT_HEADER}\n${STEER}`);
+
+    // Sent with the next reply, after the newest message; used up by the reply that answers it.
+    q.mode = "v10-core";
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" });
+    shot.setOneShot(STEER);
+    let msgs = await run("VCRP V10 Universal.json");
+    assert(has(msgs) && !cachedPart(msgs).includes(STEER), "with the next reply, after the newest message, never cached");
+    assert(!text(await run("VCRP V10 Universal.json", "impersonate")).includes(STEER), "Impersonate: not sent");
+    await run("VCRP V10 Universal.json");
+    shot.vcrpOneShotOnReply(5, "normal");
+    assert.equal(meta.vcrp_oneshot.text, STEER, "a reply arriving elsewhere (after a failed request) does not use it up");
+    chat.push({ is_user: false, mes: "She did." });
+    shot.vcrpOneShotOnReply(1, "normal");
+    assert(meta.vcrp_oneshot.text === "" && meta.vcrp_oneshot.used.text === STEER && meta.vcrp_oneshot.used.index === 1, "the reply uses it up: the box empties, the reply keeps it");
+    // The same reply written again gets it again; the next new reply does not.
+    assert(has(await run("VCRP V10 Universal.json", "swipe")) && has(await run("VCRP V10 Universal.json", "continue")), "a swipe and a Continue of that reply get it again");
+    const kept = chat.pop();
+    assert(has(await run("VCRP V10 Universal.json", "regenerate")), "a regenerate gets it again");
+    chat.push(kept, { is_user: true, mes: "go on" });
+    assert(!text(await run("VCRP V10 Universal.json")).includes(STEER), "the next new reply starts clean");
+    chat.pop();
+    // With a Pura engine: after the randomisers, before Pura's reasoning help.
+    q.mode = "pura-adapted";
+    q.pura = { randomisers: ["chaos"], reasoning: "procedure" };
+    chat.push({ is_user: true, mes: "go on" });
+    shot.setOneShot(STEER);
+    const late = after(await run("VCRP V10 Universal.json"));
+    assert(late.indexOf("### Chaos Mode") < late.indexOf(shot.ONESHOT_HEADER) && late.indexOf(shot.ONESHOT_HEADER) < late.indexOf("### Reasoning Procedure"), "Pura: after the randomisers, before the reasoning help");
+    // A preset without the slot is flagged.
+    const presetJson = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V10 Universal", prompts: presetJson.prompts.map(p => ({ ...p, content: String(p.content || "").replace("[[pura_late]]", "") })), prompt_order: presetJson.prompt_order, extensions: presetJson.extensions });
+    assert(vcrpHealthCheck().items.some(i => /Re-import the preset: .*one-shot direction/.test(i.title)), "a preset without the slot: re-import");
+    for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
+
+    // Each reply's cost: cold first (the prompt written in full), warm next (read from the cache).
+    q.mode = "v10-core";
+    for (const k of Object.keys(meta)) delete meta[k];
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" });
+    await run("VCRP V10 Universal.json");
+    chat.push({ is_user: false, mes: "A reply of some length. ".repeat(40), swipes: ["x"], swipe_id: 0, swipe_info: [{}] });
+    cost.vcrpCostOnReply(1, "normal");
+    const c1 = chat[1].extra && chat[1].extra.vcrp_cost;
+    assert(c1 && c1.cold && c1.tokens.write > 0 && c1.tokens.read === 0 && c1.output > 200 && c1.model === "Claude Opus 5.5" && c1.total > 0, `a cold reply: ${JSON.stringify(c1)}`);
+    assert(Math.abs(c1.total - (c1.pieces.read + c1.pieces.write + c1.pieces.plain + c1.pieces.output)) < 1e-12 && chat[1].swipe_info[0].extra.vcrp_cost === c1, "the parts add up; its swipe keeps it");
+    chat.push({ is_user: true, mes: "go" });
+    await run("VCRP V10 Universal.json");
+    chat.push({ is_user: false, mes: "Short." });
+    cost.vcrpCostOnReply(3, "normal");
+    const c3 = chat[3].extra.vcrp_cost;
+    assert(!c3.cold && c3.tokens.read > 0 && c3.total < c1.total, `a warm reply reads the cache and costs less: ${c3.total} vs ${c1.total}`);
+    // A Continue adds its part; a request cancelled in the preview counts nothing.
+    await run("VCRP V10 Universal.json", "continue");
+    chat[3].mes += " And then she left, slowly, the door swinging behind her.";
+    cost.vcrpCostOnReply(3, "continue");
+    const c3b = chat[3].extra.vcrp_cost;
+    assert(c3b.parts === 2 && c3b.total > c3.total && c3b.output > c3.output && c3b.output - c3.output < 30, `a Continue adds only its own part: ${c3b.output - c3.output} tokens`);
+    await run("VCRP V10 Universal.json");
+    cost.vcrpCostRequestCancelled();
+    chat.push({ is_user: false, mes: "Never sent." });
+    cost.vcrpCostOnReply(4, "normal");
+    assert(!chat[4].extra, "a cancelled request: no cost");
+    await run("VCRP V10 Universal.json", "impersonate");
+    chat.push({ is_user: false, mes: "x" });
+    cost.vcrpCostOnReply(5, "normal");
+    assert(!chat[5].extra, "Impersonate: nothing counted");
+    const words = cost.costBadgeText(c1);
+    assert(/^≈ \$\d/.test(words.short) && words.detail.includes("cache cold") && words.detail.includes("Read from the cache:") && words.detail.includes("Written by the model:"), `the badge: ${words.short}`);
+    assert(cost.costBadgesOn(), "on by default");
+    cost.setCostBadges(false);
+    assert(!cost.costBadgesOn() && extension_settings.VCRP.globalSettings.costBadges === false, "the switch");
+    cost.setCostBadges(true);
+
+    chat.length = 0;
+    for (const k of Object.keys(meta)) delete meta[k];
+    Object.assign(q, { mode: keep.mode, pura: keep.pura });
+}
+console.log("47 ok one-shot direction (next reply only, after the newest message, used up by its reply, again on swipe/regenerate/Continue, Pura order, Setup Check), each reply's cost (cold/warm, parts add up, Continue adds its part, cancelled and Impersonate count nothing, the switch)");
 
 console.log("\nALL FORK CHECKS PASSED");

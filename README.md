@@ -58,6 +58,14 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   Tone Rules and plot focus on or off, and, with a Pura engine, Pura's scene randomisers (Dead
   Dove Escalation among them, two at most), without opening the VCRP window. A SillyTavern
   without the wand menu gets a small button under VCRP's own instead.
+- **One-shot direction** (VCRP Quick, "Next reply only"): a steer for the next reply alone ("she
+  finally tells him about the ring"). It goes out after your message with any engine, never
+  written into the chat, and empties once that reply arrives; a swipe, regenerate or Continue of
+  that reply gets it again, and your next message starts clean.
+- **Each reply's cost** (Memory tab → Reply length → "Show each reply's cost", on by default): a
+  small estimate under each reply's avatar, green when the cache was warm, amber when it was cold.
+  Tap it for the breakdown: read from the cache, written to it, sent fresh, written by the model.
+  Works with Story Memory on or off; a Continue adds its part to the reply.
 - **Tense** in Story Config: present or past. Left on default it sends nothing and each engine
   keeps its own (Megumin's Story Config has no tense, so the Megumin Original engines only get one
   if you pick it).

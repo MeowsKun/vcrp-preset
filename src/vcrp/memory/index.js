@@ -323,20 +323,25 @@ function vcrpMarkedSplit(messages, total, cold) {
     return { read, write: cachedEnd - read, plain: total - cachedEnd };
 }
 
+/**
+ * A prompt's tokens as the cache prices them: { total, read, write, plain }. `cold`: nothing
+ * is cached (a first request, or after a break longer than the cache lasts).
+ */
+export function promptSpendSplit(messages, cold) {
+    const total = messages.reduce((n, m) => n + tokensOfMessage(m), 0);
+    if (memoryBudgetSettings().markCache && vcrpRouteHoistsSystem()) return { total, ...vcrpMarkedSplit(messages, total, cold) };
+    const tail = cold ? null : warmWrittenTokens(messages);
+    const write = tail === null ? total : Math.min(total, tail);
+    return { total, read: total - write, write, plain: 0 };
+}
+
 function countPromptSpend(st, messages) {
     const budget = currentMemoryBudget();
     if (!budget) return;
-    const total = messages.reduce((n, m) => n + tokensOfMessage(m), 0);
     // A standalone summary call carries a prompt of its own: priced as written.
     const cold = !!taskStandalone || isCold({ lastRequestAt: st.lastRequestAt }, clock(), budget);
-    let cost;
-    if (memoryBudgetSettings().markCache && vcrpRouteHoistsSystem()) {
-        cost = requestCost(budget, vcrpMarkedSplit(messages, total, cold));
-    } else {
-        const tail = cold ? null : warmWrittenTokens(messages);
-        const write = tail === null ? total : Math.min(total, tail);
-        cost = requestCost(budget, { read: total - write, write });
-    }
+    const { total, read, write, plain } = promptSpendSplit(messages, cold);
+    const cost = requestCost(budget, { read, write, plain });
     const s = spendOf(st);
     // Every background call (Story Memory's, an NPC scan, the Story Director, another
     // extension's) is counted apart, and never stands in for "the last reply".

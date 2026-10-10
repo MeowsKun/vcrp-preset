@@ -3,6 +3,7 @@
 //
 // An entry in SillyTavern's wand menu (the magic-wand button by the chat input) opens a
 // small panel with:
+//   - a direction for the next reply only (oneShot.js);
 //   - this chat's Tone Rules, on or off;
 //   - the plot focus, on or off;
 //   - with a Pura engine selected, Pura's scene randomisers (Dead Dove Escalation among
@@ -21,9 +22,45 @@ import { activeEngine } from "../engine/meguminOriginal.js";
 import { toneRules, setToneRules, toneChatOpen } from "./toneRules.js";
 import { peekFocusState, setPlotFocus, PLOT_DEFAULTS, plotFocusRemaining } from "./focus/index.js";
 import { puraSettings, PURA_RANDOMISER_LABELS, PURA_MAX_RANDOMISERS } from "./pura/index.js";
+import { oneShot, setOneShot } from "./oneShot.js";
+import { getContext } from "../st.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 const OVERLAY = "vcrp_quick_overlay";
+const STYLE_ID = "vcrp-quick-style";
+
+// The panel brings its own look rather than leaning on style.css: a phone that kept an older
+// cached style.css after an update (or a browser without the `inset` shorthand) drew it as a
+// broken, unstyled menu at the top of the screen. The placement that matters (a full-screen
+// layer, the card at the bottom) is also set on the elements themselves.
+const OVERLAY_STYLE = "position:fixed; top:0; right:0; bottom:0; left:0; width:100%; height:100%; z-index:10001; display:flex; align-items:flex-end; justify-content:center; padding:12px; box-sizing:border-box; background:rgba(0,0,0,0.45); margin:0;";
+const CARD_STYLE = "position:relative; width:100%; max-width:420px; max-height:80vh; overflow-y:auto; box-sizing:border-box; background:#18181b; color:#f4f4f5; border:1px solid #27272a; border-radius:14px; padding:14px; box-shadow:0 10px 30px rgba(0,0,0,0.6); font-size:0.85rem; text-align:left;";
+const CSS = `
+#${OVERLAY} .vcrp-quick-card { max-height: 80dvh; }
+#${OVERLAY} .vcrp-quick-head { display:flex; align-items:center; justify-content:space-between; font-weight:700; margin-bottom:10px; }
+#${OVERLAY} .vcrp-quick-close, #${OVERLAY} .vcrp-quick-more { background:rgba(255,255,255,0.06); color:inherit; border:1px solid #27272a; border-radius:8px; padding:6px 10px; cursor:pointer; font:inherit; width:auto; margin:0; }
+#${OVERLAY} .vcrp-quick-more { width:100%; margin-top:12px; }
+#${OVERLAY} .vcrp-quick-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid #27272a; cursor:pointer; margin:0; }
+#${OVERLAY} .vcrp-quick-row.off { opacity:0.55; cursor:default; }
+#${OVERLAY} .vcrp-quick-text { display:flex; flex-direction:column; gap:2px; }
+#${OVERLAY} .vcrp-quick-text span, #${OVERLAY} .vcrp-quick-sub span, #${OVERLAY} .vcrp-quick-sub.muted, #${OVERLAY} .vcrp-quick-shot-row { font-size:0.72rem; color:#a1a1aa; font-weight:400; }
+#${OVERLAY} .vcrp-quick-row input { width:20px; height:20px; flex-shrink:0; margin:0; }
+#${OVERLAY} .vcrp-quick-sub { margin:12px 0 6px; font-weight:700; }
+#${OVERLAY} .vcrp-quick-chips { display:flex; flex-wrap:wrap; gap:6px; }
+#${OVERLAY} .vcrp-quick-chip { display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid #27272a; background:rgba(255,255,255,0.04); font-size:0.76rem; cursor:pointer; margin:0; }
+#${OVERLAY} .vcrp-quick-chip.on { border-color:#ec4899; background:rgba(236,72,153,0.15); }
+#${OVERLAY} .vcrp-quick-chip.off { opacity:0.45; cursor:default; }
+#${OVERLAY} .vcrp-quick-shot { width:100%; box-sizing:border-box; background:rgba(0,0,0,0.25); color:inherit; border:1px solid #27272a; border-radius:8px; padding:8px; font:inherit; resize:vertical; min-height:60px; margin:0; }
+#${OVERLAY} .vcrp-quick-shot-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:4px 0 6px; }
+#vcrp_quick_fab { position:fixed; top:116px; right:26px; z-index:9999; width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:#18181b; color:#f4f4f5; border:1px solid #27272a; cursor:pointer; }
+`;
+function ensureStyle(doc) {
+    if (doc.getElementById(STYLE_ID)) return;
+    const el = doc.createElement("style");
+    el.id = STYLE_ID;
+    el.textContent = CSS;
+    (doc.head || doc.body).appendChild(el);
+}
 
 const SWITCH = (id, on, label, desc, disabled = false) => `
     <label class="vcrp-quick-row${disabled ? " off" : ""}" for="${id}">
@@ -54,9 +91,19 @@ function quickHtml() {
             : plot.active && left <= 0 ? "It has run its replies; switch it off and on to restart."
                 : esc(plot.text.trim().slice(0, 90)) + (plot.text.trim().length > 90 ? "…" : "");
     const pura = isPuraEngine(activeEngine());
+    const shot = oneShot();
+    const chat = ((getContext() || {}).chat) || [];
+    const usedHere = shot.used && shot.used.index === chat.length - 1 && chat.length && !chat[chat.length - 1].is_user;
+    const shotDesc = !open ? "Open a chat first."
+        : shot.text.trim() ? "Goes out with your next reply, then clears."
+            : usedHere ? `Used by the last reply ("${esc(String(shot.used.text).slice(0, 60))}${String(shot.used.text).length > 60 ? "…" : ""}"): a swipe or Continue of it gets it again.`
+                : "A steer for the next reply only, never saved into the chat.";
     return `
         <div class="vcrp-quick-head"><span><i class="fa-solid fa-sliders"></i> VCRP Quick</span>
             <button type="button" class="vcrp-quick-close" id="vcrp_quick_close" title="Close"><i class="fa-solid fa-xmark"></i></button></div>
+        <div class="vcrp-quick-sub" style="margin-top:0;">Next reply only</div>
+        <textarea id="vcrp_quick_shot" class="vcrp-quick-shot" rows="3" placeholder="e.g. She finally tells him about the ring." ${open ? "" : "disabled"}>${esc(shot.text)}</textarea>
+        <div class="vcrp-quick-shot-row"><span id="vcrp_quick_shot_desc">${shotDesc}</span>${open && shot.text.trim() ? `<button type="button" class="vcrp-quick-close" id="vcrp_quick_shot_clear">Clear</button>` : ""}</div>
         ${SWITCH("vcrp_quick_tone", open && tone.enabled, "Tone Rules", toneDesc, !open)}
         ${SWITCH("vcrp_quick_plot", open && plot.active, "Plot focus", plotDesc, !open)}
         ${pura ? `<div class="vcrp-quick-sub">Pura's scene randomisers <span>(two at most; the Director's Cut alone)</span></div>
@@ -73,6 +120,14 @@ function wire(card, doc) {
         const btn = doc.getElementById("prompt-slot-fixed-btn");
         if (btn) btn.click();
     });
+    on("#vcrp_quick_shot", "input", e => {
+        setOneShot(e.target.value, { soon: true });
+        const desc = card.querySelector("#vcrp_quick_shot_desc");
+        if (desc) desc.textContent = e.target.value.trim() ? "Goes out with your next reply, then clears." : "A steer for the next reply only, never saved into the chat.";
+    });
+    // Leaving the box saves at once (before a send or a chat switch can miss it).
+    on("#vcrp_quick_shot", "change", e => setOneShot(e.target.value));
+    on("#vcrp_quick_shot_clear", "click", () => { setOneShot(""); redraw(); });
     on("#vcrp_quick_tone", "change", e => { setToneRules({ enabled: e.target.checked }); redraw(); });
     on("#vcrp_quick_plot", "change", async e => { await setPlotFocus({ active: e.target.checked }); redraw(); });
     card.querySelectorAll(".vcrp_quick_rand").forEach(box => box.addEventListener("change", () => {
@@ -89,10 +144,12 @@ function wire(card, doc) {
 /** Opens the panel (or redraws it when it is open). */
 export function openQuickPanel(doc = typeof document !== "undefined" ? document : null) {
     if (!doc) return;
+    ensureStyle(doc);
     let overlay = doc.getElementById(OVERLAY);
     if (!overlay) {
         overlay = doc.createElement("div");
         overlay.id = OVERLAY;
+        overlay.style.cssText = OVERLAY_STYLE;
         overlay.addEventListener("click", e => { if (e.target === overlay) closeQuickPanel(doc); });
         doc.body.appendChild(overlay);
         const onKey = e => {
@@ -104,6 +161,7 @@ export function openQuickPanel(doc = typeof document !== "undefined" ? document 
     overlay.innerHTML = "";
     const card = doc.createElement("div");
     card.className = "vcrp-quick-card";
+    card.style.cssText = CARD_STYLE;
     card.innerHTML = quickHtml();
     overlay.appendChild(card);
     wire(card, doc);
@@ -138,10 +196,19 @@ export function vcrpInstallQuickPanel(doc = typeof document !== "undefined" ? do
         item.innerHTML = `<div class="fa-solid fa-sliders extensionsMenuExtensionButton"></div><span>VCRP Quick</span>`;
         menu.appendChild(item);
     } else {
+        ensureStyle(doc);
         item.id = "vcrp_quick_fab";
         item.title = "VCRP Quick";
         item.innerHTML = `<i class="fa-solid fa-sliders"></i>`;
         doc.body.appendChild(item);
     }
-    item.addEventListener("click", () => openQuickPanel(doc));
+    item.addEventListener("click", () => {
+        // The wand menu shuts the way SillyTavern shuts it, so it is not left hanging open.
+        const open = doc.getElementById("extensionsMenu");
+        if (open && item.parentNode === open) {
+            const jq = doc.defaultView && doc.defaultView.jQuery;
+            if (jq) jq(open).fadeOut(100); else open.style.display = "none";
+        }
+        openQuickPanel(doc);
+    });
 }

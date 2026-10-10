@@ -26,6 +26,7 @@ import { storyConfigFields } from "../../features/storyconfig/config.js";
 import { activeEngine } from "../../engine/meguminOriginal.js";
 import { isPuraEngine, puraVariant } from "../../core/engines.js";
 import { puraSettings } from "../pura/index.js";
+import { costBadgesOn, setCostBadges } from "../replyCost.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 
@@ -124,7 +125,10 @@ function renderReplyLength($c, s, budget, st, rerender) {
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Safety cap (tokens)</div><div class="set-desc">Stops a reply at this many tokens, thinking included. It does not make replies shorter: one that reaches it is cut off mid-sentence. Set it well above a normal reply${measured ? ` (about ${k(measured * 2)}, twice your average)` : " (about twice your average)"}, so only a runaway one stops. 0 = off; SillyTavern's Max Response Length still applies.</div></div>
             <input id="vmem_cap_reply" type="number" min="0" max="64000" step="500" class="ps-modern-input" style="width:90px;" value="${cap}"></div>
         ${cap && measured && cap < measured * 1.3 ? `<div style="font-size:0.72rem; color:#f59e0b; margin-top:4px;"><i class="fa-solid fa-triangle-exclamation"></i> The cap is close to your average reply: many replies will be cut off.</div>` : ""}
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Show each reply's cost</div><div class="set-desc">A small estimate under each reply's avatar (green: the cache was warm; amber: cold, the prompt written in full). Tap it for the breakdown: read from the cache, written to it, sent fresh, written by the model. Works with Story Memory on or off.</div></div>
+            <input type="checkbox" id="vmem_cost_badges" ${costBadgesOn() ? "checked" : ""} /></div>
         </div>`);
+    $c.find("#vmem_cost_badges").on("change", function () { setCostBadges(this.checked); saveSettingsDebounced(); });
     $c.find("#vmem_len").on("change", function () {
         if (!localProfile.storyConfig) localProfile.storyConfig = {};
         localProfile.storyConfig.length = String($(this).val());
