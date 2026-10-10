@@ -11,7 +11,8 @@
 //     Cut alone.
 // Everything here is the same setting as in the full window; the texts (the rules, the
 // plot) are written there. A SillyTavern without the wand menu gets a small floating
-// button under VCRP's own instead.
+// button under VCRP's own instead. The panel opens as a modal dialog (the browser's top
+// layer), so nothing in SillyTavern's page can squash or cover it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { localProfile } from "../core/state.js";
@@ -34,8 +35,11 @@ const STYLE_ID = "vcrp-quick-style";
 // broken, unstyled menu at the top of the screen. The placement that matters (a full-screen
 // layer, the card at the bottom) is also set on the elements themselves.
 const OVERLAY_STYLE = "position:fixed; top:0; right:0; bottom:0; left:0; width:100%; height:100%; z-index:10001; display:flex; align-items:flex-end; justify-content:center; padding:12px; box-sizing:border-box; background:rgba(0,0,0,0.45); margin:0;";
+// The dialog itself is only a frame for the card, held to the bottom of the screen.
+const DIALOG_STYLE = "padding:0; border:none; background:transparent; color:#f4f4f5; width:calc(100% - 24px); max-width:420px; max-height:none; margin:auto auto 12px auto; overflow:visible;";
 const CARD_STYLE = "position:relative; width:100%; max-width:420px; max-height:80vh; overflow-y:auto; box-sizing:border-box; background:#18181b; color:#f4f4f5; border:1px solid #27272a; border-radius:14px; padding:14px; box-shadow:0 10px 30px rgba(0,0,0,0.6); font-size:0.85rem; text-align:left;";
 const CSS = `
+dialog#${OVERLAY}::backdrop { background: rgba(0,0,0,0.45); }
 #${OVERLAY} .vcrp-quick-card { max-height: 80dvh; }
 #${OVERLAY} .vcrp-quick-head { display:flex; align-items:center; justify-content:space-between; font-weight:700; margin-bottom:10px; }
 #${OVERLAY} .vcrp-quick-close, #${OVERLAY} .vcrp-quick-more { background:rgba(255,255,255,0.06); color:inherit; border:1px solid #27272a; border-radius:8px; padding:6px 10px; cursor:pointer; font:inherit; width:auto; margin:0; }
@@ -141,22 +145,37 @@ function wire(card, doc) {
     }));
 }
 
+// A modal dialog opens in the browser's own top layer, outside the page's layout: nothing in
+// SillyTavern's (a transformed or clipped parent, a stacking order) can squash or cover it. A
+// fixed full-screen layer drawn in the page was squashed into a strip at the top of the
+// screen on a phone. Browsers without modal dialogs get that layer still.
+const canModal = doc => {
+    try { return typeof doc.createElement("dialog").showModal === "function"; } catch (e) { return false; }
+};
+
 /** Opens the panel (or redraws it when it is open). */
 export function openQuickPanel(doc = typeof document !== "undefined" ? document : null) {
     if (!doc) return;
     ensureStyle(doc);
     let overlay = doc.getElementById(OVERLAY);
     if (!overlay) {
-        overlay = doc.createElement("div");
+        const modal = canModal(doc);
+        overlay = doc.createElement(modal ? "dialog" : "div");
         overlay.id = OVERLAY;
-        overlay.style.cssText = OVERLAY_STYLE;
+        overlay.style.cssText = modal ? DIALOG_STYLE : OVERLAY_STYLE;
+        // A tap outside the card (on the backdrop) closes it.
         overlay.addEventListener("click", e => { if (e.target === overlay) closeQuickPanel(doc); });
         doc.body.appendChild(overlay);
-        const onKey = e => {
-            if (!doc.getElementById(OVERLAY)) { doc.removeEventListener("keydown", onKey); return; }
-            if (e.key === "Escape") { closeQuickPanel(doc); doc.removeEventListener("keydown", onKey); }
-        };
-        doc.addEventListener("keydown", onKey);
+        if (modal) {
+            overlay.addEventListener("cancel", e => { e.preventDefault(); closeQuickPanel(doc); });   // Escape, the back gesture
+            overlay.showModal();
+        } else {
+            const onKey = e => {
+                if (!doc.getElementById(OVERLAY)) { doc.removeEventListener("keydown", onKey); return; }
+                if (e.key === "Escape") { closeQuickPanel(doc); doc.removeEventListener("keydown", onKey); }
+            };
+            doc.addEventListener("keydown", onKey);
+        }
     }
     overlay.innerHTML = "";
     const card = doc.createElement("div");
@@ -169,7 +188,9 @@ export function openQuickPanel(doc = typeof document !== "undefined" ? document 
 
 export function closeQuickPanel(doc = typeof document !== "undefined" ? document : null) {
     const overlay = doc && doc.getElementById(OVERLAY);
-    if (overlay) overlay.remove();
+    if (!overlay) return;
+    if (typeof overlay.close === "function" && overlay.open) { try { overlay.close(); } catch (e) { /* removed below anyway */ } }
+    overlay.remove();
 }
 
 /** On a chat change: an open panel shows the new chat's switches. */

@@ -529,6 +529,18 @@ for (let k = 0; k < memCount; k++) {
     quick.openQuickPanel(w.document);
     w.document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape" }));
     check(!w.document.getElementById("vcrp_quick_overlay"), "VCRP Quick: Escape does not close it");
+    // Where the browser has modal dialogs (every current one; jsdom lacks them, so stubbed here):
+    // a dialog in the top layer, held to the bottom; Escape or the back gesture ("cancel") closes it.
+    const proto = w.HTMLDialogElement.prototype;
+    proto.showModal = function () { this.setAttribute("open", ""); };
+    proto.close = function () { this.removeAttribute("open"); };
+    quick.openQuickPanel(w.document);
+    const dlg = w.document.getElementById("vcrp_quick_overlay");
+    check(dlg && dlg.tagName === "DIALOG" && dlg.hasAttribute("open") && /margin: auto auto 12px/.test(dlg.getAttribute("style")) && dlg.querySelector(".vcrp-quick-card #vcrp_quick_shot"), "VCRP Quick: not opened as a modal dialog where the browser has them");
+    dlg.dispatchEvent(new w.Event("cancel", { cancelable: true }));
+    check(!w.document.getElementById("vcrp_quick_overlay"), "VCRP Quick: the dialog's cancel (Escape, back gesture) does not close it");
+    delete proto.showModal;
+    delete proto.close;
     const bare = w.document.implementation.createHTMLDocument("bare");
     quick.vcrpInstallQuickPanel(bare, { fallback: false });
     check(!bare.getElementById("vcrp_quick_fab"), "VCRP Quick: a button before SillyTavern is ready (its menu may still come)");
