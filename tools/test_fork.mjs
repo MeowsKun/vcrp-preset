@@ -3151,4 +3151,78 @@ console.log("46 ok Tone Rules in Focus (read, checked, flagged as tone), each re
 }
 console.log("47 ok one-shot direction (next reply only, after the newest message, used up by its reply, again on swipe/regenerate/Continue, Pura order, Setup Check), each reply's cost (cold/warm, parts add up, Continue adds its part, cancelled and Impersonate count nothing, the switch)");
 
+// 48. The whole reply pipeline, every MESSAGE_RECEIVED handler in index.js's order, on one
+//     Pura reply with everything on: what each measures and what the reply ends up as.
+{
+    const src = readFileSync(join(REPO, "index.js"), "utf8");
+    const order = [...src.matchAll(/eventSource\.on\(event_types\.MESSAGE_RECEIVED, (\(id, type\) => )?(\w+)/g)].map(m => m[2]);
+    const mods = {
+        vcrpCostOnReply: await imp("src/vcrp/replyCost.js"), vcrpOneShotOnReply: await imp("src/vcrp/oneShot.js"),
+        vcrpMemoryCountReply: await imp("src/vcrp/memory/index.js"), vcrpPuraTidyOnReply: await imp("src/vcrp/pura/tidy.js"),
+        vcrpPuraRollsOnReply: await imp("src/vcrp/pura/rolls.js"), vcrpDedashOnReply: await imp("src/vcrp/dedash.js"),
+        vcrpDialogueColorsOnReply: await imp("src/vcrp/dialogueColors.js"),
+    };
+    const pipeline = order.filter(n => mods[n]);
+    assert.deepEqual(pipeline, ["vcrpCostOnReply", "vcrpOneShotOnReply", "vcrpMemoryCountReply", "vcrpPuraTidyOnReply", "vcrpPuraRollsOnReply", "vcrpDedashOnReply", "vcrpDialogueColorsOnReply"], `the reply handlers, in order: ${pipeline.join(", ")}`);
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const { estimateTokens } = mods.vcrpMemoryCountReply;
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { mode: q.mode, pura: q.pura, addons: q.addons, order: JSON.stringify(q.blockStack.order), mem: JSON.stringify(q.vcrpMemory) };
+    for (const k of Object.keys(meta)) delete meta[k];
+    q.mode = "pura-adapted";
+    q.pura = { randomisers: ["deadDove"], voice: "random", showRolls: true };
+    q.addons = [...new Set([...(q.addons || []), "color"])];
+    q.blockStack.order = ["pura_npc", "pura_scene"];
+    q.vcrpMemory = { ...(q.vcrpMemory || {}), enabled: true };
+    meguminSyncLegacyBlockIds();
+    meta.vcrp_tone = { enabled: true, text: "Bleak." };
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "I walk in." });
+    (await imp("src/vcrp/oneShot.js")).setOneShot("She finally tells him.");
+    await run("VCRP V10 Universal.json");
+    const written = `<font color="#000080" title="Mara">"You came."</font> She smiled — slowly.\n\n[NPC:MINOR|Ann]\nb: Ann | 30 — 35 | Clerk\n[/NPC]\n\n((OOC: Kinks rolled: none.))\n\n<Blocks>\n<Pura_Scene>\n[SCENE|Café|Noon|Sun]\ndetail: steam\n[/SCENE]\n</Pura_Scene>\n</Blocks>`;
+    chat.push({ is_user: false, mes: written, swipes: [written], swipe_id: 0, swipe_info: [{}] });
+    const madeOut = estimateTokens(written);
+    for (const name of pipeline) {
+        const m = mods[name];
+        if (name === "vcrpPuraRollsOnReply") m[name](1, "normal", { show: true }); else m[name](1, "normal");
+    }
+    const out = chat[1].mes;
+    const cost = chat[1].extra.vcrp_cost;
+    const mem = meta.vcrp_memory && meta.vcrp_memory.spend;
+    assert(cost && cost.output === madeOut, `the cost measured on the reply as written: ${cost && cost.output} vs ${madeOut}`);
+    assert(mem && mem.last && mem.last.output === madeOut, `Story Memory measured it as written too (not with the rolls' notes): ${mem && mem.last && mem.last.output} vs ${madeOut}`);
+    assert(meta.vcrp_oneshot.text === "" && meta.vcrp_oneshot.used.index === 1, "the one-shot direction used up");
+    assert(out.includes("She smiled, slowly.") && out.includes("b: Ann | 30 — 35 | Clerk") && out.includes("<Pura_NPC>\n[NPC:MINOR|Ann]"), "the story's dashes cleaned, the moved sheet's kept");
+    assert(out.includes("<Pura_Notes>\n🎲 Rolled this reply") && out.includes("Kinks rolled: none.") && !/\(\(OOC/.test(out), "the OOC note and the rolls in the Notes tab");
+    assert(meta.vcrp_colors && meta.vcrp_colors.names.mara && meta.vcrp_colors.names.mara.color !== "#000080" && out.includes(`<font color="${meta.vcrp_colors.names.mara.color}" title="Mara">`), "the color locked, made readable, in the reply");
+    assert(chat[1].swipes[0] === out && out.split("<Blocks>").length === 2 && out.split("</Blocks>").length === 2, "one envelope; the swipe holds the final text");
+
+    // A swipe with no cost of its own does not show the copy SillyTavern gave it of the last one.
+    q.mode = "v10-core";
+    chat[1].extra.vcrp_cost = { total: 0.5 };
+    chat[1].swipe_info = [{}, { extra: { vcrp_cost: { total: 0.5 } } }];
+    chat[1].swipe_id = 1;
+    mods.vcrpCostOnReply.vcrpCostOnReply(1, "swipe");
+    assert(!chat[1].extra.vcrp_cost && !chat[1].swipe_info[1].extra.vcrp_cost, "a swipe without a count: no inherited cost");
+
+    // An NPC update that adds a line, applied again (a swipe or regenerate of its reply): not twice.
+    const { npcApplyUpdates } = await imp("src/features/npc/updates.js");
+    const keepBank = JSON.stringify(q.npcBank);
+    q.npcBank = { ...(q.npcBank || {}), enabled: true, npcs: [{ name: "Ann", secrets: "* Owes Okafor money" }] };
+    const upd = [{ name: "Ann", ops: [{ op: "+", label: "Secrets", text: "Sleeps with the knife" }] }];
+    assert.equal(npcApplyUpdates(upd).applied.length, 1, "added once");
+    assert.equal(npcApplyUpdates(upd).applied.length, 0, "the same line again: not added twice");
+    assert.equal(q.npcBank.npcs[0].secrets, "* Owes Okafor money\n* Sleeps with the knife", "the field holds it once");
+    q.npcBank = JSON.parse(keepBank);
+
+    chat.length = 0;
+    for (const k of Object.keys(meta)) delete meta[k];
+    Object.assign(q, { mode: keep.mode, pura: keep.pura, addons: keep.addons, vcrpMemory: JSON.parse(keep.mem) });
+    q.blockStack.order = JSON.parse(keep.order);
+    meguminSyncLegacyBlockIds();
+}
+console.log("48 ok the whole reply pipeline in index.js's order (cost and Story Memory measure the reply as written; one-shot used; tidy, rolls, dash cleaner and colors in turn)");
+
 console.log("\nALL FORK CHECKS PASSED");

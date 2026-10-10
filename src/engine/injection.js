@@ -217,7 +217,7 @@ export async function handlePromptInjection(data, type) {
 
     if (!localProfile) return;
 
-    const dict = buildBaseDict();
+    const dict = buildBaseDict(false, { dryRun: data?.dryRun === true });
 
     if (localProfile.devOverrides) {
         Object.keys(localProfile.devOverrides).forEach(key => { if (dict[key] !== undefined) dict[key] = localProfile.devOverrides[key]; });

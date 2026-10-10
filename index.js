@@ -416,6 +416,9 @@ jQuery(async () => {
             // anything below adds to it), and the one-shot direction used up by its reply.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpCostOnReply);
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpOneShotOnReply);
+            // Story Memory's spend estimate: the reply's output, added to its request. Measured
+            // here, before the rolls' notes are added to the reply: its size plans the budget.
+            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryCountReply);
             // Pura: a tracker written in the story (or a ((OOC)) note) moves into <Blocks>
             // first, so the dash cleaner (which leaves blocks alone) never rewrites one: its
             // "| — |" placeholders and dashed fields stay as the model wrote them.
@@ -428,8 +431,6 @@ jQuery(async () => {
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDedashOnReply);
             // Dialogue Colors: each character keeps the color they first spoke in.
             eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDialogueColorsOnReply);
-            // Story Memory's spend estimate: the reply's output, added to its request.
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryCountReply);
             // Reply length: the safety cap on the request itself (where SillyTavern has the event).
             if (event_types.CHAT_COMPLETION_SETTINGS_READY) eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, vcrpApplyReplyCap);
             // VCRP budgeted memory: summarize the next stretch after a reply, when due.

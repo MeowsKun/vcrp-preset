@@ -68,11 +68,21 @@ export function vcrpCostRequestCancelled() {
  * it. A Continue adds to what the reply already had.
  */
 export function vcrpCostOnReply(messageId, type) {
-    if (type === "first_message" || !pending) return;
+    if (type === "first_message") return;
     const chat = ((getContext() || {}).chat) || [];
     const id = Number(messageId);
     const msg = chat[id];
-    if (!msg || msg.is_user || msg.is_system || pending.index !== id) return;
+    if (!msg || msg.is_user || msg.is_system) return;
+    if (!pending || pending.index !== id) {
+        // SillyTavern starts a new swipe with a copy of the last one's extras: a swipe with no
+        // count of its own (no price for the model, another preset) must not show that cost.
+        if (type === "swipe" && msg.extra && msg.extra.vcrp_cost) {
+            delete msg.extra.vcrp_cost;
+            const info = Array.isArray(msg.swipe_info) && typeof msg.swipe_id === "number" ? msg.swipe_info[msg.swipe_id] : null;
+            if (info && info.extra) delete info.extra.vcrp_cost;
+        }
+        return;
+    }
     const budget = currentMemoryBudget();
     const p = pending;
     pending = null;

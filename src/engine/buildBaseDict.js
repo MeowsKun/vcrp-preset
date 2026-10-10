@@ -36,7 +36,7 @@ import { applyPuraEngine, PURA_ADAPTED_CONFIG } from "../vcrp/pura/index.js";
 import { colorLockNote } from "../vcrp/dialogueColors.js";
 import { vcrpGenerationKind, vcrpIsDryRun } from "../vcrp/generation.js";
 
-export function buildBaseDict(isTokenCount = false) {
+export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     const dict = {};
     if (!localProfile) return dict;
 
@@ -255,7 +255,10 @@ export function buildBaseDict(isTokenCount = false) {
 
     // VCRP: a Pura Director engine writes its own main prompt and its two tags, and stands
     // the modules it overlaps aside. Before the CoT steps below, which it does not use.
-    applyPuraEngine(dict, activeEngine, isTokenCount || vcrpIsDryRun() ? "reply" : vcrpGenerationKind(), { record: !(isTokenCount || vcrpIsDryRun()) });
+    // A measure (a token count, a preview, a dry run) shows the normal reply and keeps nothing:
+    // no rolls recorded, no one-shot direction used up.
+    const measure = isTokenCount || dryRun || vcrpIsDryRun();
+    applyPuraEngine(dict, activeEngine, measure ? "reply" : vcrpGenerationKind(), { record: !measure });
 
     // NEW: Inject Thinking Effort to the absolute top of whatever [[COT]] is currently active
     let effort = localProfile.thinkEffort || "unspecified";

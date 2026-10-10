@@ -160,6 +160,9 @@ export function npcApplyUpdates(updates, { messageIndex = 0 } = {}) {
                 after = text;
             } else if (op === "+") {
                 const lines = before.split(/\r?\n/).filter(l => l.trim() !== "");
+                // Already there (a swipe or regenerate of the reply that added it): not twice.
+                const plain = s => String(s).replace(/^\s*[*-]\s+/, "").replace(/\s+/g, " ").trim().toLowerCase();
+                if (lines.some(l => plain(l) === plain(text))) return;
                 // Keep the bullet style the field already uses, so an added entry
                 // does not sit visibly apart from the ones around it.
                 const bulleted = lines.length > 0 && /^\s*[*-]\s/.test(lines[0]);
