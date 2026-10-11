@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Focus prompts (VCRP): the drift audit, its correction, and the plot focus.
+// Focus prompts (VCRP): the drift audit, its correction, the every-reply checks and the plot focus.
 //
 // The built-in defaults; a user edit is stored as a diff against them (see storage.js).
 // Tokens are filled in by vcrp/focus/index.js.
@@ -33,6 +33,14 @@ Put an earlier finding that came back under <recurring> by its number, not under
 
     correctionTemplate: "[FOCUS]\nAn editor audited the recent replies for drift. Apply these corrections from now on, without mentioning them:\n{{note}}{{standing}}",
     standingIntro: "Earlier audits kept finding these. Keep them out:",
+
+    liveTemplate: "[FOCUS: THIS REPLY]\nFrom your recent replies in this chat. Apply to this reply, without mentioning it:\n{{items}}",
+    liveSwipe: "- This is a swipe: the reader turned down {{count}} of this reply, which went:\n{{versions}}\nWrite a fresh take, not a reworded copy: open another way and take the moment somewhere new, keeping to {{user}}'s message, any direction for this reply and everything above.",
+    livePhrases: "- Phrases your recent replies keep reusing: {{phrases}}. Find fresh wording for them, or leave them out.",
+    liveOpening: "- Your last {{count}} replies all opened with {{opening}}. Open this one another way.",
+    liveEnding: "- Your last {{count}} replies all ended by handing the turn to {{user}}: on a question, or with someone waiting on them. End this one on something else: an action under way, a detail, a line that lands.",
+    liveShapes: "- The \"not X, but Y\" sentence shape came up {{count}} times in your recent replies ({{example}}). Say what things are, directly.",
+    liveUser: "- Your last reply wrote {{user}}'s part ({{lines}}). {{user}} belongs to the reader: write only what the other characters say and do, and stop where {{user}} would speak or act.",
 
     plotTemplate: "[PLOT FOCUS]\nThe story should revolve around: {{plot}}\n{{strength}}\nAnswer {{user}}'s latest message first and stay true to what has already happened. Steer through what the characters notice, want and do, never by announcing it, and never mention this note.",
     plotThread: "Keep it alive in the background: weave it in where it fits, so it is never long out of sight.",

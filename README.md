@@ -171,7 +171,7 @@ message where the prompt first changed and shows the text before and after.
 
 ## Keeping long stories on track: Focus
 
-The **Focus** tab has two tools, each with its own switch.
+The **Focus** tab has three tools, each with its own switches.
 
 **Plot focus:** write what the story should revolve around ("the ring Mara pawned, and the
 people who want it back") and pick how hard it steers: a background thread, central, or
@@ -183,6 +183,28 @@ replies instead (a swipe of the last one still gets it). Story Memory's recall l
 so old chapters about it come back while it is on; drift audits check the story stays on it;
 the Story Director plans around it. Impersonate goes without it, and Story Memory's summaries
 never see it.
+
+**Every reply** (on by default): on each reply VCRP reads the last few replies itself, with no
+call of its own and nothing to approve. Whatever it finds is sent with that one reply, in
+`[[focus]]` after the chat history, so it never touches the cache. When it finds nothing, nothing
+is sent; when it does, the note is a couple of hundred tokens at most.
+
+- **Swipes take a new direction:** a swipe is shown how the versions it replaces began and ended,
+  and asked for a fresh take rather than a reworded copy.
+- **Repeats:** it names:
+  - phrases reused across the last 6 replies (the card's own words and yours are left out);
+  - the same opening word three replies running;
+  - three replies running that end by handing the turn to you (a question, or someone waiting
+    on you);
+  - the "It wasn't X. It was Y." habit.
+- **Writing for you:** lines in the last reply that speak, act or think for your character are
+  quoted back. Lines that only repeat what you wrote yourself are left alone, and so are
+  questions and italic thoughts. This is pattern matching, so it can miss a line or flag one
+  wrongly. It is off on engines meant to write your character (Co-writer engines, Pura Original
+  set to write for `{{user}}`).
+
+Fresh replies only: a Continue, an Impersonate and background calls go without. The wording is
+in Advanced: Edit Prompts.
 
 **Drift audits:** long roleplays drift: characters lose their edges and start to sound alike,
 the same smirk or scent comes back every reply, stock phrasing piles up. An audit runs every few

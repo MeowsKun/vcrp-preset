@@ -281,12 +281,24 @@ for (let k = 0; k < memCount; k++) {
     clicks += 6;
     if (failures === plotBefore) console.log("  ✓ Plot focus: on/off, text, strength, count, status, works with the audits off");
 
+    // Every reply: drawn with the audits off, on by default, each switch saved, the preview.
+    const liveBefore = failures;
+    check(box.find("#focus_live_panel").length === 1 && box.find("#focus_live_panel input[type=checkbox]").length === 3, "the every-reply checks are not drawn with the audits off");
+    check(["swipes", "repeats", "user"].every(k => box.find(`#focus_live_${k}`).is(":checked")), "the every-reply checks are not on by default");
+    box.find("#focus_live_repeats").prop("checked", false).trigger("change"); await tick();
+    check(p.focus.live && p.focus.live.repeats === false && p.focus.live.swipes === true && p.focus.live.user === true, `a switch is not saved: ${JSON.stringify(p.focus.live)}`);
+    check(/Nothing right now/.test(box.find("#focus_live_preview").text()), `the preview on an empty chat: "${box.find("#focus_live_preview").text()}"`);
+    box.find("#focus_live_repeats").prop("checked", true).trigger("change"); await tick();
+    check(p.focus.live.repeats === true, "a switch does not turn back on");
+    clicks += 2;
+    if (failures === liveBefore) console.log("  ✓ Every reply: drawn either way, on by default, switches saved, preview");
+
     // The prompt editor, with the audits off and on; typing saves the reader's text.
     const editorBefore = failures;
-    check(box.find("#focus_prompt_editor textarea").length === 15, `the prompt editor (audits off): ${box.find("#focus_prompt_editor textarea").length} fields`);
+    check(box.find("#focus_prompt_editor textarea").length === 22, `the prompt editor (audits off): ${box.find("#focus_prompt_editor textarea").length} fields`);
     p.focus.enabled = true;
     switchTab(tabsUI.findIndex(t => t.title === "Focus"));
-    check(box.find("#focus_prompt_editor textarea").length === 15, "the prompt editor is missing with the audits on");
+    check(box.find("#focus_prompt_editor textarea").length === 22, "the prompt editor is missing with the audits on");
     box.find("#focus_prompt_editor .pe-enable-toggle").trigger("click");
     box.find('#focus_prompt_editor textarea[data-key="checkSlop"]').val("- [slop] my own check").trigger("input");
     check(p.focus.customPromptsEnabled === true && p.focus.customPrompts && p.focus.customPrompts.checkSlop === "- [slop] my own check", "an edit does not reach the profile");

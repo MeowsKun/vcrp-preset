@@ -12,7 +12,7 @@
 
 import { getContext, updateMessageBlock } from "../st.js";
 import { estimateTokens } from "./memory/index.js";
-import { replyLimitTokens } from "./replyLength.js";
+import { replyLimitTokens, sentReplyLimit } from "./replyLength.js";
 
 const NEAR = 0.85;   // a reply this close to the limit is taken to have reached it (the count is an estimate)
 const LOOKBACK = 1500;   // characters searched back for the last full sentence
@@ -58,7 +58,9 @@ export function cutReply(text) {
 /** MESSAGE_RECEIVED: a reply that reached the limit mid-sentence is trimmed to its last full sentence. */
 export function vcrpCutOnReply(messageId, type) {
     if (type === "first_message") return;
-    const limit = replyLimitTokens();
+    // The limit the request really went out with; without SillyTavern's settings event, the
+    // cap or SillyTavern's own Max Response Length.
+    const limit = sentReplyLimit() || replyLimitTokens();
     if (!limit) return;
     const chat = ((getContext() || {}).chat) || [];
     const id = Number(messageId);

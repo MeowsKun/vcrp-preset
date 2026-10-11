@@ -10,6 +10,7 @@
 
 import { getContext, chat_metadata, saveMetadata, debounce } from "../st.js";
 import { vcrpGenerationRaw } from "./generation.js";
+import { answerOf } from "./pura/rolls.js";
 
 const META = "vcrp_oneshot";   // { text, used: { text, index } }
 
@@ -50,7 +51,8 @@ export function oneShotText(gen = "reply", { record = false } = {}) {
     let send = text.trim();
     // Nothing new waiting: the same reply written again (a swipe, a regenerate, a Continue)
     // gets the direction it was written with.
-    if (!send && used && used.index === index && (gen === "continue" || raw === "swipe" || raw === "regenerate")) send = String(used.text || "").trim();
+    if (!send && used && used.index === index && (used.answers === undefined || used.answers === answerOf(chat, index))
+        && (gen === "continue" || raw === "swipe" || raw === "regenerate")) send = String(used.text || "").trim();
     if (!send) return "";
     if (record) pending = { text: send, index };
     return `${ONESHOT_HEADER}\n${send}\n${ONESHOT_FOOTER}`;
@@ -62,6 +64,6 @@ export function vcrpOneShotOnReply(messageId, type) {
     const id = Number(messageId);
     if (pending.index !== id) return;
     const cur = chat_metadata[META] && typeof chat_metadata[META] === "object" ? chat_metadata[META] : {};
-    chat_metadata[META] = { text: String(cur.text || "").trim() === pending.text ? "" : String(cur.text || ""), used: { text: pending.text, index: id } };
+    chat_metadata[META] = { text: String(cur.text || "").trim() === pending.text ? "" : String(cur.text || ""), used: { text: pending.text, index: id, answers: answerOf(((getContext() || {}).chat) || [], id) } };
     pending = null;
 }

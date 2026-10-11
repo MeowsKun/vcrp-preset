@@ -35,10 +35,21 @@ export function rollSession(reuse = {}) {
     };
 }
 
+// What a reply answers (the message before it): a swipe or regenerate leaves it alone; deleting
+// messages moves another reply into the same place, and this tells the two apart. By the
+// message's send date, which editing it keeps (fixing a typo and regenerating is the same
+// reply again); its opening words only for a message without one.
+export const answerOf = (chat, index) => {
+    const m = (chat || [])[index - 1];
+    if (!m) return "";
+    return m.send_date ? `date|${m.send_date}` : `text|${String(m.mes || "").slice(0, 40)}`;
+};
+
 /** The kept rolls of the reply at chat index `index`, as indices to pick again per list; {} when none. */
 export function rollsReuseFor(index) {
     const last = chat_metadata && chat_metadata[META];
     if (!last || last.index !== index || !Array.isArray(last.rolls)) return {};
+    if (last.answers !== undefined && last.answers !== answerOf(((getContext() || {}).chat) || [], index)) return {};
     return Object.fromEntries(last.rolls.map(r => [r.key, (r.picks || []).map(p => p.index)]));
 }
 
@@ -91,7 +102,7 @@ export function vcrpPuraRollsOnReply(messageId, type, { show = true } = {}) {
     if (!msg || msg.is_user || msg.is_system || typeof msg.mes !== "string") return;
     if (Number.isInteger(pending.index) && pending.index !== id) return;
     const { rolls } = pending;
-    if (chat_metadata) chat_metadata[META] = { index: id, rolls };
+    if (chat_metadata) chat_metadata[META] = { index: id, rolls, answers: answerOf(chat, id) };
     if (!rolls.length || !show) { pending = null; return; }
     const text = withRollsNote(msg.mes, rolls);
     if (text === null) return;

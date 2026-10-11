@@ -3015,6 +3015,22 @@ console.log("45 ok bug sweep: reply handlers in order (a tracker's dashes kept, 
     await run("VCRP V10 Universal.json", "regenerate");
     assert.equal(indices(rolls.pendingRolls().rolls), indices(meta.vcrp_rolls_last.rolls), "a regenerate keeps the rolls");
     chat.push(kept);
+    // Messages deleted: another reply now sits in that place. Its swipe does not take the old rolls.
+    const answered = chat[0];
+    chat[0] = { is_user: true, mes: "a different message, after deleting some" };
+    assert.deepEqual(rolls.rollsReuseFor(1), {}, "another reply in the same place: no rolls reused");
+    chat[0] = answered;
+    assert(Object.keys(rolls.rollsReuseFor(1)).length > 0, "the same reply again: its rolls");
+    // By send date when the message has one: an edit of it (a typo fixed) is still the same reply.
+    const dated = { ...answered, send_date: "2026-10-11T10:00:00.000Z" };
+    chat[0] = dated;
+    meta.vcrp_rolls_last.answers = rolls.answerOf(chat, 1);
+    chat[0] = { ...dated, mes: "an edited message" };
+    assert(Object.keys(rolls.rollsReuseFor(1)).length > 0, "the message before it edited: still its rolls");
+    chat[0] = { ...dated, send_date: "2026-10-11T10:05:00.000Z" };
+    assert.deepEqual(rolls.rollsReuseFor(1), {}, "another message with the same words: no rolls reused");
+    chat[0] = answered;
+    meta.vcrp_rolls_last.answers = rolls.answerOf(chat, 1);
     q.pura.keepRolls = false;
     let differs = false;
     for (let i = 0; i < 12 && !differs; i++) { await run("VCRP V10 Universal.json", "swipe"); differs = indices(rolls.pendingRolls().rolls) !== indices(meta.vcrp_rolls_last.rolls); }
@@ -3059,6 +3075,7 @@ console.log("46 ok Tone Rules in Focus (read, checked, flagged as tone), each re
 // 47. One-shot direction (the next reply only) and each reply's cost.
 {
     const shot = await imp("src/vcrp/oneShot.js");
+    const { answerOf } = await imp("src/vcrp/pura/rolls.js");
     const cost = await imp("src/vcrp/replyCost.js");
     const q = state.localProfile;
     const meta = globalThis.__ST__.chat_metadata;
@@ -3088,7 +3105,17 @@ console.log("46 ok Tone Rules in Focus (read, checked, flagged as tone), each re
     assert(has(await run("VCRP V10 Universal.json", "swipe")) && has(await run("VCRP V10 Universal.json", "continue")), "a swipe and a Continue of that reply get it again");
     const kept = chat.pop();
     assert(has(await run("VCRP V10 Universal.json", "regenerate")), "a regenerate gets it again");
-    chat.push(kept, { is_user: true, mes: "go on" });
+    chat.push(kept);
+    const answered1 = chat[0];
+    chat[0] = { is_user: true, mes: "a different message, after deleting some" };
+    assert(!has(await run("VCRP V10 Universal.json", "swipe")), "messages deleted, another reply in that place: its swipe does not get the old direction");
+    chat[0] = { ...answered1, send_date: "2026-10-11T10:00:00.000Z" };
+    meta.vcrp_oneshot.used.answers = answerOf(chat, 1);
+    chat[0] = { ...chat[0], mes: "go, edited" };
+    assert(has(await run("VCRP V10 Universal.json", "swipe")), "your message edited, then a swipe: the same direction");
+    chat[0] = answered1;
+    meta.vcrp_oneshot.used.answers = answerOf(chat, 1);
+    chat.push({ is_user: true, mes: "go on" });
     assert(!text(await run("VCRP V10 Universal.json")).includes(STEER), "the next new reply starts clean");
     chat.pop();
     // With a Pura engine: after the randomisers, before Pura's reasoning help.
@@ -3365,21 +3392,29 @@ console.log("50 ok the cache: an older reply ends the same every turn, whoever t
     Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V10 Universal", prompts: presetJson.prompts.map(p => ({ ...p, content: String(p.content || "").replace("[[pura_late]]", "") })), prompt_order: presetJson.prompt_order, extensions: presetJson.extensions });
     assert(vcrpHealthCheck().items.some(i => /Re-import the preset: .*length limit/.test(i.title)), "a cap with a preset that has no slot for its line: re-import");
     for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
-    // Only a reply that reached the limit: the cap, or SillyTavern's own Max Response Length.
+    // Only a reply that reached the limit its request went out with (SillyTavern's settings event
+    // carries it: the cap on a VCRP prompt, SillyTavern's own Max Response Length otherwise).
+    vcrpSetGenerationType("normal", {}, false);
+    const sent = (vcrp, maxTokens) => { len.vcrpNotePrompt(vcrp); const d = { max_tokens: maxTokens }; len.vcrpApplyReplyCap(d); return d.max_tokens; };
     g.memoryBudget.replyCap = 200;
+    assert.equal(sent(true, 20000), 200, "a VCRP prompt goes out with the cap");
     const long = `${"She crossed the room and set the cup down beside him. ".repeat(14)}Then she turned and`;
     chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: long, swipes: [long], swipe_id: 0 });
     cutMod.vcrpCutOnReply(1, "normal");
     assert(chat[1].mes.endsWith("beside him.") && chat[1].swipes[0] === chat[1].mes, "a reply at the limit, cut mid-sentence: trimmed, its swipe too");
     g.memoryBudget.replyCap = 5000;
+    sent(true, 20000);
     chat[1].mes = long;
     cutMod.vcrpCutOnReply(1, "normal");
     assert.equal(chat[1].mes, long, "far under the limit: an unfinished-looking ending is the model's own, left alone");
+    g.memoryBudget.replyCap = 200;
+    assert.equal(sent(false, 20000), 20000, "another preset's prompt: the cap is not applied");
+    cutMod.vcrpCutOnReply(1, "normal");
+    assert.equal(chat[1].mes, long, "nor counted: a reply 20,000 tokens could have run is not trimmed at the cap");
     g.memoryBudget.replyCap = 0;
-    chatCompletionSettings.openai_max_tokens = 200;
+    sent(false, 200);
     cutMod.vcrpCutOnReply(1, "normal");
     assert(chat[1].mes.endsWith("beside him."), "SillyTavern's own Max Response Length counts as the limit too");
-    delete chatCompletionSettings.openai_max_tokens;
 
     // The next turn: the last complete blocks, when the latest reply wrote none.
     chat.length = 0;
@@ -3399,5 +3434,126 @@ console.log("50 ok the cache: an older reply ends the same every turn, whoever t
     meguminSyncLegacyBlockIds();
 }
 console.log("51 ok graceful hard cap (the room told in words after thinking and blocks, after the newest message, replies only; a cut reply ends on its last full sentence; the last complete blocks carried)");
+
+// 52. Focus, every reply: a swipe shown the versions it replaces, repeats named, lines written
+//     for {{user}} quoted back. After the chat (never cached), fresh replies only, nothing
+//     when nothing is found.
+{
+    const focus = await imp("src/vcrp/focus/index.js");
+    const live = await imp("src/vcrp/focus/live.js");
+    const q = state.localProfile;
+    const keep = { focus: JSON.stringify(q.focus || null), mode: q.mode, pura: JSON.stringify(q.pura || null), card: { ...ctx.characters[0] } };
+    q.mode = "v10-core";
+    q.focus = {};
+    const say = (u, a) => chat.push({ is_user: true, name: "Bob", send_date: `u${chat.length}`, mes: u }, { is_user: false, name: "Alice", send_date: `a${chat.length}`, mes: a });
+    const fresh = () => { chat.length = 0; chat.push({ is_user: false, name: "Alice", mes: "The air thick with unspoken tension, the café opens." }); };
+    vcrpSetGenerationType("normal", {}, false);
+
+    // Varied replies: nothing goes out.
+    fresh();
+    say("I order a coffee.", "<think>plan</think>\nAlice pours the coffee and slides it across the counter. \"Black, like your soul.\"\n<Blocks>\n<World_State>café, noon</World_State>\n</Blocks>");
+    say("I laugh.", "\"You laugh like a man with debts,\" she says, wiping the steam wand.");
+    say("I ask about the ring.", "The radio crackles. Somewhere in the back a kettle starts to scream, and Alice ignores it.");
+    assert.equal(focus.focusLiveBlock(), "", "varied replies: nothing sent");
+    assert.equal(focus.vcrpFocusBlock(), "", "and [[focus]] stays empty");
+
+    // Repeats: a reused phrase (its longest form), the same opening, hand-off endings, the shape.
+    ctx.characters[0] = { ...keep.card, description: "Alice greets everyone with: the usual, sugar, coming right up." };
+    fresh();
+    say("I show her the brass key from the cellar door.", "She leans on the counter, the air thick with unspoken tension. The usual sugar coming right up. It wasn't fear. It was something older. She nods at the brass key from the cellar door. \"Well?\"");
+    say("I shrug.", "She smirks, the air thick with unspoken tension again. The usual sugar coming right up. It wasn't anger. It was hunger. \"And?\" She waits for your answer.");
+    say("I stay quiet.", "She turns away, the air thick with unspoken tension between them. The usual sugar coming right up. It wasn't pity. It was patience. \"What now?\"");
+    const reps = focus.focusLiveBlock();
+    assert(reps.startsWith("[FOCUS: THIS REPLY]"), "the checks' heading");
+    assert(reps.includes("\"the air thick with unspoken tension\"") && !reps.includes("\"the air thick with\""), `a reused phrase, in its longest form: ${reps}`);
+    assert(!/usual sugar coming/.test(reps), "the card's own words are not the writer's habit");
+    assert(!/brass key/.test(reps), "the reader's own words are left out");
+    assert(reps.includes("Your last 3 replies all opened with \"She…\""), "the same opening three replies running");
+    assert(reps.includes("ended by handing the turn to {{user}}"), "the same hand-off ending three replies running");
+    assert(/"not X, but Y" sentence shape came up 3 times/.test(reps), "the not-X-but-Y shape");
+    assert(!reps.includes("Swipe") && !reps.includes("swipe"), "no swipe note on a new reply");
+
+    // Writing for {{user}}: speech, actions at the start of a sentence, "you"; echoes left out.
+    fresh();
+    say("I sit down.", "Alice slides a cup over. \"Fine,\" Bob says, taking it. Bob nods and leans back in his chair.");
+    let u = focus.focusLiveBlock();
+    assert(u.includes("Your last reply wrote {{user}}'s part") && u.includes("\"Fine,\" Bob says") && u.includes("Bob nods and leans back in his chair"), `speech and action quoted back: ${u}`);
+    fresh();
+    say("I nod and lean back in my chair.", "Bob nods and leans back in his chair. Alice turns to Bob and smiles.");
+    assert.equal(focus.focusLiveBlock(), "", "your own action told back, and being looked at, are not taken for writing for you");
+    fresh();
+    say("I wait.", "The rain keeps on. You decide to stay a little longer, and she pretends not to notice.");
+    assert(focus.focusLiveBlock().includes("You decide to stay a little longer"), "second person: what \"you\" decide");
+    fresh();
+    say("I wait.", "*You think you can just walk back in,* she thinks. You think that's funny? Bob wonders if she's lying?");
+    assert.equal(focus.focusLiveBlock(), "", "a character's thoughts in italics, and questions, are not taken for writing for you");
+    fresh();
+    say("I sit down.", "\"Fine,\" Bob says.");
+    q.mode = "pura-original"; q.pura = { ...(JSON.parse(keep.pura) || {}), userControl: "write" };
+    assert(live.writesForUser() && focus.focusLiveBlock() === "", "Pura set to write for {{user}}: not checked");
+    q.pura.userControl = "dont";
+    assert(!live.writesForUser() && focus.focusLiveBlock().includes("\"Fine,\" Bob says"), "Pura not writing for {{user}}: checked");
+    q.mode = "v10-core";
+
+    // Swipes: the versions it replaces, newest last, shown by their opening and closing words.
+    fresh();
+    say("I ask about the ring.", "Alice tells you about the ring at last.");
+    const v1 = "Alice laughs and refuses to answer, polishing the same glass for the third time while the radio plays something old and the rain hammers the window, until she finally sets it down and says nothing at all.";
+    const v2 = "The ring is gone, she says. Pawned in March to a man with a gold tooth and a long memory, and she has been paying for it ever since in favours nobody should owe anyone.";
+    Object.assign(chat[chat.length - 1], { mes: v2, swipes: [v1, v2], swipe_id: 2 });
+    vcrpSetGenerationType("swipe", {}, false);
+    const sw = focus.focusLiveBlock();
+    assert(sw.includes("the reader turned down 2 earlier versions of this reply") && sw.includes("\"Alice laughs and refuses to answer") && sw.includes("The ring is gone, she says.") && sw.includes("favours nobody should owe anyone"), `a swipe sees what it replaces: ${sw}`);
+    assert(sw.indexOf("Alice laughs") < sw.indexOf("The ring is gone"), "oldest first");
+    vcrpSetGenerationType("normal", {}, false);
+    assert(!focus.focusLiveBlock().includes("turned down"), "a new reply is not a swipe");
+
+    // Where it goes: in the per-turn rules, after the last reply (never cached); fresh replies only.
+    fresh();
+    say("I sit down.", "\"Fine,\" Bob says.");
+    for (const preset of ["VCRP V10 Universal.json", "VCRP V10 Megumin Original.json"]) {
+        const msgs = await run(preset);
+        const at = msgs.findIndex(m => typeof m.content === "string" && m.content.includes("[FOCUS: THIS REPLY]"));
+        const lastReply = msgs.map(m => m.role).lastIndexOf("assistant");
+        assert(at > lastReply && msgs[at].content.includes("Your last reply wrote Bob's part"), `${preset}: after the last reply, {{user}} filled in`);
+        for (const kind of ["continue", "impersonate"]) assert(!text(await run(preset, kind)).includes("[FOCUS: THIS REPLY]"), `${preset}: not on ${kind}`);
+    }
+    vcrpSetGenerationType("quiet", {}, false);
+    assert.equal(focus.focusLiveBlock(), "", "not on a background call");
+    vcrpSetGenerationType("normal", {}, false);
+
+    // The switches, the audit's correction first, and the reader's own wording.
+    q.focus = { live: { swipes: true, repeats: true, user: false } };
+    assert.equal(focus.focusLiveBlock(), "", "a check switched off says nothing");
+    q.focus = { enabled: true };
+    focus.focusState().note = "Stop the smirking.";
+    const both = focus.vcrpFocusBlock();
+    assert(both.indexOf("Stop the smirking.") >= 0 && both.indexOf("Stop the smirking.") < both.indexOf("[FOCUS: THIS REPLY]"), "the audit's correction, then this reply's checks");
+    q.focus = { enabled: false, customPromptsEnabled: true, customPrompts: { liveTemplate: "CHECKS:\n{{items}}" } };
+    assert(focus.vcrpFocusBlock().startsWith("CHECKS:\n- Your last reply wrote"), "the reader's own wording, audits off");
+
+    // Setup Check: a preset without the slot cannot carry them.
+    const presetJson = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V10 Universal", prompts: presetJson.prompts, prompt_order: presetJson.prompt_order, extensions: presetJson.extensions });
+    const warned = () => vcrpHealthCheck().items.some(i => /Re-import the preset: .*every-reply checks/.test(i.title));
+    assert(!warned(), "the current preset: no warning");
+    chatCompletionSettings.prompts = presetJson.prompts.map(x => ({ ...x, content: String(x.content || "").replace("[[focus]]", "") }));
+    assert(warned(), "a preset without [[focus]]: re-import");
+    q.focus = { live: { swipes: false, repeats: false, user: false } };
+    assert(!warned(), "all switched off: no warning");
+    for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
+
+    delete globalThis.__ST__.chat_metadata.vcrp_focus;
+    chat.length = 0;
+    ctx.characters[0] = keep.card;
+    q.focus = JSON.parse(keep.focus) || undefined;
+    if (!q.focus) delete q.focus;
+    q.pura = JSON.parse(keep.pura) || undefined;
+    if (!q.pura) delete q.pura;
+    q.mode = keep.mode;
+}
+console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reused phrases, openings, hand-off endings and the not-X-but-Y shape named; lines written for {{user}} quoted back, echoes and Pura's write-for-you left alone; after the chat, fresh replies only; switches; the correction first)");
 
 console.log("\nALL FORK CHECKS PASSED");

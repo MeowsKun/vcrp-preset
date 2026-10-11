@@ -33,6 +33,7 @@
 //   --budget USD     the per-request ceiling to report against (default 0.30)
 //   --tokfactor F    Claude tokens per cl100k token; the newer Claude tokenizer runs larger (default 1.15)
 //   --seed N         chat/timing randomness (default 7)
+//   --no-live        Focus's every-reply checks off (on by default, as in the extension)
 //
 // The chat is built from real English sentences (the preset's own prose) and sized like
 // roleplay: replies of 350-600 tokens (thinking and blocks already stripped from history, as
@@ -79,6 +80,7 @@ const PRESET = ORIGINAL ? "VCRP V10 Megumin Original.json" : "VCRP V10 Universal
 const BUDGET = +opt("budget", 0.30);
 const TOKFACTOR = +opt("tokfactor", 1.15);
 const SEED = +opt("seed", 7);
+const LIVE = !opt("no-live", false);
 
 // $ per million tokens. Cache writes are 1.25x input on the 5-minute cache, 2x on the 1-hour one.
 const PRICES = {
@@ -180,13 +182,14 @@ Object.assign(state.localProfile, ENGINE === "shura"
     : /^pura-/.test(ENGINE) ? { mode: ENGINE, model: "cot-v10-ukiyo-english" }
         : (ORIGINAL ? { mode: "v10-ukiyo-megumin", model: "cot-meg-ukiyo-english" } : { mode: "v10-core", model: "cot-v10-ukiyo-english" }),
     { cotEnabled: true });
+if (!LIVE) state.localProfile.focus = { ...(state.localProfile.focus || {}), live: { swipes: false, repeats: false, user: false } };
 if (EXTRAS) {
     const p = state.localProfile;
     p.pura = { voice: "random", randomisers: ["deadDove", "chaos"], groundedProse: true, html: true };
     p.blockStack.order = ["pura_npc", "pura_scene", "pura_relationship", "pura_events", "pura_choices"];
     (await imp("src/features/blocks/registry.js")).meguminSyncLegacyBlockIds();
     p.addons = [...new Set([...(p.addons || []), "color"])];
-    p.focus = { enabled: true, every: 20, checks: { drift: true, motifs: true, slop: true } };
+    p.focus = { ...(p.focus || {}), enabled: true, every: 20, checks: { drift: true, motifs: true, slop: true } };
     chat_metadata.vcrp_tone = { enabled: true, text: "Bleak and unsentimental. Violence lands hard and stays; no rescues, no softening, no last-minute mercy. Humour only ever as gallows humour." };
     chat_metadata.vcrp_cast_lock = { enabled: true };
     chat_metadata.vcrp_focus = { note: "Stop ending scenes on a held breath; vary the closing beats. Mara's speech has gone soft: keep her clipped and sardonic.", items: [], plot: { active: true, text: "The ring Mara pawned, and the people who want it back.", strength: "central", endAfter: 0 } };
@@ -403,6 +406,6 @@ if (MEMORY) {
 const worst = [...rows].sort((a, b) => b.cost - a.cost).slice(0, 3);
 console.log(`\nmost expensive: ${worst.map(r => `msg ${r.msg} $${r.cost.toFixed(3)} (${r.total} tok${r.cut ? ", cut" : ""})`).join(" · ")}`);
 mkdirSync(join(REPO, "tools", "out"), { recursive: true });
-const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}${ORIGINAL ? "_original" : ""}${/^pura-/.test(ENGINE) ? `_${ENGINE}` : ""}${EXTRAS ? "_extras" : ""}_${MARKS}${EXACT ? "_exact" : ""}.csv`);
+const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}${ORIGINAL ? "_original" : ""}${/^pura-/.test(ENGINE) ? `_${ENGINE}` : ""}${EXTRAS ? "_extras" : ""}${LIVE ? "" : "_nolive"}_${MARKS}${EXACT ? "_exact" : ""}.csv`);
 writeFileSync(file, "msg,in_history,prompt_tokens,read,write,plain,cost,cut\n" + rows.map(r => [r.msg, r.inHistory, r.total, r.read, r.write, r.plain, r.cost.toFixed(4), r.cut ? 1 : 0].join(",")).join("\n"));
 console.log(`per-request rows: ${file}`);

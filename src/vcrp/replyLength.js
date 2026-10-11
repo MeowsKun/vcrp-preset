@@ -102,14 +102,22 @@ export function replyBudgetText(gen = "reply") {
 export function vcrpApplyReplyCap(data) {
     const ours = vcrpPrompt;
     vcrpPrompt = false;   // one prompt, one request
-    if (!data || typeof data !== "object" || !ours || vcrpGenerationKind() === "quiet") return;
+    if (!data || typeof data !== "object" || vcrpGenerationKind() === "quiet") return;
     const cap = replyCapTokens();
-    if (!cap) return;
     // Only the limit the request already carries: an OpenAI reasoning model rejects
     // max_tokens when it takes max_completion_tokens, so adding the other one would break it.
-    for (const key of ["max_tokens", "max_completion_tokens"]) {
+    if (ours && cap) for (const key of ["max_tokens", "max_completion_tokens"]) {
         if (!(key in data)) continue;
         const now = Number(data[key]);
         if (!(now > 0) || now > cap) data[key] = cap;
     }
+    // The limit this reply really went out with, whichever preset built it: what a reply that
+    // stops mid-sentence is measured against (replyCut.js).
+    sentLimit = Number(data.max_tokens ?? data.max_completion_tokens) || 0;
+}
+
+let sentLimit = 0;
+/** The output limit the latest reply request went out with (0 when SillyTavern did not say). */
+export function sentReplyLimit() {
+    return sentLimit;
 }

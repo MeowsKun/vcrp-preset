@@ -105,7 +105,34 @@ own (Pura Director · Adapted uses present tense).
 
 ---
 
-## 7. Fixed for you (nothing to set)
+## 7. Focus, every reply: fresher swipes, fewer repeats
+
+These are already on. On each reply VCRP looks over your recent replies itself: no extra AI call,
+nothing to approve, and nothing is sent when it finds nothing. When it does find something, it
+adds a short note for that one reply. That note sits after the chat history, so it never breaks
+the cache.
+
+- **Swipes take a new direction.** When you swipe, the model sees how the versions you turned
+  down began and ended. It's asked for a fresh take, not the same reply reworded.
+- **Repeats.** It looks for:
+  - phrases reused across the last 6 replies ("the air thick with unspoken tension");
+  - three replies in a row that open with the same word;
+  - three replies in a row that end by handing the turn to you (a question, or someone waiting
+    on you);
+  - the "It wasn't X. It was Y." habit.
+
+  The model is told to avoid whatever it found.
+- **Writing for you.** If the last reply spoke, acted or thought for your character, those lines
+  are quoted back with a reminder that your character is yours. Lines that only repeat what you
+  wrote yourself don't count. This check is off on engines meant to write your character too.
+
+**Where:** VCRP → **Focus** tab → **Every reply**. Each check has its own switch. Open *What the
+next reply would get now* to see the note as it stands. The wording is editable under Advanced:
+Edit Prompts. The paid drift audits on the same tab are separate and can stay off.
+
+---
+
+## 8. Fixed for you (nothing to set)
 
 - **No more accidental regenerates on mobile** when you scroll sideways across the block card or a
   wide HTML panel.

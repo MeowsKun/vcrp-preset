@@ -127,6 +127,7 @@ export function vcrpHealthCheck() {
     const focusOff = [];
     const carries = tag => (cc.prompts || []).some(p => p && typeof p.content === "string" && p.content.includes(tag));
     if (focusSettings().enabled && !carries("[[focus]]")) focusOff.push("the drift audits' correction");
+    if (Object.values(focusSettings().live).some(Boolean) && !carries("[[focus]]")) focusOff.push("Focus's every-reply checks");
     const plot = peekFocusState() && peekFocusState().plot;
     if (plot && plot.active && !carries("[[plotfocus]]")) focusOff.push("the plot focus");
     // The Pura engines and Pura's trackers have tags of their own.

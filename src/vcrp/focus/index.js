@@ -15,6 +15,11 @@
 // The settings (on, how often, which checks) are the profile's. The audit's state (the
 // note, the waiting audit, the flagged list, where the last audit ended) is the chat's.
 //
+// Between audits, the every-reply checks (live.js) read the last few replies on each reply,
+// with no call: a swipe told how the versions it replaces went, phrases and openings and
+// endings being repeated, lines written for {{user}}. What they find rides in [[focus]]
+// after the correction, for that reply only. On by default, each with its own switch.
+//
 // The plot focus is the reader's own steer: something the story should revolve around.
 // It goes last in the prompt, after the newest message ([[plotfocus]] at the end of the
 // </history> slot), the most weight a line can have and still outside the cache. Story
@@ -34,7 +39,8 @@ import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
 import { resolveAnchor, anchorOf, estimateTokens, vcrpCountBackgroundOutput } from "../memory/index.js";
 import { memorySummaryRunning } from "../memory/summarize.js";
 import { backgroundEstimate } from "../backgroundCosts.js";
-import { vcrpWithoutSwipedReply } from "../generation.js";
+import { vcrpWithoutSwipedReply, vcrpGenerationKind, vcrpGenerationRaw } from "../generation.js";
+import { focusLiveFindings } from "./live.js";
 import { registerRecallQuery } from "../memory/index.js";
 import { DEFAULT_PROMPTS } from "../../prompts/index.js";
 import { toneRules } from "../toneRules.js";
@@ -52,6 +58,13 @@ export const FOCUS_CHECKS = {
     slop: { label: "Slop & clichés", desc: "Stock phrasing, purple prose and AI-isms piling up." },
 };
 
+// The every-reply checks (live.js): read by VCRP on each reply, no call, on by default.
+export const FOCUS_LIVE = {
+    swipes: { label: "Swipes take a new direction", desc: "A swipe is shown how the versions you turned down opened and ended, and asked for a fresh take instead of a reworded copy." },
+    repeats: { label: "Repeats", desc: "Phrases reused across the last 6 replies, the same opening word or the same hand-off ending (a question, someone waiting on you) three replies running, and the \"not X, but Y\" sentence shape. Each is named, for this reply only." },
+    user: { label: "Writing for you", desc: "When the last reply spoke, acted or thought for your character, the lines are quoted back with a reminder that your character is yours. Pattern matching, so it can miss one or flag one wrongly. Off on engines meant to write for you (Co-writer, Pura set to write for {{user}})." },
+};
+
 export function focusSettings() {
     const f = (localProfile && localProfile.focus) || {};
     const every = Math.round(Number(f.every));
@@ -60,6 +73,7 @@ export function focusSettings() {
         every: Number.isFinite(every) && every >= 5 ? Math.min(every, 100) : 20,
         checks: { drift: true, motifs: true, slop: true, ...(f.checks || {}) },
         standing: f.standing !== false,
+        live: { swipes: true, repeats: true, user: true, ...(f.live || {}) },
     };
 }
 
@@ -342,16 +356,48 @@ export function focusStanding(st = peekFocusState()) {
         .sort((a, b) => (b.times - a.times) || ((b.last || 0) - (a.last || 0))).slice(0, STANDING);
 }
 
-/** [[focus]]: the approved note and the repeat offenders, or nothing. Removing the note removes both. */
+/**
+ * [[focus]]: the approved note and the repeat offenders (removing the note removes both), then
+ * what the every-reply checks found. Nothing when there is neither.
+ */
 export function vcrpFocusBlock() {
     const s = focusSettings();
-    if (!s.enabled) return "";
-    const st = peekFocusState();
+    const parts = [];
+    const st = s.enabled ? peekFocusState() : null;
     const note = st && typeof st.note === "string" ? st.note.trim() : "";
-    if (!note) return "";
-    const standing = s.standing ? focusStanding(st) : [];
-    const keep = standing.length ? `\n${focusPrompt("standingIntro")}\n${standing.map(i => `- ${i.text}`).join("\n")}` : "";
-    return fill(focusPrompt("correctionTemplate"), { note, standing: keep });
+    if (note) {
+        const standing = s.standing ? focusStanding(st) : [];
+        const keep = standing.length ? `\n${focusPrompt("standingIntro")}\n${standing.map(i => `- ${i.text}`).join("\n")}` : "";
+        parts.push(fill(focusPrompt("correctionTemplate"), { note, standing: keep }));
+    }
+    const live = focusLiveBlock({ live: s.live });
+    if (live) parts.push(live);
+    return parts.join("\n\n");
+}
+
+/**
+ * What the every-reply checks found, worded for the reply about to be written; "" when they
+ * are off or find nothing. Fresh replies only: a Continue carries on what is written, and an
+ * Impersonate or a background call is not the story's next reply.
+ */
+export function focusLiveBlock({ live = focusSettings().live, gen = vcrpGenerationKind(), swipe = vcrpGenerationRaw() === "swipe" } = {}) {
+    if (gen !== "reply" || !Object.values(live).some(Boolean)) return "";
+    let f;
+    try { f = focusLiveFindings({ ...live, swipe }); } catch (e) {
+        console.warn("[VCRP] Focus: the every-reply checks failed:", e);
+        return "";
+    }
+    const items = [];
+    if (f.swipe) {
+        const versions = f.swipe.shown.map(v => (v.ended ? `  - "${v.opened} …" … "… ${v.ended}"` : `  - "${v.opened}"`)).join("\n");
+        items.push(fill(focusPrompt("liveSwipe"), { count: f.swipe.count === 1 ? "an earlier version" : `${f.swipe.count} earlier versions`, versions }));
+    }
+    if (f.phrases) items.push(fill(focusPrompt("livePhrases"), { phrases: f.phrases.map(p => `"${p.text}"`).join(", ") }));
+    if (f.opening) items.push(fill(focusPrompt("liveOpening"), { count: f.opening.count, opening: f.opening.label }));
+    if (f.ending) items.push(fill(focusPrompt("liveEnding"), { count: f.ending.count }));
+    if (f.shapes) items.push(fill(focusPrompt("liveShapes"), { count: f.shapes.count, example: `"${f.shapes.example}"` }));
+    if (f.user) items.push(fill(focusPrompt("liveUser"), { lines: f.user.lines.join("; ") }));
+    return items.length ? fill(focusPrompt("liveTemplate"), { items: items.join("\n") }) : "";
 }
 
 // ── After a reply ────────────────────────────────────────────────────────────

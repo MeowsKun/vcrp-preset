@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// The Focus tab: the plot focus, then the drift audits (settings, the audit waiting for
-// review, the correction in the prompt, and what audits have flagged so far).
+// The Focus tab: the plot focus, the every-reply checks, then the drift audits (settings, the
+// audit waiting for review, the correction in the prompt, and what audits have flagged so far).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { localProfile } from "../../core/state.js";
@@ -14,6 +14,7 @@ import {
     FOCUS_CHECKS, FOCUS_MIN_REPLIES, FOCUS_MAX_FAILURES, focusSettings, peekFocusState, repliesSinceAudit, focusEstimate, focusStanding,
     focusAuditRunning, runFocusAudit, approveFocusAudit, discardFocusAudit, setFocusNote, removeFocusItem, resetFocus,
     onFocusChange, PLOT_STRENGTHS, PLOT_DEFAULTS, plotFocusActive, plotFocusRemaining, setPlotFocus,
+    FOCUS_LIVE, focusLiveBlock,
 } from "./index.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
@@ -27,7 +28,7 @@ let listening = false;
 function ensureFocusSettings() {
     if (!localProfile.focus || typeof localProfile.focus !== "object") localProfile.focus = {};
     const s = focusSettings();
-    Object.assign(localProfile.focus, { enabled: s.enabled, every: s.every, checks: { ...s.checks }, standing: s.standing });
+    Object.assign(localProfile.focus, { enabled: s.enabled, every: s.every, checks: { ...s.checks }, standing: s.standing, live: { ...s.live } });
     return localProfile.focus;
 }
 
@@ -100,6 +101,37 @@ function wirePlotPanel(c) {
     });
 }
 
+// What the every-reply checks would send with a new reply now (a swipe adds its versions).
+function livePreview() {
+    const t = focusLiveBlock({ gen: "reply", swipe: false });
+    return t ? esc(t) : "Nothing right now: the checks that are on found nothing in the latest replies.";
+}
+
+function livePanel(s) {
+    return `
+        <div class="mtab-panel" id="focus_live_panel">
+            <div class="mtab-panel-title gold"><i class="fa-solid fa-repeat"></i> Every reply</div>
+            <div class="set-desc" style="margin-bottom:6px;">Checked by VCRP on each reply: no call of its own, nothing to approve, free. What they find goes with that one reply, in the per-turn rules after the chat (never cached): usually nothing, a couple of hundred tokens at most. Works with the audits on or off.</div>
+            ${Object.entries(FOCUS_LIVE).map(([k, d]) => `
+            <div class="mtab-setting-row" style="padding-bottom:0; border:none;">
+                <div class="set-info"><div class="set-label">${esc(d.label)}</div><div class="set-desc">${esc(d.desc)}</div></div>
+                <input type="checkbox" id="focus_live_${k}" ${s.live[k] ? "checked" : ""} />
+            </div>`).join("")}
+            <details style="margin-top:10px;">
+                <summary class="set-desc" style="cursor:pointer;">What the next reply would get now</summary>
+                <div id="focus_live_preview" class="set-desc" style="white-space:pre-wrap; margin-top:6px; padding:8px; border-radius:6px; background:rgba(0,0,0,0.2);">${livePreview()}</div>
+            </details>
+        </div>`;
+}
+
+function wireLivePanel(c, f) {
+    Object.keys(FOCUS_LIVE).forEach(k => c.find(`#focus_live_${k}`).on("change", function () {
+        f.live = { ...focusSettings().live, [k]: $(this).is(":checked") };
+        saveProfileToMemory();
+        c.find("#focus_live_preview").html(livePreview());
+    }));
+}
+
 function pendingPanel(st) {
     const p = st.pending;
     const byId = Object.fromEntries((st.items || []).map(i => [i.id, i]));
@@ -131,17 +163,18 @@ export function renderFocusTab(c) {
     const f = ensureFocusSettings();
     const s = focusSettings();
     const st = peekFocusState();
-    const on = s.enabled || plotFocusActive(st);
+    const on = s.enabled || plotFocusActive(st) || Object.values(s.live).some(Boolean);
 
     c.append(`
         <div class="mtab-header">
             <div class="mtab-header-left">
                 <div class="mtab-header-icon" style="background: linear-gradient(135deg, #14b8a6, #0f766e);"><i class="fa-solid fa-crosshairs"></i></div>
-                <div><h2>Focus</h2><p>Keeps a long story on track: steer it around a plot focus of your choosing, and audit it every few replies for character drift, repeated motifs and slop.</p></div>
+                <div><h2>Focus</h2><p>Keeps a long story on track: steer it around a plot focus of your choosing, catch repeats, copied swipes and lines written for you on every reply, and audit it every few replies for character drift, repeated motifs and slop.</p></div>
             </div>
             <div class="mtab-header-badge" style="color:${on ? "#2dd4bf" : "var(--text-muted)"};"><i class="fa-solid fa-${on ? "circle-check" : "circle-xmark"}" style="font-size:0.6rem;"></i> ${on ? "Enabled" : "Disabled"}</div>
         </div>
         ${plotPanel(st)}
+        ${livePanel(s)}
         <div class="mtab-toggle-row ${s.enabled ? "active" : ""}" id="focus_enable" style="margin-bottom:14px;">
             <div class="toggle-info">
                 <div class="toggle-label"><i class="fa-solid fa-crosshairs" style="color:#2dd4bf;"></i> Enable drift audits</div>
@@ -151,6 +184,7 @@ export function renderFocusTab(c) {
         </div>`);
 
     wirePlotPanel(c);
+    wireLivePanel(c, f);
     c.find("#focus_enable").on("click", () => { f.enabled = !s.enabled; saveProfileToMemory(); rerender(); });
 
     if (!s.enabled) {
@@ -295,6 +329,13 @@ function focusPromptEditor(f) {
             { key: "toneNote", label: "Audit: extra line for tone drift", hint: "Added to the note's instructions while the Tone Rules are on (through the <code>{{plotNote}}</code> token)." },
             { key: "correctionTemplate", label: "Correction in the prompt", hint: "Tokens: <code>{{note}}</code>, <code>{{standing}}</code> (the repeat offenders, when there are any)." },
             { key: "standingIntro", label: "Repeat offenders: heading", hint: "The line above the repeat offenders." },
+            { key: "liveTemplate", label: "Every reply: in the prompt", hint: "Tokens: <code>{{items}}</code> (one line for each check that found something)." },
+            { key: "liveSwipe", label: "Every reply: swipes", hint: "Tokens: <code>{{count}}</code> (\"an earlier version\", \"3 earlier versions\"), <code>{{versions}}</code> (how each began and ended), <code>{{user}}</code>." },
+            { key: "livePhrases", label: "Every reply: reused phrases", hint: "Tokens: <code>{{phrases}}</code>." },
+            { key: "liveOpening", label: "Every reply: the same opening", hint: "Tokens: <code>{{count}}</code>, <code>{{opening}}</code>." },
+            { key: "liveEnding", label: "Every reply: hand-off endings", hint: "Tokens: <code>{{count}}</code>, <code>{{user}}</code>." },
+            { key: "liveShapes", label: "Every reply: \"not X, but Y\"", hint: "Tokens: <code>{{count}}</code>, <code>{{example}}</code>." },
+            { key: "liveUser", label: "Every reply: writing for you", hint: "Tokens: <code>{{lines}}</code> (the lines quoted back), <code>{{user}}</code>." },
             { key: "plotTemplate", label: "Plot focus in the prompt", hint: "Tokens: <code>{{plot}}</code>, <code>{{strength}}</code>, <code>{{user}}</code>. Sent last, after your message." },
             { key: "plotThread", label: "Plot focus: background thread", hint: "What <code>{{strength}}</code> says at this setting." },
             { key: "plotCentral", label: "Plot focus: central", hint: "What <code>{{strength}}</code> says at this setting." },
