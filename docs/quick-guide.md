@@ -65,6 +65,19 @@ how much room it has (the panel shows the split, e.g. *story about 850 words, th
 words*), so it plans to finish in time. If a reply still runs into the cap mid-sentence, it ends
 on its last full sentence and a note tells you; press **Continue** if you want the rest.
 
+**One budget for the whole request.** With Story Memory on, each reply is held to its target
+(e.g. $0.30), input and output together. You don't need to set anything: *Hold each reply to the
+target* in Memory → Reply length is on by default.
+
+- **How it works:** VCRP prices the prompt as it goes out, and what's left of the target is the
+  most the reply can write.
+- **During play** that's plenty: the cache makes the prompt cheap.
+- **Right after a break** the whole prompt is written to the cache again, so the room is
+  smaller, about a reply and a quarter. The model is told its room then, so it finishes inside it.
+- **The panel** shows what the last reply's prompt cost and how much room it had.
+- **Background calls:** VCRP's own (summaries, audits, the Story Director, NPC scans) are each
+  kept to 8,000 output tokens, so none can run away.
+
 **Tips:** Grounded Prose (Pura panel) is the biggest per-reply extra (~900 tokens); turn it off if
 you want to save. The BLOCKS tab shows what each Pura tracker costs per reply.
 

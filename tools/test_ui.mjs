@@ -198,7 +198,13 @@ for (let k = 0; k < memCount; k++) {
     check(/At 9,000: the story about \d+ words(, the thinking about \d+ words)?, the blocks about \d+ tokens\./.test(box.text()) && !/about 0 words/.test(box.text()), "the cap's split (story, thinking, blocks) is not shown");
     box.find("#vmem_cap_reply").val("0").trigger("change");
     check(!/At [\d,]+: the story about/.test(box.text()), "the split is shown with no cap");
-    clicks += 3;
+    // Holding replies to the target: on by default, says why it does nothing with Story Memory off, saved.
+    check(box.find("#vmem_hold").is(":checked") && /Story Memory is off, so replies are not held/.test(box.text()), "the hold switch, or its note with Story Memory off, is missing");
+    box.find("#vmem_hold").prop("checked", false).trigger("change");
+    check((((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).holdTarget === false, "switching the hold off is not saved");
+    $("#ps_stage_content").find("#vmem_hold").prop("checked", true).trigger("change");
+    check((((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).holdTarget === true, "switching the hold back on is not saved");
+    clicks += 5;
     console.log("  ✓ Reply length (Story Memory off): drawn, and each control reaches its setting");
 }
 // Background calls: their price shows before sending (Story Director, NPC scan, NPC update),

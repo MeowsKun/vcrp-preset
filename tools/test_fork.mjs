@@ -1832,7 +1832,7 @@ console.log("33 ok blocks kept out of the history (cache-stable), last turn's bl
     chat.length = 0;
     chat.push({ is_user: false, mes: "" });
     assert.equal(memory.measuredOutputTokens(), null, "nothing measured yet");
-    assert.equal(memory.currentMemoryBudget().outputTokens, 2500, "the default until then");
+    assert.equal(memory.currentMemoryBudget().outputTokens, 2500 * memory.HOLD_MARGIN, "the default until then (a quarter more while replies are held to the target)");
     for (const words of [3500, 3500, 3500]) {   // 5,000 tokens each
         vcrpSetGenerationType("normal", {}, false);
         memory.vcrpMemoryAfterPrompt(prompt, false);
@@ -1843,7 +1843,12 @@ console.log("33 ok blocks kept out of the history (cache-stable), last turn's bl
     const b = memory.currentMemoryBudget();
     const { computeBudget, priceForModel } = await imp("src/vcrp/memory/budget.js");
     const plain = computeBudget(priceForModel("claude-opus-4-6"), {});
-    assert(b.outputTokens === 5000 && plain.outputTokens === 2500 && b.coldTokens < plain.coldTokens, `the budget plans for the real size: a smaller cold-start prompt (${b.coldTokens} vs ${plain.coldTokens})`);
+    assert(b.outputTokens === 5000 * memory.HOLD_MARGIN && plain.outputTokens === 2500 && b.coldTokens < plain.coldTokens, `the budget plans for the real size: a smaller cold-start prompt (${b.coldTokens} vs ${plain.coldTokens})`);
+    extension_settings.VCRP.globalSettings.memoryBudget = { holdTarget: false };
+    assert.equal(memory.currentMemoryBudget().outputTokens, 5000, "not held to the target: the average itself");
+    extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 5500 };
+    assert.equal(memory.currentMemoryBudget().outputTokens, 5500, "never more than the safety cap");
+    delete extension_settings.VCRP.globalSettings.memoryBudget;
     vcrpSetGenerationType("continue", {}, false);
     memory.vcrpMemoryAfterPrompt(prompt, false);
     chat[0].mes += "w ".repeat(500);
@@ -3555,5 +3560,111 @@ console.log("51 ok graceful hard cap (the room told in words after thinking and 
     q.mode = keep.mode;
 }
 console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reused phrases, openings, hand-off endings and the not-X-but-Y shape named; lines written for {{user}} quoted back, echoes and Pura's write-for-you left alone; after the chat, fresh replies only; switches; the correction first)");
+
+// 53. Each reply held to the target, input and output together: the prompt priced as it goes
+//     out, the rest of the target its output limit, told to the model when tight; VCRP's own
+//     background calls capped; other calls left alone.
+{
+    const memory = await imp("src/vcrp/memory/index.js");
+    const rl = await imp("src/vcrp/replyLength.js");
+    const { setActiveFocusAudit } = await imp("src/core/activeRequests.js");
+    const q = state.localProfile;
+    const g = extension_settings.VCRP.globalSettings;
+    const keep = { budget: JSON.stringify(g.memoryBudget || null), mem: q.vcrpMemory.enabled, mode: q.mode };
+    q.mode = "v10-core";
+    q.vcrpMemory.enabled = true;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-4-6" });
+    delete globalThis.__ST__.chat_metadata.vcrp_memory;
+    let now = Date.UTC(2026, 9, 13, 20);
+    memory.setMemoryClock(() => now);
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" });
+    const OUT = 25 / 1e6, TARGET = 0.30;
+    // A reply request as SillyTavern sends it: the prompt (with `filler` tokens of older story), then its settings.
+    const send = async (filler = 0, type = "normal") => {
+        vcrpSetGenerationType(type, {}, false);
+        const msgs = buildPrompt("VCRP V10 Universal.json");
+        if (filler) msgs.splice(1, 0, { role: "user", content: "story ".repeat(Math.round(filler * 3.5 / 6)) });
+        await handlePromptInjection({ chat: msgs, dryRun: false });
+        const data = { max_tokens: 20000 };
+        rl.vcrpApplyReplyCap(data);
+        return { msgs, data, room: rl.lastReplyRoom() };
+    };
+    const told = msgs => (text(msgs).match(/has room for about ([\d,]+) tokens/) || [])[1];
+
+    // A cold cache (first request): the whole prompt written. Input and output together within the target.
+    let r = await send();
+    assert(r.room && r.room.cold && r.data.max_tokens === r.room.tokens, `cold: the room is the request's limit (${JSON.stringify(r.room)}, ${r.data.max_tokens})`);
+    assert(r.room.input + r.room.tokens * OUT <= TARGET + 1e-9, `input $${r.room.input.toFixed(3)} + room ${r.room.tokens} within $0.30`);
+    const base = r.room.input;
+    // Warm (a minute later): mostly read from the cache, so the room is wide, and not told (it would ask for more).
+    now += 60000;
+    r = await send();
+    assert(!r.room.cold && r.room.tokens > 6000 && r.data.max_tokens === r.room.tokens, `warm: a wide room (${r.room.tokens})`);
+    assert(!told(r.msgs), "a wide room is not told to the model");
+    // A cold start with a long prompt: a tight room, told to the model in tokens, on the request.
+    const tokensPerDollar = 1 / (10 / 1e6);   // cold: written at twice the input price
+    const filler = Math.max(0, Math.round((TARGET - 3000 * OUT) * 0.92 * tokensPerDollar - base * tokensPerDollar));
+    memory.memoryState().lastPlan = { promptTokens: Math.round(base * tokensPerDollar) + filler, cold: true };
+    now += 3 * 3600000;
+    r = await send(filler);
+    assert(r.room.cold && r.room.held && r.room.tokens < 3750 && r.room.tokens >= rl.MIN_ROOM, `cold and long: a tight room (${r.room.tokens})`);
+    assert.equal(Number(String(told(r.msgs)).replace(/,/g, "")), r.room.tokens, "the model is told the room it really has");
+    assert(r.data.max_tokens === r.room.tokens && r.room.input + r.room.tokens * OUT <= TARGET + 1e-9, "and held to it");
+    // So long the prompt alone is near the target: the minimum room, said not to be held.
+    now += 3 * 3600000;
+    r = await send(filler + 6000);
+    assert(r.room.tokens === rl.MIN_ROOM && !r.room.held, `the prompt alone near the target: the minimum (${JSON.stringify(r.room)})`);
+    // A safety cap below the room wins, and is told.
+    g.memoryBudget = { replyCap: 2000 };
+    now += 60000;
+    r = await send();
+    assert(r.data.max_tokens === 2000 && told(r.msgs) === "2,000", `the safety cap below the room (${r.data.max_tokens})`);
+    // Switched off, Story Memory off, or another preset: not held.
+    g.memoryBudget = { holdTarget: false };
+    now += 60000;
+    r = await send();
+    assert(r.data.max_tokens === 20000 && !told(r.msgs), "switched off: SillyTavern's limit");
+    delete g.memoryBudget;
+    q.vcrpMemory.enabled = false;
+    r = await send();
+    assert(r.data.max_tokens === 20000, "Story Memory off: not held");
+    q.vcrpMemory.enabled = true;
+    rl.vcrpNotePrompt(false);
+    const other = { max_tokens: 20000 };
+    rl.vcrpApplyReplyCap(other);
+    assert.equal(other.max_tokens, 20000, "another preset's request: left alone");
+    assert.equal(rl.replyBudgetText("continue", 2000), "", "the line is for replies only");
+
+    // Background calls: VCRP's own get their limit; anyone else's are left alone.
+    vcrpSetGenerationType("quiet", {}, false);
+    memory.setMemoryTaskActive(true);
+    const summary = { max_tokens: 20000 };
+    rl.vcrpApplyReplyCap(summary);
+    memory.setMemoryTaskActive(false);
+    setActiveFocusAudit({ text: "x" });
+    const audit = { max_completion_tokens: 30000 };
+    rl.vcrpApplyReplyCap(audit);
+    setActiveFocusAudit(null);
+    const small = { max_tokens: 1200 };
+    memory.setMemoryTaskActive(true);
+    rl.vcrpApplyReplyCap(small);
+    memory.setMemoryTaskActive(false);
+    const theirs = { max_tokens: 20000 };
+    rl.vcrpApplyReplyCap(theirs);
+    assert(summary.max_tokens === rl.BACKGROUND_OUTPUT && audit.max_completion_tokens === rl.BACKGROUND_OUTPUT && !("max_tokens" in audit), "a summary and an audit: capped, on the limit they carry");
+    assert(small.max_tokens === 1200 && theirs.max_tokens === 20000, "never raised; another extension's background call left alone");
+    vcrpSetGenerationType("normal", {}, false);
+
+    memory.setMemoryClock(null);
+    delete globalThis.__ST__.chat_metadata.vcrp_memory;
+    chat.length = 0;
+    g.memoryBudget = JSON.parse(keep.budget) || undefined;
+    if (!g.memoryBudget) delete g.memoryBudget;
+    q.vcrpMemory.enabled = keep.mem;
+    q.mode = keep.mode;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+}
+console.log("53 ok each reply held to the target (priced as it goes out, the rest its limit, told when tight, the minimum when the prompt alone nears it, the cap wins below it; off, memory off, another preset: not held; VCRP's background calls capped, never raised, others left alone)");
 
 console.log("\nALL FORK CHECKS PASSED");

@@ -28,7 +28,7 @@ import { vcrpCostAfterPrompt, vcrpCostRequestCancelled } from "../vcrp/replyCost
 import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone, vcrpCountBackgroundPrompt } from "../vcrp/memory/index.js";
 import { vcrpCacheCheckRecord } from "../vcrp/cacheCheck.js";
 import { stripHistoryBlocks } from "../vcrp/blockHistory.js";
-import { vcrpNotePrompt } from "../vcrp/replyLength.js";
+import { vcrpNotePrompt, vcrpReplyRoom } from "../vcrp/replyLength.js";
 import { buildTokenBreakdown } from "../vcrp/tokenBreakdown.js";
 
 // Throttles the prompt-preview popup so token counting and rapid ST background
@@ -290,6 +290,8 @@ export async function handlePromptInjection(data, type) {
         stripHistoryBlocks(messages);
         vcrpFinalizeMessages(messages, vcrpGen, s => (typeof substituteParams === 'function' ? substituteParams(s) : s));
         vcrpMemoryShapeTask(messages);
+        // VCRP: the reply's room under the target, priced before the cache clock is stamped.
+        vcrpReplyRoom(messages, data?.dryRun === true);
         vcrpMemoryAfterPrompt(messages, data?.dryRun === true);
         vcrpCostAfterPrompt(messages, data?.dryRun === true);   // VCRP: each reply's cost badge
     }

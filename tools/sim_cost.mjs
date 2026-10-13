@@ -172,6 +172,7 @@ const state = await imp("src/core/state.js");
 const { vcrpSetGenerationType } = await imp("src/vcrp/generation.js");
 const mem = await imp("src/vcrp/memory/index.js");
 const S = await imp("src/vcrp/memory/summarize.js");
+const RL = await imp("src/vcrp/replyLength.js");
 const CACHE = await imp("src/vcrp/memory/cache.js");
 const L = await imp("src/vcrp/memory/ledger.js");
 await imp("src/vcrp/memory/index.js");         // registers globalThis.vcrp_memory_intercept
@@ -330,7 +331,10 @@ function summarizeAfterReply(full, lastPrompt, replyText, now) {
     ctxChat.length = 0; ctxChat.push(...full);
     const span = S.nextSpan(full, st, budget);
     if (!span) return;
-    const ask = [...lastPrompt, { role: "assistant", content: replyText }, { role: "user", content: textOfTokens(450, `summarize ${now}`) }];
+    // As vcrpMemoryShapeTask sends it: the story-turn slots (Output Rules, </history>) are rules
+    // for writing a scene, not a summary, and are left out.
+    const storyTurnSlot = m => typeof m.content === "string" && /^\s*(?:## your thinking steps|<\/history>)/.test(m.content);
+    const ask = [...lastPrompt.filter(m => !storyTurnSlot(m)), { role: "assistant", content: replyText }, { role: "user", content: textOfTokens(450, `summarize ${now}`) }];
     const s = price1(ask, now + 20000, SUMMARY_OUT);
     const c = price1(ask, now + 35000, CHECK_OUT);
     upkeep.calls += 2; upkeep.cost += s.cost + c.cost;
@@ -352,7 +356,7 @@ function summarizeAfterReply(full, lastPrompt, replyText, now) {
 // ── play it out ──────────────────────────────────────────────────────────────
 const rows = [];
 let now = t0;
-let cuts = 0, overFloor = 0, overSummaries = 0;
+let cuts = 0, overFloor = 0, overSummaries = 0, heldShort = 0;
 mem.setMemoryClock(() => now);
 for (let t = 1; t < N; t += 2) {            // each user message triggers one request
     const full = chat.slice(0, t + 1);
@@ -377,7 +381,12 @@ for (let t = 1; t < N; t += 2) {            // each user message triggers one re
     await handlePromptInjection({ chat: msgs, dryRun: false });
     const replyText = chat[t + 1] ? chat[t + 1].mes : "";
     const reply = replyText ? tokens(replyText) : 450;
-    const r = price1(msgs, now, reply + VISIBLE_COT + HIDDEN_THINKING);
+    // Held to the target (Story Memory on): the reply cannot write past the room its request
+    // went out with (max_tokens), whatever it would have written.
+    const wanted = reply + VISIBLE_COT + HIDDEN_THINKING;
+    const room = MEMORY && RL.holdTargetActive() ? RL.lastReplyRoom() : null;
+    if (room && wanted > room.tokens) heldShort++;
+    const r = price1(msgs, now, room ? Math.min(wanted, room.tokens) : wanted);
     rows.push({ msg: t + 1, inHistory: history.length, cut: !!(plan && plan.cut), ...r });
     if (oneShot) oneShot.setOneShot("");   // used up by the reply
     if (MEMORY && t + 1 >= ENABLE_AT && chat[t + 1]) summarizeAfterReply(chat.slice(0, t + 2), msgs, replyText, now + 60000);
@@ -392,7 +401,7 @@ const label = `${MEMORY ? `MEMORY on${ENABLE_AT ? ` from msg ${ENABLE_AT}` : ""}
 console.log(`\n${label}`);
 console.log(`${rows.length} requests over ${N} messages · replies $${sum(costs).toFixed(2)}${MEMORY ? ` + memory upkeep $${upkeep.cost.toFixed(2)} (${upkeep.calls} calls) = $${(sum(costs) + upkeep.cost).toFixed(2)}` : ""}`);
 console.log(`per request: mean $${(sum(costs) / costs.length).toFixed(3)} · median $${q(costs, 0.5).toFixed(3)} · p90 $${q(costs, 0.9).toFixed(3)} · max $${Math.max(...costs).toFixed(3)}`);
-console.log(`over the $${BUDGET.toFixed(2)} budget: ${costs.filter(c => c > BUDGET).length} requests · cache misses (write > half the prompt): ${rows.filter(r => r.write > r.total / 2).length}${MEMORY ? ` · cuts ${cuts} · cuts held back by the verbatim floor ${overFloor} / by summaries ${overSummaries}` : ""}`);
+console.log(`over the $${BUDGET.toFixed(2)} budget: ${costs.filter(c => c > BUDGET).length} requests · cache misses (write > half the prompt): ${rows.filter(r => r.write > r.total / 2).length}${MEMORY ? ` · cuts ${cuts} · cuts held back by the verbatim floor ${overFloor} / by summaries ${overSummaries} · replies stopped at their room ${heldShort}` : ""}`);
 console.log("\n  msg   prompt    read   write   plain    cost");
 for (const m of [10, 50, 100, 200, 400, 600, 800, 1000]) {
     const r = rows.find(x => x.msg >= m);

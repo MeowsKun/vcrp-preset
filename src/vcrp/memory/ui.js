@@ -27,7 +27,7 @@ import { activeEngine } from "../../engine/meguminOriginal.js";
 import { isPuraEngine, puraVariant } from "../../core/engines.js";
 import { puraSettings } from "../pura/index.js";
 import { costBadgesOn, setCostBadges } from "../replyCost.js";
-import { replyBudget } from "../replyLength.js";
+import { replyBudget, holdTargetActive, lastReplyRoom, BACKGROUND_OUTPUT } from "../replyLength.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 
@@ -77,6 +77,18 @@ async function runCatchUp($c, max) {
     if ($c.closest("body").length) renderVcrpMemoryPanel($c);
 }
 
+// What holding replies to the target did with the latest reply, or why it is not working.
+function holdStatus(s, on, budget) {
+    if (s.holdTarget === false) return "";
+    const note = t => `<br><span style="opacity:.85;">${t}</span>`;
+    if (!on) return note("Story Memory is off, so replies are not held: only the safety cap applies.");
+    if (!budget) return note("The model's price is not known, so replies are not held: set a custom price below.");
+    const r = lastReplyRoom();
+    if (!r || !holdTargetActive()) return "";
+    const how = `Last reply: its prompt cost about ${money(r.input)} (cache ${r.cold ? "cold" : "warm"}), leaving room for about ${k(r.tokens)} tokens of output.`;
+    return note(r.held ? how : `${how} Its prompt alone was near the target, so it got the minimum room and may have gone a little over.`);
+}
+
 // ── Reply length ──
 // The two things that really set a reply's length, gathered here: the story's length
 // (Story Config's own field, the same setting) and the thinking's (Thinking Effort). The
@@ -124,13 +136,15 @@ function renderReplyLength($c, s, budget, st, rerender) {
                 ${effort === "custom" ? `<option value="custom" selected>Custom: ${esc(localProfile.customThinkEffort || "")} words</option>` : ""}
             </select></div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Safety cap (tokens)</div><div class="set-desc">A hard limit on each reply, thinking and blocks included: it can never go over. While it is set, the model is told its room and the story's share of it in words, so it plans to finish inside it. A reply that still reaches it ends on its last full sentence (Continue writes the rest), and the next reply carries the last complete blocks. A cap close to your normal reply${measured ? ` (about ${k(measured)})` : ""} gets reached more often. 0 = off; SillyTavern's Max Response Length still applies.${(() => {
-                const b = replyBudget();
+                const b = replyBudget(cap);
                 if (!b) return "";
                 const split = [`the story about ${b.storyWords} words`, b.thinkingWords ? `the thinking about ${b.thinkingWords} words` : "", b.blocks ? `the blocks about ${b.blocks} tokens` : ""].filter(Boolean);
                 return `<br><span style="opacity:.85;">At ${b.cap.toLocaleString("en-US")}: ${split.join(", ")}.</span>`;
             })()}</div></div>
             <input id="vmem_cap_reply" type="number" min="0" max="64000" step="500" class="ps-modern-input" style="width:90px;" value="${cap}"></div>
         ${cap && measured && cap < measured * 1.3 ? `<div style="font-size:0.72rem; color:#f59e0b; margin-top:4px;"><i class="fa-solid fa-triangle-exclamation"></i> The cap is close to your average reply: many replies will be cut off.</div>` : ""}
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Hold each reply to the target</div><div class="set-desc">Input and output together stay within your ${money(Number(s.targetCost) || 0.3)} target. Each reply's prompt is priced as it goes out, and what is left of the target is the most the reply can write. During play that is plenty; right after a break, when the whole prompt is written to the cache again, it is about a reply and a quarter, and the model is told so it finishes inside it. Needs Story Memory on and the model's price. VCRP's own background calls (summaries, audits, the Story Director, NPC scans) can write at most ${BACKGROUND_OUTPUT.toLocaleString("en-US")} tokens each.${holdStatus(s, on, budget)}</div></div>
+            <input type="checkbox" id="vmem_hold" ${s.holdTarget !== false ? "checked" : ""} /></div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Show each reply's cost</div><div class="set-desc">A small estimate under each reply's avatar (green: the cache was warm; amber: cold, the prompt written in full). Tap it for the breakdown: read from the cache, written to it, sent fresh, written by the model. Works with Story Memory on or off.</div></div>
             <input type="checkbox" id="vmem_cost_badges" ${costBadgesOn() ? "checked" : ""} /></div>
         </div>`);
@@ -149,6 +163,7 @@ function renderReplyLength($c, s, budget, st, rerender) {
         localProfile.thinkEffort = String($(this).val());
         saveProfileToMemory();
     });
+    $c.find("#vmem_hold").on("change", function () { saveSetting("holdTarget", this.checked); rerender(); });
     $c.find("#vmem_cap_reply").on("change", function () {
         const v = Math.round(Number($(this).val()));
         saveSetting("replyCap", Number.isFinite(v) && v > 0 ? Math.min(64000, v) : 0);

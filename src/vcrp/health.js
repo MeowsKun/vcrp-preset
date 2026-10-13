@@ -15,7 +15,7 @@ import { autoSummaryHold } from "./memory/summarize.js";
 import { meguminOriginalActive } from "../engine/meguminOriginal.js";
 import { kbAlwaysOnStats, presetCarriesAlwaysSlot } from "./knowledgebase.js";
 import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "./cacheCheck.js";
-import { replyCapTokens } from "./replyLength.js";
+import { replyCapTokens, holdTargetActive } from "./replyLength.js";
 import { focusSettings, peekFocusState } from "./focus/index.js";
 import { isPuraEngine } from "../core/engines.js";
 import { activeEngine } from "../engine/meguminOriginal.js";
@@ -136,7 +136,7 @@ export function vcrpHealthCheck() {
     if (toneRulesText("reply") && !carries("[[pura_late]]")) focusOff.push("your Tone Rules");
     if (oneShot().text.trim() && !carries("[[pura_late]]")) focusOff.push("your one-shot direction");
     if (castLockOn() && !carries("[[pura_late]]")) focusOff.push("Existing cast only");
-    if (replyCapTokens() && !carries("[[pura_late]]")) focusOff.push("the length limit's line to the model");
+    if ((replyCapTokens() || holdTargetActive()) && !carries("[[pura_late]]")) focusOff.push("the length limit's line to the model");
     if (focusOff.length) {
         add("warn", `Re-import the preset: ${focusOff.join(" and ")} cannot reach the model`,
             `The active preset was imported before this version and has no place for it. Import "VCRP V10 Universal" (or "VCRP V10 Megumin Original") again from the extension's Presets folder and select it. Re-importing replaces your own edits to that preset.`);

@@ -29,6 +29,7 @@ export const BUDGET_DEFAULTS = {
     ttl: "1h",              // must match SillyTavern's claude.extendedTTL (1h) or not (5m)
     outputTokens: 2500,     // reply + visible CoT + hidden thinking, per request; the chat's measured average replaces it (index.js)
     replyCap: 0,            // safety cap on a reply's tokens, thinking included (0 = off): replyLength.js
+    holdTarget: true,       // each reply held to targetCost, input and output together: replyLength.js
     warmCeiling: 100000,    // the most the prompt may carry while the cache is warm
     minVerbatim: 10000,     // recent messages always kept word for word, whatever the budget
     customPrice: null,      // { input, output, read } for a model the table does not know

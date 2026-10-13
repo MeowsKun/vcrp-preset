@@ -142,6 +142,22 @@ that split. A reply that still reaches the cap mid-sentence ends on its last ful
 (Continue writes the rest), and the next reply carries the last complete blocks. For a reply of
 about 2,000 tokens: Story length 450–550 words, Thinking length 250 words, a cap of 2,000.
 
+**Hold each reply to the target** (on by default, with Story Memory): input and output together
+stay within the per-request target.
+- **How:** each reply's prompt is priced as it goes out (read from the cache, written to it,
+  sent fresh), and what is left of the target, in output tokens, becomes the request's limit.
+- **During play** the room is wide; it goes on the request but is not told to the model, since a
+  large number would only invite longer replies.
+- **Right after a break**, when the whole prompt is written to the cache again, the room is about
+  a reply and a quarter (Story Memory's cuts leave that much). The model is told it, with the
+  story's share in words.
+- **The safety cap**, when lower, still wins.
+- **A prompt that alone nears the target** gets a minimum room of 1,500 tokens, and the panel
+  says so.
+- **VCRP's own background calls** (summaries and their checks, audits, the Story Director, NPC
+  scans and updates, the ban list, style generators) are each limited to 8,000 output tokens,
+  well above what they write, so none can run away. Other extensions' calls are left alone.
+
 **Pin** a fact or a chapter (the pin button beside it) to keep it in the memory text for good:
 the size cap never trims it and a pinned chapter is never folded into an arc. The meter also
 keeps a running **spend estimate** for the chat (replies and background calls, from VCRP's own
