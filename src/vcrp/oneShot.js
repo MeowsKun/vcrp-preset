@@ -58,6 +58,9 @@ export function oneShotText(gen = "reply", { record = false } = {}) {
     return `${ONESHOT_HEADER}\n${send}\n${ONESHOT_FOOTER}`;
 }
 
+/** Another chat is open: a direction sent in the last one is never this one's to use up. */
+export function forgetOneShotPending() { pending = null; }
+
 /** MESSAGE_RECEIVED: the reply that carried the direction uses it up (kept with that reply). */
 export function vcrpOneShotOnReply(messageId, type) {
     if (type === "first_message" || !pending || !chat_metadata) return;

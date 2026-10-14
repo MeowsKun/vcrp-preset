@@ -243,7 +243,11 @@ export async function handlePromptInjection(data, type) {
         if (msg.content && typeof msg.content === 'string') {
             Object.entries(dict).forEach(([trigger, replacement]) => {
                 if (msg.content.includes(trigger)) {
-                    const processed = typeof substituteParams === 'function' ? substituteParams(replacement) : replacement;
+                    // VCRP: a comment macro is for whoever edits the prompt, never the model.
+                    // SillyTavern's default macro engine only knows "{{//", so "{{ //" (Pura's
+                    // Reasoning Procedure has one) would reach the model word for word.
+                    const uncommented = String(replacement).replace(/\{\{\s*\/\/[\s\S]*?\}\}/g, "");
+                    const processed = typeof substituteParams === 'function' ? substituteParams(uncommented) : uncommented;
 
                     // If the replacement is empty, remove the tag AND the empty line it sits on
                     if (processed.trim() === "") {

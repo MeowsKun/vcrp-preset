@@ -499,17 +499,35 @@ export function initProfile() {
         if (typeof toastr !== "undefined") toastr.info(`${imported} summaries from the old Memory Core are now Story Memory chapters.`, "VCRP");
     }
 
+    // VCRP: a settings-side copy of the plan or the NPCs (from before chat_metadata held them)
+    // belongs to a story already under way. A chat you have not written in yet (its greeting,
+    // or a group's greetings) is a new story: it starts empty, even when the profile it falls
+    // back on (the character's, the group's) still carries another chat's copy. Every new
+    // chat of a card would otherwise inherit it.
+    const canMigrate = Array.isArray(context.chat) && context.chat.some(m => m && m.is_user && !m.is_system);
+
     if (chat_metadata && chat_metadata["megumin_story_plan"]) {
         if (localProfile.storyPlan) {
             localProfile.storyPlan.currentPlan = chat_metadata["megumin_story_plan"].currentPlan || "";
             localProfile.storyPlan.lastTrackerState = chat_metadata["megumin_story_plan"].lastTrackerState || "";
+            // Where the plan was made in THIS chat. Kept with the plan: in the profile it was
+            // shared by every chat of a card, and a longer chat's index pruned a shorter
+            // chat's plan as if the story had been rewound.
+            const at = chat_metadata["megumin_story_plan"].planMessageIndex;
+            localProfile.storyPlan.planMessageIndex = Number.isInteger(at) ? at : null;
         }
-    } else if (chat_metadata && localProfile.storyPlan && (localProfile.storyPlan.currentPlan || localProfile.storyPlan.lastTrackerState)) {
+    } else if (canMigrate && chat_metadata && localProfile.storyPlan && (localProfile.storyPlan.currentPlan || localProfile.storyPlan.lastTrackerState)) {
         chat_metadata["megumin_story_plan"] = {
             currentPlan: localProfile.storyPlan.currentPlan || "",
-            lastTrackerState: localProfile.storyPlan.lastTrackerState || ""
+            lastTrackerState: localProfile.storyPlan.lastTrackerState || "",
+            planMessageIndex: null
         };
+        localProfile.storyPlan.planMessageIndex = null;
         saveMetadata();
+    } else if (localProfile.storyPlan) {
+        localProfile.storyPlan.currentPlan = "";
+        localProfile.storyPlan.lastTrackerState = "";
+        localProfile.storyPlan.planMessageIndex = null;
     }
 
     // --- LOAD NPCs FROM CHAT METADATA ---
@@ -517,12 +535,14 @@ export function initProfile() {
         if (localProfile.npcBank) {
             localProfile.npcBank.npcs = chat_metadata["megumin_npc_bank"].npcs || [];
         }
-    } else if (chat_metadata && localProfile.npcBank && localProfile.npcBank.npcs?.length > 0) {
+    } else if (canMigrate && chat_metadata && localProfile.npcBank && localProfile.npcBank.npcs?.length > 0) {
         // Migration: If NPCs are stuck in settings.json, move them to the chat file!
         chat_metadata["megumin_npc_bank"] = {
             npcs: localProfile.npcBank.npcs || []
         };
         saveMetadata();
+    } else if (localProfile.npcBank) {
+        localProfile.npcBank.npcs = [];
     }
 
     // The three blocks above are still a migration SOURCE: a chat opened for the first
@@ -736,6 +756,7 @@ export function saveProfileToMemory() {
             if (!chat_metadata["megumin_story_plan"]) chat_metadata["megumin_story_plan"] = {};
             chat_metadata["megumin_story_plan"].currentPlan = plan.currentPlan || "";
             chat_metadata["megumin_story_plan"].lastTrackerState = plan.lastTrackerState || "";
+            chat_metadata["megumin_story_plan"].planMessageIndex = Number.isInteger(plan.planMessageIndex) ? plan.planMessageIndex : null;
         }
 
         if (bank && ((bank.npcs?.length > 0) || chat_metadata["megumin_npc_bank"] !== undefined)) {
@@ -766,6 +787,7 @@ export function saveProfileToMemory() {
     if (profileToSave.storyPlan) {
         delete profileToSave.storyPlan.currentPlan;
         delete profileToSave.storyPlan.lastTrackerState;
+        delete profileToSave.storyPlan.planMessageIndex;   // the chat's, with the plan
     }
     if (profileToSave.npcBank) {
         delete profileToSave.npcBank.npcs; // DO NOT save NPCs in settings.json!
@@ -817,6 +839,7 @@ export function flushProfileSettingsToLoadedKey() {
     if (profileToSave.storyPlan) {
         delete profileToSave.storyPlan.currentPlan;
         delete profileToSave.storyPlan.lastTrackerState;
+        delete profileToSave.storyPlan.planMessageIndex;   // the chat's, with the plan
     }
     if (profileToSave.npcBank) {
         delete profileToSave.npcBank.npcs; // DO NOT save NPCs in settings.json!

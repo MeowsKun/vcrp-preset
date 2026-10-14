@@ -3667,4 +3667,137 @@ console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reu
 }
 console.log("53 ok each reply held to the target (priced as it goes out, the rest its limit, told when tight, the minimum when the prompt alone nears it, the cap wins below it; off, memory off, another preset: not held; VCRP's background calls capped, never raised, others left alone)");
 
+// 54. One chat's story stays in that chat: the Director's plan (and where it was made), the NPC
+//     Bank, Story Memory and Focus; a new chat of the same card starts clean; what a chat's
+//     requests left in memory is dropped on a switch. And GLM: dialogue tags closed on the
+//     dialogue, and no comment macro reaches the model.
+{
+    const { saveProfileToMemory } = await imp("src/core/profile.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const focus = await imp("src/vcrp/focus/index.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const g = extension_settings.VCRP.globalSettings;
+    const keep = { meta: JSON.stringify(meta), profiles: JSON.stringify(extension_settings.VCRP.profiles), chatId: ctx.chatId, chat: JSON.stringify(chat), saveMode: g.saveMode };
+    const lines = n => Array.from({ length: n }, (_, i) => ({ is_user: i % 2 === 1, name: i % 2 ? "Bob" : "Alice", send_date: `x${i}`, mes: `Line ${i}.` }));
+    const open = (id, messages, metadata = {}) => {
+        ctx.chatId = id;
+        chat.length = 0; chat.push(...messages);
+        for (const k of Object.keys(meta)) delete meta[k];
+        Object.assign(meta, JSON.parse(JSON.stringify(metadata)));
+        initProfile();
+        return state.localProfile;
+    };
+    g.saveMode = "character";   // a fresh install's: every chat of a card shares one profile
+    // Saving reads the rule box and shows a "saved" badge: nothing on screen here.
+    const keep$ = globalThis.$;
+    const none = { length: 0, val() { return ""; }, css() { return none; }, text() { return none; }, html() { return none; }, fadeIn() { return none; }, fadeOut() { return none; }, prop() { return none; }, is() { return false; } };
+    globalThis.$ = () => none;
+
+    // Where a plan was made is kept with the plan, in its chat: a longer chat's index no longer
+    // prunes a shorter chat's plan as if it had been rewound.
+    let lp = open("A", lines(200), { megumin_story_plan: { currentPlan: "Plan A", lastTrackerState: "", planMessageIndex: 180 } });
+    assert(lp.storyPlan.currentPlan === "Plan A" && lp.storyPlan.planMessageIndex === 180, "the plan and its place, from the chat");
+    saveProfileToMemory();
+    const charProfile = () => extension_settings.VCRP.profiles["alice.png"];
+    assert(charProfile() && !("planMessageIndex" in charProfile().storyPlan) && meta.megumin_story_plan.planMessageIndex === 180, "the place is saved with the plan, not in the profile every chat shares");
+    lp = open("B", lines(50), { megumin_story_plan: { currentPlan: "Plan B", lastTrackerState: "", planMessageIndex: 40 } });
+    assert.equal(lp.storyPlan.currentPlan, "Plan B", "a shorter chat of the same card keeps its plan");
+    lp = open("B", lines(30), { megumin_story_plan: { currentPlan: "Plan B", lastTrackerState: "", planMessageIndex: 40 } });
+    assert.equal(lp.storyPlan.currentPlan, "", "a real rewind past the plan still clears it");
+
+    // A copy left in the shared profile by an older version: an old story takes it, a new chat does not.
+    Object.assign(charProfile().storyPlan, { currentPlan: "Old plan", lastTrackerState: "arc: old" });
+    charProfile().npcBank.npcs = [{ name: "Old Npc", appearance: "from another story" }];
+    lp = open("C", lines(1));
+    assert(lp.storyPlan.currentPlan === "" && lp.npcBank.npcs.length === 0 && !meta.megumin_story_plan && !meta.megumin_npc_bank, "a new chat (only its greeting) starts with no plan and no NPCs");
+    lp = open("C2", [{ is_user: false, mes: "Hi from Alice." }, { is_user: false, mes: "Hi from Mara." }]);
+    assert(lp.storyPlan.currentPlan === "" && lp.npcBank.npcs.length === 0, "a new group-style chat (several greetings, nothing written yet) starts clean too");
+    lp = open("D", lines(4));
+    assert(lp.storyPlan.currentPlan === "Old plan" && lp.npcBank.npcs.length === 1 && meta.megumin_story_plan && meta.megumin_npc_bank, "a story already under way still takes its old copy");
+    delete charProfile().storyPlan.currentPlan; delete charProfile().storyPlan.lastTrackerState; delete charProfile().npcBank.npcs;
+
+    // Story Memory, Focus and the rest are the chat's: a new chat of the same card starts clean,
+    // and none of it is written into the profile the chats share.
+    q54: {
+        lp = open("E", lines(10));
+        lp.vcrpMemory.enabled = true;
+        memory.memoryState().chapters.push({ id: "c1", gist: "Mara pawned the ring", chapter: "The ring went to the pawnshop." });
+        focus.focusState().note = "Stop the smirking.";
+        focus.focusState().plot = { active: true, text: "The ring", strength: "central", endAfter: 0 };
+        Object.assign(meta, { vcrp_tone: { enabled: true, text: "Bleak." }, vcrp_cast_lock: { enabled: true }, vcrp_oneshot: { text: "She tells him." }, vcrp_colors: { names: { mara: { name: "Mara", color: "#ff69b4" } } } });
+        saveProfileToMemory();
+        const shared = JSON.stringify(charProfile());
+        assert(!/pawnshop|Mara pawned|smirking|The ring|Bleak|She tells him|#ff69b4/.test(shared), "nothing of the story is in the shared profile");
+        open("F", lines(1));
+        assert(!(memory.memoryState().chapters || []).length && !focus.peekFocusState() && !meta.vcrp_tone && !meta.vcrp_cast_lock && !meta.vcrp_oneshot && !meta.vcrp_colors, "a new chat of the same card: no memory, focus, tone, cast lock, direction or colors");
+        break q54;
+    }
+
+    // What the last chat's requests left in memory is dropped on a switch (index.js, CHAT_CHANGED).
+    const indexSrc = readFileSync(join(REPO, "index.js"), "utf8");
+    const onSwitch = indexSrc.slice(indexSrc.indexOf("eventSource.on(event_types.CHAT_CHANGED, () => {"), indexSrc.indexOf("flushProfileSettingsToLoadedKey();"));
+    for (const call of ["vcrpCacheCheckReset()", "forgetReplyRoom()", "forgetOneShotPending()", "setPendingRolls(null)", "forgetCostPending()"]) assert(onSwitch.includes(call), `a chat switch calls ${call}`);
+    const cc = await imp("src/vcrp/cacheCheck.js");
+    cc.vcrpCacheCheckRecord([{ role: "system", content: "same" }, { role: "user", content: "chat A" }], "reply", 0);
+    cc.vcrpCacheCheckReset();
+    cc.vcrpCacheCheckRecord([{ role: "system", content: "same" }, { role: "user", content: "chat B, another story" }], "reply", 60000);
+    assert.equal(cc.vcrpCacheCheckReport(), null, "after a switch, the next chat's first prompt is not compared with the last chat's");
+    const rl = await imp("src/vcrp/replyLength.js");
+    rl.forgetReplyRoom();
+    assert(rl.lastReplyRoom() === null && rl.sentReplyLimit() === 0, "the last chat's room and limit are forgotten");
+
+    // GLM: every colored line ends on its closing quote.
+    const dc = await imp("src/vcrp/dialogueColors.js");
+    const F = '<font color="#ff69b4" title="Mara">';
+    const mend = t => dc.mendFontTags(t).text;
+    assert.equal(mend(`${F}"Hello," she said, turning away.\n\nThe rain kept on.`), `${F}"Hello,"</font> she said, turning away.\n\nThe rain kept on.`, "never closed: closed after the line");
+    assert.equal(mend(`${F}"Hello," she said, turning away.</font>`), `${F}"Hello,"</font> she said, turning away.`, "closed after the narration: closed after the line");
+    assert.equal(mend(`${F}"Hello," she said. "How are you?"</font> Bob shrugged.`), `${F}"Hello,"</font> she said. ${F}"How are you?"</font> Bob shrugged.`, "a whole paragraph: each line its own");
+    assert.equal(mend(String.raw`${F}"Hi."<\/font> She left.`), `${F}"Hi."</font> She left.`, "an escaped closing tag");
+    assert.equal(mend(`${F}"Hi."</ font> She left.`), `${F}"Hi."</font> She left.`, "a closing tag with a space");
+    assert.equal(mend(`<FONT COLOR="#FF0000" title="Ann">"Stop!" Ann cried.</FONT>`), `<FONT COLOR="#FF0000" title="Ann">"Stop!"</font> Ann cried.`, "capitals");
+    assert.equal(mend(`${F}"First." <font color="#00ffff" title="Jo">"Second."</font> Then silence.`), `${F}"First."</font> <font color="#00ffff" title="Jo">"Second."</font> Then silence.`, "one left open before the next");
+    assert.equal(mend(`${F}“Hello,” she said.</font>`), `${F}“Hello,”</font> she said.`, "curly quotes");
+    assert.equal(mend(`${F}*hums softly* and smiles.\nNext line.`), `${F}*hums softly* and smiles.</font>\nNext line.`, "no dialogue: closed at the end of its line, never carried on");
+    assert.equal(mend(`${F}She smiled. "Hello."</font> Then she left.`), `She smiled. ${F}"Hello."</font> Then she left.`, "opened before the narration: only the line is colored");
+    assert.equal(mend(`${F}She smiled. "Hello," she said. "Bye."\nThe door shut.`), `She smiled. ${F}"Hello,"</font> she said. ${F}"Bye."</font>\nThe door shut.`, "never closed, opened before the narration: each line on that line of text");
+    assert.equal(mend(`*${F}"Psst," she whispers.</font>*`), `*${F}"Psst,"</font> she whispers.*`, "inside italics");
+    const fine = `${F}"Hello,"</font> she said. ${F}"Bye."</font>`;
+    assert(!dc.mendFontTags(fine).changed, "tags already right are left alone");
+    const styled = `<font color="#888">line one\nline two</font>`;
+    assert(!dc.mendFontTags(styled).changed, "styling that is not dialogue is left alone");
+    const withThink = `<think>${F}"draft"</think>\n${F}"Real," she said.`;
+    assert.equal(mend(withThink), `<think>${F}"draft"</think>\n${F}"Real,"</font> she said.`, "the thinking is left alone");
+    const withBlocks = `${F}"Hi," she said.</font>\n<Blocks>\n<World_State><font color="red">"loc" stays</World_State>\n</Blocks>`;
+    assert.equal(mend(withBlocks), `${F}"Hi,"</font> she said.\n<Blocks>\n<World_State><font color="red">"loc" stays</World_State>\n</Blocks>`, "the blocks are left alone");
+    // On a reply as it arrives, with the add-on on; the model is told how to close them.
+    lp = open("G", [{ is_user: true, mes: "go" }, { is_user: false, mes: `${F}"Come here," she said, smiling.\n\nThe bar was quiet.` }]);
+    lp.addons = [...new Set([...(lp.addons || []), "color"])];
+    dc.vcrpDialogueColorsOnReply(1, "normal");
+    assert.equal(chat[1].mes, `${F}"Come here,"</font> she said, smiling.\n\nThe bar was quiet.`, "a reply is mended as it arrives");
+    assert(dc.colorLockNote().includes("every <font> you open is closed") && dc.colorLockNote().includes("Narration and dialogue tags"), "the model is told to close the tags on the dialogue");
+    lp.addons = lp.addons.filter(a => a !== "color");
+    assert.equal(dc.colorLockNote(), "", "nothing with the add-on off");
+
+    // GLM: Pura's Reasoning Procedure opens with a comment macro written "{{ //": SillyTavern's
+    // default macro engine only removes "{{//", so it reached the model word for word.
+    lp = open("H", [{ is_user: true, mes: "go" }]);
+    Object.assign(lp, { mode: "pura-original", pura: { reasoning: "procedure", randomisers: [] } });
+    for (const mode of ["pura-original", "pura-adapted"]) {
+        lp.mode = mode;
+        const t = text(await run("VCRP V10 Universal.json"));
+        assert(t.includes("### Reasoning Procedure") && !/\{\{\s*\/\//.test(t) && !t.includes("To encourage GLM"), `${mode}: the procedure goes, its comment does not`);
+    }
+
+    for (const k of Object.keys(meta)) delete meta[k];
+    Object.assign(meta, JSON.parse(keep.meta));
+    extension_settings.VCRP.profiles = JSON.parse(keep.profiles);
+    ctx.chatId = keep.chatId;
+    chat.length = 0; chat.push(...JSON.parse(keep.chat));
+    g.saveMode = keep.saveMode;
+    initProfile();
+    globalThis.$ = keep$;
+}
+console.log("54 ok one chat's story stays in it (the plan and where it was made, NPCs, memory, focus, tone, colors; a new chat of the same card starts clean; the shared profile holds no story; a switch drops the last chat's request state) and GLM (dialogue tags closed on the dialogue, as replies arrive; told to the model; no comment macro reaches it)");
+
 console.log("\nALL FORK CHECKS PASSED");

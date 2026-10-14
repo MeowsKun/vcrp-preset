@@ -248,4 +248,11 @@ export function sentReplyLimit() {
     return sentLimit;
 }
 
+/** Another chat is open: the last one's room and limit are not this one's. */
+export function forgetReplyRoom() {
+    nextRoom = null;
+    lastRoom = null;
+    sentLimit = 0;
+}
+
 export { BACKGROUND_OUTPUT, MIN_ROOM };

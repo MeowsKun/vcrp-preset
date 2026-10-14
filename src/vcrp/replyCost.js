@@ -55,6 +55,12 @@ export function vcrpCostAfterPrompt(messages, dryRun) {
     pending = { index, read, write, plain, cold, from: gen === "continue" ? outputTokens(chat[index]) : 0, continued: gen === "continue" };
 }
 
+/** Another chat is open: the last one's request is not this one's to price (its clock stays). */
+export function forgetCostPending() {
+    pending = null;
+    stampedOver = null;
+}
+
 /** The prompt was built but never sent (Cancel in the payload preview): nothing to count. */
 export function vcrpCostRequestCancelled() {
     const st = chat_metadata && chat_metadata[META];

@@ -46,7 +46,14 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   made readable as it is locked: lightened or darkened until it reads against your theme, and
   turned when it is all but the same as a color already taken. While the add-on is on, Global
   Toggles & Add-ons lists this chat's colors: change one (kept exactly as you set it), or forget
-  it and the model picks again.
+  it and the model picks again. Some models (GLM above all) leave a color tag open or wrap the
+  narration in it, and the color then runs over the narration and the paragraphs after it. So
+  every reply's tags are mended as it arrives, and the model is told how to close them:
+  - a closing tag written wrong (`</ font>`, `<\/font>`) is fixed;
+  - each quoted line gets its own tag, and the narration around it is left plain;
+  - a tag never closed stops at the end of its line.
+
+  The thinking, the blocks, and styling that is not dialogue are left as written.
 - **Sideways scrolling on mobile:** scrolling sideways on the blocks card, or on anything wide in
   a reply that scrolls (an HTML object, a table), no longer counts as a swipe (which regenerated
   the last reply). Swiping anywhere else works as before.

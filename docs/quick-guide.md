@@ -109,6 +109,12 @@ they first spoke in for the whole chat, and colours too dark or too pale for you
 adjusted so they stay readable. Below the add-on cards you'll find **Dialogue colors in this chat**:
 change a character's colour, or *Forget* it to let the model pick again.
 
+**No more coloured narration (GLM).** Some models, GLM especially, leave a colour tag open or wrap
+the narration in it, so the colour runs over the narration and the paragraphs after it. VCRP now
+fixes each new reply's tags as it arrives, so only the spoken lines are coloured, and the model
+sees clean examples in its history. It's also told how to close the tags. Replies written before
+this update stay as they were.
+
 ---
 
 ## 6. Story Config: Tense

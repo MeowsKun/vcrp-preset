@@ -9,6 +9,7 @@ import { DEFAULT_PROMPTS } from "../../prompts/index.js";
 import { renderPromptEditor } from "../../ui/promptEditor.js";
 import { getCleanedChatHistory } from "../../engine/chatText.js";
 import { analyzeSlopDirectly, analyzeSlopWithPreset } from "../../engine/tasks.js";
+import { meguminActiveDataIdentity } from "../../core/keys.js";
 
 export function renderBanList(c) {
     c.empty();
@@ -166,11 +167,18 @@ export function renderBanList(c) {
         const chatText = getCleanedChatHistory();
         if (chatText.length < 50) return toastr.warning("Not enough chat history to analyze!");
         $(this).prop("disabled", true).html(`<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...`);
+        // VCRP: the scan reads this chat; a different chat open when it returns does not get its phrases.
+        const scanIdentity = meguminActiveDataIdentity();
         let rawResponse;
         if (!localProfile.banListBackend || localProfile.banListBackend === "direct") {
             rawResponse = await analyzeSlopDirectly(chatText);
         } else {
             rawResponse = await analyzeSlopWithPreset(chatText);
+        }
+        if (rawResponse && meguminActiveDataIdentity() !== scanIdentity) {
+            console.debug(`[VCRP] Ban list scan discarded: it started on "${scanIdentity}" but "${meguminActiveDataIdentity()}" is active now.`);
+            toastr.info("The chat changed while the scan ran, so its phrases were not added. Run it again in this chat.");
+            rawResponse = null;
         }
         if (rawResponse) {
             const newPhrases = rawResponse.split(/[,*\n-]/).map(t => t.trim().replace(/['"\[\]\.]/g, '')).filter(t => t.length > 3);

@@ -190,17 +190,110 @@ export function lockReplyColors(text, names, { background = DARK_BG, readable = 
     return { text: head + out, changed };
 }
 
-/** What the add-on's rule gets every turn: the colors already taken. "" when none. */
-export function colorLockNote() {
-    if (!colorOn()) return "";
-    const list = Object.values(lockedColors()).slice(-LIMIT);
-    if (!list.length) return "";
-    return `\n- Colors already taken in this story (use exactly these for these characters, and give anyone new a color not on this list): ${list.map(n => `${n.name} ${n.color}`).join("; ")}.`;
+// ── Tags that stay on the dialogue ───────────────────────────────────────────
+// Some models (GLM above all) leave a <font> open, close it after the narration that follows
+// the line, or wrap a whole paragraph from its first quote to its last. A browser then colors
+// the narration too, and carries an unclosed <font> on into the paragraphs after it. So each
+// reply is mended as it arrives: every colored line ends right after its closing quote.
+
+const OPENERS = { "\"": "\"", "“": "”", "„": "“", "«": "»", "「": "」", "『": "』" };
+// A closing tag as models misspell it: "</ font>", "< /font>" and "<\/font>" close nothing.
+const FONT_CLOSE_ANY = /<\s*\\?\/\s*font\s*>/gi;
+const FONT_CLOSE = "</font>";
+
+/** `x` cut into quoted lines and what lies between them: [{ quote, text }]. */
+function quoteParts(x) {
+    const parts = [];
+    let i = 0, start = 0;
+    while (i < x.length) {
+        const close = OPENERS[x[i]];
+        if (!close) { i++; continue; }
+        const end = x.indexOf(close, i + 1);
+        if (start < i) parts.push({ quote: false, text: x.slice(start, i) });
+        const stop = end < 0 ? x.length : end + close.length;
+        parts.push({ quote: true, text: x.slice(i, stop) });
+        i = start = stop;
+    }
+    if (start < x.length) parts.push({ quote: false, text: x.slice(start) });
+    return parts;
 }
 
 /**
- * MESSAGE_RECEIVED: learn and enforce on the reply that just arrived. Runs early, with the
- * dash cleaner, so everything after it sees the corrected text.
+ * What `tag` should have colored in `region`: each quoted line on its own, the narration
+ * around them left plain. A region with no dialogue, or with nothing but dialogue, keeps the
+ * one tag (closed).
+ */
+function wrapDialogue(tag, region) {
+    const parts = quoteParts(region);
+    const runsOn = parts.some(p => p.quote) && parts.some(p => !p.quote && /[\p{L}\p{N}]/u.test(p.text));
+    if (runsOn) return parts.map(p => (p.quote ? `${tag}${p.text}${FONT_CLOSE}` : p.text)).join("");
+    const trail = region.match(/\s*$/)[0];
+    return `${tag}${region.slice(0, region.length - trail.length)}${FONT_CLOSE}${trail}`;
+}
+
+/**
+ * A reply's story with every <font> ending on its dialogue: misspelt closing tags fixed, one
+ * that runs on over narration (or opens before it) split so each quoted line has its own, one
+ * never closed treated the same up to the end of its line of text. Thinking and blocks are
+ * left alone. Returns { text, changed }.
+ */
+export function mendFontTags(text) {
+    const s = String(text || "");
+    if (!/<font\b/i.test(s)) return { text: s, changed: false };
+    // Thinking is the model's own; opened and never closed, the whole reply is.
+    if (/<think(?:ing)?\b[^>]*>/i.test(s) && !/<\/think(?:ing)?\s*>/i.test(s)) return { text: s, changed: false };
+    let split = 0, m;
+    const re = /<\/think(?:ing)?\s*>/gi;
+    while ((m = re.exec(s)) !== null) split = m.index + m[0].length;
+    const head = s.slice(0, split);
+    // Blocks and trackers (capitalized tags) are set aside, and put back as they were. HTML
+    // written in capitals (<FONT>, <B>) is not a tracker.
+    const kept = [];
+    const keep = x => { kept.push(x); return `\u0000${kept.length - 1}\u0000`; };
+    let body = s.slice(split)
+        .replace(/<Blocks\b[^>]*>[\s\S]*?(?:<\/Blocks\s*>|$)/gi, keep)
+        .replace(/<(?!(?:FONT|SPAN|DIV|P|B|I|U|S|EM|STRONG|SMALL|BIG|SUB|SUP|BR|HR|DETAILS|SUMMARY|CENTER|BLOCKQUOTE)\b)([A-Z][A-Za-z_]+)\b[^>]*>[\s\S]*?<\/\1\s*>/g, keep);
+    body = body.replace(FONT_CLOSE_ANY, FONT_CLOSE);
+    const opens = [...body.matchAll(/<font\b[^>]*>/gi)];
+    let out = "", cursor = 0;
+    opens.forEach((o, n) => {
+        const tag = o[0], from = o.index + tag.length;
+        const next = n + 1 < opens.length ? opens[n + 1].index : body.length;
+        const closeAt = body.indexOf(FONT_CLOSE, from);
+        out += body.slice(cursor, o.index);
+        if (closeAt >= 0 && closeAt < next) {
+            // A styled passage over several lines with no dialogue in it is left as written.
+            out += wrapDialogue(tag, body.slice(from, closeAt));
+            cursor = closeAt + FONT_CLOSE.length;
+            return;
+        }
+        // Never closed: what it was meant for is on its own line of text.
+        const rest = body.slice(from, next);
+        const lineEnd = rest.search(/\r?\n/);
+        const at = lineEnd < 0 ? rest.length : lineEnd;
+        out += wrapDialogue(tag, rest.slice(0, at));
+        cursor = from + at;
+    });
+    out += body.slice(cursor);
+    const mended = head + out.replace(/\u0000(\d+)\u0000/g, (all, i) => kept[Number(i)]);
+    return { text: mended, changed: mended !== s };
+}
+
+/**
+ * What the add-on's rule gets every turn: how to close the tags (every model is reminded;
+ * some forget), and the colors already taken. "" with the add-on off.
+ */
+export function colorLockNote() {
+    if (!colorOn()) return "";
+    const tags = "\n- Color only the spoken words: put <font …> right before each line's opening quote and </font> right after its closing quote, every line on its own. Narration and dialogue tags (she said, actions) always stay outside the tags, and every <font> you open is closed.";
+    const list = Object.values(lockedColors()).slice(-LIMIT);
+    if (!list.length) return tags;
+    return `${tags}\n- Colors already taken in this story (use exactly these for these characters, and give anyone new a color not on this list): ${list.map(n => `${n.name} ${n.color}`).join("; ")}.`;
+}
+
+/**
+ * MESSAGE_RECEIVED: mend the reply's tags, then learn and enforce its colors. Runs early, with
+ * the dash cleaner, so everything after it sees the corrected text.
  */
 export function vcrpDialogueColorsOnReply(messageId, type) {
     if (type === "first_message" || !colorOn() || !chat_metadata) return;
@@ -210,8 +303,9 @@ export function vcrpDialogueColorsOnReply(messageId, type) {
     if (!msg || msg.is_user || msg.is_system || typeof msg.mes !== "string" || !/<font\b/i.test(msg.mes)) return;
     if (!chat_metadata[META] || typeof chat_metadata[META] !== "object") chat_metadata[META] = { names: {} };
     if (!chat_metadata[META].names) chat_metadata[META].names = {};
-    const { text, changed } = lockReplyColors(msg.mes, chat_metadata[META].names, { background: themeBackground() });
-    if (!changed) return;
+    const mended = mendFontTags(msg.mes);
+    const { text, changed } = lockReplyColors(mended.text, chat_metadata[META].names, { background: themeBackground() });
+    if (!changed && !mended.changed) return;
     msg.mes = text;
     if (Array.isArray(msg.swipes) && typeof msg.swipe_id === "number") msg.swipes[msg.swipe_id] = text;
     try {

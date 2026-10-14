@@ -100,15 +100,16 @@ import { whatsNewToast } from "./src/vcrp/whatsNew.js";
 import { puraApplyNpcChanges } from "./src/vcrp/pura/npc.js";
 import { vcrpDialogueColorsOnReply } from "./src/vcrp/dialogueColors.js";
 import { vcrpPuraTidyOnReply } from "./src/vcrp/pura/tidy.js";
-import { vcrpPuraRollsOnReply } from "./src/vcrp/pura/rolls.js";
+import { vcrpPuraRollsOnReply, setPendingRolls } from "./src/vcrp/pura/rolls.js";
 import { puraSettings } from "./src/vcrp/pura/index.js";
 import { vcrpInstallSwipeGuard } from "./src/vcrp/swipeGuard.js";
 import { vcrpInstallQuickPanel, refreshQuickPanel } from "./src/vcrp/quickPanel.js";
-import { vcrpCostOnReply, drawCostBadge, drawAllCostBadges } from "./src/vcrp/replyCost.js";
-import { vcrpOneShotOnReply } from "./src/vcrp/oneShot.js";
+import { vcrpCostOnReply, drawCostBadge, drawAllCostBadges, forgetCostPending } from "./src/vcrp/replyCost.js";
+import { vcrpOneShotOnReply, forgetOneShotPending } from "./src/vcrp/oneShot.js";
 import { vcrpCutOnReply } from "./src/vcrp/replyCut.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
-import { vcrpApplyReplyCap } from "./src/vcrp/replyLength.js";
+import { vcrpApplyReplyCap, forgetReplyRoom } from "./src/vcrp/replyLength.js";
+import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
 import { initDraggableButton, updateCharacterDisplay, discoverDefaultImages } from "./src/ui/launcher.js";
 import { tabsUI, switchTab, updateGlobalSyncButton, toggleTabGlobalSync } from "./src/ui/tabs.js";
@@ -394,6 +395,15 @@ jQuery(async () => {
                 .forEach(evt => { if (evt) eventSource.on(evt, vcrpRefreshHealthBadge); });
             eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, handlePromptInjection);
             eventSource.on(event_types.CHAT_CHANGED, () => {
+                // VCRP: what the last chat's requests left in memory is not this chat's. The
+                // cache check would compare this chat's first prompt with the last chat's and
+                // report the cache broken; a reply's rolls, direction or price waiting for it
+                // belong to a request made there.
+                vcrpCacheCheckReset();
+                forgetReplyRoom();
+                forgetOneShotPending();
+                setPendingRolls(null);
+                forgetCostPending();
                 // A save debounced at 500ms would die when initProfile swaps localProfile
                 // below. Flush it under the OLD key first — settings only, because
                 // chat_metadata already belongs to the chat we are switching TO.
