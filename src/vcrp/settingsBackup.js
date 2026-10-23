@@ -10,6 +10,7 @@
 import { extension_settings, saveSettingsDebounced, cancelDebounce } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { initProfile, _saveProfileDebouncedInner } from "../core/profile.js";
+import { drawPowerState } from "./power.js";
 import { cleanLegacySettings, migrateRenamedTabs, migrateUtilityPrefillFlag } from "../core/migrations.js";
 import { downloadJsonFile } from "../utils/download.js";
 
@@ -53,6 +54,7 @@ export function applySettingsImport(data) {
     migrateUtilityPrefillFlag();
     saveSettingsDebounced();
     initProfile();
+    drawPowerState();   // the file carries VCRP's On/Off with the rest
 }
 
 /** Opens a file picker and imports the chosen file after confirmation and an automatic backup. */

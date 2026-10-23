@@ -151,7 +151,44 @@ Edit Prompts. The paid drift audits on the same tab are separate and can stay of
 
 ---
 
-## 8. Fixed for you (nothing to set)
+## 8. V11 Тайна and the Author's Notebook (Megumin Suite V11)
+
+**The engine.** PRESETS & COT → **V11 Тайна · Megumin Original**. It's Megumin Suite V11's new
+engine, word for word: a "writers' room" of five talks each turn over in the thinking, and the reply
+is told by one narrator with a voice and opinions. Picking it also picks CoT V11 and the V11 Default
+style. On **GLM, Kimi, DeepSeek or Qwen**, pick **CoT V11 — Thinking Cap**: shorter thinking that
+those models actually stick to. A Thinking Cap sets its own length, so your Thinking length isn't
+sent with it (as in Megumin V11).
+
+**Its preset.** Import **VCRP V11 Megumin Original** from the extension's Presets folder and select
+it while V11 is picked. Like every VCRP preset it carries regex scripts (they hide the thinking and
+tidy the history): allow them once in Extensions → Regex → Preset scripts. Your other VCRP presets
+don't need re-importing. Setup Check reminds you of both: the regex, and V11 running on a V10
+preset.
+
+**The Notebook.** The story picks two or three hidden truths, drops small clues, and reveals each
+one when the story earns it. It's always on with V11; for any other engine, switch it on in the
+**Focus** tab.
+- **On a reply's card:** a 📓 **Notebook** tab shows what that reply changed, blurred until you
+  hover or tap a line.
+- **In the Focus tab:** the live truths sit behind a spoiler warning. You can edit one, mark it
+  revealed, delete it, or bring a past one back.
+- **Swipes, edits and deletes** undo exactly what a reply did.
+
+**Characters on file.** Someone who left the scene and is named again comes back as they left:
+their last outfit and mood from the World State, and their Bonds numbers. It's on by default; the
+switch is in the BLOCKS tab, under World State (or under Bonds if you only use Bonds).
+
+**On / Off.** The **On/Off** button at the top of the VCRP window sets VCRP aside completely, for a
+quick chat with another preset or to check whether something odd is VCRP's doing.
+
+**Lore for background jobs.** The Story Director, NPC scans and Focus audits now see the lorebook
+entries your story has active (up to about 3,000 tokens per call, so a big lorebook stays cheap).
+Switch it off in Global Settings → Behaviour → *Lore for background calls*.
+
+---
+
+## 9. Fixed for you (nothing to set)
 
 - **No more accidental regenerates on mobile** when you scroll sideways across the block card or a
   wide HTML panel.

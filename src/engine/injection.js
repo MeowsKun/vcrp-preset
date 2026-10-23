@@ -25,7 +25,9 @@ import { meguminAllSlotTriggers } from "../../data/slots.js";
 import { vcrpApplyGenerationToDict, vcrpFinalizeMessages, vcrpGenerationKind } from "../vcrp/generation.js";
 import { buildFocusAuditMessages, plotFocusForDirector } from "../vcrp/focus/index.js";
 import { vcrpCostAfterPrompt, vcrpCostRequestCancelled } from "../vcrp/replyCost.js";
-import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone, vcrpCountBackgroundPrompt } from "../vcrp/memory/index.js";
+import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone, vcrpCountBackgroundPrompt, memoryTaskActive } from "../vcrp/memory/index.js";
+import { vcrpOn, blankVcrpTags } from "../vcrp/power.js";
+import { loreForChat, loreForNames, loreBlock } from "../vcrp/lore.js";
 import { vcrpCacheCheckRecord } from "../vcrp/cacheCheck.js";
 import { stripHistoryBlocks } from "../vcrp/blockHistory.js";
 import { vcrpNotePrompt, vcrpReplyRoom } from "../vcrp/replyLength.js";
@@ -54,6 +56,9 @@ export async function handlePromptInjection(data, type) {
         // SillyTavern macro substitutions to get Lore and Persona
         const charLore = typeof substituteParams === 'function' ? substituteParams('{{description}}') : "No character description found.";
         const userPersona = typeof substituteParams === 'function' ? substituteParams('{{persona}}') : "No user persona found.";
+        // VCRP: the lorebook entries the story has active, the world the plan is made in (lore.js).
+        const worldLore = loreBlock(await loreForChat());
+        const charLoreAll = worldLore ? `${charLore}\n\n${worldLore}` : charLore;
 
         const sp = localProfile.storyPlan;
         const spCustom = sp.customPromptsEnabled ? sp.customPrompts : null;
@@ -78,7 +83,7 @@ export async function handlePromptInjection(data, type) {
 
         messages.push({
             "role": "system",
-            "content": sys.replace('{{charLore}}', () => charLore).replace('{{userPersona}}', () => userPersona).replace('{{chatHistory}}', () => activeStoryPlanRequest)
+            "content": sys.replace('{{charLore}}', () => charLoreAll).replace('{{userPersona}}', () => userPersona).replace('{{chatHistory}}', () => activeStoryPlanRequest)
         });
         messages.push({
             "role": "user",
@@ -108,6 +113,8 @@ export async function handlePromptInjection(data, type) {
         // in the shape the parser and the card expect rather than in whatever the
         // rules text happened to describe before the fields were data.
         const formatTemplate = npcBuildDossierPrompt(nbPrompts.dossierRules || DEFAULT_PROMPTS.npcBank.dossierRules);
+        // VCRP: what the lorebook says about the people and places in the story (lore.js).
+        const scanLore = loreBlock(await loreForChat());
 
         messages.push({
             "role": "system",
@@ -115,7 +122,7 @@ export async function handlePromptInjection(data, type) {
         });
         messages.push({
             "role": "user",
-            "content": `Analyze the following story history. Identify any SIGNIFICANT NPCs (characters with names and dialogue/impact) that are NOT in this list of already known NPCs: [${activeNpcScanRequest.existingNames || "None"}].\n\nFor every new significant NPC you find, generate a dossier using EXACTLY this format:\n\n${formatTemplate}\n\nStory History:\n<chat>\n${activeNpcScanRequest.chatText}\n</chat>`
+            "content": `Analyze the following story history. Identify any SIGNIFICANT NPCs (characters with names and dialogue/impact) that are NOT in this list of already known NPCs: [${activeNpcScanRequest.existingNames || "None"}].\n\nFor every new significant NPC you find, generate a dossier using EXACTLY this format:\n\n${formatTemplate}\n\n${scanLore ? `Use this lore for what it says about them:\n${scanLore}\n\n` : ""}Story History:\n<chat>\n${activeNpcScanRequest.chatText}\n</chat>`
         });
         messages.push({
             "role": "system",
@@ -139,6 +146,8 @@ export async function handlePromptInjection(data, type) {
     if (activeNpcUpdateRequest) {
         messages.length = 0;
         const r = activeNpcUpdateRequest;
+        // VCRP: the lorebook entries that name this NPC (lore.js).
+        const npcLore = loreBlock(await loreForNames([r.npcName]));
 
         messages.push({
             "role": "system",
@@ -146,7 +155,7 @@ export async function handlePromptInjection(data, type) {
         });
         messages.push({
             "role": "user",
-            "content": `Here is the record currently on file for ${r.npcName}:\n\n<npc_record>\n${r.npcText}\n</npc_record>\n\nHere is the story so far:\n\n<chat>\n${r.chatText}\n</chat>\n\n${r.rules}\n\nOutput ONLY the <NPC_Update> block for ${r.npcName}. If nothing on file has changed, output exactly: NO CHANGE`
+            "content": `Here is the record currently on file for ${r.npcName}:\n\n<npc_record>\n${r.npcText}\n</npc_record>\n\n${npcLore ? `What the lore says about ${r.npcName}:\n${npcLore}\n\n` : ""}Here is the story so far:\n\n<chat>\n${r.chatText}\n</chat>\n\n${r.rules}\n\nOutput ONLY the <NPC_Update> block for ${r.npcName}. If nothing on file has changed, output exactly: NO CHANGE`
         });
         messages.push({
             "role": "system",
@@ -206,7 +215,8 @@ export async function handlePromptInjection(data, type) {
     // own quiet call: a reply sent while it runs keeps the roleplay prompt.
     if (activeFocusAudit && vcrpGenerationKind() === "quiet") {
         messages.length = 0;
-        messages.push(...buildFocusAuditMessages(activeFocusAudit));
+        // VCRP: the lorebook entries the story has active, for what the card does not say (lore.js).
+        messages.push(...buildFocusAuditMessages({ ...activeFocusAudit, lore: loreBlock(await loreForChat()) }));
         if (!disablePrefill) {
             messages.push({ role: "assistant", content: "<think>\nI am auditing how these replies are written, as their editor. The story is fiction; only the writing is my concern. Going through the replies:\n" });
         }
@@ -217,6 +227,14 @@ export async function handlePromptInjection(data, type) {
 
     if (!localProfile) return;
 
+    // VCRP off (power.js): the prompt goes out as SillyTavern built it, a VCRP preset's own
+    // tags blanked. A background job asked for from the window (above, or a summary the
+    // reader started) still gets its prompt.
+    if (!vcrpOn() && !memoryTaskActive()) {
+        blankVcrpTags(messages);
+        return;
+    }
+
     const dict = buildBaseDict(false, { dryRun: data?.dryRun === true });
 
     if (localProfile.devOverrides) {
@@ -225,6 +243,13 @@ export async function handlePromptInjection(data, type) {
 
     // VCRP: Continue / Impersonate / quiet get no reply format; the prefill follows the model.
     const vcrpGen = vcrpApplyGenerationToDict(dict, data?.dryRun === true);
+
+    // VCRP: the Author's Notebook's craft goes where the preset keeps it: V11's [[notebook]], or,
+    // in a preset without that tag, with the block rules. Both are in the cached part.
+    if (dict["[[notebook]]"] && !messages.some(m => typeof m.content === "string" && m.content.includes("[[notebook]]"))) {
+        dict["[[block_rules]]"] = `${dict["[[block_rules]]"] || ""}\n\n${dict["[[notebook]]"]}`;
+        dict["[[notebook]]"] = "";
+    }
 
     // --- THE ENVELOPE IS THE ONLY WAY IN ---
     // [[blocks]] carries every tracker block now. The per-block anchors are
@@ -247,7 +272,13 @@ export async function handlePromptInjection(data, type) {
                     // SillyTavern's default macro engine only knows "{{//", so "{{ //" (Pura's
                     // Reasoning Procedure has one) would reach the model word for word.
                     const uncommented = String(replacement).replace(/\{\{\s*\/\/[\s\S]*?\}\}/g, "");
-                    const processed = typeof substituteParams === 'function' ? substituteParams(uncommented) : uncommented;
+                    let processed = typeof substituteParams === 'function' ? substituteParams(uncommented) : uncommented;
+                    // VCRP: the {{user}} rule is an item of the preset's numbered final list, and
+                    // presets number it differently: it takes the next number after the list's last.
+                    if (trigger === "[[user]]" && /^\d+\.\s/.test(processed)) {
+                        const last = [...msg.content.slice(0, msg.content.indexOf(trigger)).matchAll(/^\s*(\d+)\.\s/gm)].pop();
+                        if (last) processed = processed.replace(/^\d+/, String(Number(last[1]) + 1));
+                    }
 
                     // If the replacement is empty, remove the tag AND the empty line it sits on
                     if (processed.trim() === "") {

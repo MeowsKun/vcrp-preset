@@ -107,6 +107,17 @@ export function renderGlobalSettings(c) {
             <div class="ps-switch" style="${gs.enableUtilityPrefill ? 'background: #10b981;' : ''}"></div>
         </div>
     `);
+    // VCRP: lorebook entries for VCRP's background calls (vcrp/lore.js). Missing means on.
+    const loreOn = gs.loreInTasks !== false;
+    $content.append(`
+        <div class="mtab-toggle-row ${loreOn ? 'active' : ''}" id="gs_toggle_lore_tasks" style="cursor: pointer;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-book-atlas" style="color: #f59e0b;"></i> Lore for background calls</div>
+                <div class="toggle-desc">The Story Director, NPC scans and updates, and Focus audits build their own prompt, so your lorebook never reached them. On, they get the World Info entries your story has active (an NPC update: the entries that name that NPC). Those entries are paid for in each of those calls; turn it off to save.</div>
+            </div>
+            <div class="ps-switch" style="${loreOn ? 'background: #f59e0b;' : ''}"></div>
+        </div>
+    `);
     // VCRP: whether story replies keep the preset's CoT Prefill slot.
     const det = vcrpDetectPrefill();
     const { source, model } = vcrpActiveModel();
@@ -235,6 +246,15 @@ export function renderGlobalSettings(c) {
     wireToggle("#gs_toggle_prompt_preview", "promptPreview", "var(--gold)");
     wireToggle("#gs_toggle_utility_prefill", "enableUtilityPrefill", "#10b981");
     wireToggle("#gs_toggle_clean_dashes", "cleanDashes", "#38bdf8");
+    // On unless switched off, so not the helper above (which reads a missing setting as off).
+    $content.find("#gs_toggle_lore_tasks").on("click", function () {
+        gs.loreInTasks = gs.loreInTasks === false;
+        saveSettingsDebounced();
+        const on = gs.loreInTasks !== false;
+        $(this).toggleClass("active", on);
+        $(this).css("border-color", on ? "#f59e0b" : "var(--border-color)");
+        $(this).find(".ps-switch").css("background", on ? "#f59e0b" : "");
+    });
 
     $content.find("#gs_clean_chat_dashes").on("click", async function () {
         const chat = getContext().chat;

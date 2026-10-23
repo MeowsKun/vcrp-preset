@@ -22,6 +22,7 @@ import {
     vcrpMemoryEnabled, memoryState, memoryBudgetSettings, resolveAnchor, anchorOf, estimateTokens,
 } from "./memory/index.js";
 import { composeMemoryText } from "./memory/ledger.js";
+import { lastLoreText } from "./lore.js";
 
 const DIRECTOR_RECENT = 30;      // messages the Director reads word for word on top of the memory
 const DIRECTOR_FIXED = 2500;     // its own instructions, roughly
@@ -82,7 +83,8 @@ function directorFromMemory() {
 export function directorEstimate() {
     const sub = s => (typeof substituteParams === "function" ? String(substituteParams(s) || "") : "");
     const plan = (localProfile && localProfile.storyPlan && localProfile.storyPlan.currentPlan) || "";
-    const extra = estimateTokens(sub("{{description}}") + sub("{{persona}}") + plan);
+    // The lorebook entries it gets too (lore.js), as large as the last background call's.
+    const extra = estimateTokens(sub("{{description}}") + sub("{{persona}}") + plan + lastLoreText());
     return backgroundEstimate(estimateTokens(vcrpChatForStoryDirector()) + extra + DIRECTOR_FIXED);
 }
 
@@ -127,5 +129,5 @@ export async function vcrpNoteNpcScan(mark = vcrpNpcScanMark()) {
 /** A scan's or an update's next call, estimated. */
 export function npcEstimate({ newOnly = false } = {}) {
     const { text } = vcrpChatForNpcScan({ newOnly });
-    return backgroundEstimate(estimateTokens(text) + NPC_FIXED);
+    return backgroundEstimate(estimateTokens(text + lastLoreText()) + NPC_FIXED);
 }

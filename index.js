@@ -110,6 +110,7 @@ import { vcrpCutOnReply } from "./src/vcrp/replyCut.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpApplyReplyCap, forgetReplyRoom } from "./src/vcrp/replyLength.js";
 import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
+import { vcrpOn, setVcrpOn, whenOn, drawPowerState } from "./src/vcrp/power.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
 import { initDraggableButton, updateCharacterDisplay, discoverDefaultImages } from "./src/ui/launcher.js";
 import { tabsUI, switchTab, updateGlobalSyncButton, toggleTabGlobalSync } from "./src/ui/tabs.js";
@@ -205,6 +206,7 @@ jQuery(async () => {
         const h = await $.get(`${extensionFolderPath}/example.html`);
         $("body").append(h);
         initDraggableButton();
+        drawPowerState();
         $("body").append('<div id="ps-global-tooltip"></div>');
         // Profile level badge styles
         $("head").append(`<style>
@@ -366,6 +368,13 @@ jQuery(async () => {
             }
         });
 
+        // VCRP: the master switch on the top bar.
+        $("body").on("click", "#ps_btn_power", function () {
+            setVcrpOn(!vcrpOn());
+            vcrpRefreshHealthBadge();   // Setup Check warns while it is off
+            vcrpMemoryUpdateVisuals();  // off, Story Memory cuts nothing, so nothing is dimmed
+            if (typeof toastr !== "undefined") toastr.info(vcrpOn() ? "VCRP is on again." : "VCRP is off: the prompt goes out as SillyTavern builds it, and nothing runs after a reply.", "VCRP");
+        });
         $("body").on("click", "#ps_btn_save_close", function () { saveProfileToMemory(); $("#prompt-slot-modal-overlay").fadeOut(200); toastr.success("Workflow Configured & Applied Successfully!"); });
 
         if (typeof eventSource !== 'undefined' && typeof event_types !== 'undefined') {
@@ -425,34 +434,36 @@ jQuery(async () => {
             eventSource.on(event_types.MESSAGE_DELETED, vcrpMemoryOnMessageDeleted);
             // VCRP: each reply's cost, measured on the reply as the model wrote it (before
             // anything below adds to it), and the one-shot direction used up by its reply.
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpCostOnReply);
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpOneShotOnReply);
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpCostOnReply));
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpOneShotOnReply));
             // Story Memory's spend estimate: the reply's output, added to its request. Measured
             // here, before the rolls' notes are added to the reply: its size plans the budget.
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryCountReply);
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpMemoryCountReply));
             // VCRP: a reply the length limit cut off mid-sentence ends on its last full sentence.
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpCutOnReply);
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpCutOnReply));
             // Pura: a tracker written in the story (or a ((OOC)) note) moves into <Blocks>
             // first, so the dash cleaner (which leaves blocks alone) never rewrites one: its
             // "| — |" placeholders and dashed fields stay as the model wrote them.
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpPuraTidyOnReply);
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpPuraTidyOnReply));
             // Pura: what this reply's randomisers rolled, in its Notes tab (after the tidy,
             // which may have made that tab already).
-            eventSource.on(event_types.MESSAGE_RECEIVED, (id, type) => vcrpPuraRollsOnReply(id, type, { show: puraSettings().showRolls }));
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn((id, type) => vcrpPuraRollsOnReply(id, type, { show: puraSettings().showRolls })));
             // Dash cleaner next, so every handler after it (the tracker capture,
             // Story Memory) sees the reply as it will stay in the history.
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDedashOnReply);
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpDedashOnReply));
             // Dialogue Colors: each character keeps the color they first spoke in.
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpDialogueColorsOnReply);
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpDialogueColorsOnReply));
             // Reply length: the safety cap on the request itself (where SillyTavern has the event).
-            if (event_types.CHAT_COMPLETION_SETTINGS_READY) eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, vcrpApplyReplyCap);
+            if (event_types.CHAT_COMPLETION_SETTINGS_READY) eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, whenOn(vcrpApplyReplyCap));
             // VCRP budgeted memory: summarize the next stretch after a reply, when due.
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpMemoryAfterReply);
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpMemoryAfterReply));
             // VCRP Focus: audit the recent replies for drift every N replies (after Story Memory).
-            eventSource.on(event_types.MESSAGE_RECEIVED, vcrpFocusAfterReply);
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpFocusAfterReply));
             // IMAGE GEN AUTO-GEN & SWIPE TRIGGERS
             eventSource.on(event_types.MESSAGE_RECEIVED, async () => {
                 vcrpMemoryUpdateVisuals();
+                // VCRP off: nothing runs after a reply (the Story Director, the NPC capture).
+                if (!vcrpOn()) return;
 
                 // --- STORY DIRECTOR FEEDBACK & AUTO-EVOLVE ---
                 const sp = localProfile?.storyPlan;

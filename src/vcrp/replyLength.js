@@ -29,8 +29,12 @@ import {
 } from "./memory/index.js";
 import { requestCost } from "./memory/budget.js";
 import { isCold } from "./memory/window.js";
-import { vcrpGenerationKind } from "./generation.js";
+import { vcrpGenerationKind, vcrpWithoutSwipedReply } from "./generation.js";
 import { meguminActiveBlocks } from "../features/blocks/registry.js";
+import { notebookCurrentPhase } from "./notebook/index.js";
+import { activeEngine } from "../engine/meguminOriginal.js";
+import { isPuraEngine } from "../core/engines.js";
+import { isThinkingCap } from "../../data/cot/index.js";
 import {
     activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder, activeFocusAudit,
 } from "../core/activeRequests.js";
@@ -122,21 +126,32 @@ const LINE_TAIL = "This overrides any longer length asked for above.";
 
 // What the blocks of a reply take: their measured size in the chat's recent replies, or a
 // typical size when none has been written yet. 0 with no blocks in the stack.
+// The Author's Notebook writes in the blocks as well: a line now and then, which the measured
+// size already holds, but its setup (two or three full truths) once, on the reply that starts
+// it, and that one is counted on its own.
+const NOTEBOOK_SETUP_TOKENS = 400;
 function blocksTokens() {
     let active = [];
     try { active = meguminActiveBlocks().filter(b => b && !b.transient && !b.slot); } catch (e) { active = []; }
-    if (!active.length) return 0;
+    let setup = 0;
+    try { setup = notebookCurrentPhase(vcrpWithoutSwipedReply((getContext() || {}).chat || [])) === "setup" ? NOTEBOOK_SETUP_TOKENS : 0; } catch (e) { setup = 0; }
+    if (!active.length) return setup;
     let chat = [];
     try { chat = ((getContext() || {}).chat || []).filter(m => m && !m.is_user && !m.is_system && typeof m.mes === "string").slice(-10); } catch (e) { chat = []; }
     // What the model wrote: the Notes tab is left out (VCRP adds each reply's rolls to it).
     const sizes = chat.map(m => (m.mes.match(/<Blocks\b[^>]*>[\s\S]*?<\/Blocks\s*>/i) || [])[0]).filter(Boolean)
         .map(b => estimateTokens(b.replace(/<Pura_Notes\b[^>]*>[\s\S]*?<\/Pura_Notes\s*>/gi, "")));
-    return sizes.length ? Math.round(sizes.reduce((a, b) => a + b, 0) / sizes.length) : 300;
+    return (sizes.length ? Math.round(sizes.reduce((a, b) => a + b, 0) / sizes.length) : 300) + setup;
 }
 
 /** The thinking's share: its set length, about 250 words when none is set, nothing with it off. */
 function thinkingWords() {
     if (!localProfile || localProfile.cotEnabled === false) return { words: 0, set: true };
+    // A Thinking Cap (not a Pura engine's thinking, which takes the set length) keeps its own
+    // length, five short lines, and is never given a word count: it is "set", so not told one.
+    let pura = false;
+    try { pura = isPuraEngine(activeEngine()); } catch (e) { pura = false; }
+    if (!pura && isThinkingCap(localProfile.model)) return { words: 100, set: true };
     const effort = String(localProfile.thinkEffort || "unspecified");
     if (effort === "unspecified") return { words: 250, set: false };
     const n = Number(effort === "custom" ? localProfile.customThinkEffort : effort);

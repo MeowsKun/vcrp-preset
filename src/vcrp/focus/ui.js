@@ -10,6 +10,7 @@ import { DEFAULT_PROMPTS } from "../../prompts/index.js";
 import { renderPromptEditor } from "../../ui/promptEditor.js";
 import { escapeHtmlAttr } from "../../utils/html.js";
 import { toneRules } from "../toneRules.js";
+import { notebookPanel, wireNotebookPanel } from "../notebook/ui.js";
 import {
     FOCUS_CHECKS, FOCUS_MIN_REPLIES, FOCUS_MAX_FAILURES, focusSettings, peekFocusState, repliesSinceAudit, focusEstimate, focusStanding,
     focusAuditRunning, runFocusAudit, approveFocusAudit, discardFocusAudit, setFocusNote, removeFocusItem, resetFocus,
@@ -175,6 +176,7 @@ export function renderFocusTab(c) {
         </div>
         ${plotPanel(st)}
         ${livePanel(s)}
+        ${notebookPanel()}
         <div class="mtab-toggle-row ${s.enabled ? "active" : ""}" id="focus_enable" style="margin-bottom:14px;">
             <div class="toggle-info">
                 <div class="toggle-label"><i class="fa-solid fa-crosshairs" style="color:#2dd4bf;"></i> Enable drift audits</div>
@@ -185,6 +187,7 @@ export function renderFocusTab(c) {
 
     wirePlotPanel(c);
     wireLivePanel(c, f);
+    wireNotebookPanel(c, rerender);
     c.find("#focus_enable").on("click", () => { f.enabled = !s.enabled; saveProfileToMemory(); rerender(); });
 
     if (!s.enabled) {

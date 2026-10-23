@@ -34,3 +34,9 @@ export {
 export { saveBase64AsFile, debounce, cancelDebounce } from "../../../../utils.js";
 export { humanizedDateTime } from "../../../../RossAscends-mods.js";
 export { Popup, POPUP_TYPE } from "../../../../popup.js";
+// VCRP: the World Info a background call is given (vcrp/lore.js). Read off the module rather
+// than imported by name: a name SillyTavern does not export would stop the whole extension
+// from loading, where this way an older SillyTavern only means no lore (null, lore.js).
+import * as worldInfo from "../../../../world-info.js";
+export const checkWorldInfo = typeof worldInfo.checkWorldInfo === "function" ? worldInfo.checkWorldInfo : null;
+export const getSortedEntries = typeof worldInfo.getSortedEntries === "function" ? worldInfo.getSortedEntries : null;

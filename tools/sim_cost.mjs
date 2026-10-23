@@ -24,7 +24,8 @@
 //   --target USD     the memory's per-request target (default 0.30)
 //   --npcs           NPC Bank on with six NPCs whose names come and go in the chat, so the
 //                    retrieved-NPC list changes from turn to turn
-//   --engine ID      ukiyo | shura | pura-adapted | pura-original (default ukiyo)
+//   --engine ID      ukiyo | shura | pura-adapted | pura-original | v11 (V11 Тайна on the V11 preset,
+//                    its Author's Notebook on) (default ukiyo)
 //   --extras         everything added since the Pura engines, on: Pura's random voice, two
 //                    randomisers, Grounded Prose and HTML; five Pura trackers in the block,
 //                    which the replies write (so the carried state and their output are real);
@@ -76,7 +77,7 @@ const MARKS = DIRECT ? "st" : String(opt("marks", "vcrp"));
 // A provider that reads the cache only where a marker matches exactly (Bedrock), rather than
 // also looking back for an older marker (Anthropic's own API).
 const EXACT = !!opt("exact", false);
-const PRESET = ORIGINAL ? "VCRP V10 Megumin Original.json" : "VCRP V10 Universal.json";
+const PRESET = ENGINE === "v11" ? "VCRP V11 Megumin Original.json" : ORIGINAL ? "VCRP V10 Megumin Original.json" : "VCRP V10 Universal.json";
 const BUDGET = +opt("budget", 0.30);
 const TOKFACTOR = +opt("tokfactor", 1.15);
 const SEED = +opt("seed", 7);
@@ -178,7 +179,9 @@ const L = await imp("src/vcrp/memory/ledger.js");
 await imp("src/vcrp/memory/index.js");         // registers globalThis.vcrp_memory_intercept
 const { meguminCleanChatHistoryText } = await imp("src/engine/chatText.js");
 initProfile();
-Object.assign(state.localProfile, ENGINE === "shura"
+Object.assign(state.localProfile, ENGINE === "v11"
+    ? { mode: "v11-room-megumin", model: "cot-v11-english", activeStyleId: "dir_v11", aiRule: "an overt narrator teller with a voice and opinions, present in every paragraph. Do not write as an effaced narrator or a camera." }
+    : ENGINE === "shura"
     ? (ORIGINAL ? { mode: "v10-shura-megumin", model: "cot-meg-shura-english" } : { mode: "v10-shura", model: "cot-v10-shura-english" })
     : /^pura-/.test(ENGINE) ? { mode: ENGINE, model: "cot-v10-ukiyo-english" }
         : (ORIGINAL ? { mode: "v10-ukiyo-megumin", model: "cot-meg-ukiyo-english" } : { mode: "v10-core", model: "cot-v10-ukiyo-english" }),
@@ -333,8 +336,7 @@ function summarizeAfterReply(full, lastPrompt, replyText, now) {
     if (!span) return;
     // As vcrpMemoryShapeTask sends it: the story-turn slots (Output Rules, </history>) are rules
     // for writing a scene, not a summary, and are left out.
-    const storyTurnSlot = m => typeof m.content === "string" && /^\s*(?:## your thinking steps|<\/history>)/.test(m.content);
-    const ask = [...lastPrompt.filter(m => !storyTurnSlot(m)), { role: "assistant", content: replyText }, { role: "user", content: textOfTokens(450, `summarize ${now}`) }];
+    const ask = [...lastPrompt.filter(m => !mem.isStoryTurnSlot(m)), { role: "assistant", content: replyText }, { role: "user", content: textOfTokens(450, `summarize ${now}`) }];
     const s = price1(ask, now + 20000, SUMMARY_OUT);
     const c = price1(ask, now + 35000, CHECK_OUT);
     upkeep.calls += 2; upkeep.cost += s.cost + c.cost;
@@ -415,6 +417,6 @@ if (MEMORY) {
 const worst = [...rows].sort((a, b) => b.cost - a.cost).slice(0, 3);
 console.log(`\nmost expensive: ${worst.map(r => `msg ${r.msg} $${r.cost.toFixed(3)} (${r.total} tok${r.cut ? ", cut" : ""})`).join(" · ")}`);
 mkdirSync(join(REPO, "tools", "out"), { recursive: true });
-const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}${ORIGINAL ? "_original" : ""}${/^pura-/.test(ENGINE) ? `_${ENGINE}` : ""}${EXTRAS ? "_extras" : ""}${LIVE ? "" : "_nolive"}_${MARKS}${EXACT ? "_exact" : ""}.csv`);
+const file = join(REPO, "tools", "out", `sim_${MODEL}_${TTL}_d${DEPTH}${MEMORY ? "_memory" : ""}${NPCS ? "_npcs" : ""}${Number.isFinite(CONTEXT) ? `_c${CONTEXT}` : ""}${DIRECT ? "_direct" : NOFIX ? "_nofix" : ""}${ORIGINAL ? "_original" : ""}${/^pura-|^v11$/.test(ENGINE) ? `_${ENGINE}` : ""}${EXTRAS ? "_extras" : ""}${LIVE ? "" : "_nolive"}_${MARKS}${EXACT ? "_exact" : ""}.csv`);
 writeFileSync(file, "msg,in_history,prompt_tokens,read,write,plain,cost,cut\n" + rows.map(r => [r.msg, r.inHistory, r.total, r.read, r.write, r.plain, r.cost.toFixed(4), r.cut ? 1 : 0].join(",")).join("\n"));
 console.log(`per-request rows: ${file}`);

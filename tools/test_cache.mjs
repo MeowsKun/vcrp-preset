@@ -83,7 +83,7 @@ initProfile();
 const q = state.localProfile;
 
 // ── The prompt SillyTavern builds: the preset, the chat with its prompt-only regex applied ──
-const preset = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+let preset = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
 const promptOnly = preset.extensions.regex_scripts.filter(r => r.promptOnly && !r.disabled && !r.markdownOnly);
 const stRegex = (text, depth) => {
     let t = text;
@@ -128,8 +128,8 @@ const marked = msgs => msgs.map((m, i) => (Array.isArray(m.content) && m.content
 const prefix = (m, upTo) => m.slice(0, upTo + 1).map(textOf);
 const firstDiff = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) return `message ${i}: ${JSON.stringify(String(a[i]).slice(-160))} → ${JSON.stringify(String(b[i]).slice(-160))}`; return ""; };
 
-async function send(kind = "normal") {
-    if (kind === "normal") chat.push({ is_user: true, name: "Bob", send_date: `u${chat.length}`, mes: `Bob says something, turn ${chat.length}.` });
+async function send(kind = "normal", said = null) {
+    if (kind === "normal") chat.push({ is_user: true, name: "Bob", send_date: `u${chat.length}`, mes: said || `Bob says something, turn ${chat.length}.` });
     gen.vcrpSetGenerationType(kind, {}, false);
     dropLast = kind === "swipe";
     const msgs = buildPrompt();
@@ -140,7 +140,7 @@ async function send(kind = "normal") {
 // The model's reply for turn i: thinking, a colored line from a character new this turn, a stray
 // sheet for them in the story, an OOC note, then its blocks.
 const NAMES = ["Ann", "Bea", "Cole", "Dex", "Eve", "Finn", "Gus"];
-const replyFor = i => {
+let replyFor = i => {
     const who = NAMES[i % NAMES.length];
     return `<think>Turn ${i}: Mara pushes back; ${who} watches.</think>\n<font color="#000080" title="Mara">"Ring's gone,"</font> Mara says — flat. <font color="#ff69b4" title="${who}">"Not my problem."</font>\n\n[NPC:MINOR|${who}]\nb: ${who} | 30 | Regular\na: Quiet\np: Wry\n[/NPC]\n\n((OOC: Kinks rolled: none.))\n\n<Blocks>\n<Pura_Scene>\n[SCENE|The Lantern|Night ${i}|Rain]\ndetail: neon on wet glass\n[/SCENE]\n</Pura_Scene>\n${i === 1 ? "<Pura_Events>\n[EVENT|🎯 QUEST|Find the brass ring|Friday]\ncontext: pawned for rent\n[/EVENT]\n</Pura_Events>\n" : ""}</Blocks>`;
 };
@@ -240,6 +240,71 @@ const asWritten = memory.estimateTokens(replyFor(7));
 ok(spend && spend.last && spend.last.output === asWritten, `Story Memory measured the last reply as the model wrote it (${spend && spend.last && spend.last.output} vs ${asWritten})`);
 const cost = chat[chat.length - 1].extra && chat[chat.length - 1].extra.vcrp_cost;
 ok(cost && cost.output === asWritten && !cost.cold, "the cost badge too, on a warm cache");
+
+// ── V11 Тайна on its own preset ───────────────────────────────────────────────
+// The Author's Notebook (written, then updated), a character who leaves the scene and comes
+// back (Characters on file), V11's Content section in the chat: all of it after the cached
+// part, the history read back byte for byte, and a summary call that leaves V11's story-turn
+// slots out and still reads the cache.
+section("V11 Тайна on its own preset: notebook and returning characters after the cached part");
+preset = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
+chat.length = 0;
+for (const k of Object.keys(meta)) delete meta[k];
+Object.assign(q, { mode: "v11-room-megumin", model: "cot-v11-english", activeStyleId: "dir_v11",
+    aiRule: "an overt narrator teller with a voice and opinions, present in every paragraph. Do not write as an effaced narrator or a camera." });
+q.pura = {};
+q.blockStack.order = ["world", "bonds"];
+meguminSyncLegacyBlockIds();
+q.npcBank = { ...(q.npcBank || {}), enabled: true, npcs: [] };
+meta.vcrp_tone = { enabled: true, text: "Bleak. No rescues." };
+castLock.setCastLock(true);
+chat.push({ is_user: false, name: "Mara", send_date: "a0", mes: "\"We're closed,\" Mara says." });
+replyFor = i => {
+    const guest = i <= 2 ? "Ann" : "Cole";   // Ann leaves after turn 2
+    const notebook = i === 1
+        ? "<Notebook>\nT1\nTruth: Mara pawned the ring to pay off the man who burned her old bar.\nHidden from: Bob, the reader\nComes out when: Bob finds the pawn ticket\nWhat it changes: Bob stops trusting her\nClue ideas: a pawn ticket in the till; Mara flinching at the word fire\n</Notebook>\n"
+        : i === 3 ? "<Notebook_Update>\nClue T1: Mara flinches when Bob mentions the fire\n</Notebook_Update>\n" : "";
+    return `<think>Turn ${i}: the room weighs it.</think>\n<font color="#ff69b4" title="Mara">"Ring's gone,"</font> Mara says, and flinches at the word fire. ${guest} watches from the door.\n\n<Blocks>\n<World_State>\n**📅 Time:** Night ${i} | **🌤 Loc:** The Lantern | **🌡 Wx:** Rain\n\n---\n\n**🧍 Bob:**\n* *Outfit:* wet coat\n\n---\n\n**👥 NPCs Present:**\n**Mara:**\n* *Outfit:* black apron\n* *Mood:* guarded\n**${guest}:**\n* *Outfit:* ${guest === "Ann" ? "green raincoat, red scarf" : "denim jacket"}\n* *Mood:* curious\n</World_State>\n<Bonds>\nMara: Mood: guarded | Affection: 2${i} (+1 a joke) | Trust: 30 (=)\n${guest}: Mood: curious | Affection: 1${i} (=) | Trust: 20 (=)\n</Bonds>\n${notebook}</Blocks>`;
+};
+cc.vcrpCacheCheckReset();
+const v11Prompts = [];
+for (let t = 1; t <= 5; t++) {
+    if (t % 2) oneShot.setOneShot(`Turn ${t}: Mara finally says why.`);
+    const p = await send("normal", t === 5 ? "Bob asks Mara whether Ann ever came back for her scarf." : null);
+    v11Prompts.push(p);
+    await arrive(t);
+    if (t > 1) {
+        const rep = cc.vcrpCacheCheckReport();
+        ok(rep && !cc.vcrpCacheCheckTrouble(rep), `V11 turn ${t}: ${rep ? (cc.vcrpCacheCheckTrouble(rep) ? `TROUBLE: ${JSON.stringify(rep.change).slice(0, 240)}` : "only the newest messages changed") : "no report"}`);
+        const prev = v11Prompts.at(-2), mkPrev = marked(prev), mkNow = marked(p);
+        const a = prefix(prev, mkPrev.at(-1)), b = prefix(p, mkNow.at(-2));
+        ok(JSON.stringify(a) === JSON.stringify(b), `V11 turn ${t}: the previous turn's cached part is read back byte for byte`, firstDiff(a, b));
+    }
+}
+const v11Last = v11Prompts.at(-1), v11Mk = marked(v11Last);
+const v11Cached = prefix(v11Last, v11Mk.at(-1)).join("\n"), v11All = v11Last.map(textOf).join("\n");
+ok(v11Cached.includes("You are a writers' room of five") && v11Cached.includes("NORA, the Director"), "V11's engine text is in the cached part");
+for (const [what, s] of [["V11's Content section", "# Content (NORA)"], ["the live truths", "<Author_Notebook>"], ["the notebook's update rules", "write the Notebook_Update block only if"],
+    ["the clue planted on turn 3", "Mara flinches when Bob mentions the fire"], ["Ann, back as she left", "Characters on file"], ["Ann's last outfit", "green raincoat, red scarf"],
+    ["the {{user}} rule, item 5", "5. The response does not speak, think, feel, or act for Bob"], ["Tone Rules", tone.TONE_HEADER], ["Existing cast only", castLock.CAST_LOCK_HEADER]]) {
+    ok(v11All.includes(s) && !v11Cached.includes(s), `${what}: sent, and after the cached part`);
+}
+ok(!v11All.includes("<The_Notebook>"), "V11 carries its own notebook craft: the shared one is not added");
+ok(!/<Notebook|Truth: Mara pawned/.test(v11Last.slice(0, v11Mk.at(-1) + 1).filter(m => m.role === "assistant").map(textOf).join("\n")), "no notebook block in the cached history (stripped with the blocks)");
+// Story Memory's summary call on the V11 preset.
+const v11rp = await send("normal");
+await arrive(6);
+const v11RpMk = marked(v11rp);
+memory.setMemoryTaskActive(true, null);
+gen.vcrpSetGenerationType("quiet", {}, false);
+const v11Sum = buildPrompt();
+v11Sum.push({ role: "system", content: `${TASK_MARKER}: not a story turn.] Summarize the stretch.` });
+await handlePromptInjection({ chat: v11Sum, dryRun: false });
+memory.setMemoryTaskActive(false);
+const v11SumText = v11Sum.map(textOf).join("\n"), v11SMk = marked(v11Sum);
+ok(!v11SumText.includes("# Content (NORA)") && !v11SumText.includes("## your thinking steps:") && !v11SumText.includes("<Author_Notebook>"), "the summary call leaves V11's story-turn slots out (Output RULES opens on Story Config there)");
+const v11RpRead = prefix(v11rp, v11RpMk.at(-1)), v11SumRead = prefix(v11Sum, v11SMk.at(-2) ?? v11SMk.at(-1));
+ok(v11SMk.length >= 1 && JSON.stringify(v11RpRead.slice(0, v11SumRead.length)) === JSON.stringify(v11SumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(v11RpRead, v11SumRead));
 
 console.log(`\n${fail ? `${fail} PROBLEM(S)` : "ALL CHECKS PASSED"} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

@@ -25,11 +25,13 @@ export const TAB_SYNC_KEYS = {
     "PRESETS & COT": ["mode", "model", "cotEnabled", "thinkEffort", "customThinkEffort", "thinkingV2", "storyConfig", "enhancedDialogue", "pura"],
     "Writing Style": ["activeStyleId", "aiRule", "customStyles", "dnRatio", "animeMode"],
     "Global Toggles & Add Ons": ["addons", "blocks", "userLanguage", "userPronouns", "onomatopoeia"],
-    "BLOCKS": ["blockStack", "statBlocks", "blocks"],
+    // castMemory: "Remember every character", drawn under World State.
+    "BLOCKS": ["blockStack", "statBlocks", "blocks", "castMemory"],
     "Story Director": ["storyPlan"],
     "Dynamic Ban List": ["banList", "banListBackend", "banListCustomPromptsEnabled", "banListCustomPrompts"],
     "NPCs Bank": ["npcBank"],
-    "Focus": ["focus"],
+    // notebook: the Author's Notebook's switch (its truths are the chat's, in chat_metadata).
+    "Focus": ["focus", "notebook"],
     "Memory": ["vcrpMemory"],
     "Knowledgebase": ["knowledgebase"]
 };

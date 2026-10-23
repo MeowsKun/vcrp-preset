@@ -25,6 +25,7 @@ import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "../cacheCheck.js";
 import { storyConfigFields } from "../../features/storyconfig/config.js";
 import { activeEngine } from "../../engine/meguminOriginal.js";
 import { isPuraEngine, puraVariant } from "../../core/engines.js";
+import { isThinkingCap } from "../../../data/cot/index.js";
 import { puraSettings } from "../pura/index.js";
 import { costBadgesOn, setCostBadges } from "../replyCost.js";
 import { replyBudget, holdTargetActive, lastReplyRoom, BACKGROUND_OUTPUT } from "../replyLength.js";
@@ -130,7 +131,7 @@ function renderReplyLength($c, s, budget, st, rerender) {
                 ${lengthOpts.map(o => `<option value="${esc(o.value)}" ${o.value === curLength ? "selected" : ""}>${esc(o.label)}</option>`).join("")}
                 ${customLength ? `<option value="${esc(curLength)}" selected>Custom (set in Story Config)</option>` : ""}
             </select></div>`}
-        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Thinking length</div><div class="set-desc">${pura ? "The most words the Pura engine's &lt;think&gt; block may take before the story starts (it has no thinking steps of its own). The same setting as Thinking Effort." : "The most words VCRP's visible thinking may take before the story starts. The same setting as Thinking Effort."}</div></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Thinking length</div><div class="set-desc">${pura ? "The most words the Pura engine's &lt;think&gt; block may take before the story starts (it has no thinking steps of its own). The same setting as Thinking Effort." : `The most words VCRP's visible thinking may take before the story starts. The same setting as Thinking Effort.${localProfile.cotEnabled !== false && isThinkingCap(localProfile.model) ? " <b>Not sent with the Thinking Cap you picked:</b> a cap sets its own length." : ""}`}</div></div>
             <select id="vmem_think" class="ps-modern-input" style="width:170px;">
                 ${[["unspecified", "No limit"], ["100", "100 words"], ["250", "250 words"], ["450", "450 words"]].map(([v, l]) => `<option value="${v}" ${effort === v ? "selected" : ""}>${l}</option>`).join("")}
                 ${effort === "custom" ? `<option value="custom" selected>Custom: ${esc(localProfile.customThinkEffort || "")} words</option>` : ""}

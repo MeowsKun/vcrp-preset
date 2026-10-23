@@ -21,7 +21,10 @@ import { puraTidyBlocks, puraTidyText } from "./pura/tidy.js";
 const BLOCKS_PAIRED = /\s*<Blocks\b[^>]*>[\s\S]*?<\/Blocks\s*>/gi;
 const BLOCKS_OPEN = /\s*<Blocks\b[^>]*>[\s\S]*$/i;   // a reply cut off inside its blocks
 
-const strip = s => String(s).replace(BLOCKS_PAIRED, "").replace(BLOCKS_OPEN, "");
+// VCRP: an Author's Notebook block the model wrote outside the envelope goes the same way,
+// so the notebook is never in the history whichever way it was written.
+const NOTEBOOK_LOOSE = /\s*<(Notebook|Notebook_Update)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi;
+const strip = s => String(s).replace(BLOCKS_PAIRED, "").replace(BLOCKS_OPEN, "").replace(NOTEBOOK_LOOSE, "");
 
 /**
  * Removes <Blocks> from every assistant message in the prompt except a trailing one (a
@@ -86,11 +89,22 @@ export function lastBlocksState() {
     return lastBlocksInfo().state;
 }
 
+// Last turn's blocks, only those still in the stack: a block taken out (or every block, the
+// Author's Notebook riding alone) is not handed back as the state to carry forward. "" when
+// none is left.
+function onlyActive(state) {
+    const tags = new Set(meguminActiveBlocks().map(b => b && b.tag && String(b.tag).toLowerCase()).filter(Boolean));
+    const m = String(state || "").match(/^(<Blocks\b[^>]*>)([\s\S]*?)(\s*<\/Blocks\s*>)$/i);
+    if (!m) return state;
+    const inner = m[2].replace(/\s*<([A-Za-z]\w*)\b[^>]*>[\s\S]*?<\/\1\s*>/g, (x, tag) => (tags.has(tag.toLowerCase()) ? x : ""));
+    return /<\w/.test(inner) ? `${m[1]}${inner}${m[3]}` : "";
+}
+
 /** What the per-turn block instructions add: last turn's blocks, as the starting point. */
 export function previousBlocksNote() {
     const carried = carriedTrackerNote();
     const info = lastBlocksInfo();
-    let state = info.state;
+    let state = onlyActive(info.state);
     // The trackers that carry their state are in their own section below, newest of each
     // from the whole chat; listing last turn's copy too would send them twice.
     if (state && carried) {

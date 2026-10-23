@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { extension_settings, getContext, chat_metadata, saveMetadata } from "../../st.js";
+import { vcrpOn } from "../power.js";
 import { extensionName } from "../../core/constants.js";
 import { localProfile } from "../../core/state.js";
 import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
@@ -484,7 +485,11 @@ export function vcrpMemoryShapeTask(messages) {
 }
 
 // The preset's after-chat slots, by how they open: rules for a story reply, not a summary.
-const isStoryTurnSlot = m => typeof (m && m.content) === "string" && /^\s*(?:## your thinking steps|<\/history>)/.test(m.content);
+// Output RULES carries the thinking steps in every preset (V11's opens on Story Config, so
+// not at its start); V11's preset adds its Content section and, when switched on, its
+// "jealbreak plus", in the chat beside it (squashed into one message with it, or not).
+const STORY_TURN_SLOTS = [/^\s*<\/history>/, /## your thinking steps:/, /^\s*# Content \(NORA\)/, /^\s*This is a work of fiction, rated M for mature/];
+export const isStoryTurnSlot = m => typeof (m && m.content) === "string" && STORY_TURN_SLOTS.some(re => re.test(m.content));
 
 // ── The memory text ──────────────────────────────────────────────────────────
 
@@ -601,9 +606,10 @@ export function vcrpMemoryBlock() {
 
 // ── SillyTavern hookup ───────────────────────────────────────────────────────
 
-// The generate interceptor the manifest names. Off unless Story Memory is on.
+// The generate interceptor the manifest names. Off unless Story Memory is on (and VCRP is:
+// power.js, off means the history goes out uncut).
 globalThis.vcrp_memory_intercept = function (chat, _contextSize, _abort, type) {
-    if (vcrpMemoryEnabled()) return vcrpMemoryIntercept(chat, type);
+    if (vcrpOn() && vcrpMemoryEnabled()) return vcrpMemoryIntercept(chat, type);
 };
 
 /** SillyTavern's chat without system messages: the list every position here counts in. */
@@ -637,7 +643,8 @@ export function vcrpMemoryUpdateVisuals() {
     dimTimer = setTimeout(() => {
         if (typeof $ !== "function") return;
         $("#vcrp-memory-cut-style").remove();
-        if (!vcrpMemoryEnabled() || !chat_metadata || !chat_metadata[META_KEY]) return;
+        // VCRP off (power.js): the history goes out uncut, so nothing is dimmed.
+        if (!vcrpOn() || !vcrpMemoryEnabled() || !chat_metadata || !chat_metadata[META_KEY]) return;
         const context = typeof getContext === "function" ? getContext() : null;
         const full = context && Array.isArray(context.chat) ? context.chat : [];
         const cutAt = Math.max(0, resolveAnchor(full.filter(m => !m.is_system), chat_metadata[META_KEY].cut));

@@ -14,6 +14,8 @@ import { meguminRenderRegistry, meguminStatFieldMap } from "./registry.js";
 // One directed edge from the blocks feature to the NPC feature. No cycle:
 // nothing under features/npc/ imports the block card.
 import { npcDecorateUpdatePane } from "../npc/updateCard.js";
+import { notebookChangesAt } from "../../vcrp/notebook/index.js";
+import { renderNotebookApplied } from "../../vcrp/notebook/card.js";
 
 // ── Clicking a choice ────────────────────────────────────────────────────────
 //
@@ -135,6 +137,14 @@ export function meguminDecorateMessageBody(bodyEl, mesText, msgIndex) {
             // feature to fill in.
             const pane = bodyEl.querySelector('.meg-block-body[data-block-id="npcUpdate"]');
             if (pane) npcDecorateUpdatePane(pane, msgIndex);
+            // VCRP: the Notebook tab shows what this reply did to the notebook as applied (VCRP's
+            // ids, nothing it refused), not the lines as the model wrote them.
+            for (const id of ["notebook", "notebook_update"]) {
+                const nbPane = bodyEl.querySelector(`.meg-block-body[data-block-id="${id}"]`);
+                if (!nbPane) continue;
+                const applied = notebookChangesAt(msgIndex);
+                if (Array.isArray(applied)) nbPane.innerHTML = renderNotebookApplied(applied);
+            }
         }
     } catch (e) {
         // Fail visible: the reader keeps the raw block text, which is exactly

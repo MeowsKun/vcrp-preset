@@ -31,8 +31,10 @@ export function meguminCotForMode(modeId, lang = "english") {
     if (!modeId) return null;
 
     let prefix = null;
-    // Megumin Original first: "v10-shura-megumin" is also a "v10-shura".
-    if (modeId.includes("megumin")) prefix = modeId.includes("shura") ? "cot-meg-shura" : "cot-meg-ukiyo";
+    // V11 first: "v11-room-megumin" is a Megumin Original too, with thinking of its own.
+    if (modeId.startsWith("v11")) prefix = "cot-v11";
+    // Megumin Original next: "v10-shura-megumin" is also a "v10-shura".
+    else if (modeId.includes("megumin")) prefix = modeId.includes("shura") ? "cot-meg-shura" : "cot-meg-ukiyo";
     // Shura next: "v10-shura" contains "v10", and the specific pairing wins.
     // The uncapped variant is the default either way -- the Thinking Cap is a
     // remedy for a model that over-thinks, not something to hand everyone.
@@ -44,6 +46,13 @@ export function meguminCotForMode(modeId, lang = "english") {
     const id = `${prefix}-english`;
     return models.find(m => m.id === id) ? id : null;
 }
+
+/**
+ * A Thinking Cap (V10's, Megumin's, V11's): it sets its own length, so no Thinking Effort word
+ * count is sent with it (Megumin Suite V11: a word count makes the models it is for count and
+ * redraft).
+ */
+export const isThinkingCap = id => /^cot-.+-cap-/.test(String(id || ""));
 
 /** The CoT entry an engine is written for, or null. */
 export function meguminCotEntryForMode(modeId, lang = "english") {

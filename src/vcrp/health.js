@@ -17,7 +17,9 @@ import { kbAlwaysOnStats, presetCarriesAlwaysSlot } from "./knowledgebase.js";
 import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "./cacheCheck.js";
 import { replyCapTokens, holdTargetActive } from "./replyLength.js";
 import { focusSettings, peekFocusState } from "./focus/index.js";
-import { isPuraEngine } from "../core/engines.js";
+import { isPuraEngine, isV11Engine } from "../core/engines.js";
+import { notebookOn } from "./notebook/index.js";
+import { vcrpOn } from "./power.js";
 import { activeEngine } from "../engine/meguminOriginal.js";
 import { meguminActiveBlocks } from "../features/blocks/registry.js";
 import { toneRulesText } from "./toneRules.js";
@@ -41,6 +43,11 @@ export function vcrpHealthCheck() {
     try { ctx = getContext(); } catch { ctx = {}; }
     const cc = ctx.chatCompletionSettings || {};
 
+    // VCRP's master switch (power.js): off, it adds nothing and runs nothing after a reply.
+    if (!vcrpOn()) {
+        add("warn", "VCRP is switched off", "Nothing is added to the prompt, and nothing runs after a reply. Turn it back on with the On/Off button at the top of the VCRP window.");
+    }
+
     // 1. API type.
     if (ctx.mainApi && ctx.mainApi !== "openai") {
         add("error", "Not using a Chat Completion API",
@@ -54,7 +61,7 @@ export function vcrpHealthCheck() {
     const isVcrp = (cc.prompts || []).some(p => VCRP_TAG_RE.test((p && p.content) || ""));
     if (!isVcrp) {
         add("error", `The active preset "${presetName}" is not a VCRP preset`,
-            "Select \"VCRP V10 Universal\" (or \"VCRP V10 Megumin Original\") in AI Response Configuration. Import it from the extension's Presets folder if it is not listed.");
+            "Select \"VCRP V10 Universal\" (or \"VCRP V10 Megumin Original\", or \"VCRP V11 Megumin Original\") in AI Response Configuration. Import it from the extension's Presets folder if it is not listed.");
         return summarize(items);
     }
     add("ok", `VCRP preset active: "${presetName}"`);
@@ -107,7 +114,7 @@ export function vcrpHealthCheck() {
     const vcrpBanList = hasText("**stripped articles:**");
     const originalBanList = !vcrpBanList && hasText("<banlist>");
     const originalEngine = meguminOriginalActive();
-    if (originalEngine && vcrpBanList) {
+    if (originalEngine && vcrpBanList && !isV11Engine(activeEngine())) {   // V11 has a note of its own below
         add("info", "Megumin Original engine on the VCRP preset",
             "The preset's ban list and final reminder are VCRP's, dash rules included. For Megumin's writing all the way through, select \"VCRP V10 Megumin Original\" in AI Response Configuration.");
     } else if (!originalEngine && originalBanList) {
@@ -128,6 +135,12 @@ export function vcrpHealthCheck() {
     const carries = tag => (cc.prompts || []).some(p => p && typeof p.content === "string" && p.content.includes(tag));
     if (focusSettings().enabled && !carries("[[focus]]")) focusOff.push("the drift audits' correction");
     if (Object.values(focusSettings().live).some(Boolean) && !carries("[[focus]]")) focusOff.push("Focus's every-reply checks");
+    // The Author's Notebook: its fixed rules in [[notebook]] (V11's preset) or [[block_rules]].
+    if (notebookOn() && !carries("[[notebook]]") && !carries("[[block_rules]]")) focusOff.push("the Author's Notebook's rules");
+    // V11 Тайна reads best on its own preset: its final check, Content section and USER note.
+    if (isV11Engine(activeEngine()) && !(cc.prompts || []).some(p => p && typeof p.content === "string" && p.content.includes("# Content (NORA)"))) {
+        add("info", "V11 Тайна is picked on a preset made for V10", "It works, but V11 rewrote its preset around its engine (a final check, its Content section, a USER note). Import \"VCRP V11 Megumin Original\" from the extension's Presets folder and select it.");
+    }
     const plot = peekFocusState() && peekFocusState().plot;
     if (plot && plot.active && !carries("[[plotfocus]]")) focusOff.push("the plot focus");
     // The Pura engines and Pura's trackers have tags of their own.

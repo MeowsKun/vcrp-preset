@@ -1,7 +1,15 @@
 // Direct prose-style instructions (not tag-based).
 // Moved verbatim out of database.js. Content unchanged.
+// VCRP: V11 Default is Megumin Suite V11's own, word for word (data/megumin.js).
+import { MEGUMIN_V11 } from "./megumin.js";
 
 export const directStyles = [
+    {
+      id: "dir_v11",
+      name: (MEGUMIN_V11 || {}).styleName,
+      desc: (MEGUMIN_V11 || {}).styleDesc,
+      rule: (MEGUMIN_V11 || {}).styleRule
+    },
     {
       id: "dir_v10_ukiyo",
       name: "V10 Ukiyo Default",

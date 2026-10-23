@@ -12,6 +12,7 @@
 
 import { localProfile } from "../../core/state.js";
 import { PURA_BLOCKS, PURA_NOTES_BLOCK } from "./puraBlocks.js";
+import { NOTEBOOK_BLOCKS, notebookBlockRequest } from "../../vcrp/notebook/index.js";
 
 // -------------------------------------------------------------
 // BLOCK REGISTRY — one definition per block the <Blocks> envelope can carry
@@ -125,7 +126,10 @@ export const MEGUMIN_BLOCK_REGISTRY = [
     // VCRP: Pura's trackers (puraBlocks.js), drawn with Pura's own cards, and the
     // Notes tab for what a Pura engine says out of character.
     ...PURA_BLOCKS,
-    PURA_NOTES_BLOCK
+    PURA_NOTES_BLOCK,
+    // VCRP: the Author's Notebook's two blocks (vcrp/notebook): its request rides in the
+    // envelope below, so they are here to be stripped, cleaned and drawn like every block.
+    ...NOTEBOOK_BLOCKS
 ];
 
 // Content written for the old format opens with <details><summary>…</summary>
@@ -178,9 +182,14 @@ export function meguminActiveBlocks() {
 // infer from prose, and the templates were already fill-in-the-blank.
 export function buildBlocksEnvelope(dict) {
     const active = meguminActiveBlocks();
-    if (!active.length) return "";
+    // VCRP: the Author's Notebook is not a block in the stack; it rides in the envelope
+    // whenever it is on, even with no other block (Megumin Suite V11).
+    let notebook = null;
+    try { notebook = notebookBlockRequest(); } catch (e) { console.warn("[VCRP] Notebook: could not build its request.", e); }
+    if (!active.length && !notebook) return "";
 
     const parts = [];
+    const rules = [];   // per-block rules, written above <Blocks>
     active.forEach(b => {
         // A lead block is written before the prose, so it is deliberately not in
         // the envelope at all — the envelope is the last thing in the reply, and
@@ -214,15 +223,25 @@ export function buildBlocksEnvelope(dict) {
         parts.push(`<${b.tag}>\n${body}\n</${b.tag}>`);
     });
 
+    if (notebook) {
+        rules.push(notebook.rules);
+        parts.push(notebook.template);
+    }
+
     if (!parts.length) return "";
 
+    // The rules come first and the "output" line sits right above the skeleton (V11):
+    // placed between the two, rules read as part of what to write, and a model echoes them.
+    const rulesText = rules.length
+        ? `These rules say how to fill the blocks below. Follow them; never write them out.\n\n${rules.join("\n\n")}\n\n`
+        : "";
     const header = [
         "## At the end of your response, output exactly one <Blocks> section.",
         "Put every block inside it, in this order, each in its own tag. Do not add tags that are not listed. Do not nest blocks inside each other. Close every tag you open. Never wrap a block in <details> or <summary>; the interface draws the header and the fold itself.",
         "The blocks are a sidebar for the reader, outside the story: nothing in them counts as revealed in the prose, and no character knows it."
     ].join("\n");
 
-    return `${header}\n\n<Blocks>\n${parts.join("\n")}\n</Blocks>`;
+    return `${rulesText}${header}\n\n<Blocks>\n${parts.join("\n")}\n</Blocks>`;
 }
 
 //

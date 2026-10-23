@@ -259,7 +259,9 @@ function renderTreated(b, opts) {
     if (!t) return "";
     // A block cut off mid-write is exactly the case a structural parser gets
     // wrong most confidently, so truncated bodies always take the prose path.
-    if (b.truncated) return "";
+    // VCRP: bar a spoiler's, which must never reach the reader as prose: its treatment
+    // reads line by line, so a cut-off body is still drawn behind the blur.
+    if (b.truncated && !t.spoiler) return "";
     try {
         // The BLOCKS tab preview is fed the TEMPLATES, so every value in it is
         // an unfilled `[placeholder]`. A treatment drops those in the chat, and
@@ -413,10 +415,14 @@ export function buildBlocksCard(blocks, opts = {}) {
             // The treatment's class goes on only when the treatment actually
             // drew something. Putting it on unconditionally would style a prose
             // fallback with the scene board's layout rules.
+            const t = BLOCK_TREATMENTS[b.def.id];
             if (treated) {
-                const t = BLOCK_TREATMENTS[b.def.id];
                 if (t && t.cls) pane.classList.add(t.cls);
                 pane.innerHTML = treated;
+            } else if (t && t.spoiler) {
+                // VCRP: a spoiler (the Author's Notebook) is never drawn as plain text: what
+                // its treatment declined stays off the card.
+                pane.innerHTML = "";
             } else {
                 pane.innerHTML = renderBody(b.body);
             }
@@ -521,6 +527,43 @@ function hideNode(n, doc) {
     }
     n.setAttribute(HIDDEN_ATTR, "1");
     n.style.display = "none";
+}
+
+// VCRP: the spoiler blocks (BLOCK_TREATMENTS[id].spoiler) of `mes` that sit outside every
+// <Blocks> envelope.
+function looseSpoilers(mes, blocks) {
+    const spans = [];
+    const re = /<Blocks\b[^>]*>[\s\S]*?(?:<\/Blocks\s*>|$)/gi;
+    let m;
+    while ((m = re.exec(mes)) !== null) {
+        spans.push([m.index, m.index + m[0].length]);
+        if (!m[0].length) break;
+    }
+    return blocks.filter(b => {
+        const t = BLOCK_TREATMENTS[b.def.id];
+        return t && t.spoiler && !spans.some(([a, z]) => b.at >= a && b.at < z);
+    });
+}
+
+// VCRP: the run of top-level nodes holding exactly a loose block's text, or null. Taken
+// only while each node holds nothing but the block's own text: a paragraph that runs into
+// the prose is refused, as findLeadNodes refuses one, so no story is ever hidden.
+function findLooseNodes(root, want, skip) {
+    if (!want) return null;
+    const kids = [...root.childNodes].filter(n => !skip.includes(n) && !isSteppable(n));
+    for (let i = 0; i < kids.length; i++) {
+        let acc = "";
+        const taken = [];
+        for (let j = i; j < kids.length && acc.length < want.length; j++) {
+            const have = normBody(kids[j].textContent);
+            if (!have) { taken.push(kids[j]); continue; }
+            if (!want.startsWith(acc + have)) break;
+            acc += have;
+            taken.push(kids[j]);
+        }
+        if (acc && acc === want) return taken;
+    }
+    return null;
 }
 
 // The node carrying a LEAD block — one the model wrote before the prose rather
@@ -691,6 +734,13 @@ export function applyBlocksToMessage(root, mes, registry, opts = {}) {
     if (markerNodes.length) {
         markerNodes.forEach(n => hideNode(n, doc));
         leadNodes.forEach(n => hideNode(n, doc));
+        // VCRP: a spoiler block (the Author's Notebook) the model wrote outside the envelope.
+        // The marker covers the envelope only, so its paragraphs would stay readable in the
+        // message: they are found by their own text and hidden too.
+        looseSpoilers(mes, tailBlocks).forEach(b => {
+            const nodes = findLooseNodes(root, normBody(b.body), markerNodes);
+            if (nodes) nodes.forEach(n => hideNode(n, doc));
+        });
         root.appendChild(buildBlocksCard([...leadFound, ...tailBlocks], opts));
         root.setAttribute(STAMP_ATTR, stamp);
         return true;

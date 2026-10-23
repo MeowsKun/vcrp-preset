@@ -37,6 +37,7 @@ import {
     PURA_MAIN, PURA_SIMPLIFIED, PURA_VARS, PURA_USER_CONTROL, PURA_LENGTHS, PURA_VOICES,
     PURA_FORMATTING, PURA_TOGGLES, PURA_RANDOMISERS,
 } from "../../../data/pura.js";
+import { MEGUMIN_V11 } from "../../../data/megumin.js";
 
 export const PURA_VOICE_LABELS = {
     "": "None",
@@ -225,6 +226,16 @@ export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { lang
 }
 
 /**
+ * V11's Thinking Cap, said again as the last thing the model reads (Megumin Suite V11): the
+ * models it is for (Kimi, DeepSeek, GLM, Qwen) follow a rule there far better than one at the
+ * top of a long prompt. A fresh reply only, while the cap is the thinking picked.
+ */
+export function thinkingCapNudge(gen = "reply") {
+    if (gen !== "reply" || !localProfile || localProfile.cotEnabled === false) return "";
+    return localProfile.model === "cot-v11-cap-english" ? MEGUMIN_V11.capNudge : "";
+}
+
+/**
  * The picks to make again this request: a Continue keeps the random voice of the reply it
  * continues; with "Swipes keep the rolls" on, a swipe or regenerate of the latest reply
  * keeps all of its rolls. {} otherwise (everything rolled fresh).
@@ -258,7 +269,7 @@ export function applyPuraEngine(dict, engine, gen = "reply", { record = false } 
     if (!isPuraEngine(engine)) {
         if (record && gen === "reply") setPendingRolls(null);
         dict["[[pura_system]]"] = "";
-        const late = [tone, cast, direction, budget].filter(Boolean).join("\n\n");
+        const late = [tone, cast, direction, budget, thinkingCapNudge(gen)].filter(Boolean).join("\n\n");
         dict["[[pura_late]]"] = late ? `\n\n${late}` : "";
         return;
     }

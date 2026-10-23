@@ -23,6 +23,8 @@ import { blockTwinsInStack } from "./puraBlocks.js";
 import { trackerCostLabel, trackersCost, usd, puraPrice } from "../../vcrp/pura/costs.js";
 import { meguminSlotByTrigger } from "../../../data/slots.js";
 import { hasSharedFragment } from "../../core/sharedFragments.js";
+import { castMemoryOn } from "../../vcrp/castMemory.js";
+import { notebookOn } from "../../vcrp/notebook/index.js";
 
 // Mirrors customBadge() in ui/tabs/globalAndBlocks.js: a block whose text was
 // rewritten in Dev Mode says so here, where it is switched on and ordered.
@@ -32,6 +34,28 @@ function editedFlag(b) {
     const slot = b && b.source ? meguminSlotByTrigger(b.source) : null;
     if (!slot || !slot.key || !hasSharedFragment(slot.key)) return "";
     return ` <span class="blk-edited-flag" title="You edited this in Dev Mode. It no longer uses the built-in text.">edited</span>`;
+}
+
+// VCRP: "Remember every character" (vcrp/castMemory.js), under World State, or under Bonds
+// when World State is not in the stack.
+function castMemoryRow() {
+    const on = castMemoryOn();
+    return `
+                    <div class="blk-sub-row">
+                        <div>
+                            <div class="blk-sub-label">Remember every character</div>
+                            <div class="blk-sub-desc">Someone named again who is no longer in the last blocks comes back as last recorded: their World State entry and Bonds line from earlier in the chat, sent only on those turns, after the chat.</div>
+                        </div>
+                        <div class="ps-toggle-card ${on ? 'active' : ''}" id="blk_cast_memory_toggle" style="padding:2px; min-width:40px; background:transparent; border-color:${on ? '#10b981' : 'var(--border-color)'}; cursor:pointer; border-radius:8px;">
+                            <div class="ps-switch" style="transform: scale(0.7); ${on ? 'background:#10b981;' : ''}"></div>
+                        </div>
+                    </div>`;
+}
+function wireCastMemoryRow(sub, c) {
+    sub.find("#blk_cast_memory_toggle").on("click", () => {
+        localProfile.castMemory = { enabled: !castMemoryOn() };
+        saveProfileToMemory(); renderBlocksTab(c);
+    });
 }
 
 export function renderBlocksTab(c) {
@@ -137,6 +161,7 @@ export function renderBlocksTab(c) {
                             <div class="ps-switch" style="transform: scale(0.7); ${ws.compactEnabled ? 'background:#10b981;' : ''}"></div>
                         </div>
                     </div>
+                    ${castMemoryRow()}
                     <div class="blk-sub-row" id="blk_freq_row" style="display:${ws.compactEnabled ? 'flex' : 'none'};">
                         <div>
                             <div class="blk-sub-label">Full state every</div>
@@ -153,11 +178,19 @@ export function renderBlocksTab(c) {
                 ws.compactEnabled = !ws.compactEnabled;
                 saveProfileToMemory(); renderBlocksTab(c);
             });
+            wireCastMemoryRow(sub, c);
             sub.find("#blk_full_freq").on("input", function () {
                 let v = parseInt($(this).val(), 10);
                 if (isNaN(v) || v < 1) v = 5;
                 ws.fullFreq = v; saveProfileDebounced();
             });
+            list.append(sub);
+        }
+        // Bonds without World State: "Remember every character" works from Bonds alone, so its
+        // switch sits under Bonds then.
+        if (b.id === "bonds" && !stack.order.includes("world")) {
+            const sub = $(`<div class="blk-sub">${castMemoryRow()}</div>`);
+            wireCastMemoryRow(sub, c);
             list.append(sub);
         }
 
@@ -289,7 +322,9 @@ export function renderBlocksPreview(host) {
     const active = meguminActiveBlocks();
     // VCRP: a tab that only holds a reply's own note (Pura's Notes) is no block to preview alone.
     if (!active.some(b => !b.transient)) {
-        host.innerHTML = `<div class="blk-empty">No blocks in the master block, so nothing is sent and nothing is drawn.</div>`;
+        host.innerHTML = notebookOn()
+            ? `<div class="blk-empty">No blocks in the master block. The Author's Notebook is on (Focus tab), so its own block is still asked for, and drawn as a spoiler tab.</div>`
+            : `<div class="blk-empty">No blocks in the master block, so nothing is sent and nothing is drawn.</div>`;
         return;
     }
 

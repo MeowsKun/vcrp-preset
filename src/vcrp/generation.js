@@ -138,8 +138,12 @@ export function vcrpFinalizeMessages(messages, gen, substitute = s => s) {
         const m = messages[i];
         if (typeof m.content !== "string") continue;
         // The engines carry "- voice: [[aiprompt]]"; with no writing style picked that
-        // is a label with nothing after it, so drop the whole line.
-        m.content = m.content.replace(EMPTY_VOICE, "");
+        // is a label with nothing after it, so drop the whole line (and the blank line it
+        // leaves doubled, only where one went).
+        if (EMPTY_VOICE.test(m.content)) {
+            EMPTY_VOICE.lastIndex = 0;
+            m.content = m.content.replace(EMPTY_VOICE, "").replace(/(?:\r?\n[ \t]*){3,}/g, "\n\n");
+        }
         if (!m.content.trim()) messages.splice(i, 1);
     }
     if (NOTES[gen]) {

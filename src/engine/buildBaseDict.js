@@ -10,15 +10,18 @@
 import { getContext, extension_settings, substituteParams } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
-import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine, isPuraEngine, puraVariant } from "../core/engines.js";
+import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine, isPuraEngine, puraVariant, isV11Engine } from "../core/engines.js";
 import { meguminStyleRule, meguminAddonText, meguminPlanTemplate } from "./meguminOriginal.js";
-import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING } from "../../data/megumin.js";
+import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING, MEGUMIN_V11 } from "../../data/megumin.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
+import { notebookCraft } from "../vcrp/notebook/index.js";
+import { castMemoryNote } from "../vcrp/castMemory.js";
 import {
     activeNpcImages, pushActiveNpcImage, clearActiveNpcImages,
 } from "../core/activeRequests.js";
 import { DEFAULT_PROMPTS } from "../prompts/index.js";
 import { hardcodedLogic } from "../../data/database.js";
+import { isThinkingCap } from "../../data/cot/index.js";
 import { applyEnhancedDialogue } from "../../data/modes/v10.js";
 import { buildBlocksEnvelope, meguminActiveBlocks, puraSheetsInStack } from "../features/blocks/registry.js";
 import { puraBlockRules } from "../features/blocks/puraBlocks.js";
@@ -172,9 +175,16 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         //
         // It sits immediately above the override pass so a Dev Mode edit of the
         // shared fragment still wins, exactly like every other shared slot.
+        //
+        // VCRP: V11's wording (Megumin Suite V11), which also asks the reply to show what
+        // {{user}} reached for, on VCRP's engines and V11. The V10 Megumin Originals keep
+        // the line they shipped with. Its number is the list's next (injection.js), so the
+        // same line fits VCRP's preset ("3."), Megumin's ("3.") and V11's ("5.").
         dict["[[user]]"] = isCoWriterEngine(activeEngine)
             ? ""
-            : "3. NEVER write {{user}}'s actions, speech, thoughts, or feelings.";
+            : isMeguminEngine(activeEngine) && !isV11Engine(activeEngine)
+                ? "3. NEVER write {{user}}'s actions, speech, thoughts, or feelings."
+                : MEGUMIN_V11.userRule;
 
         // Slot overrides, driven by MEGUMIN_SLOT_REGISTRY.
         //
@@ -261,8 +271,11 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     applyPuraEngine(dict, activeEngine, measure ? "reply" : vcrpGenerationKind(), { record: !measure });
 
     // NEW: Inject Thinking Effort to the absolute top of whatever [[COT]] is currently active
+    // Not for a Thinking Cap (Megumin Suite V11): it sets its own length, and a word count
+    // makes the models it is for count and redraft.
     let effort = localProfile.thinkEffort || "unspecified";
-    if (effort !== "unspecified" && dict["[[COT]]"]) {
+    const thinkingCap = isThinkingCap(localProfile.model);
+    if (effort !== "unspecified" && dict["[[COT]]"] && !thinkingCap) {
         let words = effort === "custom" ? (localProfile.customThinkEffort || "100") : effort;
         dict["[[COT]]"] = `Your Thinking must not be more than ${words} words.\n\n` + dict["[[COT]]"];
     }
@@ -619,11 +632,18 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     // this line.
     // The full rules of the Pura trackers in the stack, cached at the end of Main 2.
     dict["[[block_rules]]"] = puraBlockRules(meguminActiveBlocks());
+    // VCRP: the Author's Notebook's craft (fixed text, cached): V11's own [[notebook]] slot, or
+    // with the block rules in a preset without one (injection.js). Empty while it is off, and
+    // with V11, whose own text carries it.
+    dict["[[notebook]]"] = notebookCraft();
     dict["[[blocks]]"] = buildBlocksEnvelope(dict);
     // VCRP: earlier replies go out without their blocks (cache), so last turn's travel here.
     if (dict["[[blocks]]"]) {
         const previous = previousBlocksNote();
         if (previous) dict["[[blocks]]"] += `\n\n${previous}`;
+        // VCRP: characters named again but gone from those blocks, as they were last recorded.
+        const returning = castMemoryNote();
+        if (returning) dict["[[blocks]]"] += `\n\n${returning}`;
     }
 
     return dict;

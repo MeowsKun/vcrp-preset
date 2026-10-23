@@ -323,7 +323,7 @@ for (let k = 0; k < memCount; k++) {
     check(!$("#vcrp_whats_new").length, "shown on a fresh install");
     delete gs.whatsNewSeen;
     switchTab(gear);
-    check($("#vcrp_whats_new").length === 1 && /Import the preset again/.test($("#vcrp_whats_new").text()), "not shown after an update");
+    check($("#vcrp_whats_new").length === 1 && /import the new preset/.test($("#vcrp_whats_new").text()), "not shown after an update");
     const dot = () => $(`#dot_${gear}`);
     check(dot().length === 1 && dot().hasClass("has-notice"), "no dot on the settings gear");
     $("#vcrp_whats_new_ok").trigger("click");
@@ -636,6 +636,139 @@ for (const view of ["landing", "editor"]) {
         if (!ok) failures++;
         console.log(`  ${ok ? "✓" : "✗"} Dev Mode "${view}"${ok ? "" : ": " + errors.slice(before).join(" | ").slice(0, 300)}`);
     } catch (e) { failures++; console.log(`  ✗ Dev Mode "${view}": THREW ${e.stack.split("\n").slice(0, 3).join(" / ")}`); }
+}
+
+// Megumin Suite V11 in VCRP: the NPC Bank draws nothing it was handed as markup; V11's engine and
+// thinking cards; the Notebook's panel in the Focus tab (switch, spoiler, edits); "Remember
+// every character" under World State in the BLOCKS tab.
+{
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ V11: ${what}`); } };
+    const before = failures;
+    const tick = () => new Promise(r => setTimeout(r, 5));
+    const box = $("#ps_stage_content");
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { mode: p.mode, model: p.model, order: JSON.stringify(p.blockStack.order), npcs: JSON.stringify(p.npcBank.npcs || []) };
+
+    // The NPC Bank: a crafted NPC's markup is shown as text, never run; a bad portrait is dropped.
+    p.npcBank.enabled = true;
+    p.npcBank.npcs = [{ name: '<img src=x onerror="window.__xss=1">Eve', age: '<b onmouseover="x">30</b>', sex: "F", appearance: '</textarea><script>window.__xss=2</script>', pfp: "javascript:alert(1)", timestamp: Date.now(), messageIndex: 0, history: [] }];
+    switchTab(tabsUI.findIndex(t => t.title === "NPCs Bank"));
+    await tick();
+    check(box.find("img[onerror], b[onmouseover], script").length === 0 && !box.find('img[src^="javascript"]').length && window.__xss === undefined, "the NPC Bank ran markup from an NPC record");
+    check(/<img src=x onerror/.test(box.text()), "the NPC's name is not shown as text");
+
+    // V11's engine card, and its two thinking cards (drawn while the CoT is on).
+    p.cotEnabled = true;
+    switchTab(tabsUI.findIndex(t => t.title === "PRESETS & COT"));
+    const v11card = box.find(".mtab-eng-card").filter((i, el) => /V11 Тайна · Megumin Original/.test($(el).find(".ecard-title").text()));
+    check(v11card.length === 1, "no V11 Тайна engine card");
+    v11card.trigger("click"); await tick();
+    check(p.mode === "v11-room-megumin" && p.model === "cot-v11-english" && p.activeStyleId === "dir_v11", `picking V11 does not pick its thinking and style: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
+    const capCard = box.find(".mtab-eng-card").filter((i, el) => /CoT V11 · Megumin Original — Thinking Cap/.test($(el).find(".ecard-title").text()));
+    check(capCard.length === 1, "no V11 Thinking Cap card");
+    capCard.trigger("click"); await tick();
+    check(p.model === "cot-v11-cap-english", `the V11 Thinking Cap card does not pick it: ${p.model}`);
+    check(box.find("#ps_effort_cap_note").length === 1, "no note that Thinking Effort is not sent with a Thinking Cap");
+
+    // The Notebook's panel: forced on with V11; for another engine, a switch; the live truths
+    // behind a spoiler, edited and saved with the chat.
+    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    check(box.find("#focus_notebook_panel").length === 1 && box.find("#focus_nb_on").is(":checked") && box.find("#focus_nb_on").is(":disabled") && /Always on with V11/.test(box.text()), "the Notebook is not shown as always on with V11");
+    p.mode = "v10-core"; p.model = "cot-v10-ukiyo-english";
+    p.notebook = { enabled: false };
+    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    box.find("#focus_nb_on").prop("checked", true).trigger("change"); await tick();
+    check(p.notebook && p.notebook.enabled === true && /Empty: the next reply writes it/.test(box.find("#focus_nb_status").text()), "the Notebook switch does not save, or the status is wrong");
+    chat.push({ is_user: false, name: "Mara", mes: "Story.\n<Blocks>\n<Notebook>\nT1\nTruth: The well is poisoned.\nHidden from: Bob, the reader\nComes out when: Bob drinks\nWhat it changes: everything\nClue ideas: a dead crow\n</Notebook>\n</Blocks>" });
+    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    check(/1<\/b> of 3 truths live|1 of 3 truths live/.test(box.find("#focus_nb_status").html() || ""), `the live count is not shown: ${box.find("#focus_nb_status").text()}`);
+    check(box.find("#focus_notebook_panel details").first().find(".nb_field[data-key='truth']").val() === "The well is poisoned.", "the live truth is not behind the spoiler");
+    box.find(".nb_spoiler[data-which='live']").prop("open", true).trigger("toggle");
+    box.find(".nb_field[data-id='T1'][data-key='truth']").val("The innkeeper poisoned the well.");
+    box.find(".nb_save[data-id='T1']").trigger("click"); await tick();
+    check(box.find(".nb_spoiler[data-which='live']").prop("open") === true, "the live truths fold up again after a save");
+    ctx.chatId = "another chat";
+    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    check(box.find(".nb_spoiler[data-which='live']").prop("open") === false, "another chat's live truths show unfolded");
+    delete ctx.chatId;
+    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    check(meta.vcrp_notebook && meta.vcrp_notebook.ops.some(o => o.op === "edit" && o.fields.truth === "The innkeeper poisoned the well."), "the edit is not kept with the chat");
+    box.find(".nb_reveal[data-id='T1']").trigger("click"); await tick();
+    check(/Past: 1 truth/.test(box.text()) && box.find(".nb_restore[data-id='T1']").length === 1, "Mark revealed does not move it to the past");
+    chat.pop();
+    delete meta.vcrp_notebook;
+    p.notebook = { enabled: false };
+
+    // A reply's Notebook tab: what it did as applied (VCRP's ids), blurred; a block cut off
+    // mid-write is never drawn as plain text.
+    const { meguminDecorateMessageBody } = await imp("src/features/blocks/chat.js");
+    chat.push({ is_user: false, name: "Mara", mes: "Story.\n<Blocks>\n<Notebook>\nT7\nTruth: The well is poisoned.\nHidden from: Bob, the reader\n</Notebook>\n</Blocks>" });
+    const at = chat.length - 1;
+    const mesEl = w.document.createElement("div");
+    mesEl.className = "mes_text";
+    w.document.body.appendChild(mesEl);
+    // As SillyTavern draws it: the preset's "Blocks display marker" regex wraps the envelope.
+    const MARKED = `<p>Story.</p><details class="meg-blocks-src"><summary>Blocks</summary><p>block text</p></details>`;
+    const nbTab = () => mesEl.querySelector('.meg-block-body[data-block-id="notebook"]');
+    const unblurred = el => { const c = el.cloneNode(true); c.querySelectorAll(".vcrp-nb-line").forEach(n => n.remove()); return c.textContent; };
+    mesEl.innerHTML = MARKED;
+    meguminDecorateMessageBody(mesEl, chat[at].mes, at);
+    check(nbTab() && /T1 written: The well is poisoned\./.test(nbTab().textContent) && /Hidden from: Bob, the reader/.test(nbTab().textContent) && !/T7/.test(nbTab().textContent), `the Notebook tab does not show what was applied: ${nbTab() && nbTab().textContent}`);
+    check(nbTab() && !/poisoned/.test(unblurred(nbTab())), "the Notebook tab shows a truth outside the blur");
+    chat[at].mes = "Story.\n<Blocks>\n<Notebook>\nT1\nTruth: The well is poisoned.\nHidden from: Bo";
+    mesEl.innerHTML = MARKED;
+    meguminDecorateMessageBody(mesEl, chat[at].mes, at);
+    check(!nbTab() || !/poisoned/.test(unblurred(nbTab())), `a cut-off notebook block is drawn as plain text: ${nbTab() && nbTab().innerHTML.slice(0, 200)}`);
+    mesEl.innerHTML = MARKED;
+    meguminDecorateMessageBody(mesEl, chat[at].mes);   // no message number: the card renderer alone
+    check(!nbTab() || !/poisoned/.test(unblurred(nbTab())), `a cut-off notebook block is drawn as plain text by the card: ${nbTab() && nbTab().innerHTML.slice(0, 200)}`);
+    // Written outside the envelope: SillyTavern draws its text as a paragraph below the marked
+    // envelope. The paragraph is hidden; prose that merely mentions the same words is not.
+    chat[at].mes = "Story.\n<Blocks>\n<World_State>the bar</World_State>\n</Blocks>\n<Notebook>\nT1\nTruth: The well is poisoned.\nHidden from: Bob, the reader\n</Notebook>";
+    mesEl.innerHTML = `<p>Story.</p><details class="meg-blocks-src"><summary>Blocks</summary><p>the bar</p></details><p>T1<br>Truth: The well is poisoned.<br>Hidden from: Bob, the reader</p>`;
+    meguminDecorateMessageBody(mesEl, chat[at].mes, at);
+    const visible = [...mesEl.childNodes].filter(n => n.nodeType === 1 && n.style.display !== "none" && !n.classList.contains("meg-blocks")).map(n => n.textContent).join(" ");
+    check(/Story\./.test(visible) && !/poisoned/.test(visible), `a notebook written outside the envelope stays readable in the message: ${visible}`);
+    check(nbTab() && /T1 written: The well is poisoned\./.test(nbTab().textContent), "a notebook written outside the envelope has no tab");
+    // Run into the prose (no blank line between): the paragraph holds story too, so it is left alone.
+    mesEl.innerHTML = `<details class="meg-blocks-src"><summary>Blocks</summary><p>the bar</p></details><p>She said nothing more. T1<br>Truth: The well is poisoned.<br>Hidden from: Bob, the reader</p>`;
+    meguminDecorateMessageBody(mesEl, chat[at].mes, at);
+    const shownProse = [...mesEl.childNodes].filter(n => n.nodeType === 1 && n.style.display !== "none" && !n.classList.contains("meg-blocks")).map(n => n.textContent).join(" ");
+    check(/She said nothing more\./.test(shownProse), "story prose sharing a paragraph with a loose notebook was hidden");
+    mesEl.remove();
+    chat.pop();
+
+    // BLOCKS: "Remember every character", under World State.
+    p.blockStack.order = ["world", "bonds"];
+    switchTab(tabsUI.findIndex(t => t.title === "BLOCKS"));
+    check(box.find("#blk_cast_memory_toggle").length === 1 && box.find("#blk_cast_memory_toggle").hasClass("active"), "Remember every character is missing or not on by default");
+    box.find("#blk_cast_memory_toggle").trigger("click"); await tick();
+    check(p.castMemory && p.castMemory.enabled === false, "the switch does not save");
+    delete p.castMemory;
+    // Bonds alone: the switch sits under Bonds, once.
+    p.blockStack.order = ["bonds"];
+    switchTab(tabsUI.findIndex(t => t.title === "BLOCKS"));
+    check(box.find("#blk_cast_memory_toggle").length === 1, "Remember every character is missing with Bonds alone");
+    box.find("#blk_cast_memory_toggle").trigger("click"); await tick();
+    check(p.castMemory && p.castMemory.enabled === false, "the switch under Bonds does not save");
+    delete p.castMemory;
+
+    // Global Settings: lore for background calls, on until switched off.
+    const gsl = extension_settings.VCRP.globalSettings;
+    delete gsl.loreInTasks;
+    switchTab(tabsUI.findIndex(t => t.title === "Global Settings"));
+    check(box.find("#gs_toggle_lore_tasks").hasClass("active"), "Lore for background calls is missing or not on by default");
+    box.find("#gs_toggle_lore_tasks").trigger("click"); await tick();
+    check(gsl.loreInTasks === false && !box.find("#gs_toggle_lore_tasks").hasClass("active"), "Lore for background calls does not switch off");
+    box.find("#gs_toggle_lore_tasks").trigger("click"); await tick();
+    check(gsl.loreInTasks === true, "Lore for background calls does not switch back on");
+    delete gsl.loreInTasks;
+
+    Object.assign(p, { mode: keep.mode, model: keep.model });
+    p.blockStack.order = JSON.parse(keep.order);
+    p.npcBank.npcs = JSON.parse(keep.npcs);
+    clicks += 9;
+    if (failures === before) console.log("  ✓ V11: NPC Bank escapes records; V11 engine and thinking cards; the Notebook panel (forced, switch, spoiler, edit, reveal); Remember every character; the lore switch");
 }
 
 console.error = origError;

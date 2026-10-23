@@ -32,15 +32,18 @@ export function buildFakeTree(label) {
     })(ext);
 
     // `import a, { b, c as d } from "x"` and re-exports `export { b, c } from "x"` that leave the extension.
-    const importRe = /(?:import|export)\s+(?:([\w$]+)\s*,?\s*)?(?:\{([^}]*)\})?(?:\*\s+as\s+[\w$]+)?\s*from\s*["']([^"']+)["']/g;
+    // A namespace import (`import * as ns from "x"`) stubs every `ns.name` the file reads.
+    const importRe = /(?:import|export)\s+(?:([\w$]+)\s*,?\s*)?(?:\{([^}]*)\})?(?:\*\s+as\s+([\w$]+))?\s*from\s*["']([^"']+)["']/g;
     const stubs = new Map();
     for (const file of jsFiles) {
-        for (const m of readFileSync(file, "utf8").matchAll(importRe)) {
-            const target = resolve(dirname(file), m[3]);
+        const src = readFileSync(file, "utf8");
+        for (const m of src.matchAll(importRe)) {
+            const target = resolve(dirname(file), m[4]);
             if (target.startsWith(ext + sep)) continue;
             if (!stubs.has(target)) stubs.set(target, new Set());
             if (m[1]) stubs.get(target).add("default");
             (m[2] || "").split(",").map(s => s.trim().split(/\s+as\s+/)[0]).filter(Boolean).forEach(n => stubs.get(target).add(n));
+            if (m[3]) for (const u of src.matchAll(new RegExp(`\\b${m[3].replace(/\$/g, "\\$")}\\.([\\w$]+)`, "g"))) stubs.get(target).add(u[1]);
         }
     }
     for (const [path, names] of stubs) {

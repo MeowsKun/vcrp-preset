@@ -11,7 +11,7 @@ import { saveProfileToMemory, saveProfileDebounced } from "../../core/profile.js
 import { fireRefreshHook, REFRESH } from "../../core/refreshHooks.js";
 import { hardcodedLogic } from "../../../data/database.js";
 import { renderDevMode } from "../devmode.js";
-import { meguminCotForMode } from "../../../data/cot/index.js";
+import { meguminCotForMode, isThinkingCap } from "../../../data/cot/index.js";
 import { buildStoryConfigSection } from "../../features/storyconfig/ui.js";
 import { countActiveConfigFields } from "../../features/storyconfig/config.js";
 
@@ -80,6 +80,7 @@ export function renderCoreAndCot(c) {
         "v10-ukiyo-megumin": "Megumin Suite's own V10 Ukiyo, word for word, for RP that reads exactly the way it did on Megumin. Its engine text, thinking steps and Enhanced Dialogue are the originals, and so is the wording of your writing style, add-ons and Story Config while it is selected. The dash cleaner pauses. Pair it with the \"VCRP V10 Megumin Original\" preset. Story Memory works the same as on every VCRP engine.",
         "pura-original": "Pura's Director Preset 16.0 (by Pura), word for word: grounded, character-driven co-writing where {{user}} directs the scene. Pura's own formatting, length, user-control, genre and modes, set in the Pura Director panel; Story Config and the writing style stand aside. Thinks in its own &lt;think&gt; block, without a CoT script. Works with Story Memory, Focus, the NPC Bank and every block, Pura's trackers among them.",
         "pura-adapted": "Pura's Director core, reworded only where VCRP's modules take over: Story Config sets genre, tone, POV, tense, pace, length, friction and explicitness, and VCRP's rule keeps {{user}} yours. Pura's voices, randomisers, extras and modes stay in the Pura Director panel. Thinks in its own &lt;think&gt; block, without a CoT script. Works with Story Memory, Focus, the NPC Bank and every block, Pura's trackers among them.",
+        "v11-room-megumin": "Megumin Suite V11's new engine, word for word: a writers' room of five (a director, a psychologist, a story architect, a storyteller, a dialogue writer) who talk the turn over in the thinking, and one overt narrator with a voice and opinions in the reply. It keeps an Author's Notebook by itself: two or three hidden truths, planted as clues and paid off when the story earns it (always on with this engine; see the Focus tab). Picks CoT V11 and the V11 Default style; for models that over-think (GLM, Kimi, DeepSeek, Qwen), pick its Thinking Cap. The dash cleaner pauses. Pair it with the \"VCRP V11 Megumin Original\" preset. Story Memory, Focus and every module work as on every VCRP engine.",
         "v10-shura-megumin": "Megumin Suite's own V10 Shura, word for word, for RP that reads exactly the way it did on Megumin. Its engine text, thinking steps and Enhanced Dialogue are the originals, and so is the wording of your writing style, add-ons and Story Config while it is selected. The dash cleaner pauses. Pair it with the \"VCRP V10 Megumin Original\" preset. Story Memory works the same as on every VCRP engine.",
     };
 
@@ -165,6 +166,7 @@ export function renderCoreAndCot(c) {
         else if (m.id.includes("v7")) version = "V7";
         else if (m.id.includes("v8")) version = "V8";
         // Before the v9 test purely so the two lists stay in the same order.
+        else if (m.id.includes("v11")) version = "V11";
         else if (m.id.includes("v10")) version = "V10";
         else if (m.id.includes("v9")) version = "V9";
 
@@ -312,7 +314,9 @@ export function renderCoreAndCot(c) {
         // The Megumin Original set first: none of its ids share a prefix with VCRP's,
         // but its capped ids do share one with its own uncapped ids.
         const model = localProfile.model || "";
-        if (model.startsWith("cot-meg-ukiyo-cap-")) currentType = "meg-ukiyo-cap";
+        if (model.startsWith("cot-v11-cap-")) currentType = "v11-cap";
+        else if (model.startsWith("cot-v11-")) currentType = "v11";
+        else if (model.startsWith("cot-meg-ukiyo-cap-")) currentType = "meg-ukiyo-cap";
         else if (model.startsWith("cot-meg-shura-cap-")) currentType = "meg-shura-cap";
         else if (model.startsWith("cot-meg-ukiyo-")) currentType = "meg-ukiyo";
         else if (model.startsWith("cot-meg-shura-")) currentType = "meg-shura";
@@ -328,7 +332,8 @@ export function renderCoreAndCot(c) {
         else if (localProfile.model && localProfile.model.startsWith("cot-v10-shura-")) { currentType = "v10-shura"; }
 
         let allowedCotTypes = null;
-        if (localProfile.mode.includes("megumin")) allowedCotTypes = ["meg-ukiyo", "meg-ukiyo-cap", "meg-shura", "meg-shura-cap"];
+        if (localProfile.mode.startsWith("v11")) allowedCotTypes = ["v11", "v11-cap"];
+        else if (localProfile.mode.includes("megumin")) allowedCotTypes = ["meg-ukiyo", "meg-ukiyo-cap", "meg-shura", "meg-shura-cap"];
         else if (localProfile.mode.includes("v10")) allowedCotTypes = ["v10-ukiyo", "v10-ukiyo-cap", "v10-shura", "v10-shura-cap"];
 
         // Thinking Frameworks
@@ -343,6 +348,8 @@ export function renderCoreAndCot(c) {
             { id: "meg-ukiyo-cap", label: "CoT V10 Ukiyo \u00b7 Megumin Original \u2014 Thinking Cap", desc: "Megumin Suite's own capped Writer's Mind, word for word.", isNew: true },
             { id: "meg-shura", label: "CoT V10 Shura \u00b7 Megumin Original", desc: "Megumin Suite's own seven rules, word for word. Built for the Megumin Original Shura.", isNew: true },
             { id: "meg-shura-cap", label: "CoT V10 Shura \u00b7 Megumin Original \u2014 Thinking Cap", desc: "Megumin Suite's own capped seven rules, word for word.", isNew: true },
+            { id: "v11", label: "CoT V11 \u00b7 Megumin Original", desc: "The writers' room works the turn in order: the director reads it, the psychologist decides what each character wants, the story architect decides what is new and what the notebook does, the storyteller and the dialogue writer draft, and the director checks the draft. Built for V11 \u0422\u0430\u0439\u043d\u0430.", isNew: true },
+            { id: "v11-cap", label: "CoT V11 \u00b7 Megumin Original \u2014 Thinking Cap", desc: "The same five steps as one short line of notes each, no draft, written once in the reply; its rules are said again as the last thing the model reads. For models that over-think (GLM, Kimi, DeepSeek, Qwen). No word count: it sets its own length.", isNew: true },
         ];
         types.forEach(t => {
             const isSel = currentType === t.id;
@@ -367,7 +374,7 @@ export function renderCoreAndCot(c) {
             `);
             
             card.on("click", () => {
-                if (t.id.startsWith("v10") || t.id.startsWith("meg")) localProfile.model = `cot-${t.id}-english`;
+                if (t.id.startsWith("v10") || t.id.startsWith("v11") || t.id.startsWith("meg")) localProfile.model = `cot-${t.id}-english`;
                 saveProfileToMemory(); renderCoreAndCot(c);
             }); 
             typeGrid.append(card);
@@ -379,6 +386,10 @@ export function renderCoreAndCot(c) {
         if (!localProfile.customThinkEffort) localProfile.customThinkEffort = "100";
 
         secCot.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-gauge-high"></i> Thinking Effort</div>`);
+        // A Thinking Cap sets its own length: no word count goes with it (buildBaseDict.js).
+        if (isThinkingCap(localProfile.model)) {
+            secCot.append(`<div class="set-desc" id="ps_effort_cap_note" style="margin:-6px 0 10px;"><i class="fa-solid fa-circle-info"></i> Not sent with the Thinking Cap you picked: a cap sets its own length. It still applies when you pick a thinking without a cap.</div>`);
+        }
         const effortGrid = $(`<div class="mtab-card-grid" style="margin-bottom: 24px; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));"></div>`);
         const efforts = [
             { id: "100", label: "100 Words" },

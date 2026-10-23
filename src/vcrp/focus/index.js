@@ -39,6 +39,7 @@ import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
 import { resolveAnchor, anchorOf, estimateTokens, vcrpCountBackgroundOutput } from "../memory/index.js";
 import { memorySummaryRunning } from "../memory/summarize.js";
 import { backgroundEstimate } from "../backgroundCosts.js";
+import { lastLoreText } from "../lore.js";
 import { vcrpWithoutSwipedReply, vcrpGenerationKind, vcrpGenerationRaw } from "../generation.js";
 import { focusLiveFindings } from "./live.js";
 import { registerRecallQuery } from "../memory/index.js";
@@ -143,7 +144,8 @@ export function focusEstimate() {
     const input = focusAuditInput();
     if (!input) return null;
     const items = input.items.map(i => i.text).join("\n");
-    return backgroundEstimate(estimateTokens(input.text + input.card + items + (input.plot ? input.plot.text : "") + (input.tone || "")) + AUDIT_FIXED);
+    // With the lorebook entries an audit gets (lore.js), as large as the last background call's.
+    return backgroundEstimate(estimateTokens(input.text + input.card + items + (input.plot ? input.plot.text : "") + (input.tone || "") + lastLoreText()) + AUDIT_FIXED);
 }
 
 // ── The audit prompt ─────────────────────────────────────────────────────────
@@ -185,7 +187,7 @@ export function buildFocusAuditMessages(input) {
     });
     return [
         { role: "system", content: focusPrompt("auditSystem") },
-        { role: "user", content: `<character_card>\n${input.card || "No character card."}\n</character_card>\n\n${input.plot ? `<plot_focus>\n${input.plot.text}\n</plot_focus>\n\n` : ""}${input.tone ? `<tone_rules>\n${input.tone}\n</tone_rules>\n\n` : ""}<earlier_findings>\n${flagged}\n</earlier_findings>\n\n<replies>\n${input.text}\n</replies>` },
+        { role: "user", content: `<character_card>\n${input.card || "No character card."}\n</character_card>\n\n${input.lore ? `${input.lore}\n\n` : ""}${input.plot ? `<plot_focus>\n${input.plot.text}\n</plot_focus>\n\n` : ""}${input.tone ? `<tone_rules>\n${input.tone}\n</tone_rules>\n\n` : ""}<earlier_findings>\n${flagged}\n</earlier_findings>\n\n<replies>\n${input.text}\n</replies>` },
         { role: "user", content: task },
     ];
 }
