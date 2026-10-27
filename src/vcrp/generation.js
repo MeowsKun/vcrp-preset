@@ -53,7 +53,7 @@ export function vcrpIsDryRun() {
 }
 
 // Tags that only make sense in a normal story reply.
-const REPLY_ONLY_TAGS = ["[[THINK]]", "[[COT]]", "[[prefill]]", "[[blocks]]", "[[storytracker]]"];
+const REPLY_ONLY_TAGS = ["[[THINK]]", "[[thinking]]", "[[COT]]", "[[prefill]]", "[[blocks]]", "[[storytracker]]"];
 
 const EMPTY_VOICE = /^[ \t]*- (?:\*\*)?voice:(?:\*\*)?[ \t]*(?:\r?\n|$)/gm;
 

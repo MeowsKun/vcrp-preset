@@ -383,12 +383,12 @@ for (let t = 1; t < N; t += 2) {            // each user message triggers one re
     await handlePromptInjection({ chat: msgs, dryRun: false });
     const replyText = chat[t + 1] ? chat[t + 1].mes : "";
     const reply = replyText ? tokens(replyText) : 450;
-    // Held to the target (Story Memory on): the reply cannot write past the room its request
-    // went out with (max_tokens), whatever it would have written.
+    // Held to the target (Story Memory on): the reply cannot write past the limit its request
+    // went out with (max_tokens: its room, or a whole reply when the room is less).
     const wanted = reply + VISIBLE_COT + HIDDEN_THINKING;
     const room = MEMORY && RL.holdTargetActive() ? RL.lastReplyRoom() : null;
-    if (room && wanted > room.tokens) heldShort++;
-    const r = price1(msgs, now, room ? Math.min(wanted, room.tokens) : wanted);
+    if (room && wanted > (room.limit || room.tokens)) heldShort++;
+    const r = price1(msgs, now, room ? Math.min(wanted, room.limit || room.tokens) : wanted);
     rows.push({ msg: t + 1, inHistory: history.length, cut: !!(plan && plan.cut), ...r });
     if (oneShot) oneShot.setOneShot("");   // used up by the reply
     if (MEMORY && t + 1 >= ENABLE_AT && chat[t + 1]) summarizeAfterReply(chat.slice(0, t + 2), msgs, replyText, now + 60000);

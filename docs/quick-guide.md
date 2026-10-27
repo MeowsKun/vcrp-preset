@@ -107,7 +107,9 @@ All in PRESETS & COT → **Pura Director** (pick a Pura engine first).
 Turn on the **Dialogue Colors** add-on (Global Toggles & Add Ons). Each character keeps the colour
 they first spoke in for the whole chat, and colours too dark or too pale for your theme are
 adjusted so they stay readable. Below the add-on cards you'll find **Dialogue colors in this chat**:
-change a character's colour, or *Forget* it to let the model pick again.
+change a character's colour, or *Forget* it to let the model pick again. It works on every engine,
+the Megumin Originals too (VCRP asks the model to name who speaks in each coloured line), and it
+knows "Mara Reyes" is the Mara it already has.
 
 **No more coloured narration (GLM).** Some models, GLM especially, leave a colour tag open or wrap
 the narration in it, so the colour runs over the narration and the paragraphs after it. VCRP now
@@ -153,18 +155,26 @@ Edit Prompts. The paid drift audits on the same tab are separate and can stay of
 
 ## 8. V11 Тайна and the Author's Notebook (Megumin Suite V11)
 
-**The engine.** PRESETS & COT → **V11 Тайна · Megumin Original**. It's Megumin Suite V11's new
-engine, word for word: a "writers' room" of five talks each turn over in the thinking, and the reply
-is told by one narrator with a voice and opinions. Picking it also picks CoT V11 and the V11 Default
-style. On **GLM, Kimi, DeepSeek or Qwen**, pick **CoT V11 — Thinking Cap**: shorter thinking that
-those models actually stick to. A Thinking Cap sets its own length, so your Thinking length isn't
-sent with it (as in Megumin V11).
+**The engines.** PRESETS & COT, under V11. All four are Megumin Suite V11's own, word for word,
+and each picks its own thinking:
+- **V11 Тайна · Megumin Original**: one storyteller writes the whole turn. The base for every model.
+- **V11 Тайна · Writers' Room**: the same, with a room of five talking each turn over in the thinking.
+- **V11 Тайна DeepSeek**: V11 Тайна with one more line for DeepSeek, which tends to treat the
+  character as the player.
+- **V11 Тайна Preview**: the first V11 release, kept as it was. On **GLM, Kimi, DeepSeek or Qwen**,
+  pick its **Thinking Cap**: shorter thinking that those models actually stick to. A Thinking Cap
+  sets its own length, so your Thinking length isn't sent with it (as in Megumin V11).
+
+**Two styles.** Writing Style → **V11 Default** (a narrator with a voice and opinions) or **V11
+Inside** (the narration rides inside one character at a time, never yours). Switching between the
+V11 engines keeps the one you picked.
 
 **Its preset.** Import **VCRP V11 Megumin Original** from the extension's Presets folder and select
-it while V11 is picked. Like every VCRP preset it carries regex scripts (they hide the thinking and
-tidy the history): allow them once in Extensions → Regex → Preset scripts. Your other VCRP presets
-don't need re-importing. Setup Check reminds you of both: the regex, and V11 running on a V10
-preset.
+it while a V11 engine is picked. If you imported it before, import it again and replace the old one:
+it was rebuilt for V11's newest engines. Like every VCRP preset it carries regex scripts (they hide
+the thinking and tidy the history): allow them once in Extensions → Regex → Preset scripts. Your
+other VCRP presets don't need re-importing. Setup Check reminds you of all three: the regex, the old
+V11 preset, and V11 running on a V10 preset.
 
 **The Notebook.** The story picks two or three hidden truths, drops small clues, and reveals each
 one when the story earns it. It's always on with V11; for any other engine, switch it on in the

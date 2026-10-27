@@ -323,7 +323,7 @@ for (let k = 0; k < memCount; k++) {
     check(!$("#vcrp_whats_new").length, "shown on a fresh install");
     delete gs.whatsNewSeen;
     switchTab(gear);
-    check($("#vcrp_whats_new").length === 1 && /import the new preset/.test($("#vcrp_whats_new").text()), "not shown after an update");
+    check($("#vcrp_whats_new").length === 1 && /re-import its preset/.test($("#vcrp_whats_new").text()), "not shown after an update");
     const dot = () => $(`#dot_${gear}`);
     check(dot().length === 1 && dot().hasClass("has-notice"), "no dot on the settings gear");
     $("#vcrp_whats_new_ok").trigger("click");
@@ -657,14 +657,24 @@ for (const view of ["landing", "editor"]) {
     check(box.find("img[onerror], b[onmouseover], script").length === 0 && !box.find('img[src^="javascript"]').length && window.__xss === undefined, "the NPC Bank ran markup from an NPC record");
     check(/<img src=x onerror/.test(box.text()), "the NPC's name is not shown as text");
 
-    // V11's engine card, and its two thinking cards (drawn while the CoT is on).
+    // V11's engine cards, and their thinking cards (drawn while the CoT is on).
     p.cotEnabled = true;
     switchTab(tabsUI.findIndex(t => t.title === "PRESETS & COT"));
-    const v11card = box.find(".mtab-eng-card").filter((i, el) => /V11 Тайна · Megumin Original/.test($(el).find(".ecard-title").text()));
-    check(v11card.length === 1, "no V11 Тайна engine card");
+    const card = re => box.find(".mtab-eng-card").filter((i, el) => re.test($(el).find(".ecard-title").text()));
+    check(card(/^\s*V11 Тайна · Megumin Original/).length === 1 && card(/^\s*V11 Тайна · Writers' Room · Megumin Original/).length === 1 && card(/^\s*V11 Тайна DeepSeek · Megumin Original/).length === 1, "no card for V11 Тайна, its Writers' Room or its DeepSeek version");
+    // Picking one keeps V11 Inside; moving between them keeps it too.
+    p.activeStyleId = "dir_v11_inside"; p.aiRule = "inside";
+    card(/^\s*V11 Тайна · Megumin Original/).trigger("click"); await tick();
+    check(p.mode === "v11-voice-megumin" && p.model === "cot-v11-voice-english" && p.activeStyleId === "dir_v11_inside", `picking V11 Тайна does not pick its thinking or keep V11 Inside: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
+    check(card(/CoT V11 Тайна · Megumin Original/).length === 1 && card(/CoT V11 Тайна · Writers' Room · Megumin Original/).length === 1, "no V11 Тайна thinking cards");
+    card(/^\s*V11 Тайна · Writers' Room · Megumin Original/).trigger("click"); await tick();
+    check(p.mode === "v11-writers-room-megumin" && p.model === "cot-v11-wr-english" && p.activeStyleId === "dir_v11_inside", `the Writers' Room: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
+    const v11card = card(/^\s*V11 Тайна Preview · Megumin Original/);
+    check(v11card.length === 1, "no V11 Тайна Preview engine card");
+    p.activeStyleId = "dir_v10_ukiyo";
     v11card.trigger("click"); await tick();
     check(p.mode === "v11-room-megumin" && p.model === "cot-v11-english" && p.activeStyleId === "dir_v11", `picking V11 does not pick its thinking and style: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
-    const capCard = box.find(".mtab-eng-card").filter((i, el) => /CoT V11 · Megumin Original — Thinking Cap/.test($(el).find(".ecard-title").text()));
+    const capCard = card(/CoT V11 Тайна Preview · Megumin Original — Thinking Cap/);
     check(capCard.length === 1, "no V11 Thinking Cap card");
     capCard.trigger("click"); await tick();
     check(p.model === "cot-v11-cap-english", `the V11 Thinking Cap card does not pick it: ${p.model}`);

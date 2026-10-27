@@ -485,10 +485,15 @@ export function vcrpMemoryShapeTask(messages) {
 }
 
 // The preset's after-chat slots, by how they open: rules for a story reply, not a summary.
-// Output RULES carries the thinking steps in every preset (V11's opens on Story Config, so
-// not at its start); V11's preset adds its Content section and, when switched on, its
-// "jealbreak plus", in the chat beside it (squashed into one message with it, or not).
-const STORY_TURN_SLOTS = [/^\s*<\/history>/, /## your thinking steps:/, /^\s*# Content \(NORA\)/, /^\s*This is a work of fiction, rated M for mature/];
+// Output RULES carries the thinking steps' heading in VCRP's and V10's presets. In V11's the
+// heading goes with the thinking (none on a summary call), so it is known by its final check,
+// in either of V11's wordings. The V11 preset from before that carried its Content section
+// and, when switched on, its "jealbreak plus", in the chat beside Output RULES.
+const STORY_TURN_SLOTS = [
+    /^\s*<\/history>/, /## your thinking steps:/,
+    /## final reminder:\nBefore you output, check:/, /<final_check>\nBefore you output, check:/,
+    /^\s*# Content \(NORA\)/, /^\s*This is a work of fiction, rated M for mature/,
+];
 export const isStoryTurnSlot = m => typeof (m && m.content) === "string" && STORY_TURN_SLOTS.some(re => re.test(m.content));
 
 // ── The memory text ──────────────────────────────────────────────────────────

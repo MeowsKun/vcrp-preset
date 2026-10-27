@@ -87,7 +87,9 @@ function holdStatus(s, on, budget) {
     const r = lastReplyRoom();
     if (!r || !holdTargetActive()) return "";
     const how = `Last reply: its prompt cost about ${money(r.input)} (cache ${r.cold ? "cold" : "warm"}), leaving room for about ${k(r.tokens)} tokens of output.`;
-    return note(r.held ? how : `${how} Its prompt alone was near the target, so it got the minimum room and may have gone a little over.`);
+    // The request's limit is never below a whole reply, so one that runs over its room finishes.
+    const over = r.limit > r.tokens ? ` The model was told that room; the request allowed ${k(r.limit)}, a whole reply, so one that runs over still finishes its blocks.` : "";
+    return note(r.held ? how + over : `${how} Its prompt alone was near the target, so it got the minimum room and may have gone a little over.${over}`);
 }
 
 // ── Reply length ──

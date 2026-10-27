@@ -12,7 +12,8 @@ import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
 import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine, isPuraEngine, puraVariant, isV11Engine } from "../core/engines.js";
 import { meguminStyleRule, meguminAddonText, meguminPlanTemplate } from "./meguminOriginal.js";
-import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING, MEGUMIN_V11 } from "../../data/megumin.js";
+import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING, MEGUMIN_V11, MEGUMIN_V11_CONFIG } from "../../data/megumin.js";
+import { v11Frame, applyMeguminV11Sections, storySettingsSection, languageLine } from "./meguminV11.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
 import { notebookCraft } from "../vcrp/notebook/index.js";
 import { castMemoryNote } from "../vcrp/castMemory.js";
@@ -25,7 +26,7 @@ import { isThinkingCap } from "../../data/cot/index.js";
 import { applyEnhancedDialogue } from "../../data/modes/v10.js";
 import { buildBlocksEnvelope, meguminActiveBlocks, puraSheetsInStack } from "../features/blocks/registry.js";
 import { puraBlockRules } from "../features/blocks/puraBlocks.js";
-import { buildConfigBlock } from "../features/storyconfig/config.js";
+import { buildConfigBlock, configLines } from "../features/storyconfig/config.js";
 import { npcBuildTextFromData } from "../features/npc/data.js";
 import { npcBuildDossierPrompt, npcBuildUpdatePrompt } from "../features/npc/fields.js";
 import { memGetCachedKeywords } from "../core/keywords.js";
@@ -50,12 +51,19 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     // A Megumin Original engine takes Megumin's own wording of every shared text
     // below (styles, add-ons, Story Config, Enhanced Dialogue, Story Director).
     const megumin = isMeguminEngine(activeEngine);
+    // Megumin Suite V11's engines take its own Story Config wording, and the V11 Тайна ones
+    // its words around the turn (src/engine/meguminV11.js): "v11" or undefined.
+    const meguminV11 = megumin && isV11Engine(activeEngine);
+    const frame = v11Frame(activeEngine);
 
     // 1. GLOBAL DEFAULTS (Language, Pronouns, Word Count)
     const targetLang = (localProfile.userLanguage && localProfile.userLanguage.trim() !== "")
         ? localProfile.userLanguage.toUpperCase()
         : "ENGLISH";
-    dict["[[Language]]"] = `[LANGUAGE RULE]\nALL OUTPUT EXCEPT THINKING MUST BE IN ${targetLang} ONLY.`;
+    // V11 Тайна: its own line, after a blank one (the preset has one newline there).
+    dict["[[Language]]"] = frame
+        ? "\n" + languageLine(targetLang)
+        : `[LANGUAGE RULE]\nALL OUTPUT EXCEPT THINKING MUST BE IN ${targetLang} ONLY.`;
 
     if (localProfile.userPronouns === "male") dict["[[pronouns]]"] = `{{user}} is male. Always portray and address him as such.`;
     else if (localProfile.userPronouns === "female") dict["[[pronouns]]"] = `{{user}} is female. Always portray and address her as such.`;
@@ -66,7 +74,11 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
 
     // Story Config (<config> block). Empty when the config is off or every field is on Default.
     // VCRP: Pura Director · Adapted hands its tense to Story Config; left on default, Pura's own.
-    dict["[[config]]"] = buildConfigBlock(localProfile.storyConfig, { original: megumin, fallback: puraVariant(activeEngine) === "adapted" ? PURA_ADAPTED_CONFIG : null });
+    // Megumin Suite V11's engines: its wording; V11 Тайна's: its <story_settings>, then <repetition>.
+    const configOpts = { original: meguminV11 ? MEGUMIN_V11_CONFIG : megumin, fallback: puraVariant(activeEngine) === "adapted" ? PURA_ADAPTED_CONFIG : null };
+    dict["[[config]]"] = frame
+        ? storySettingsSection(configLines(localProfile.storyConfig, configOpts), activeEngine.repetition)
+        : buildConfigBlock(localProfile.storyConfig, configOpts);
 
     // 2. STANDARD STAGE SELECTIONS (Stage 2, 4, 5, 6)
 
@@ -93,8 +105,9 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         const item = hardcodedLogic.addons.find(a => a.id === aId);
         if (item) dict[item.trigger] = megumin ? meguminAddonText(item.id, item.content) : item.content;
     });
-    // VCRP: the colors each character already has, so they stay the same reply to reply.
-    if (dict["[[COLOR]]"]) dict["[[COLOR]]"] += colorLockNote();
+    // VCRP: the colors each character already has, so they stay the same reply to reply (and
+    // the speaker's name in each tag, which Megumin's own wording of the add-on leaves out).
+    if (dict["[[COLOR]]"]) dict["[[COLOR]]"] += colorLockNote(dict["[[COLOR]]"]);
 
 
     // Stage 5 Defaults (Format Blocks)
@@ -125,6 +138,8 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         dict["[[DNRATIO]]"] = "";
     }
 
+    // The onomatopoeia rule as shipped: V11's preset words it its own way unless it was edited.
+    let onomatoShipped = "";
     if (localProfile.onomatopoeia && localProfile.onomatopoeia.enabled) {
         let onoRule = `- Narration must utilize onomatopoeia. Use precise, context-specific phonetic representations for physical interactions (e.g., the click of a latch, the thud of a heavy object, the soughing of wind) rather than abstract descriptions of sound.`;
         if (localProfile.onomatopoeia.useStyling && megumin) {
@@ -132,6 +147,7 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         } else if (localProfile.onomatopoeia.useStyling) {
             onoRule += `\nAll onomatopoeic words must be animated and colored using HTML tags and inline CSS. The selected style tag and color must objectively correspond to the physical nature or movement of the sound produced; for example, a repetitive friction sound such as "shush-shush" must utilize a sliding animation tag to represent the physical action.`;
         }
+        onomatoShipped = onoRule;
         dict["[[onomato]]"] = onoRule;
     } else {
         dict["[[onomato]]"] = "";
@@ -246,7 +262,8 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         // V8/V9 Dynamic Injection & Stripping
         if (isModern) {
             // 1. Inject [[aiprompt]] directly into the engine prompts (like p6) where the tag exists
-            const aiPromptVal = dict["[[aiprompt]]"] || "";
+            // V11 Тайна's text always names its narrator ("You narrate as"): V11 Default when no style is picked.
+            const aiPromptVal = dict["[[aiprompt]]"] || (frame ? MEGUMIN_V11.styleRule : "") || "";
             for (let i = 1; i <= 6; i++) {
                 if (dict[`[[prompt${i}]]`] && dict[`[[prompt${i}]]`].includes("[[aiprompt]]")) {
                     dict[`[[prompt${i}]]`] = dict[`[[prompt${i}]]`].split("[[aiprompt]]").join(aiPromptVal);
@@ -371,7 +388,8 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     if (localProfile.banList && localProfile.banList.length > 0) {
         const banStr = localProfile.banList.map(b => `- ${b}`).join("\n");
         const banCustom = localProfile.banListCustomPromptsEnabled ? localProfile.banListCustomPrompts : null;
-        const template = (banCustom && banCustom.injectionTemplate) || DEFAULT_PROMPTS.banList.injectionTemplate;
+        // V11 Тайна: no old-style heading inside its <banlist>, unless you wrote your own.
+        const template = (banCustom && banCustom.injectionTemplate) || (frame ? MEGUMIN_V11.banAdditions : DEFAULT_PROMPTS.banList.injectionTemplate);
         dict["[[banlist]]"] = template.replace('{{banItems}}', () => banStr);
     } else {
         dict["[[banlist]]"] = "";
@@ -403,6 +421,11 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
             });
         }
     });
+    // An engine that places [[pronouns]] in its own text (V11 Тайна, inside <reader>) has it
+    // filled there, just above; the preset's own copy stays empty.
+    if (activeEngine && [1, 2, 3, 4, 5, 6].some(i => String(activeEngine[`p${i}`] || "").includes("[[pronouns]]"))) {
+        dict["[[pronouns]]"] = "";
+    }
 
     // --- COMPACT WORLD STATE LOGIC ---
     if (localProfile.blocks.includes("info") && dict["[[infoblock]]"] && localProfile.worldState && localProfile.worldState.compactEnabled) {
@@ -616,6 +639,15 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
             }
         }
     }
+
+    // Megumin Suite V11's preset sections ([[thinking]], [[formatting]], [[banned]], [[reminder]],
+    // [[content]], [[addon_rules]]), from the parts above, in V11's words. Only the V11 preset
+    // carries their tags.
+    applyMeguminV11Sections(dict, activeEngine, {
+        gen: measure ? "reply" : vcrpGenerationKind(),
+        onomatoShipped,
+        styled: Boolean(localProfile.onomatopoeia && localProfile.onomatopoeia.useStyling),
+    });
 
     // --- MASTER BLOCK ENVELOPE ---
     // Built from the same per-block values the legacy path uses, so engine

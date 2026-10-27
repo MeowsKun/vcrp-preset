@@ -204,6 +204,9 @@ export const storyConfigFields = [
               value: "flexible. As short as 50 words for a quick one-on-one exchange, up to 700 when a scene earns the space. Match the length to what the moment actually needs; never pad to reach a number" },
             { label: "250–350 words", legacy: ["250–350 words"],
               value: "250–350 words per response. When trimming to fit, cut description before dialogue" },
+            // Megumin Suite V11's length for its V11 Тайна engines, in its words.
+            { label: "250–350 words, longer for fights and sex", legacy: ["250–350 words, longer for fights and sex"],
+              value: "usually 250–350 words, longer only while a fight or sex scene is under way" },
             { label: "450–550 words", legacy: ["450–550 words"],
               value: "450–550 words per response. When trimming to fit, cut description before dialogue" },
             { label: "minimum 900 words", legacy: ["minimum 900 words", "at least 900 words per response — earn the length with new material. NEVER pad by restating what the scene has already established"],
@@ -328,8 +331,19 @@ export function countActiveConfigFields(cfg) {
 // and notes. A value the reader typed is sent as typed either way.
 // `fallback` gives an engine's own value for a field left on default ({ tense: "present" }),
 // sent as that option's sentence; the profile is not changed.
-export function buildConfigBlock(cfg, { original = false, fallback = null } = {}) {
-    if (!cfg) return "";
+export function buildConfigBlock(cfg, opts = {}) {
+    const lines = configLines(cfg, opts);
+    if (lines.length === 0) return "";
+    return `<config>\n${CONFIG_PREAMBLE}\n\n${lines.join("\n")}\n</config>`;
+}
+
+/**
+ * The block's lines, one per field set. `original` takes Megumin's wording: V10's (true), or
+ * the table given (Megumin Suite V11's for its engines, which wrap the lines themselves).
+ */
+export function configLines(cfg, { original = false, fallback = null } = {}) {
+    if (!cfg) return [];
+    const table = original === true ? MEGUMIN_CONFIG : original || null;
 
     normalizeStoryConfig(cfg);
     const lines = [];
@@ -338,14 +352,12 @@ export function buildConfigBlock(cfg, { original = false, fallback = null } = {}
         if ((!raw || String(raw).trim() === "") && fallback && fallback[f.key]) raw = upgradeConfigValue(f, fallback[f.key]);
         if (!raw || String(raw).trim() === "") return;
         raw = String(raw).trim();
-        if (original && Object.prototype.hasOwnProperty.call(MEGUMIN_CONFIG.values, raw)) raw = MEGUMIN_CONFIG.values[raw];
+        if (table && Object.prototype.hasOwnProperty.call(table.values, raw)) raw = table.values[raw];
         // The asterisked note tells the model what the field governs. pov carries none —
         // the value already says everything it needs to.
-        const aiNote = original && Object.prototype.hasOwnProperty.call(MEGUMIN_CONFIG.notes, f.key) ? MEGUMIN_CONFIG.notes[f.key] : f.aiNote;
+        const aiNote = table && Object.prototype.hasOwnProperty.call(table.notes, f.key) ? table.notes[f.key] : f.aiNote;
         const note = aiNote ? ` *${aiNote}*` : "";
         lines.push(`- ${f.tag}: ${raw}${note}`);
     });
-
-    if (lines.length === 0) return "";
-    return `<config>\n${CONFIG_PREAMBLE}\n\n${lines.join("\n")}\n</config>`;
+    return lines;
 }

@@ -15,6 +15,12 @@
 // together stay within the target. During play the room is wide; right after a break, when
 // the whole prompt is written to the cache again, it is about a reply and a quarter.
 //
+// The room is what the model is told; the request's own limit is never below a whole reply
+// (half again the chat's usual one). Right after a break the room can be the minimum, and a
+// model that ran past it was stopped in its blocks, the last thing it writes: the trackers
+// lost for the turn, a Continue to pay for. A reply that runs over its room now finishes, a
+// few cents over the target at most; only the safety cap, set by the reader, still stops it.
+//
 // The limits go on the request itself (SillyTavern's CHAT_COMPLETION_SETTINGS_READY), only
 // for prompts built from the VCRP preset. VCRP's own background calls (a summary, an audit,
 // the Story Director, an NPC scan) get a limit of their own, well above what they write, so
@@ -40,12 +46,13 @@ import {
 } from "../core/activeRequests.js";
 
 const MIN_ROOM = 1500;            // the least room a reply is given, even when its prompt alone nears the target
+const WHOLE_REPLY = 1.5;          // the request's limit is at least this many usual replies, so a reply over its room still finishes
 const BACKGROUND_OUTPUT = 8000;   // VCRP's background calls: far above what they write (a summary is ~1,500)
 const NEW_TOKENS = 4500;          // a warm prompt's part written to the cache, before the prompt is known
 
 let vcrpPrompt = false;   // the prompt about to go out was built from the VCRP preset
-let nextRoom = null;      // the room worked out for the request about to go out
-let lastRoom = null;      // { tokens, input, cold, held } of the latest reply request, for the Memory tab
+let nextRoom = null;      // the limit worked out for the request about to go out
+let lastRoom = null;      // { tokens, limit, input, cold, held } of the latest reply request, for the Memory tab
 
 /** Called with every prompt that goes out: was it one VCRP filled in? */
 export function vcrpNotePrompt(isVcrp) {
@@ -205,7 +212,8 @@ export function vcrpReplyRoom(messages, dryRun) {
     const { read, write, plain } = promptSpendSplit(messages, cold);
     const input = requestCost(budget, { read, write, plain });
     const room = roomFor(input, budget);
-    const limit = Math.min(Math.max(MIN_ROOM, room), replyCapTokens() || Infinity);
+    const cap = replyCapTokens() || Infinity;
+    const limit = Math.min(Math.max(MIN_ROOM, room), cap);
     // The model is told the room it really has (or, when it turned out wide, nothing).
     const line = replyBudgetText(gen, limit);
     for (const m of messages) {
@@ -214,8 +222,10 @@ export function vcrpReplyRoom(messages, dryRun) {
         break;
     }
     if (dryRun) return;
-    nextRoom = limit;
-    lastRoom = { tokens: limit, input, cold, held: limit <= room };
+    // The request's own limit: the room, or a whole reply when the room is less.
+    const hard = Math.min(Math.max(limit, Math.round(typicalReply() * WHOLE_REPLY)), cap);
+    nextRoom = hard;
+    lastRoom = { tokens: limit, limit: hard, input, cold, held: limit <= room };
 }
 
 /** A background call of VCRP's own is being sent: a summary or its check, an audit, the Director, an NPC scan. */

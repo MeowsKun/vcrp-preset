@@ -302,9 +302,51 @@ v11Sum.push({ role: "system", content: `${TASK_MARKER}: not a story turn.] Summa
 await handlePromptInjection({ chat: v11Sum, dryRun: false });
 memory.setMemoryTaskActive(false);
 const v11SumText = v11Sum.map(textOf).join("\n"), v11SMk = marked(v11Sum);
-ok(!v11SumText.includes("# Content (NORA)") && !v11SumText.includes("## your thinking steps:") && !v11SumText.includes("<Author_Notebook>"), "the summary call leaves V11's story-turn slots out (Output RULES opens on Story Config there)");
+ok(!v11SumText.includes("# Content (NORA)") && !v11SumText.includes("## your thinking steps:") && !v11SumText.includes("<Author_Notebook>"), "the summary call leaves V11's story-turn slots out (Output RULES known by its final check)");
 const v11RpRead = prefix(v11rp, v11RpMk.at(-1)), v11SumRead = prefix(v11Sum, v11SMk.at(-2) ?? v11SMk.at(-1));
 ok(v11SMk.length >= 1 && JSON.stringify(v11RpRead.slice(0, v11SumRead.length)) === JSON.stringify(v11SumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(v11RpRead, v11SumRead));
+
+// ── V11 Тайна (one voice) on its own preset ───────────────────────────────────
+// The V11 Тайна turn frame: its Content section, story settings and repetition rule, the
+// thinking, <formatting> and <final_check> all after the cached part; the history read back
+// byte for byte; a summary call without any of them, still reading the cache.
+section("V11 Тайна (one voice): its turn frame after the cached part");
+chat.length = 0;
+for (const k of Object.keys(meta)) delete meta[k];
+Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english", activeStyleId: "dir_v11_inside",
+    aiRule: (await imp("data/directStyles.js")).directStyles.find(s => s.id === "dir_v11_inside").rule });
+chat.push({ is_user: false, name: "Mara", send_date: "b0", mes: "\"We're closed,\" Mara says." });
+cc.vcrpCacheCheckReset();
+const voicePrompts = [];
+for (let t = 1; t <= 4; t++) {
+    const p = await send("normal");
+    voicePrompts.push(p);
+    await arrive(t);
+    if (t > 1) {
+        const rep = cc.vcrpCacheCheckReport();
+        ok(rep && !cc.vcrpCacheCheckTrouble(rep), `V11 Тайна turn ${t}: ${rep ? (cc.vcrpCacheCheckTrouble(rep) ? `TROUBLE: ${JSON.stringify(rep.change).slice(0, 240)}` : "only the newest messages changed") : "no report"}`);
+        const prev = voicePrompts.at(-2), a = prefix(prev, marked(prev).at(-1)), b = prefix(p, marked(p).at(-2));
+        ok(JSON.stringify(a) === JSON.stringify(b), `V11 Тайна turn ${t}: the previous turn's cached part is read back byte for byte`, firstDiff(a, b));
+    }
+}
+const voiceLast = voicePrompts.at(-1), voiceMk = marked(voiceLast);
+const voiceCached = prefix(voiceLast, voiceMk.at(-1)).join("\n"), voiceAll = voiceLast.map(textOf).join("\n");
+ok(voiceCached.includes("You are the narrator of an ongoing story") && voiceCached.includes("<banlist>") && voiceCached.includes("rides inside one character at a time"), "V11 Тайна's text, its ban list and V11 Inside are in the cached part");
+for (const [what, s] of [["its Content section", "<content>\nThis story is rated"], ["its repetition rule", "<repetition>"], ["its final check", "<final_check>"], ["its formatting", "<formatting>"], ["its language line", "Write the response in English."]]) {
+    ok(voiceAll.includes(s) && !voiceCached.includes(s), `${what}: sent, and after the cached part`);
+}
+const voiceRp = await send("normal");
+await arrive(5);
+memory.setMemoryTaskActive(true, null);
+gen.vcrpSetGenerationType("quiet", {}, false);
+const voiceSum = buildPrompt();
+voiceSum.push({ role: "system", content: `${TASK_MARKER}: not a story turn.] Summarize the stretch.` });
+await handlePromptInjection({ chat: voiceSum, dryRun: false });
+memory.setMemoryTaskActive(false);
+const voiceSumText = voiceSum.map(textOf).join("\n");
+ok(!voiceSumText.includes("<final_check>") && !voiceSumText.includes("<content>\nThis story is rated") && !voiceSumText.includes("<repetition>"), "the summary call leaves V11 Тайна's story-turn sections out");
+const voiceRpRead = prefix(voiceRp, marked(voiceRp).at(-1)), voiceSumMk = marked(voiceSum), voiceSumRead = prefix(voiceSum, voiceSumMk.at(-2) ?? voiceSumMk.at(-1));
+ok(voiceSumMk.length >= 1 && JSON.stringify(voiceRpRead.slice(0, voiceSumRead.length)) === JSON.stringify(voiceSumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(voiceRpRead, voiceSumRead));
 
 console.log(`\n${fail ? `${fail} PROBLEM(S)` : "ALL CHECKS PASSED"} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

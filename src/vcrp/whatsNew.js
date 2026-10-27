@@ -12,13 +12,13 @@
 import { extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "../core/constants.js";
 
-export const WHATS_NEW_ID = "10.0.0-vcrp.4";
+export const WHATS_NEW_ID = "10.0.0-vcrp.5";
 
 const ITEMS = [
-    "<b>V11 Тайна.</b> Megumin Suite V11's new engine, word for word: a writers' room of five that talks the turn over in the thinking, and one narrator with a voice and opinions in the reply. With CoT V11 and its Thinking Cap (for GLM, Kimi, DeepSeek, Qwen), and its own preset, <b>VCRP V11 Megumin Original</b>. In PRESETS &amp; COT, under V11.",
-    "<b>Author's Notebook.</b> The story keeps two or three hidden truths, plants small clues and pays each one off when the story earns it. Always on with V11; a switch in the Focus tab for any other engine. Kept with the chat, so swipes, edits and deletes undo exactly what a reply did; each reply's notebook changes are a blurred tab on its card.",
-    "<b>Characters on file.</b> Someone named again who left the scene comes back as they left: their last World State entry and Bonds line. BLOCKS tab, under World State (or Bonds).",
-    "<b>An On/Off switch</b> on the top bar of this window: off, VCRP steps aside and nothing runs after a reply. <b>Lorebook entries</b> now reach the Story Director, NPC scans and Focus audits. <b>Safer NPC Bank:</b> an NPC record (an imported pack, a dossier a model wrote) can no longer run code on the page.",
+    "<b>Megumin Suite V11's newest update, word for word.</b> <b>V11 Тайна</b> (one storyteller, the base for every model), <b>V11 Тайна · Writers' Room</b> and <b>V11 Тайна DeepSeek</b> join the first V11 engine, now called <b>V11 Тайна Preview</b>. Each picks its own thinking. In PRESETS &amp; COT, under V11.",
+    "<b>V11 Inside</b>, a new writing style from V11: the narration rides inside one character at a time (never yours) and sees the scene the way they would. Switching between the V11 engines keeps it.",
+    "<b>VCRP V11 Megumin Original, rebuilt</b> on V11's new preset: its rules up top, where they cache, and only what changes each turn after the chat. Each V11 engine brings its own Content section, story settings and final check. The notebook's hidden truths are now about the world and the other characters, never your own character's past (V11's fix).",
+    "<b>Fixes.</b> Dialogue colors stay put on the Megumin Original engines (they now name who is speaking, so VCRP can hold each character to theirs). A reply after a break no longer gets cut off in its blocks: the request always leaves room for a whole reply. A block a reply leaves out, or is cut off in, is carried from where it was last written whole instead of dropping out.",
 ];
 
 const settings = () => extension_settings[extensionName] && extension_settings[extensionName].globalSettings;
@@ -38,7 +38,7 @@ export function markWhatsNewSeen() {
 /** Once, when SillyTavern is ready: the one thing that needs doing. */
 export function whatsNewToast() {
     if (!hasUnseenWhatsNew() || typeof toastr === "undefined") return;
-    toastr.info("New: V11 Тайна and the Author's Notebook. To use V11, import the VCRP V11 Megumin Original preset from the extension's Presets folder (your other VCRP presets need no re-import). What's new: VCRP → Global Settings.", `VCRP updated to ${WHATS_NEW_ID}`, { timeOut: 20000, extendedTimeOut: 10000 });
+    toastr.info("New: Megumin's V11 update (V11 Тайна, its Writers' Room and DeepSeek version, V11 Inside). Re-import the VCRP V11 Megumin Original preset from the extension's Presets folder, replacing the old one (your other VCRP presets need no re-import). What's new: VCRP → Global Settings.", `VCRP updated to ${WHATS_NEW_ID}`, { timeOut: 20000, extendedTimeOut: 10000 });
 }
 
 /** The card at the top of Global Settings, with a "Got it" button (#vcrp_whats_new_ok). */
@@ -49,7 +49,7 @@ export function whatsNewCardHtml() {
             ${ITEMS.map(i => `<div class="set-desc" style="margin:6px 0;">${i}</div>`).join("")}
             <div class="mtab-callout gold" style="margin:10px 0 0;">
                 <i class="fa-solid fa-file-import"></i>
-                <span><b>For V11, import the new preset</b> VCRP V11 Megumin Original from the extension's Presets folder, select it while V11 Тайна is picked, and allow its regex scripts (Extensions → Regex → Preset scripts; Setup Check reminds you). Your VCRP V10 presets need no re-import: the Notebook, characters on file and everything else work with them as they are.</span>
+                <span><b>For V11, re-import its preset</b> VCRP V11 Megumin Original from the extension's Presets folder, replacing the old one, select it while a V11 engine is picked, and allow its regex scripts (Extensions → Regex → Preset scripts). Setup Check tells you if the old one is still loaded. Your VCRP V10 presets need no re-import.</span>
             </div>
             <div style="margin-top:10px;"><button id="vcrp_whats_new_ok" class="ps-modern-btn primary" style="font-size:0.75rem;"><i class="fa-solid fa-check"></i> Got it</button></div>
         </div>`;

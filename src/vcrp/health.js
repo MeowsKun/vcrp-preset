@@ -112,7 +112,8 @@ export function vcrpHealthCheck() {
     const prompts = Array.isArray(cc.prompts) ? cc.prompts : [];
     const hasText = s => prompts.some(p => p && typeof p.content === "string" && p.content.includes(s));
     const vcrpBanList = hasText("**stripped articles:**");
-    const originalBanList = !vcrpBanList && hasText("<banlist>");
+    // Megumin's: its ban list as text (V10's preset), or V11's [[banned]] section.
+    const originalBanList = !vcrpBanList && (hasText("<banlist>") || hasText("[[banned]]"));
     const originalEngine = meguminOriginalActive();
     if (originalEngine && vcrpBanList && !isV11Engine(activeEngine())) {   // V11 has a note of its own below
         add("info", "Megumin Original engine on the VCRP preset",
@@ -137,9 +138,15 @@ export function vcrpHealthCheck() {
     if (Object.values(focusSettings().live).some(Boolean) && !carries("[[focus]]")) focusOff.push("Focus's every-reply checks");
     // The Author's Notebook: its fixed rules in [[notebook]] (V11's preset) or [[block_rules]].
     if (notebookOn() && !carries("[[notebook]]") && !carries("[[block_rules]]")) focusOff.push("the Author's Notebook's rules");
-    // V11 Тайна reads best on its own preset: its final check, Content section and USER note.
-    if (isV11Engine(activeEngine()) && !(cc.prompts || []).some(p => p && typeof p.content === "string" && p.content.includes("# Content (NORA)"))) {
-        add("info", "V11 Тайна is picked on a preset made for V10", "It works, but V11 rewrote its preset around its engine (a final check, its Content section, a USER note). Import \"VCRP V11 Megumin Original\" from the extension's Presets folder and select it.");
+    // V11 Тайна reads best on its own preset: its final check, Content section and USER note,
+    // built from the engine (the V11 preset's [[content]] and [[reminder]]). The V11 preset from
+    // before those carried the first engine's as text, so the newer engines lose theirs on it.
+    if (isV11Engine(activeEngine()) && !carries("[[reminder]]")) {
+        if (carries("# Content (NORA)")) {
+            add("warn", "Re-import the VCRP V11 Megumin Original preset", "The one you have is from before V11 Тайна, its Writers' Room and its DeepSeek version: it sends the first engine's Content section and final check to every V11 engine. Import \"VCRP V11 Megumin Original\" again from the extension's Presets folder, replacing the old one, and select it.");
+        } else {
+            add("info", "V11 Тайна is picked on a preset made for V10", "It works, but V11 rewrote its preset around its engines (its Content section, its story settings, a final check, a USER note). Import \"VCRP V11 Megumin Original\" from the extension's Presets folder and select it.");
+        }
     }
     const plot = peekFocusState() && peekFocusState().plot;
     if (plot && plot.active && !carries("[[plotfocus]]")) focusOff.push("the plot focus");

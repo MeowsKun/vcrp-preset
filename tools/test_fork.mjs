@@ -3615,11 +3615,15 @@ console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reu
     r = await send(filler);
     assert(r.room.cold && r.room.held && r.room.tokens < 3750 && r.room.tokens >= rl.MIN_ROOM, `cold and long: a tight room (${r.room.tokens})`);
     assert.equal(Number(String(told(r.msgs)).replace(/,/g, "")), r.room.tokens, "the model is told the room it really has");
-    assert(r.data.max_tokens === r.room.tokens && r.room.input + r.room.tokens * OUT <= TARGET + 1e-9, "and held to it");
+    assert(r.room.input + r.room.tokens * OUT <= TARGET + 1e-9, "the room it is told keeps it within the target");
+    // The request itself never stops a reply short of a whole one (half again the usual 2,500):
+    // a reply that ran over its room was cut off in its blocks.
+    assert(r.data.max_tokens === 3750 && r.room.limit === 3750, `the request allows a whole reply (${r.data.max_tokens})`);
     // So long the prompt alone is near the target: the minimum room, said not to be held.
     now += 3 * 3600000;
     r = await send(filler + 6000);
     assert(r.room.tokens === rl.MIN_ROOM && !r.room.held, `the prompt alone near the target: the minimum (${JSON.stringify(r.room)})`);
+    assert(r.data.max_tokens === 3750, "still a whole reply on the request");
     // A safety cap below the room wins, and is told.
     g.memoryBudget = { replyCap: 2000 };
     now += 60000;
@@ -3670,7 +3674,7 @@ console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reu
     q.mode = keep.mode;
     Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
 }
-console.log("53 ok each reply held to the target (priced as it goes out, the rest its limit, told when tight, the minimum when the prompt alone nears it, the cap wins below it; off, memory off, another preset: not held; VCRP's background calls capped, never raised, others left alone)");
+console.log("53 ok each reply held to the target (priced as it goes out, the rest its limit, told when tight, the minimum when the prompt alone nears it, never cut short of a whole reply, the cap wins below it; off, memory off, another preset: not held; VCRP's background calls capped, never raised, others left alone)");
 
 // 54. One chat's story stays in that chat: the Director's plan (and where it was made), the NPC
 //     Bank, Story Memory and Focus; a new chat of the same card starts clean; what a chat's
@@ -3990,12 +3994,12 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     delete g.loreInTasks;
     loreImpl.check = null; loreImpl.entries = null;
 
-    // The V11 preset as generated: V11's slots on VCRP's frame, three tags moved after the chat.
+    // The V11 preset as generated: V11's slots on VCRP's frame, the per-turn ones after the chat.
     const p11 = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
     const slot = n => p11.prompts.find(x => x.name === n);
     const ord = p11.prompt_order.find(o => o.character_id === 100001).order;
     const on = n => (ord.find(o => o.identifier === slot(n).identifier) || {}).enabled;
-    assert(on("Content rule") && on("USER") && !on("jealbreak plus") && !slot("USER Consent"), "V11's new slots in, jealbreak plus off, USER Consent retired");
+    assert(on("USER") && !slot("jealbreak plus") && !slot("USER Consent") && !slot("Content rule"), "V11's USER note in; no consent or jailbreak slot (V11 has none); the Content section rides in Output RULES");
     assert(slot("Output RULES").content.includes("[[storyplan]]\n\n[[npc_dossier]]\n\n[[npc list]]") && !slot("Main 2").content.includes("[[npc_dossier]]") && !slot("</lore><user_persona>").content.includes("[[npc list]]") && !slot("Output RULES").content.includes("[[infoblockcurrent]]"), "the NPC list, the dossier rules and the plan ride after the chat (they change turn to turn)");
     assert(slot("Main 2").content.includes("[[notebook]]") && slot("</history>").content.endsWith("[[pura_late]][[plotfocus]]"), "the notebook's slot, and VCRP's late slots");
 
@@ -4094,5 +4098,168 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     q.castMemory = JSON.parse(keep.cm) || undefined; if (!q.castMemory) delete q.castMemory;
 }
 console.log("55 ok Megumin Suite V11 (V11 Тайна on its own preset and VCRP's, its thinking and Thinking Cap, the {{user}} rule numbered to the list; the Author's Notebook's rules, kept in the replies with the reader's changes, cached craft and per-turn truths, never in the history or summaries, a spoiler card; characters on file; the master switch; lore for background calls; the generated V11 preset)");
+
+// 56. Fixes from testing V11: Dialogue Colors on the Megumin mirror (the speaker's name asked
+//     for, names and colors matched as models write them), and a block the last reply left out
+//     or was cut off in carried from where it was last written whole.
+{
+    const colors = await imp("src/vcrp/dialogueColors.js");
+    const bh = await imp("src/vcrp/blockHistory.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const { MEGUMIN_ADDONS } = await imp("data/megumin.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { mode: q.mode, model: q.model, addons: q.addons, order: JSON.stringify(q.blockStack.order) };
+
+    // The V11 mirror keeps Megumin's own sentence, which never asks who speaks; the note asks.
+    q.addons = [...new Set([...(q.addons || []), "color"])];
+    Object.assign(q, { mode: "v11-room-megumin", model: "cot-v11-english" });
+    for (const k of Object.keys(meta)) delete meta[k];
+    chat.length = 0;
+    let msgs = await run("VCRP V11 Megumin Original.json");
+    assert(text(msgs).includes(MEGUMIN_ADDONS.color.trim()) && text(msgs).includes(`title="Name">`), "V11 Megumin Original: Megumin's color sentence word for word, the speaker's name asked for after it");
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english" });
+    msgs = await run("VCRP V10 Universal.json");
+    assert(text(msgs).includes(`title="Character Name"`) && !text(msgs).includes(`title="Name">`), "VCRP's own wording asks already: not twice");
+
+    // A name and a color as models write them.
+    const names = {};
+    colors.lockReplyColors(`<font color="#ff69b4" title="Mara">"Hi."</font>`, names, { readable: false });
+    let r = colors.lockReplyColors(`<font color="#00ff00" title="Mara Reyes">"A."</font> <font color=“#00ff00” title=“Mara (softly)”>"B."</font> <font color="crimson" title="**Mara**">"C."</font> <font title="Mara">"D."</font>`, names, { readable: false });
+    assert.equal((r.text.match(/color="#ff69b4"/g) || []).length, 4, `her full name, curly quotes, an aside, emphasis, a named color, no color at all: all Mara's (${r.text})`);
+    assert.deepEqual(Object.keys(names), ["mara"], "no second Mara learned");
+    r = colors.lockReplyColors(`<font color="RoyalBlue" title="Jonah">"Yo."</font>`, names, { readable: false });
+    assert(names.jonah.color === "#4169e1" && r.text.includes(`color="#4169e1"`), "a named color learned as its hex");
+    const two = { "mara reyes": { name: "Mara Reyes", color: "#ff69b4" }, "mara stone": { name: "Mara Stone", color: "#00ffff" } };
+    colors.lockReplyColors(`<font color="#ffd700" title="Mara">"?"</font>`, two, { readable: false });
+    assert(two.mara && two.mara.color === "#ffd700" && two["mara reyes"].color === "#ff69b4", "two Maras known: a bare \"Mara\" is neither");
+
+    // Blocks: one the last reply left out comes from where it was last whole, and is asked for.
+    q.blockStack.order = ["world", "bonds"];
+    meguminSyncLegacyBlockIds();
+    const B = inner => `Prose.\n\n<Blocks>\n${inner}\n</Blocks>`;
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: B("<World_State>the docks</World_State>\n<Bonds>\nMara: Mood: warm | Affection: 40/100 (=)\n</Bonds>") });
+    assert(!bh.previousBlocksNote().includes("Not written whole"), "a reply with every block: carried as it is");
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: B("<World_State>the pier</World_State>") });
+    let note = bh.previousBlocksNote();
+    assert(note.includes("the pier") && note.includes("Affection: 40/100") && note.indexOf("<World_State>") < note.indexOf("<Bonds>")
+        && note.includes("Bonds (1 reply back)") && note.includes("Write every block in full this reply"), `a block the last reply left out: its last whole copy, in its place, said where from:\n${note}`);
+    // Cut off inside its blocks: its World State is whole and newest; Bonds was cut, and the thinking's draft is not a copy.
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "<think>draft <Bonds>Mara: Affection: 99/100</Bonds></think>\nProse.\n\n<Blocks>\n<World_State>the boat</World_State>\n<Bonds>\nMara: Mood: war" });
+    note = bh.previousBlocksNote();
+    assert(note.includes("the boat") && !note.includes("the pier") && note.includes("Affection: 40/100") && !note.includes("99/100")
+        && note.includes("World State (from your last reply)") && note.includes("Bonds (2 replies back)"), `a reply cut off in its blocks: its whole World State, Bonds from where it was last whole, never the thinking's:\n${note}`);
+    // A block taken out of the stack is not brought back.
+    q.blockStack.order = ["world"];
+    meguminSyncLegacyBlockIds();
+    assert(!bh.previousBlocksNote().includes("Bonds"), "a block out of the stack: not carried");
+
+    chat.length = 0;
+    for (const k of Object.keys(meta)) delete meta[k];
+    Object.assign(q, { mode: keep.mode, model: keep.model, addons: keep.addons });
+    q.blockStack.order = JSON.parse(keep.order);
+    meguminSyncLegacyBlockIds();
+}
+console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror (Megumin's sentence kept, the speaker's name asked for; full names, curly quotes, asides, named colors), and a block the last reply left out or was cut off in carried from where it was last whole");
+
+// 57. Megumin Suite V11's 24-25/10 update: V11 Тайна, its Writers' Room and DeepSeek version
+//     beside the first engine (now V11 Тайна Preview), their thinking, V11 Inside, the preset in
+//     slots with its sections built from V11's words, V11's Story Config wording, and the
+//     notebook's truths kept off {{user}}.
+{
+    const db = await imp("data/database.js");
+    const engines = await imp("src/core/engines.js");
+    const { meguminCotForMode } = await imp("data/cot/index.js");
+    const { MEGUMIN_V11, MEGUMIN_V11_UPSTREAM } = await imp("data/megumin.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const q = state.localProfile;
+    const keep = { mode: q.mode, model: q.model, aiRule: q.aiRule, style: q.activeStyleId, addons: q.addons, order: JSON.stringify(q.blockStack.order), cfg: JSON.stringify(q.storyConfig || {}), ban: JSON.stringify(q.banList || []), ono: JSON.stringify(q.onomatopoeia || null), pron: q.userPronouns };
+    const style = id => db.hardcodedLogic.directStyles.find(s => s.id === id);
+    const asEngine = (mode, styleId = "dir_v11") => Object.assign(q, { mode, model: meguminCotForMode(mode), cotEnabled: true, activeStyleId: styleId, aiRule: style(styleId).rule });
+    const between = (t, a, b) => t.slice(t.indexOf(a), t.indexOf(b, t.indexOf(a)) + b.length);
+    const lastAssistant = msgs => msgs.map(m => m.role).lastIndexOf("assistant");
+
+    // The engines, their thinking, their style.
+    const ids = ["v11-voice-megumin", "v11-writers-room-megumin", "v11-deepseek-megumin", "v11-room-megumin"];
+    const found = ids.map(id => db.hardcodedLogic.modes.find(m => m.id === id));
+    assert(found.every(m => m && m.megumin && engines.isV11Engine(m) && engines.engineKeepsNotebook(m) && m.contentRules && m.reminderChecks), "four V11 engines, Megumin Originals keeping a notebook, each with its Content section and final check");
+    assert(found.slice(0, 3).every(m => m.turnFrame === "v11" && m.repetition) && !found[3].turnFrame && found[3].label.includes("Preview"), "the three V11 Тайна engines on its turn frame; the first one, kept as it was, is the Preview");
+    assert.deepEqual(ids.map(id => meguminCotForMode(id)), ["cot-v11-voice-english", "cot-v11-wr-english", "cot-v11-voice-english", "cot-v11-english"], "each picks its own thinking (DeepSeek thinks like V11 Тайна)");
+    assert(style("dir_v11_inside").rule === MEGUMIN_V11.insideRule && style("dir_v11_inside").name === "V11 Inside" && engines.styleFamily("dir_v11").includes("dir_v11_inside"), "V11 Inside, word for word, in V11's family");
+    let upstream = null;
+    try { upstream = execSync(`git show ${MEGUMIN_V11_UPSTREAM}:data/modes/v11taina.js`, { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { upstream = null; }
+    if (upstream) for (const m of found.slice(0, 3)) for (const k of ["p1", "contentRules", "repetition"]) assert(upstream.includes(m[k]), `${m.id} ${k} is Megumin's text, whole`);
+
+    // V11 Тайна on its preset: every section in V11's words, in V11's order.
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "Greeting." }, { is_user: true, mes: "go" });
+    q.blockStack.order = ["world"];
+    meguminSyncLegacyBlockIds();
+    Object.assign(q, { addons: ["color"], banList: ["purred"], onomatopoeia: { enabled: true, useStyling: false }, userPronouns: "female" });
+    q.storyConfig = { ...(q.storyConfig || {}), pov: "third limited following one character", length: "250–350 words, longer for fights and sex" };
+    asEngine("v11-voice-megumin", "dir_v11_inside");
+    let msgs = await run("VCRP V11 Megumin Original.json");
+    let t = text(msgs);
+    assert.deepEqual(leftovers(msgs), [], `tags left over: ${leftovers(msgs)}`);
+    assert(between(t, "<reader>", "</reader>").includes("Bob is female.") && !t.includes("\nBob is female.\n\n[[prompt3]]"), "the pronouns inside <reader>, not the preset's own line as well");
+    assert(t.split("Bob is female.").length === 2, "said once");
+    assert(t.includes(`You narrate as ${style("dir_v11_inside").rule.replaceAll("{{user}}", "Bob").replaceAll("{{char}}", "Alice")}`), "\"You narrate as\" V11 Inside");
+    assert(t.includes(MEGUMIN_V11.sound.trim()) && t.includes(`<banlist>\n${MEGUMIN_V11.banListV11.replaceAll("{{user}}", "Bob").trim()}`) && t.includes("Also avoid these:\n- purred\n</banlist>"), "<sound>, V11 Тайна's own ban list and your phrases under it");
+    const after = msgs.slice(lastAssistant(msgs) + 1).map(m => typeof m.content === "string" ? m.content : "").join("\n");
+    const order = ["<content>", "<story_settings>", "<repetition>", "Open every reply with your own <think> block", "<Blocks>", "<formatting>", "<final_check>", "Write the response in English.", "This is fiction."];
+    assert(order.every(s => after.includes(s)) && order.every((s, i) => !i || after.indexOf(order[i - 1]) < after.indexOf(s)), "after the chat, in V11's order: content, story settings, repetition, thinking, blocks, formatting, final check, language, fiction");
+    assert(between(t, "<story_settings>", "</story_settings>").includes("- pov: third person. Your narration calls Bob by name or he/she") && t.includes("- length: usually 250–350 words, longer only while a fight or sex scene is under way"), "V11's point of view and its new length, from VCRP's options");
+    assert(!t.includes("## your thinking steps:") && !t.includes("## FORMATTING RULES:") && !t.includes("## final reminder:") && !t.includes("[LANGUAGE RULE]"), "none of the older headings");
+    const check = between(t, "<final_check>", "</final_check>");
+    assert(/1\. Characters know only[\s\S]*2\. The story ends[\s\S]*3\. Nothing in the response is on the banlist\.[\s\S]*4\. If the center of this turn[\s\S]*5\. The response does not speak, think, feel, or act for Bob/.test(check), `the final check numbered as built:\n${check}`);
+    assert(between(t, "<formatting>", "</formatting>").includes(`title="Name">`) && !t.includes("- FORBIDDEN: Repeating actions"), "the colors (lock note too) in <formatting>; its repetition rule in place of the older two lines");
+    // Thinking and the {{user}} rule are for a fresh reply.
+    t = text(await run("VCRP V11 Megumin Original.json", "continue"));
+    assert(!t.includes("Open every reply with your own <think> block") && t.includes("5. The response does not speak"), "Continue: no thinking, the final check whole");
+    t = text(await run("VCRP V11 Megumin Original.json", "impersonate"));
+    assert(!t.includes("The response does not speak, think, feel") && t.includes("4. If the center of this turn"), "Impersonate: the {{user}} rule left out of the final check");
+    // No style picked: V11 Тайна still names its narrator, in V11 Default.
+    Object.assign(q, { activeStyleId: null, aiRule: "" });
+    t = text(await run("VCRP V11 Megumin Original.json"));
+    assert(t.includes(`You narrate as ${MEGUMIN_V11.styleRule}`), "no style: V11 Default");
+    // The Writers' Room: its own text and thinking, the same frame.
+    asEngine("v11-writers-room-megumin");
+    t = text(await run("VCRP V11 Megumin Original.json"));
+    assert(t.includes("You are a writers' room of five") && t.includes("<final_check>") && t.includes("JULIA"), "the Writers' Room on the V11 frame");
+    // The Preview keeps its older headings, and V11's wording of Story Config.
+    asEngine("v11-room-megumin");
+    msgs = await run("VCRP V11 Megumin Original.json");
+    t = text(msgs);
+    assert.deepEqual(leftovers(msgs), [], `Preview: tags left over: ${leftovers(msgs)}`);
+    assert(t.includes(`## your thinking steps:\nOpen every reply`) && t.includes(`## FORMATTING RULES:\n\n`) && t.includes("- FORBIDDEN: Repeating actions") && t.includes("## final reminder:\nBefore you output, check:\n1.") && t.includes("[LANGUAGE RULE]") && t.includes("<config>\n"), "the Preview: its older headings");
+    assert(t.includes(`<banlist>\n${MEGUMIN_V11.banList.replaceAll("{{user}}", "Bob").trim()}`) && !t.includes("<story_settings>") && t.includes("- pov: third person. Your narration calls Bob by name or he/she"), "its own ban list, <config>, V11's point of view");
+    // The notebook's truths stay off {{user}} (every engine with it on).
+    assert(MEGUMIN_V11.notebookSetup.includes("{{user}}'s own past and the reasons behind what they do belong to the reader") && MEGUMIN_V11.notebookUpdate.includes("belong to the reader"), "the notebook keeps {{user}}'s past to the reader");
+
+    // Setup Check: the V11 preset from before is named, and replaced.
+    const presetJson = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
+    ctx.mainApi = "openai";
+    const set = prompts => Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V11 Megumin Original", prompts, prompt_order: presetJson.prompt_order, extensions: presetJson.extensions });
+    asEngine("v11-voice-megumin");
+    set(presetJson.prompts.map(p => (p.name === "Output RULES" ? { ...p, content: "# Content (NORA)\n## final reminder:" } : p)));
+    assert(vcrpHealthCheck().items.some(i => i.level === "warn" && /Re-import the VCRP V11 Megumin Original preset/.test(i.title)), "the old V11 preset: re-import it");
+    set(presetJson.prompts);
+    assert(!vcrpHealthCheck().items.some(i => /Re-import the VCRP V11|V11 Тайна is picked/.test(i.title)), `the new one: nothing to say (${JSON.stringify(vcrpHealthCheck().items.map(i => i.title))})`);
+    for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
+
+    // The preset as generated: V11's slots, its words left to the extension, VCRP's tags in.
+    const slot = n => presetJson.prompts.find(x => x.name === n);
+    assert(slot("Main 2").content.includes("[[aiprompt]]\n\n[[notebook]]\n\n[[addon_rules]]\n\n[[knowledgebase_always]]\n\n[[banned]][[pura_system]][[block_rules]]"), "up top: the add-on rules, the ban list, VCRP's cached slots");
+    assert(slot("Output RULES").content.includes("[[focus]]\n\n[[content]]\n\n[[config]]\n\n[[thinking]]\n\n[[blocks]]\n\n[[formatting]]\n\n[[reminder]]\n[[Language]]"), "after the chat, V11's order");
+    assert(!presetJson.prompts.some(p => /\[\[(dice_rules|img_rules|npc_rules|this_turn|MVU|infoblockcurrent|storyplan_now|storyplan_rules)\]\]/.test(String(p.content || ""))), "none of V11's tags for what VCRP leaves out or does its own way");
+
+    chat.length = 0;
+    Object.assign(q, { mode: keep.mode, model: keep.model, aiRule: keep.aiRule, activeStyleId: keep.style, addons: keep.addons, storyConfig: JSON.parse(keep.cfg), banList: JSON.parse(keep.ban), onomatopoeia: JSON.parse(keep.ono), userPronouns: keep.pron });
+    q.blockStack.order = JSON.parse(keep.order);
+    meguminSyncLegacyBlockIds();
+}
+console.log("57 ok Megumin Suite V11's 24-25/10 update (V11 Тайна, its Writers' Room and DeepSeek version beside the Preview, their thinking, V11 Inside; the V11 preset in slots: pronouns in <reader>, V11's ban list, content, story settings, repetition, formatting and final check in its order; Continue and Impersonate; the Preview's older headings; V11's Story Config wording; the notebook off {{user}}; Setup Check names the old V11 preset)");
 
 console.log("\nALL FORK CHECKS PASSED");

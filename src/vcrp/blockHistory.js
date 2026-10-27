@@ -68,20 +68,73 @@ function blocksOf(mes) {
     return /<Blocks\b[^>]*>\s*<\w/i.test(state) ? state : "";
 }
 
+// The blocks that hold the story's state, written in full every reply. One a reply left out, or
+// was cut off inside, would otherwise be missing from the blocks handed to the next reply, which
+// writes its own from them and leaves it out again: so its newest complete copy stands in.
+const STATE_BLOCKS = ["world", "bonds", "sheet", "tracker"];
+
+// A reply without its thinking (a model may draft its blocks there); "" when it is all thinking.
+function storyPart(mes) {
+    const s = String(mes || "");
+    if (/<think(?:ing)?\b[^>]*>/i.test(s) && !/<\/think(?:ing)?\s*>/i.test(s)) return "";
+    let at = 0, m;
+    const re = /<\/think(?:ing)?\s*>/gi;
+    while ((m = re.exec(s)) !== null) at = m.index + m[0].length;
+    return s.slice(at);
+}
+
 /**
- * The latest complete blocks, as { state, back }: from the latest reply, or, when it wrote none
- * (the length limit cut it off before them, or the model left them out), from the latest one of
- * the few before it that did, `back` replies earlier. A reply being swiped does not count.
+ * The state blocks `state` lacks, or holds an older copy of than a newer reply cut off later
+ * on, put in from the newest reply that has them whole. Returns { state, filled: [{ label, back }] }.
+ */
+function fillStateBlocks(state, back, replies) {
+    let active = [];
+    try { active = meguminActiveBlocks().filter(b => b && b.tag && !b.transient); } catch (e) { active = []; }
+    const filled = [];
+    for (const b of active) {
+        if (!STATE_BLOCKS.includes(b.id)) continue;
+        const whole = new RegExp(`<${b.tag}\\b[^>]*>[\\s\\S]*?<\\/${b.tag}\\s*>`, "gi");
+        let found = null;
+        for (let i = 0; i < replies.length && !found; i++) {
+            const all = storyPart(replies[i].mes).match(whole);
+            if (all) found = { text: all[all.length - 1].trim(), back: i };
+        }
+        if (!found) continue;
+        const has = new RegExp(`<${b.tag}\\b`, "i").test(state);
+        if (has && found.back >= back) continue;   // the blocks' own copy is the newest
+        if (!state) state = "<Blocks>\n</Blocks>";
+        if (has) {
+            state = state.replace(new RegExp(`<${b.tag}\\b[^>]*>[\\s\\S]*?<\\/${b.tag}\\s*>`, "i"), () => found.text);
+        } else {
+            // In its place in the stack: before the first later block that is there.
+            const later = active.slice(active.indexOf(b) + 1).map(x => state.search(new RegExp(`<${x.tag}\\b`, "i"))).filter(i => i >= 0);
+            const at = later.length ? Math.min(...later) : state.search(/<\/Blocks\s*>\s*$/i);
+            state = `${state.slice(0, at)}${found.text}\n${state.slice(at)}`;
+        }
+        filled.push({ label: b.label || b.tag, back: found.back });
+    }
+    return { state, filled };
+}
+
+/**
+ * The latest complete blocks, as { state, back, filled }: from the latest reply, or, when it
+ * wrote none (the length limit cut it off before them, or the model left them out), from the
+ * latest one of the few before it that did, `back` replies earlier. A state block missing from
+ * them, or cut off in a newer reply, comes from the newest reply that has it whole (`filled`).
+ * A reply being swiped does not count.
  */
 export function lastBlocksInfo() {
     let chat = [];
-    try { chat = ((getContext() || {}).chat || []).filter(m => !m.is_system); } catch (e) { return { state: "", back: 0 }; }
+    try { chat = ((getContext() || {}).chat || []).filter(m => !m.is_system); } catch (e) { return { state: "", back: 0, filled: [] }; }
     const replies = [...vcrpWithoutSwipedReply(chat)].reverse().filter(m => !m.is_user && typeof m.mes === "string").slice(0, LOOKBACK_REPLIES);
+    let state = "", back = 0;
     for (let i = 0; i < replies.length; i++) {
-        const state = blocksOf(replies[i].mes);
-        if (state) return { state, back: i };
+        state = blocksOf(replies[i].mes);
+        if (state) { back = i; break; }
     }
-    return { state: "", back: 0 };
+    const whole = Boolean(state);
+    if (!whole) back = 0;
+    return { back, whole, ...fillStateBlocks(state, whole ? back : replies.length, replies) };
 }
 
 /** The latest complete blocks, or "" when none of the last few replies has any. */
@@ -112,7 +165,13 @@ export function previousBlocksNote() {
         if (!/<Blocks\b[^>]*>\s*<\w/i.test(state)) state = "";
     }
     const parts = [];
-    if (state) parts.push(`${info.back ? "The blocks as they stood at the end of an earlier reply (the last one wrote none)." : "The blocks as they stood at the end of your last reply."} Write this reply's blocks from there: carry forward what this scene does not change.\n${state}`);
+    const head = !info.whole ? "The blocks as your recent replies last wrote each one whole (none of them closed all of its blocks)."
+        : info.back ? "The blocks as they stood at the end of an earlier reply (the last one wrote none)."
+            : "The blocks as they stood at the end of your last reply.";
+    // A block that reply left out or was cut off in: said where it comes from, and asked for whole.
+    const filled = info.filled || [];
+    const from = filled.length ? ` Not written whole there, so each is its newest whole copy: ${filled.map(f => `${f.label} (${f.back ? `${f.back} ${f.back === 1 ? "reply" : "replies"} back` : "from your last reply"})`).join(", ")}. Write every block in full this reply.` : "";
+    if (state) parts.push(`${head}${from} Write this reply's blocks from there: carry forward what this scene does not change.\n${state}`);
     if (carried) parts.push(carried);
     return parts.join("\n\n");
 }

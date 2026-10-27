@@ -1,6 +1,6 @@
 // Direct prose-style instructions (not tag-based).
 // Moved verbatim out of database.js. Content unchanged.
-// VCRP: V11 Default is Megumin Suite V11's own, word for word (data/megumin.js).
+// VCRP: V11 Default and V11 Inside are Megumin Suite V11's own, word for word (data/megumin.js).
 import { MEGUMIN_V11 } from "./megumin.js";
 
 export const directStyles = [
@@ -9,6 +9,12 @@ export const directStyles = [
       name: (MEGUMIN_V11 || {}).styleName,
       desc: (MEGUMIN_V11 || {}).styleDesc,
       rule: (MEGUMIN_V11 || {}).styleRule
+    },
+    {
+      id: "dir_v11_inside",
+      name: (MEGUMIN_V11 || {}).insideName,
+      desc: (MEGUMIN_V11 || {}).insideDesc,
+      rule: (MEGUMIN_V11 || {}).insideRule
     },
     {
       id: "dir_v10_ukiyo",

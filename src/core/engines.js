@@ -58,6 +58,11 @@ export const engineLocksStyle = m => isV7Engine(m) || isModernEngine(m);
  *  take from V9, and the reason it stopped borrowing the isV9 flag. */
 export const engineUsesRenderLimits = m => isV9Engine(m) && !isV10Engine(m);
 
+// The built-in styles a generation offers (Megumin Suite V11: V11 Default and V11 Inside).
+// Switching between the engines of one generation keeps whichever of them is in use.
+const STYLE_FAMILY = { dir_v11: ["dir_v11", "dir_v11_inside"] };
+export const styleFamily = id => STYLE_FAMILY[id] || (id ? [id] : []);
+
 /** The built-in style an engine drops you on when you switch to it. */
 export function lockedStyleIdFor(m) {
     if (!m) return null;

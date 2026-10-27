@@ -9,7 +9,12 @@
 //   - every turn, the model is told the colors already taken (with the add-on's own rule,
 //     after the chat, never cached);
 //   - a reply that gives a known character another color is corrected as it arrives.
-// A line without a name is left as the model wrote it.
+// A line without a name is left as the model wrote it. Megumin's own wording of the add-on
+// (on its Original engines) never asks for the name, so the turn's note asks for it.
+//
+// A name is matched loosely, as models write it: "Mara Reyes" is the Mara already known (when
+// no other Mara is), quotes, emphasis and a "(softly)" aside are left out, and a named color
+// ("crimson") counts like its hex.
 //
 // Readable colors: a color the model picks can be too dark for a dark theme (navy on
 // black), too pale for a light one, or all but the same as someone else's. When a
@@ -28,6 +33,39 @@ const LIMIT = 40;   // names listed to the model at most
 const colorOn = () => Boolean(localProfile && Array.isArray(localProfile.addons) && localProfile.addons.includes("color"));
 const key = name => String(name || "").trim().toLowerCase();
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+// A title as the speaker's name: no "(softly)" or "[aside]", no quotes or emphasis around it.
+const speakerName = raw => String(raw || "").replace(/\([^)]*\)|\[[^\]]*\]/g, " ").replace(/["“”‘’*_`]|^'+|'+$/g, "").replace(/\s+/g, " ").trim();
+
+/**
+ * The key of a known character `name` stands for: the same name, or one that holds the other
+ * word for word ("Mara" and "Mara Reyes") when only one known character does. Null otherwise.
+ */
+function knownKey(names, name) {
+    const k = key(name);
+    if (!k) return null;
+    if (names[k]) return k;
+    const words = k.split(" ");
+    const hits = Object.keys(names).filter(other => {
+        const theirs = other.split(" ");
+        return words.every(w => theirs.includes(w)) || theirs.every(w => words.includes(w));
+    });
+    return hits.length === 1 ? hits[0] : null;
+}
+
+// The color names models reach for, as hex. One not listed is left as the model wrote it.
+const NAMED = {
+    black: "#000000", white: "#ffffff", gray: "#808080", grey: "#808080", silver: "#c0c0c0", red: "#ff0000",
+    crimson: "#dc143c", darkred: "#8b0000", maroon: "#800000", firebrick: "#b22222", tomato: "#ff6347", coral: "#ff7f50",
+    salmon: "#fa8072", orange: "#ffa500", darkorange: "#ff8c00", gold: "#ffd700", goldenrod: "#daa520", yellow: "#ffff00",
+    khaki: "#f0e68c", olive: "#808000", green: "#008000", lime: "#00ff00", limegreen: "#32cd32", forestgreen: "#228b22",
+    seagreen: "#2e8b57", teal: "#008080", turquoise: "#40e0d0", cyan: "#00ffff", aqua: "#00ffff", skyblue: "#87ceeb",
+    lightskyblue: "#87cefa", deepskyblue: "#00bfff", dodgerblue: "#1e90ff", steelblue: "#4682b4", royalblue: "#4169e1",
+    blue: "#0000ff", navy: "#000080", indigo: "#4b0082", purple: "#800080", violet: "#ee82ee", orchid: "#da70d6",
+    plum: "#dda0dd", lavender: "#e6e6fa", magenta: "#ff00ff", fuchsia: "#ff00ff", pink: "#ffc0cb", hotpink: "#ff69b4",
+    deeppink: "#ff1493", brown: "#a52a2a", chocolate: "#d2691e", sienna: "#a0522d", tan: "#d2b48c", beige: "#f5f5dc",
+};
+const asHex = color => (HEX.test(color) ? color : NAMED[String(color).toLowerCase()] || "");
 
 /** The chat's locked colors, as { key: { name, color } }. */
 export function lockedColors() {
@@ -155,7 +193,11 @@ export function forgetAllLockedColors() {
 
 // <font …> opening tags, with their color and title, wherever they sit in the text.
 const FONT_OPEN = /<font\b([^>]*)>/gi;
-const attr = (attrs, name) => { const m = String(attrs).match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i")); return m ? (m[1] ?? m[2] ?? m[3] ?? "").trim() : ""; };
+const attr = (attrs, name) => { const m = String(attrs).match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|“([^”]*)”|([^\\s>]+))`, "i")); return m ? (m[1] ?? m[2] ?? m[3] ?? m[4] ?? "").trim() : ""; };
+// The tag with its color set to `hex`: the model's value replaced, or one added where it gave none.
+const withColor = (tag, hex) => (/\bcolor\s*=/i.test(tag)
+    ? tag.replace(/(\bcolor\s*=\s*)(?:"[^"]*"|'[^']*'|“[^”]*”|[^\s>]+)/i, `$1"${hex}"`)
+    : tag.replace(/^<font\b/i, `<font color="${hex}"`));
 
 /**
  * One reply: learns the colors of characters seen for the first time (made readable, unless
@@ -171,21 +213,24 @@ export function lockReplyColors(text, names, { background = DARK_BG, readable = 
     const from = thinkEnd >= 0 ? thinkEnd : 0;
     const head = String(text).slice(0, from), tail = String(text).slice(from);
     const out = tail.replace(FONT_OPEN, (tag, attrs) => {
-        const name = attr(attrs, "title");
+        const name = speakerName(attr(attrs, "title"));
         const color = attr(attrs, "color");
-        if (!name || !HEX.test(color)) return tag;
-        const k = key(name);
-        const known = names[k];
+        if (!name) return tag;
+        const k = knownKey(names, name);
+        const known = k ? names[k] : null;
         if (!known) {
-            const fixed = readable ? readableColor(color, { background, taken: Object.values(names).map(n => n && n.color) }) : color.toLowerCase();
-            names[k] = { name, color: fixed };
+            // Someone new: theirs is the color they first speak in, when it is one.
+            const hex = asHex(color);
+            if (!hex) return tag;
+            const fixed = readable ? readableColor(hex, { background, taken: Object.values(names).map(n => n && n.color) }) : hex.toLowerCase();
+            names[key(name)] = { name, color: fixed };
             if (fixed === color.toLowerCase()) return tag;
             changed = true;
-            return tag.replace(/(\bcolor\s*=\s*)(?:"[^"]*"|'[^']*'|[^\s>]+)/i, `$1"${fixed}"`);
+            return withColor(tag, fixed);
         }
         if (known.color === color.toLowerCase()) return tag;
         changed = true;
-        return tag.replace(/(\bcolor\s*=\s*)(?:"[^"]*"|'[^']*'|[^\s>]+)/i, `$1"${known.color}"`);
+        return withColor(tag, known.color);
     });
     return { text: head + out, changed };
 }
@@ -280,15 +325,17 @@ export function mendFontTags(text) {
 }
 
 /**
- * What the add-on's rule gets every turn: how to close the tags (every model is reminded;
+ * What the add-on's rule gets every turn: the speaker's name in each tag when the add-on's own
+ * wording (`addonText`) does not ask for it, how to close the tags (every model is reminded;
  * some forget), and the colors already taken. "" with the add-on off.
  */
-export function colorLockNote() {
+export function colorLockNote(addonText = "") {
     if (!colorOn()) return "";
+    const named = /\btitle\s*=/i.test(String(addonText)) ? "" : "\n- Every colored line names its speaker in title, the same name every time: <font color=\"#HEX\" title=\"Name\">.";
     const tags = "\n- Color only the spoken words: put <font …> right before each line's opening quote and </font> right after its closing quote, every line on its own. Narration and dialogue tags (she said, actions) always stay outside the tags, and every <font> you open is closed.";
     const list = Object.values(lockedColors()).slice(-LIMIT);
-    if (!list.length) return tags;
-    return `${tags}\n- Colors already taken in this story (use exactly these for these characters, and give anyone new a color not on this list): ${list.map(n => `${n.name} ${n.color}`).join("; ")}.`;
+    if (!list.length) return named + tags;
+    return `${named}${tags}\n- Colors already taken in this story (use exactly these for these characters, and give anyone new a color not on this list): ${list.map(n => `${n.name} ${n.color}`).join("; ")}.`;
 }
 
 /**
