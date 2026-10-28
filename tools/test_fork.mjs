@@ -402,7 +402,16 @@ console.log("14 ok Ukiyo (temperature, menu, strangers, trims, no em dashes)");
     msgs.push({ role: "assistant", content: "Alice turned toward the door and" });
     await handlePromptInjection({ chat: msgs, dryRun: false });
     assert(msgs.at(-2).role === "user" && msgs.at(-2).content.startsWith("[Continue your previous reply"), "continue note: user role, still right before the partial reply");
-    for (const [source, field, model] of [["claude", "claude_model", "claude-opus-5-5"], ["openrouter", "openrouter_model", "google/gemini-2.5-pro"]]) {
+    // Gemini on OpenRouter too: its one system instruction is fixed for its cache. It caches by
+    // itself, so VCRP adds no markers there.
+    for (const model of ["google/gemini-4-argon", "google/gemini-2.5-pro"]) {
+        Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: model });
+        vcrpSetGenerationType("normal", {}, false);
+        msgs = await run("VCRP V10 Universal.json");
+        assert(msgs[0].role === "system" && !afterChatRoles(msgs).includes("system"), `OpenRouter + ${model}: nothing after the chat is a system message`);
+        assert(msgs.every(m => typeof m.content === "string"), `OpenRouter + ${model}: no cache markers`);
+    }
+    for (const [source, field, model] of [["claude", "claude_model", "claude-opus-5-5"], ["openrouter", "openrouter_model", "z-ai/glm-5"], ["makersuite", "google_model", "gemini-4-argon"]]) {
         Object.assign(chatCompletionSettings, { chat_completion_source: source, [field]: model });
         msgs = await run("VCRP V10 Universal.json");
         assert(afterChatRoles(msgs).includes("system"), `${source} ${model}: roles left as the preset set them`);
@@ -410,7 +419,7 @@ console.log("14 ok Ukiyo (temperature, menu, strangers, trims, no em dashes)");
     for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
     Object.assign(chatCompletionSettings, keep);
 }
-console.log("15 ok OpenRouter + Claude: after-chat messages sent as user (other routes untouched)");
+console.log("15 ok OpenRouter + Claude or Gemini: after-chat messages sent as user, cache markers for Claude only (other routes untouched)");
 
 // 16. Cache safety: anything that can change from one turn to the next sits after the chat
 //     history. Before it, a change invalidates the cached history on every turn.
@@ -4446,5 +4455,93 @@ console.log("58 ok one preset for every engine: VCRP's engines and Pura's on the
     ctx.mainApi = keep.api;
 }
 console.log("59 ok V11's Adapted engines (built from the originals with V11's text, frame, thinking and notebook; VCRP's ban list in <banlist>, its dash line in the final check, Story Config and add-ons in VCRP's words; another style's own lead-in, for JULIA too; the originals untouched; the dash cleaner; Setup Check)");
+
+// 60. Story Memory sweep, on Gemini 4 Argon: summaries read as Gemini writes them, cuts that
+//     land where chapters end, a budget for a cache the model keeps by itself, and recall.
+{
+    const L = await imp("src/vcrp/memory/ledger.js");
+    const W = await imp("src/vcrp/memory/window.js");
+    const R = await imp("src/vcrp/memory/recall.js");
+    const B = await imp("src/vcrp/memory/budget.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+
+    // Fact lines and verdicts dressed up the way Gemini writes them.
+    const f = L.parseFactChanges("1. + **person** | Okafor owes Mara money\n2) ~ **F3** | the ring is fake\n* + [place] | Vault sits under the pier\n+ item: a brass key\n- F7 — settled\n- - F8\n`+ thread | the ledger`\n(none)");
+    assert.deepEqual(f.ops.map(o => `${o.op}${o.cat || o.id}`), ["+person", "~F3", "+place", "+item", "-F7", "-F8", "+thread"], `every fact line read: ${JSON.stringify(f)}`);
+    assert(f.ops[0].text === "Okafor owes Mara money" && f.ops[3].text === "a brass key" && f.ops[4].reason === "settled" && !f.skipped.length, "texts and reasons kept, nothing skipped");
+    for (const v of ["OK", "**OK**", "OK.", "ok", "Verdict: OK", "OK — the summary is accurate.", "<think>checking</think>\nOK"]) assert.equal(L.parseCheck(v).verdict, "ok", `"${v}" reads as OK`);
+    assert.equal(L.parseCheck("Not OK: the ring was never found.").verdict, "unreadable", "not OK is not OK");
+    const fenced = L.parseSummary("<think>reading</think>\n**Summary**\n```xml\n<chapter_gist>G</chapter_gist>\n<chapter>\nC\n</chapter>\n<fact_changes>\n1. + **person** | P\n</fact_changes>\n```");
+    assert(fenced.ok && fenced.gist === "G" && fenced.ops.length === 1, "a summary in a code fence, after thinking and a heading");
+
+    // Cuts land where chapters end, never inside one.
+    const msgs = Array.from({ length: 120 }, (_, i) => ({ tokens: i % 2 ? 900 : 60, isUser: i % 2 === 0 }));
+    const budget = B.computeBudget({ input: 2, output: 10, read: 0.1, writePremium: false }, { targetCost: 0.10, outputTokens: 2500 });
+    const plan = W.planWindow({ msgs, fixedTokens: 8000, state: { summarizedTo: 100, chapterEnds: [40, 80, 100] }, now: 1e12, budget });
+    assert(plan.cut && [40, 80, 100].includes(plan.cutAt), `a cut lands on a chapter's end (${plan.cutAt})`);
+    const roomy = W.planWindow({ msgs, fixedTokens: 8000, state: { summarizedTo: 90, chapterEnds: [40, 80, 90] }, now: 1e12, budget });
+    assert(roomy.cutAt === 90 && roomy.promptTokens <= budget.coldTokens - 8000, `Gemini: the cut leaves room to grow back, not a cut again next turn (${roomy.cutAt}: ${roomy.promptTokens} of ${budget.coldTokens})`);
+    assert(plan.cutAt === 80 && plan.promptTokens <= budget.coldTokens, "with no chapter end that leaves the room (the next one is in the text kept word for word): the deepest that fits");
+    const claudeB = B.computeBudget(B.priceForModel("anthropic/claude-opus-4.6"), { targetCost: 0.50, outputTokens: 2500 });
+    const cPlan = W.planWindow({ msgs, fixedTokens: 8000, state: { summarizedTo: 90, chapterEnds: [40, 60, 80, 90] }, now: 1e12, budget: claudeB });
+    assert(cPlan.cutAt === 60 && cPlan.promptTokens <= claudeB.coldTokens, `Claude: the gentlest cut that fits, as before (its warm ceiling leaves room) (${cPlan.cutAt})`);
+    const loose = W.planWindow({ msgs, fixedTokens: 8000, state: { summarizedTo: 100 }, now: 1e12, budget });
+    assert(loose.cut && msgs[loose.cutAt].isUser, "without chapters to land on: at a user message, as before");
+    assert(W.planWindow({ msgs, fixedTokens: 8000, state: { summarizedTo: 100, chapterEnds: [41, 81] }, now: 1e12, budget }).cut, "chapters that end mid-turn (the old Memory Core's): a user message will do");
+
+    // In the chat: a cut saved partway through a chapter (before this fix) gets that chapter into
+    // the memory text on load; "Cut now" lands on a chapter's end.
+    const chatM = Array.from({ length: 60 }, (_, i) => ({ is_user: i % 2 === 0, send_date: `g${i}`, mes: `(${i}) message` }));
+    const st = memory.memoryState();
+    Object.assign(st, {
+        chapters: [{ id: "C1", gist: "First stretch.", chapter: "c1", start: null, end: memory.anchorOf(chatM, 20), undo: {} },
+            { id: "C2", gist: "Second stretch.", chapter: "c2", start: memory.anchorOf(chatM, 20), end: memory.anchorOf(chatM, 40), undo: {} }],
+        ledger: [], summarized: memory.anchorOf(chatM, 40), cut: memory.anchorOf(chatM, 30), shown: "<story_memory>only C1</story_memory>",
+    });
+    assert(memory.repairMemory(chatM, st) && st.shown.includes("Second stretch.") && memory.resolveAnchor(chatM, st.cut) === 30, "a cut saved inside a chapter: that chapter's gist goes into the memory text, the cut stays");
+    st.cut = null;
+    const fc = memory.forceCut(st, chatM);
+    assert(fc.result === "cut" && [20, 40].includes(fc.cutAt), `Cut now lands on a chapter's end (${fc.cutAt})`);
+    for (const k of Object.keys(st)) delete st[k];
+
+    // The budget: Gemini (a custom price) pays plain input on a miss, keeps its cache minutes,
+    // and its prompt never grows past what a full-price request can afford. Claude as before.
+    const argon = B.priceForModel("google/gemini-4-argon", { "google/gemini-4-argon": { input: 2, output: 10, read: 0.1 } });
+    const g = B.computeBudget(argon, { targetCost: 0.30, outputTokens: 2500, ttl: "1h" });
+    assert(g.implicit && g.write === 2 && g.ttl === "5m" && g.warmTokens === g.coldTokens && g.coldTokens > 120000, `Gemini: no write surcharge, 5 minutes, no warm ceiling (${JSON.stringify({ write: g.write, ttl: g.ttl, cold: g.coldTokens, warm: g.warmTokens })})`);
+    const futureClaude = B.priceForModel("anthropic/claude-opus-6", { "anthropic/claude-opus-6": { input: 5, output: 25, read: 0.5 } });
+    assert.equal(B.computeBudget(futureClaude, { ttl: "1h" }).write, 10, "a Claude the table does not know yet keeps the surcharge");
+    const opus = B.computeBudget(B.priceForModel("anthropic/claude-opus-4.6"), { ttl: "1h" });
+    assert(!opus.implicit && opus.ttl === "1h" && opus.warmTokens > opus.coldTokens, "Claude: its cache lifetime and warm ceiling as set");
+
+    // Recall: filler words never match; a fact comes back on one rare word, measured across the
+    // whole memory; common words adding up do not bring one back.
+    assert(!R.keywordsOf("The harbor was quiet and she saw him.").has("the") && !R.keywordsOf("she saw him").size, "short filler words dropped");
+    const corpus = [{ text: "Mara presses Okafor about vault0 under the pier and the ring." }, { text: "Mara and Okafor argue about the ring again." }, { text: "Mara pays Okafor for the ring." }, { text: "Vault0 sits under the pier" }, { text: "Okafor owes Mara money for the ring" }];
+    const facts = [{ id: "F1", text: "Vault0 sits under the pier", tokens: 8, fact: true, order: 1 }, { id: "F2", text: "Okafor owes Mara money for the ring", tokens: 9, fact: true, order: 2 }];
+    assert.deepEqual(R.pickRecall(facts, R.keywordsOf("Bob asks Mara about vault0 and the ring."), 1000, corpus).map(c => c.id), ["F1"], "the fact named by a rare word comes back; the one sharing only Mara and the ring does not");
+
+    // Setup Check on Argon: the cache needs nothing; Story Memory's own checks run too.
+    const keepCc = { ...chatCompletionSettings }, keepApi = ctx.mainApi;
+    ctx.mainApi = "openai";
+    const v11 = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: v11.prompts, prompt_order: v11.prompt_order });
+    state.localProfile.vcrpMemory.enabled = true;
+    extension_settings.VCRP.globalSettings.memoryBudget = {};
+    let titles = vcrpHealthCheck().items.map(i => i.title);
+    assert(titles.includes("Gemini caches the prompt by itself") && titles.includes("OpenRouter + Gemini: after-chat instructions go as user messages"), `Setup Check on Argon: its cache (${titles.join(" / ")})`);
+    assert(titles.some(t => /no price known for google\/gemini-4-argon/.test(t)), "Setup Check on Argon: no price, said (the Story Memory checks run on Gemini too)");
+    assert(!titles.some(t => /config\.yaml|pin the provider to Anthropic|marks the prompt cache/.test(t)), "no Claude cache advice on Gemini");
+    extension_settings.VCRP.globalSettings.memoryBudget = { customPrice: { "google/gemini-4-argon": { input: 2, output: 10, read: 0.1 } } };
+    titles = vcrpHealthCheck().items.map(i => i.title);
+    assert(!titles.some(t => /no price known/.test(t)), "with its price: no warning");
+    delete extension_settings.VCRP.globalSettings.memoryBudget;
+    state.localProfile.vcrpMemory.enabled = false;
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keepCc);
+    ctx.mainApi = keepApi;
+}
+console.log("60 ok Story Memory on Gemini 4 Argon (Gemini's way of writing facts and verdicts; cuts on chapters' ends, an old cut inside a chapter repaired; no write surcharge, 5-minute cache, no warm ceiling; recall on rare words across the memory; Setup Check)");
 
 console.log("\nALL FORK CHECKS PASSED");

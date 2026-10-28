@@ -31,22 +31,28 @@ const stripThinking = text => String(text || "").replace(/<(think|thinking)>[\s\
  *   + category | text        add
  *   ~ F12 | text             reword
  *   - F7 | reason            retire (the reason is optional and only for the reader)
- * A markdown bullet in front ("- + person | ...") is tolerated.
+ * Written the way models dress it up, too: a markdown bullet or a number in front
+ * ("- + person | ...", "1. + person | ..."), bold or code marks ("+ **person** | ..."), and a
+ * colon or a dash for the bar ("+ person: ...", "- F7 — reason"). Gemini writes all of these.
  */
+const SEP = "(?:\\||:|—|–|-(?=\\s))";
+const ADD = new RegExp(`^\\+\\s*\\[?([A-Za-z]+)\\]?\\s*${SEP}\\s*(.+)$`);
+const REWORD = new RegExp(`^~\\s*\\[?(F\\d+)\\]?\\s*${SEP}\\s*(.+)$`, "i");
+const RETIRE = new RegExp(`^-\\s*\\[?(F\\d+)\\]?\\s*(?:${SEP}\\s*(.*))?$`, "i");
 export function parseFactChanges(block) {
     const ops = [];
     const skipped = [];
     for (let raw of String(block || "").split(/\r?\n/)) {
-        let line = raw.trim();
-        if (!line || /^none\.?$/i.test(line)) continue;
-        line = line.replace(/^[*•]\s+/, "").replace(/^-\s+(?=[+~])/, "");
+        let line = raw.trim().replace(/\*\*|__|`/g, "").trim();
+        if (!line || /^\(?none\.?\)?$/i.test(line)) continue;
+        line = line.replace(/^\d+[.)]\s+/, "").replace(/^[*•]\s+/, "").replace(/^-\s+(?=[+~])/, "").replace(/^-\s+(?=-\s*\[?F\d)/i, "");
         let m;
-        if ((m = line.match(/^\+\s*\[?([A-Za-z]+)\]?\s*\|\s*(.+)$/))) {
+        if ((m = line.match(ADD))) {
             const cat = m[1].toLowerCase();
             ops.push({ op: "+", cat: FACT_CATEGORIES.includes(cat) ? cat : "world", text: m[2].trim() });
-        } else if ((m = line.match(/^~\s*\[?(F\d+)\]?\s*\|\s*(.+)$/i))) {
+        } else if ((m = line.match(REWORD))) {
             ops.push({ op: "~", id: m[1].toUpperCase(), text: m[2].trim() });
-        } else if ((m = line.match(/^-\s*\[?(F\d+)\]?\s*(?:\|\s*(.*))?$/i))) {
+        } else if ((m = line.match(RETIRE))) {
             ops.push({ op: "-", id: m[1].toUpperCase(), reason: (m[2] || "").trim() });
         } else {
             skipped.push(raw.trim());
@@ -66,10 +72,14 @@ export function parseSummary(text) {
     return { ok: !!(gist && chapter), gist: gist || "", chapter: chapter || "", ops, skipped, arc: arc || "", changesFound: changes !== null };
 }
 
-/** The check call's answer: "OK", or corrected tags. Unreadable answers count as unchecked. */
+/**
+ * The check call's answer: "OK", or corrected tags. Unreadable answers count as unchecked.
+ * "OK" may come dressed up: "**OK**", "OK.", "Verdict: OK", "OK, the summary is accurate".
+ */
 export function parseCheck(text) {
     const t = stripThinking(text);
-    if (/^\s*ok\b/i.test(t) && !/<chapter>/i.test(t)) return { verdict: "ok" };
+    const plain = t.replace(/[*_`#>]/g, "").trim();
+    if (/^(?:verdict\s*[:\-–—]?\s*)?ok\b/i.test(plain) && !/<chapter>/i.test(t)) return { verdict: "ok" };
     const fixed = parseSummary(t);
     if (fixed.ok) return { verdict: "corrected", fixed };
     return { verdict: "unreadable" };

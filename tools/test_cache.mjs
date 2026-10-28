@@ -427,5 +427,38 @@ ok(!adSum.map(textOf).join("\n").includes("<final_check>"), "the summary call le
 const adRpRead = prefix(adRp, marked(adRp).at(-1)), adSumMk = marked(adSum), adSumRead = prefix(adSum, adSumMk.at(-2) ?? adSumMk.at(-1));
 ok(adSumMk.length >= 1 && JSON.stringify(adRpRead.slice(0, adSumRead.length)) === JSON.stringify(adSumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(adRpRead, adSumRead));
 
+// ── Gemini 4 Argon on OpenRouter ──────────────────────────────────────────────
+// Gemini caches a repeated prompt start by itself (no markers). OpenRouter folds every
+// system message into its one system instruction, so nothing after the chat may be one: the
+// instruction stays the same turn to turn, and each prompt opens like the one before it, up to
+// the reply before last.
+section("Gemini 4 Argon (OpenRouter): the prompt start holds still, for its own cache");
+chat.length = 0;
+for (const k of Object.keys(meta)) delete meta[k];
+const keepRoute = { ...chatCompletionSettings };
+Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+Object.assign(q, { mode: "v11-voice-adapted", model: "cot-v11-voice-english" });
+chat.push({ is_user: false, name: "Mara", send_date: "e0", mes: "\"We're closed,\" Mara says." });
+const geminiView = msgs => ({ sys: msgs.filter(m => m.role === "system").map(textOf).join("\n"), contents: msgs.filter(m => m.role !== "system").map(textOf) });
+const gPrompts = [];
+for (let t = 1; t <= 4; t++) {
+    const p = await send("normal");
+    gPrompts.push(p);
+    await arrive(t);
+    const first = p.findIndex(m => m.role !== "system");
+    ok(!p.slice(first).some(m => m.role === "system"), `Gemini, turn ${t}: nothing after the chat is a system message`);
+    ok(p.every(m => typeof m.content === "string"), `Gemini, turn ${t}: no cache markers (Gemini caches by itself)`);
+    if (t > 1) {
+        const a = geminiView(gPrompts.at(-2)), b = geminiView(p);
+        ok(a.sys === b.sys, `Gemini, turn ${t}: the system instruction is the same as last turn's`, firstDiff([a.sys], [b.sys]));
+        // The previous prompt's contents, minus its newest messages (the rules before the newest
+        // message, the message itself, what follows it), open this one unchanged.
+        const prevRoles = gPrompts.at(-2).filter(m => m.role !== "system").map(m => m.role);
+        const kept = a.contents.slice(0, prevRoles.lastIndexOf("assistant") + 1);
+        ok(JSON.stringify(b.contents.slice(0, kept.length)) === JSON.stringify(kept), `Gemini, turn ${t}: the prompt opens like last turn's, up to the reply before last`, firstDiff(kept, b.contents));
+    }
+}
+Object.assign(chatCompletionSettings, keepRoute);
+
 console.log(`\n${fail ? `${fail} PROBLEM(S)` : "ALL CHECKS PASSED"} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

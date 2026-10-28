@@ -12,9 +12,11 @@
 import { extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "../core/constants.js";
 
-export const WHATS_NEW_ID = "10.0.0-vcrp.6";
+export const WHATS_NEW_ID = "10.0.0-vcrp.7";
 
 const ITEMS = [
+    "<b>Story Memory on Gemini 4 Argon, and a full memory sweep.</b> Gemini's cache now works: OpenRouter folded VCRP's per-turn rules into Gemini's system instruction, so almost nothing was cached; now about 90% of each prompt is. Story Memory prices Gemini right (no Claude-style cache-write surcharge, a 5-minute cache) and never lets a request outgrow your target even if the cache lapsed. Enter Argon's price once in the Memory tab (2, 10, 0.1).",
+    "<b>Memory fixes.</b> A cut now always lands where a chapter ends: before, it could hide the start of a chapter that the memory text then left out. Summaries are read the way Gemini writes them (bold labels, numbered fact lines, \"**OK**\"), so no fact is dropped. Recall brings a fact back when the scene names something rare in it, and no longer matches on words like \"the\". Setup Check now runs its Story Memory checks on Gemini too.",
     "<b>V11 Тайна · Adapted</b>, with its <b>Writers' Room</b> and <b>DeepSeek</b> versions: V11's engines run as VCRP engines. V11's text, thinking and Author's Notebook, with VCRP's ban list (dash rule included), the dash cleaner, and VCRP's own wording of your writing style, add-ons and Story Config. Any writing style fits. The Megumin Originals stay word for word beside them. In PRESETS &amp; COT, under V11.",
     "<b>Sweep fixes.</b> Dialogue Colors: a color set in a style counts, a line for two characters is left alone, and a role (the Guard) is never merged with someone named like it (the Guard Captain). A reply cut off in the middle of a tag leaves no half tag in the history. Newer Gemini models (Gemini 4 Argon) no longer get a prefill they refuse with a 400 error. A custom price in the Memory tab is kept per model and never stands in for a model VCRP knows (it priced Claude at Gemini's rate), and its boxes keep what you type (they emptied themselves before the price was complete). Setup Check notes a V10 Megumin Original engine on the V11 preset.",
     "<b>Megumin Suite V11's newest update, word for word.</b> <b>V11 Тайна</b> (one storyteller, the base for every model), <b>V11 Тайна · Writers' Room</b> and <b>V11 Тайна DeepSeek</b> join the first V11 engine, now called <b>V11 Тайна Preview</b>. Each picks its own thinking. In PRESETS &amp; COT, under V11.",
@@ -41,7 +43,7 @@ export function markWhatsNewSeen() {
 /** Once, when SillyTavern is ready: the one thing that needs doing. */
 export function whatsNewToast() {
     if (!hasUnseenWhatsNew() || typeof toastr === "undefined") return;
-    toastr.info("New: V11 Тайна Adapted (V11's engines with VCRP's rules) and Megumin's V11 update. If you have not since 10.0.0-vcrp.5, re-import the VCRP V11 Megumin Original preset from the extension's Presets folder, replacing the old one. What's new: VCRP → Global Settings.", `VCRP updated to ${WHATS_NEW_ID}`, { timeOut: 20000, extendedTimeOut: 10000 });
+    toastr.info("New: Story Memory and caching on Gemini 4 Argon, memory fixes, V11 Тайна Adapted. If you have not since 10.0.0-vcrp.5, re-import the VCRP V11 Megumin Original preset from the extension's Presets folder, replacing the old one. What's new: VCRP → Global Settings.", `VCRP updated to ${WHATS_NEW_ID}`, { timeOut: 20000, extendedTimeOut: 10000 });
 }
 
 /** The card at the top of Global Settings, with a "Got it" button (#vcrp_whats_new_ok). */

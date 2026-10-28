@@ -11,7 +11,9 @@
 //
 // A cut never removes a message the memory has not summarized yet, never touches the most
 // recent budget.minVerbatim tokens, and always lands where a user message starts, so the
-// carried history opens on a turn rather than halfway through a reply.
+// carried history opens on a turn rather than halfway through a reply. Given the chapters'
+// ends (state.chapterEnds), it lands only on one of them: a cut inside a chapter would hide
+// its first messages while the memory text, which tells only whole chapters, left them out.
 //
 // Pure: callers pass token counts, the stored state, and the time.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -19,6 +21,12 @@
 // The cache counts as cold a little before it really expires: a request that starts
 // just inside the lifetime can still miss once the prompt has travelled.
 const COLD_MARGIN = 0.95;
+
+// A model that keeps its own cache (Gemini) has no warm ceiling above the cold one, so a cut
+// that only just fits would be followed by another a turn later, each one a full-price
+// request. Its cuts go this much further, leaving room for some turns to grow back. The same
+// room summaries keep ahead of a cut (summarize.js LOOKAHEAD), so the chapters are there.
+const IMPLICIT_HEADROOM = 8000;
 
 function suffixSums(msgs) {
     const after = new Array(msgs.length + 1);
@@ -36,6 +44,13 @@ function furthestCut(msgs, after, summarizedTo, minVerbatim) {
 
 const isBoundary = (msgs, c) => c === 0 || (msgs[c] && msgs[c].isUser);
 
+/** The largest of the chapters' ends (sorted or not) at or before `c`, or 0. */
+export function chapterEndAtOrBefore(ends, c) {
+    let best = 0;
+    for (const e of ends || []) if (e <= c && e > best) best = e;
+    return best;
+}
+
 /** True when the cache has expired (or never existed) at time `now`. */
 export function isCold(state, now, budget) {
     return !state || !state.lastRequestAt || now - state.lastRequestAt > budget.ttlMs * COLD_MARGIN;
@@ -45,7 +60,7 @@ export function isCold(state, now, budget) {
  * @param {object} a
  * @param {{tokens:number,isUser:boolean}[]} a.msgs  chat messages in order, as the interceptor sees them
  * @param {number} a.fixedTokens  everything in the prompt that is not chat history
- * @param {{cutAt?:number,summarizedTo?:number,lastRequestAt?:number}} a.state
+ * @param {{cutAt?:number,summarizedTo?:number,lastRequestAt?:number,chapterEnds?:number[]}} a.state
  * @param {number} a.now
  * @param {object} a.budget  from computeBudget()
  * @returns {{cutAt:number, cut:boolean, cold:boolean, promptTokens:number, behind:boolean, limit:(null|"summaries"|"verbatim floor"), reason:string}}
@@ -56,18 +71,24 @@ export function planWindow({ msgs, fixedTokens, state = {}, now, budget }) {
     const prompt = c => fixedTokens + after[c];
     const from = Math.min(Math.max(0, state.cutAt || 0), n);
     const cold = isCold(state, now, budget);
+    // Where a cut may land: a chapter's end, when the chapters end where a user message starts
+    // (VCRP's always do). Chapters brought over from the old Memory Core can end mid-turn;
+    // with none to land on, any user message will do, and the memory text still tells a
+    // chapter the cut reached partway (index.js), so nothing it hid goes missing.
+    const ends = Array.isArray(state.chapterEnds) ? new Set(state.chapterEnds.filter(e => isBoundary(msgs, e) && e > 0)) : null;
+    const canCut = c => isBoundary(msgs, c) && (!ends || !ends.size || ends.has(c));
     const ceiling = cold ? budget.coldTokens : budget.warmTokens;
 
     if (prompt(from) <= ceiling) {
         return { cutAt: from, cut: false, cold, promptTokens: prompt(from), behind: false, limit: null, reason: cold ? "cold start, already within budget" : "warm" };
     }
 
-    // The gentlest cut that brings a miss within budget, keeping as much story as fits.
+    // The gentlest cut that brings a miss within budget, keeping as much story as fits (with
+    // room to grow back on a model that keeps its own cache, when the chapters reach that far).
     const maxCut = furthestCut(msgs, after, state.summarizedTo, budget.minVerbatim);
-    let target = -1;
-    for (let c = from + 1; c <= maxCut; c++) {
-        if (isBoundary(msgs, c) && prompt(c) <= budget.coldTokens) { target = c; break; }
-    }
+    const first = limit => { for (let c = from + 1; c <= maxCut; c++) if (canCut(c) && prompt(c) <= limit) return c; return -1; };
+    let target = budget.implicit ? first(Math.max(0, budget.coldTokens - IMPLICIT_HEADROOM)) : -1;
+    if (target < 0) target = first(budget.coldTokens);
     let behind = false, limit = null;
     if (target < 0) {
         // Not enough is summarized (or the verbatim floor alone is over budget): cut as far
@@ -80,7 +101,7 @@ export function planWindow({ msgs, fixedTokens, state = {}, now, budget }) {
         // Only a cold start cuts partway: that request misses the cache anyway, so a smaller
         // prompt is pure saving. While warm, a cut that can't reach the budget would throw
         // the whole cached prompt away for nothing, so the prompt stays as it is.
-        if (cold) for (let c = maxCut; c > from; c--) if (isBoundary(msgs, c)) { target = c; break; }
+        if (cold) for (let c = maxCut; c > from; c--) if (canCut(c)) { target = c; break; }
     }
     return {
         cutAt: target, cut: target > from, cold, promptTokens: prompt(target), behind, limit,

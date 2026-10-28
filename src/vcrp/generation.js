@@ -103,11 +103,22 @@ export function vcrpDetectPrefill() {
 }
 
 /**
- * True when the route hands Claude one system prompt built from every system-role message,
- * wherever it sat. OpenRouter does this for Claude (SillyTavern issue #5227): text placed
- * after the chat is read before it, and a per-turn change there invalidates the whole cache.
+ * True when the route hands the model one system prompt built from every system-role message,
+ * wherever it sat. OpenRouter does this for Claude (SillyTavern issue #5227) and for Gemini,
+ * whose single systemInstruction its cache treats as fixed: text placed after the chat is read
+ * before it, and a per-turn change there invalidates the whole cache.
  */
 export function vcrpRouteHoistsSystem() {
+    const { source, model } = vcrpActiveModel();
+    return source === "openrouter" && /claude|anthropic|fable|gemini/.test(model);
+}
+
+/**
+ * True when VCRP may put Anthropic's cache markers on the request (OpenRouter + Claude).
+ * Gemini caches a repeated prompt start by itself, free; markers would switch it to its paid
+ * explicit cache instead.
+ */
+export function vcrpRouteMarksCache() {
     const { source, model } = vcrpActiveModel();
     return source === "openrouter" && /claude|anthropic|fable/.test(model);
 }

@@ -1,8 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // VCRP memory: what a request costs, and how big the prompt may be.
 //
-// The expensive request is the cache miss: every token is written to the cache at
-// 1.25x the input price (5-minute cache) or 2x (1-hour cache). A hit reads the cached
+// The expensive request is the cache miss: on Claude every token is written to the cache
+// at 1.25x the input price (5-minute cache) or 2x (1-hour cache); other models (Gemini,
+// DeepSeek, GLM, priced by the reader) bill a miss as plain input. A hit reads the cached
 // part at a tenth of the input price or less. So the budget is set by the miss: the
 // prompt carried after a cold start is sized so that even a full miss stays under the
 // per-request target. While the cache is warm the prompt may grow past that, up to a
@@ -55,7 +56,9 @@ export function priceForModel(modelId, customPrice = null) {
     const known = MODEL_PRICES.find(p => p.re.test(id));
     if (known) return known;
     const own = customPriceFor(customPrice, id);
-    return own ? { label: "Custom price", ...own } : null;
+    // Only Anthropic charges extra to write the cache: Gemini, DeepSeek, GLM and the rest bill
+    // a cache miss as plain input. A Claude the table does not know yet keeps the surcharge.
+    return own ? { label: "Custom price", ...own, writePremium: /claude|anthropic|fable|mythos/.test(id) } : null;
 }
 
 /** The custom price saved for model `id` ({ input, output, read }), or null. */
@@ -84,16 +87,23 @@ export const ttlMs = ttl => (ttl === "5m" ? 5 : 60) * 60 * 1000;
 export function computeBudget(price, settings = {}) {
     const s = { ...BUDGET_DEFAULTS, ...settings };
     if (!price) return null;
-    const write = price.input * (s.ttl === "5m" ? 1.25 : 2);
+    // Writing the cache costs Claude 1.25x (5-minute cache) or 2x (1 hour) the input price.
+    // A model without that surcharge (writePremium false: Gemini, DeepSeek, GLM...) keeps its
+    // cache by itself: a miss is plain input, the cache lasts minutes (Gemini's 3 to 5) whatever
+    // the setting for Claude says, and a hit is never certain. So its prompt never grows past
+    // what a full-price request can afford: there is no warm ceiling above the cold one.
+    const implicit = price.writePremium === false;
+    const ttl = implicit ? "5m" : s.ttl;
+    const write = price.input * (implicit ? 1 : ttl === "5m" ? 1.25 : 2);
     const outputCost = s.outputTokens * price.output / 1e6;
     const forInput = Math.max(0, s.targetCost - outputCost);
     const coldTokens = Math.floor(forInput / write * 1e6 * s.safety);
     return {
-        price, write, outputCost, coldTokens,
-        warmTokens: Math.max(coldTokens, s.warmCeiling),
+        price, write, outputCost, coldTokens, implicit,
+        warmTokens: implicit ? coldTokens : Math.max(coldTokens, s.warmCeiling),
         minVerbatim: s.minVerbatim,
         outputTokens: s.outputTokens,
-        ttl: s.ttl, ttlMs: ttlMs(s.ttl),
+        ttl, ttlMs: ttlMs(ttl),
     };
 }
 

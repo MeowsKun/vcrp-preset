@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { extension_settings, getContext, event_types } from "../st.js";
-import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem } from "./generation.js";
+import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem, vcrpRouteMarksCache } from "./generation.js";
 import { escapeHtmlAttr } from "../utils/html.js";
 import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memoryState, estimateTokens, memoryCanReachPrompt } from "./memory/index.js";
 import { autoSummaryHold } from "./memory/summarize.js";
@@ -103,8 +103,9 @@ export function vcrpHealthCheck() {
     add("info", `Model: ${modelLabel}`,
         mode === "auto" ? `CoT prefill: Auto → ${det.prefill ? "prefilling" : "not prefilling"} (${det.reason}).` : `CoT prefill: ${mode === "on" ? "Always on" : "Always off"}.`);
     if (vcrpRouteHoistsSystem()) {
-        add("info", "OpenRouter + Claude: after-chat instructions go as user messages",
-            "OpenRouter moves every system message to the front of the prompt. VCRP sends Output Rules and the closing slots as user messages instead, so Claude reads them after the chat and per-turn changes leave the cache intact.");
+        const gemini = /gemini/.test(String(model || ""));
+        add("info", `OpenRouter + ${gemini ? "Gemini" : "Claude"}: after-chat instructions go as user messages`,
+            `OpenRouter moves every system message to the front of the prompt${gemini ? " (Gemini has one system instruction, which its cache treats as fixed)" : ""}. VCRP sends Output Rules and the closing slots as user messages instead, so ${gemini ? "Gemini" : "Claude"} reads them after the chat and per-turn changes leave the cache intact.`);
     }
 
     // 5. Engine and preset from the same family. Told apart by the ban list: VCRP's
@@ -200,10 +201,10 @@ function longChatChecks(add, ctx, cc, source, model) {
         add("ok", `Context Size leaves Story Memory room (${maxCtx.toLocaleString()} tokens)`);
     }
 
-    if (!isClaude) return;
-
-    if (source === "openrouter") {
-        const providers = Array.isArray(cc.openrouter_providers) ? cc.openrouter_providers : [];
+    // The cache: Claude's is set up (markers, its lifetime); Gemini's keeps itself.
+    const isGemini = /gemini/.test(String(model));
+    const providers = Array.isArray(cc.openrouter_providers) ? cc.openrouter_providers : [];
+    if (isClaude && source === "openrouter") {
         const pinned = providers.length > 0 && /anthropic/i.test(String(providers[0]));
         if (!pinned || cc.openrouter_allow_fallbacks !== false) {
             add("info", "OpenRouter: pin the provider to Anthropic",
@@ -212,13 +213,25 @@ function longChatChecks(add, ctx, cc, source, model) {
             add("ok", "OpenRouter provider pinned to Anthropic");
         }
     }
-
-    if (memoryBudgetSettings().markCache && vcrpRouteHoistsSystem()) {
+    if (isClaude && memoryBudgetSettings().markCache && vcrpRouteMarksCache()) {
         add("ok", "VCRP marks the prompt cache itself (your last two replies)",
             "This needs claude.cachingAtDepth: -1 in SillyTavern's config.yaml, so SillyTavern adds none of its own markers. With both on, a request can carry more cache markers than Claude accepts and fail with a 400 \"bad request\" error. If you can't change config.yaml, untick \"Mark the cache from VCRP\" in the Memory tab instead (and pin OpenRouter to Anthropic, where SillyTavern's markers still read the cache).");
-    } else {
+    } else if (isClaude) {
         add("info", "Prompt caching is set in SillyTavern's config.yaml",
             `VCRP can't read that file. Long chats on Claude need claude.cachingAtDepth: 0 and claude.extendedTTL: true there${budget ? " (or Story Memory's cache lifetime set to 5 minutes)" : ""}.${source === "openrouter" ? " On OpenRouter + Claude, VCRP can mark the cache itself instead (Memory tab: Mark the cache from VCRP), which also works on Bedrock." : ""}`);
+    }
+    if (isGemini) {
+        add("ok", "Gemini caches the prompt by itself",
+            "Gemini keeps a repeated prompt start for a few minutes (about 3 to 5) and bills it at its cached price, with nothing to set up. VCRP keeps the start of the prompt the same from turn to turn so it can. Story Memory sizes every request as if the cache had lapsed, so even a reply after a short pause stays within your target.");
+        if (source === "openrouter") {
+            const pinned = providers.length > 0 && /google/i.test(String(providers[0]));
+            if (!pinned) {
+                add("info", "OpenRouter: pin the provider to Google AI Studio",
+                    "OpenRouter serves Gemini from several providers at different prices (Vertex US and the priority tier cost more) and each keeps its own cache. In AI Response Configuration, put Google AI Studio first in OpenRouter's provider list, so every request is billed at the price you entered and finds its cache.");
+            } else {
+                add("ok", "OpenRouter provider pinned to Google");
+            }
+        }
     }
 
     if (!memOn) return;

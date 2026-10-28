@@ -23,9 +23,9 @@ import { vcrpOn } from "../power.js";
 import { extensionName } from "../../core/constants.js";
 import { localProfile } from "../../core/state.js";
 import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
-import { vcrpActiveModel, vcrpIsDryRun, vcrpRouteHoistsSystem, vcrpWithoutSwipedReply, vcrpGenerationKind } from "../generation.js";
+import { vcrpActiveModel, vcrpIsDryRun, vcrpRouteMarksCache, vcrpWithoutSwipedReply, vcrpGenerationKind } from "../generation.js";
 import { priceForModel, computeBudget, requestCost, BUDGET_DEFAULTS } from "./budget.js";
-import { planWindow, isCold } from "./window.js";
+import { planWindow, isCold, chapterEndAtOrBefore } from "./window.js";
 import { composeMemory } from "./ledger.js";
 import { keywordsOf, pickRecall, formatRecall } from "./recall.js";
 import { TASK_MARKER } from "./prompts.js";
@@ -178,6 +178,13 @@ export function repairMemory(chat, st) {
     while (cutAt > 0 && chat[cutAt] && !chat[cutAt].is_user) cutAt--;
     if (cutAt !== resolveAnchor(chat, st.cut)) { st.cut = anchorOf(chat, cutAt); changed = true; }
     if (changed) refreshShownMemory(st, chat, Math.max(0, resolveAnchor(chat, st.cut)));
+    else if (cutAt > 0 && (st.chapters || []).some(c => Math.max(0, resolveAnchor(chat, c.start)) < cutAt && resolveAnchor(chat, c.end) > cutAt)) {
+        // A cut saved partway through a chapter, before cuts kept to chapters' ends: its memory
+        // text left that chapter out, so the messages it hid were nowhere. It goes in now.
+        const before = st.shown;
+        refreshShownMemory(st, chat, cutAt);
+        changed = st.shown !== before;
+    }
     return changed;
 }
 
@@ -225,7 +232,7 @@ export async function vcrpMemoryIntercept(chat, type) {
         const msgs = chat.map(m => ({ tokens: estimateTokens(carriedText(m)), isUser: !!m.is_user }));
         const plan = planWindow({
             msgs, fixedTokens: st.fixedTokens || FIXED_GUESS,
-            state: { cutAt, summarizedTo: Math.max(0, summarizedTo), lastRequestAt: st.lastRequestAt },
+            state: { cutAt, summarizedTo: Math.max(0, summarizedTo), lastRequestAt: st.lastRequestAt, chapterEnds: chapterEnds(chat, st) },
             now, budget,
         });
         if (plan.cut) {
@@ -336,7 +343,7 @@ function vcrpMarkedSplit(messages, total, cold) {
  */
 export function promptSpendSplit(messages, cold) {
     const total = messages.reduce((n, m) => n + tokensOfMessage(m), 0);
-    if (memoryBudgetSettings().markCache && vcrpRouteHoistsSystem()) return { total, ...vcrpMarkedSplit(messages, total, cold) };
+    if (memoryBudgetSettings().markCache && vcrpRouteMarksCache()) return { total, ...vcrpMarkedSplit(messages, total, cold) };
     const tail = cold ? null : warmWrittenTokens(messages);
     const write = tail === null ? total : Math.min(total, tail);
     return { total, read: total - write, write, plain: 0 };
@@ -437,7 +444,7 @@ export function vcrpMemoryMarkCache(messages, dryRun) {
     // Standalone summary calls too: their check call reads the stretch from the cache.
     if (dryRun || !Array.isArray(messages)) return false;
     const s = memoryBudgetSettings();
-    if (!s.markCache || !vcrpRouteHoistsSystem()) return false;
+    if (!s.markCache || !vcrpRouteMarksCache()) return false;
     markCache(messages, s.ttl);
     return true;
 }
@@ -499,7 +506,23 @@ export const isStoryTurnSlot = m => typeof (m && m.content) === "string" && STOR
 
 // ── The memory text ──────────────────────────────────────────────────────────
 
-const chapterBefore = (chat, cutAt) => c => { const end = resolveAnchor(chat, c.end); return end >= 0 && end <= cutAt; };
+// A chapter the cut has reached: any of its messages hidden. Cuts land on chapters' ends, so
+// that is a chapter wholly before the cut; one saved partway through (before cuts kept to
+// chapters) counts too, or the messages it hid would be in neither the prompt nor the memory.
+const chapterBefore = (chat, cutAt) => c => { const end = resolveAnchor(chat, c.end); return end >= 0 && Math.max(0, resolveAnchor(chat, c.start)) < cutAt; };
+
+/** Where the saved chapters end, as positions in `chat`: the only places a cut may land. */
+export function chapterEnds(chat, st) {
+    return ((st && st.chapters) || []).map(c => resolveAnchor(chat, c.end)).filter(i => i > 0);
+}
+
+// Where a cut at `cutAt` (already on a user message) may stay: the last chapter end at or
+// before it that starts a turn. When no chapter ends on a turn (chapters brought over from the
+// old Memory Core), `cutAt` itself, as planWindow allows.
+function cutOnChapter(chat, st, cutAt) {
+    const ends = chapterEnds(chat, st).filter(e => chat[e] && chat[e].is_user);
+    return ends.length ? chapterEndAtOrBefore(ends, cutAt) : cutAt;
+}
 
 /**
  * Sets the memory text the prompt carries for a cut at `cutAt`: the chapters wholly before
@@ -555,7 +578,9 @@ function recallFor(st, chat, recent) {
     const facts = (st.ledger || []).filter(f => hidden.has(f.id)).map((f, i) => ({
         id: f.id, order: 1e6 + i, text: `[${f.cat}] ${f.text}`, tokens: estimateTokens(f.text) + 4, fact: true,
     }));
-    const picked = pickRecall([...chapters, ...facts], keywordsOf(recent), s.recallTokens);
+    // How rare a word is, measured across the whole memory: the main cast is in every chapter.
+    const corpus = [...(st.chapters || []).map(c => ({ text: c.chapter })), ...(st.ledger || []).map(f => ({ text: f.text }))];
+    const picked = pickRecall([...chapters, ...facts], keywordsOf(recent), s.recallTokens, corpus);
     return { text: formatRecall(picked.filter(p => !p.fact), picked.filter(p => p.fact)), ids: picked.map(p => p.id), cut: cutAt };
 }
 
@@ -584,8 +609,10 @@ export function forceCut(st, chat) {
     const from = Math.max(0, resolveAnchor(chat, st.cut));
     const covered = Math.max(0, resolveAnchor(chat, st.summarized));
     if (!covered) return { result: "no chapters", cutAt: from };
+    // At the last chapter's end that leaves the last few messages, never inside a chapter.
     let target = Math.min(covered, chat.length - RECENT_MESSAGES);
     while (target > 0 && !(chat[target] && chat[target].is_user)) target--;
+    target = cutOnChapter(chat, st, target);
     if (target <= from) return { result: "already", cutAt: from };
     st.qaPrevCut = st.cut || null;
     st.cut = anchorOf(chat, target);

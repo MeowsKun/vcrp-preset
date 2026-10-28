@@ -81,6 +81,13 @@ target* in Memory → Reply length is on by default.
 **Tips:** Grounded Prose (Pura panel) is the biggest per-reply extra (~900 tokens); turn it off if
 you want to save. The BLOCKS tab shows what each Pura tracker costs per reply.
 
+**On Gemini (or any model that isn't Claude):** enter its price once in Memory → **Custom price**
+(Gemini 4 Argon on OpenRouter: **2**, **10**, **0.1**). Without it, Story Memory, the cost badges and
+the hold do nothing. Gemini caches the prompt by itself for a few minutes (nothing to set up), and
+VCRP keeps the prompt's start the same each turn so it can; Story Memory sizes every request as if
+that cache had lapsed, so a reply after a pause still stays within your target. Pin OpenRouter's
+provider to Google AI Studio.
+
 ---
 
 ## 4. Pura Director extras

@@ -34,7 +34,9 @@ const esc = s => escapeHtmlAttr(s == null ? "" : s);
 
 // The cache check, in the Testing panel: did the last prompt keep the one before it?
 function cacheCheckHtml(s) {
-    const c = vcrpCacheCheckSummary(vcrpCacheCheckReport(), s.ttl === "5m" ? 5 : 60);
+    // The lifetime the budget counts with: a model that keeps its own cache counts 5 minutes.
+    const b = currentMemoryBudget();
+    const c = vcrpCacheCheckSummary(vcrpCacheCheckReport(), (b ? b.ttl : s.ttl) === "5m" ? 5 : 60);
     if (!c) return `<div style="margin-top:10px; font-size:0.75rem; opacity:.75;"><b>Cache check:</b> send two messages within the cache lifetime, and this shows how much of the prompt the second one kept from the first.</div>`;
     return `<div style="margin-top:10px; font-size:0.75rem; line-height:1.5;${c.level === "warn" ? " color:#f59e0b;" : ""}"><b>${c.level === "warn" ? '<i class="fa-solid fa-triangle-exclamation"></i> ' : ""}${esc(c.title)}.</b> ${esc(c.detail)}</div>`;
 }
@@ -221,7 +223,12 @@ export function renderVcrpMemoryPanel($c) {
     }
     const st = memoryState();
 
-    $c.append(`
+    // Claude's cache is set up by the reader; a model that keeps its own (Gemini) needs nothing.
+    $c.append(budget && budget.implicit ? `
+        <div class="mtab-callout" style="margin-bottom:14px;">
+            <i class="fa-solid fa-circle-info"></i>
+            <span><strong>This model caches by itself.</strong> A repeated prompt start is kept for a few minutes (Gemini: about 3 to 5) and billed at its cached price, with nothing to set. Every request is sized as if the cache had lapsed, so none goes over your target. Set Context Size to the maximum; Global Settings → Setup Check covers the rest.</span>
+        </div>` : `
         <div class="mtab-callout gold" style="margin-bottom:14px;">
             <i class="fa-solid fa-triangle-exclamation"></i>
             <span><strong>This needs prompt caching.</strong> Either set it in SillyTavern's <code>config.yaml</code> under <code>claude:</code>
@@ -409,7 +416,7 @@ export function renderVcrpMemoryPanel($c) {
     $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title gold"><i class="fa-solid fa-sliders"></i> Budget</div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Target per request</div><div class="set-desc">The most one request should cost, in dollars. Breaks are what make a request expensive, so this sets how much story survives one.</div></div>
             <input id="vmem_target" type="number" min="0.05" max="5" step="0.01" class="ps-modern-input" style="width:90px;" value="${s.targetCost}"></div>
-        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Cache lifetime</div><div class="set-desc">Must match SillyTavern: extendedTTL true is 1 hour, otherwise 5 minutes.</div></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Cache lifetime</div><div class="set-desc">For Claude. Must match SillyTavern: extendedTTL true is 1 hour, otherwise 5 minutes. Models that keep their own cache (Gemini) always count 5 minutes.</div></div>
             <select id="vmem_ttl" class="ps-modern-input" style="width:130px;"><option value="1h" ${s.ttl !== "5m" ? "selected" : ""}>1 hour</option><option value="5m" ${s.ttl === "5m" ? "selected" : ""}>5 minutes</option></select></div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Most the prompt may carry while you play</div><div class="set-desc">Thousands of tokens. Reads from cache are cheap, so this mostly guards against slow replies on very long sessions.</div></div>
             <input id="vmem_warm" type="number" min="20" max="900" step="10" class="ps-modern-input" style="width:90px;" value="${Math.round(s.warmCeiling / 1000)}"></div>

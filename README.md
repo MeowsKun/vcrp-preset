@@ -120,15 +120,31 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 3. Extensions → Regex: make sure the preset's regex scripts are enabled.
 4. Open VCRP with the wand button, pick an engine in **PRESETS & COT**, and play.
 
-## Long chats on Claude: Story Memory
+## Long chats: Story Memory (Claude, Gemini and others)
 
 Story Memory (the **Memory** tab) keeps every request under a dollar target, however long the
 chat runs. While you play nothing is dropped, so every turn reads the prompt from cache. After
 a break the cache has expired anyway, and that is when older messages leave the prompt in one
 cut, covered by chapters (one-line gists plus full text, recalled when the scene touches them)
-and a fact ledger. New chapters wait for your review by default.
+and a fact ledger. A cut always lands where a chapter ends, so every message it hides is told
+by a chapter in the memory text. New chapters wait for your review by default. Summaries are
+read however the model dresses them up (Gemini's bold labels, numbered fact lines, "**OK**").
 
-It relies on prompt caching. Set up once:
+It needs the model's price: Claude's is built in; for any other model (Gemini, DeepSeek, GLM)
+enter it under Custom price in the Memory tab, once per model. Without a price nothing is
+summarized or cut.
+
+**On Gemini** (OpenRouter, e.g. Gemini 4 Argon: $2 in, $10 out, $0.10 cached, per million):
+Gemini caches a repeated prompt start by itself, for about 3 to 5 minutes, with nothing to set
+up. OpenRouter folds every system message into Gemini's one system instruction, so VCRP sends
+everything after the chat as user messages and the instruction stays the same from turn to turn
+(without that, nearly nothing was cached). Story Memory counts Gemini's cache as 5 minutes, with
+no write surcharge, and never lets the prompt grow past what a full-price request can afford, so
+a reply after any pause stays within the target. In a simulated session about 90% of each
+prompt is read from the cache. Pin OpenRouter's provider to Google AI Studio (the price you
+entered; other providers cost more and keep their own caches).
+
+On Claude it relies on prompt caching you set up once:
 
 1. **Context Size** (AI Response Configuration): the model's maximum. Below what VCRP sends,
    SillyTavern trims the oldest message itself every turn and nothing is ever cached.
