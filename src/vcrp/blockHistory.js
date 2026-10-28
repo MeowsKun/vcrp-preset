@@ -24,7 +24,9 @@ const BLOCKS_OPEN = /\s*<Blocks\b[^>]*>[\s\S]*$/i;   // a reply cut off inside i
 // VCRP: an Author's Notebook block the model wrote outside the envelope goes the same way,
 // so the notebook is never in the history whichever way it was written.
 const NOTEBOOK_LOOSE = /\s*<(Notebook|Notebook_Update)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi;
-const strip = s => String(s).replace(BLOCKS_PAIRED, "").replace(BLOCKS_OPEN, "").replace(NOTEBOOK_LOOSE, "");
+// A reply the length limit cut off inside a tag ("<Notebook_Up", "<Blo") ends on its start: that goes too.
+const TAG_CUT = /\s*<\/?[A-Za-z][\w-]*(?:\s[^<>]*)?$/;
+const strip = s => String(s).replace(BLOCKS_PAIRED, "").replace(BLOCKS_OPEN, "").replace(NOTEBOOK_LOOSE, "").replace(TAG_CUT, "");
 
 /**
  * Removes <Blocks> from every assistant message in the prompt except a trailing one (a

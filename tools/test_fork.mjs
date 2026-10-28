@@ -4163,6 +4163,13 @@ console.log("55 ok Megumin Suite V11 (V11 Тайна on its own preset and VCRP'
     note = bh.previousBlocksNote();
     assert(note.includes("the boat") && !note.includes("the pier") && note.includes("Affection: 40/100") && !note.includes("99/100")
         && note.includes("World State (from your last reply)") && note.includes("Bonds (2 replies back)"), `a reply cut off in its blocks: its whole World State, Bonds from where it was last whole, never the thinking's:\n${note}`);
+    // A reply cut off inside a tag's name leaves no half tag in the history; a closed tag stays.
+    const hist = [["Prose.\n\n<Notebook_Up", "Prose."], ["Prose. <Blo", "Prose."], [`Prose. <font color="#ff`, "Prose."], [`<font color="#ff69b4" title="Mara">"Hi."</font>`, `<font color="#ff69b4" title="Mara">"Hi."</font>`]];
+    for (const [cut, kept] of hist) {
+        const msgs = [{ role: "assistant", content: cut }, { role: "user", content: "go" }];
+        bh.stripHistoryBlocks(msgs);
+        assert.equal(msgs[0].content, kept, `a reply ending ${JSON.stringify(cut.slice(-14))} in the history`);
+    }
     // A block taken out of the stack is not brought back.
     q.blockStack.order = ["world"];
     meguminSyncLegacyBlockIds();
@@ -4337,5 +4344,85 @@ console.log("57 ok Megumin Suite V11's 24-25/10 update (V11 Тайна, its Writ
     ctx.mainApi = keep.api;
 }
 console.log("58 ok one preset for every engine: VCRP's engines and Pura's on the V11 preset take VCRP's ban list, formatting rules and final reminder, read from the Universal preset; the V11 engines keep V11's; Setup Check is quiet for them");
+
+// 59. V11's Adapted engines: V11 Тайна, its Writers' Room and DeepSeek version run as VCRP engines.
+//     V11's text, thinking, notebook and frame; VCRP's ban list, dash line, dash cleaner and
+//     wording of the shared texts; a style other than V11's own gets its own lead-in and wins.
+{
+    const { modes_v11_adapted, V11_ADAPTED, V11_ADAPTED_STYLE_LEADS } = await imp("data/modes/v11Adapted.js");
+    const { modes_megumin, MEGUMIN_V11 } = await imp("data/megumin.js");
+    const { UNIVERSAL_RULES } = await imp("src/engine/meguminV11.js");
+    const { meguminCotForMode } = await imp("data/cot/index.js");
+    const { vcrpDedashOnReply } = await imp("src/vcrp/dedash.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const { directStyles } = await imp("data/directStyles.js");
+    const { engineKeepsNotebook } = await imp("src/core/engines.js");
+    const q = state.localProfile;
+    const keep = { mode: q.mode, model: q.model, addons: q.addons, style: q.activeStyleId, rule: q.aiRule, cfg: JSON.stringify(q.storyConfig), api: ctx.mainApi };
+
+    // Built from the originals: the same text and frame, run as VCRP engines.
+    assert.equal(modes_v11_adapted.length, V11_ADAPTED.length, "an Adapted engine for each V11 Тайна engine");
+    for (const [from, id] of V11_ADAPTED) {
+        const a = modes_v11_adapted.find(m => m.id === id), o = modes_megumin.find(m => m.id === from);
+        assert(a && o && [1, 2, 3, 4, 5, 6].every(i => a[`p${i}`] === o[`p${i}`]) && a.contentRules === o.contentRules && a.turnFrame === "v11", `${id}: V11's text and frame`);
+        assert(a.megumin === false && a.adapted === from && engineKeepsNotebook(a), `${id}: a VCRP engine that keeps the notebook`);
+        assert.equal(meguminCotForMode(id), meguminCotForMode(from), `${id}: V11's own thinking`);
+        // Each one's style lead-in is still in V11's text, so the rewording still applies.
+        const text = [1, 2, 3, 4, 5, 6].map(i => a[`p${i}`] || "").join("\n");
+        assert.equal(V11_ADAPTED_STYLE_LEADS.filter(([lead]) => text.includes(lead)).length, 1, `${id}: its style lead-in is in V11's text`);
+    }
+
+    const style = id => { const s = directStyles.find(x => x.id === id); Object.assign(q, { activeStyleId: id, aiRule: s.rule }); };
+    q.addons = ["color", "html"];
+    q.storyConfig = { ...(q.storyConfig || {}), enabled: true, explicitness: "plain" };
+    chat.length = 0;
+    Object.assign(q, { mode: "v11-voice-adapted", model: "cot-v11-voice-english" });
+    style("dir_v11");
+    let t = text(await run("VCRP V11 Megumin Original.json"));
+    const ban = (t.match(/<banlist>\n([\s\S]*?)\n<\/banlist>/) || [])[1] || "";
+    assert(ban.startsWith(UNIVERSAL_RULES.banList.trim().replaceAll("{{user}}", "Bob")) && ban.includes("**dashes:**") && !t.includes(MEGUMIN_V11.banListV11.slice(0, 60)), "Adapted: VCRP's ban list, dash rule included, in V11's <banlist>");
+    const check = (t.match(/<final_check>[\s\S]*?<\/final_check>/) || [""])[0];
+    assert(/\n4\. No em dashes/.test(check) && /\n3\. Nothing in the response is on the banlist\./.test(check), `Adapted: VCRP's dash line in V11's final check, after the ban list's:\n${check}`);
+    assert(t.includes("<story_settings>") && t.includes("<formatting>") && t.includes("<content>") && t.includes("Write the response in English."), "Adapted: V11's frame");
+    assert(t.includes("explicitness: plain. Depict") && t.includes(`title="Character Name"`), "Adapted: Story Config and the add-ons in VCRP's words");
+    assert(t.includes("You narrate as an overt narrator teller"), "Adapted with V11 Default: V11's own lead-in");
+    style("dir_clinical");
+    t = text(await run("VCRP V11 Megumin Original.json"));
+    assert(t.includes("Your narration follows this style. Where anything below differs from it, the style wins.\nAdapt a clinical") && !t.includes("You narrate as Adapt"), "Adapted with another style: its own lead-in, and it wins");
+    Object.assign(q, { mode: "v11-writers-room-adapted", model: "cot-v11-wr-english" });
+    style("dir_v10_ukiyo");
+    t = text(await run("VCRP V11 Megumin Original.json"));
+    assert(t.includes("JULIA narrates in this style. Where anything below differs from it, the style wins.\nthe register shifts") && t.includes("**dashes:**"), "the Writers' Room, Adapted: JULIA's lead-in, VCRP's ban list");
+    // The originals are untouched.
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
+    t = text(await run("VCRP V11 Megumin Original.json"));
+    assert(t.includes(MEGUMIN_V11.banListV11.slice(0, 60)) && !t.includes("**dashes:**") && !t.includes("No em dashes") && t.includes("You narrate as the register shifts"), "the Megumin Original: V11's ban list and lead-in as before");
+
+    // The dash cleaner works on the Adapted engines, and rests on the originals.
+    for (const [mode, cleaned] of [["v11-voice-adapted", true], ["v11-voice-megumin", false]]) {
+        q.mode = mode;
+        chat.length = 0;
+        chat.push({ is_user: false, mes: "He paused—then left.", swipes: ["He paused—then left."], swipe_id: 0 });
+        vcrpDedashOnReply(0, "normal");
+        assert.equal(chat[0].mes.includes("—"), !cleaned, `${mode}: the dash cleaner ${cleaned ? "works" : "rests"}`);
+    }
+    chat.length = 0;
+
+    // Setup Check: at home on the V11 preset; on a V10 one, pointed to it.
+    ctx.mainApi = "openai";
+    const titles = file => {
+        const pr = JSON.parse(readFileSync(join(REPO, "Presets", file), "utf8"));
+        Object.assign(chatCompletionSettings, { prompts: pr.prompts, prompt_order: pr.prompt_order });
+        return vcrpHealthCheck().items.map(i => i.title);
+    };
+    q.mode = "v11-voice-adapted";
+    assert(!titles("VCRP V11 Megumin Original.json").some(s => /Megumin Original (engine|preset)|on the V11 preset|V11 Тайна is picked|Re-import the VCRP V11/.test(s)), "Setup Check: an Adapted engine on the V11 preset says nothing");
+    assert(titles("VCRP V10 Universal.json").includes("V11 Тайна is picked on a preset made for V10"), "Setup Check: on a V10 preset, pointed to the V11 one");
+    delete chatCompletionSettings.prompts; delete chatCompletionSettings.prompt_order;
+
+    Object.assign(q, { mode: keep.mode, model: keep.model, addons: keep.addons, activeStyleId: keep.style, aiRule: keep.rule, storyConfig: JSON.parse(keep.cfg) });
+    ctx.mainApi = keep.api;
+}
+console.log("59 ok V11's Adapted engines (built from the originals with V11's text, frame, thinking and notebook; VCRP's ban list in <banlist>, its dash line in the final check, Story Config and add-ons in VCRP's words; another style's own lead-in, for JULIA too; the originals untouched; the dash cleaner; Setup Check)");
 
 console.log("\nALL FORK CHECKS PASSED");

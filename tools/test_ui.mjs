@@ -669,6 +669,14 @@ for (const view of ["landing", "editor"]) {
     check(card(/CoT V11 Тайна · Megumin Original/).length === 1 && card(/CoT V11 Тайна · Writers' Room · Megumin Original/).length === 1, "no V11 Тайна thinking cards");
     card(/^\s*V11 Тайна · Writers' Room · Megumin Original/).trigger("click"); await tick();
     check(p.mode === "v11-writers-room-megumin" && p.model === "cot-v11-wr-english" && p.activeStyleId === "dir_v11_inside", `the Writers' Room: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
+    // V11's Adapted engines: a card each, described, with V11's thinking.
+    const adapted = [[/^\s*V11 Тайна · Adapted/, "v11-voice-adapted", "cot-v11-voice-english"], [/^\s*V11 Тайна · Writers' Room · Adapted/, "v11-writers-room-adapted", "cot-v11-wr-english"], [/^\s*V11 Тайна DeepSeek · Adapted/, "v11-deepseek-adapted", "cot-v11-voice-english"]];
+    for (const [re, mode, model] of adapted) {
+        const c = card(re);
+        check(c.length === 1 && /VCRP's ban list/.test(c.find(".ecard-desc").text()), `no described card for ${mode}`);
+        c.trigger("click"); await tick();
+        check(p.mode === mode && p.model === model && p.activeStyleId === "dir_v11_inside", `picking ${mode}: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
+    }
     const v11card = card(/^\s*V11 Тайна Preview · Megumin Original/);
     check(v11card.length === 1, "no V11 Тайна Preview engine card");
     p.activeStyleId = "dir_v10_ukiyo";
@@ -778,7 +786,7 @@ for (const view of ["landing", "editor"]) {
     p.blockStack.order = JSON.parse(keep.order);
     p.npcBank.npcs = JSON.parse(keep.npcs);
     clicks += 9;
-    if (failures === before) console.log("  ✓ V11: NPC Bank escapes records; V11 engine and thinking cards; the Notebook panel (forced, switch, spoiler, edit, reveal); Remember every character; the lore switch");
+    if (failures === before) console.log("  ✓ V11: NPC Bank escapes records; V11 engine and thinking cards (the Adapted ones too); the Notebook panel (forced, switch, spoiler, edit, reveal); Remember every character; the lore switch");
 }
 
 console.error = origError;

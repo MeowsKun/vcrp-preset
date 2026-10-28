@@ -229,7 +229,7 @@ export const MEGUMIN_SLOT_REGISTRY = [
     { key: null, trigger: "[[formatting]]", label: "Formatting (V11)", scope: "auto", group: "live", where: "Writing Style",
       hint: "The dialogue ratio, the colors and the dialogue tags, under V11's heading (in <formatting> for V11 Тайна; with VCRP's formatting rules for VCRP's engines and Pura's)." },
     { key: null, trigger: "[[banned]]", label: "Ban List (V11)", scope: "auto", group: "live", where: "Banned Phrases",
-      hint: "The built-in ban list with your phrases, in one <banlist>: V11's (V11 Тайна's own on its engines), or VCRP's for VCRP's engines and Pura's." },
+      hint: "The built-in ban list with your phrases, in one <banlist>: V11's (V11 Тайна's own on its engines), or VCRP's for VCRP's engines, Pura's and V11's Adapted ones." },
     { key: null, trigger: "[[reminder]]", label: "Final Check (V11)", scope: "auto", group: "live", where: "Preset & Thinking",
       hint: "The final checks, numbered: V11's (the shared ones, the ban list's, the engine's own, then Never Write For {{user}}), or VCRP's final reminder for VCRP's engines and Pura's." },
     { key: null, trigger: "[[content]]", label: "Content (V11)", scope: "auto", group: "live", where: "Preset & Thinking",

@@ -165,6 +165,13 @@ and each picks its own thinking:
   pick its **Thinking Cap**: shorter thinking that those models actually stick to. A Thinking Cap
   sets its own length, so your Thinking length isn't sent with it (as in Megumin V11).
 
+**Adapted versions.** **V11 Тайна · Adapted**, **V11 Тайна · Writers' Room · Adapted** and **V11
+Тайна DeepSeek · Adapted** are the same engines run as VCRP engines. V11's text, thinking and
+Notebook stay; VCRP's writing rules come on top: VCRP's ban list with its dash rule, the dash cleaner,
+and VCRP's own wording of your writing style, add-ons and Story Config. Any writing style fits (one
+other than V11's own takes over the narration). Pick an Adapted one for VCRP's rules, an Original
+one for Megumin's exactly.
+
 **Two styles.** Writing Style → **V11 Default** (a narrator with a voice and opinions) or **V11
 Inside** (the narration rides inside one character at a time, never yours). Switching between the
 V11 engines keeps the one you picked.

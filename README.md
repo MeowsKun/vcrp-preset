@@ -102,7 +102,8 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 - **Engines:** V10 Ukiyo and V10 Shura (with Enhanced Dialogue), their CoTs and Thinking Cap variants,
   plus their **Megumin Original** versions, Megumin Suite V11's four engines (**V11 Тайна**, its
   **Writers' Room** and **DeepSeek** versions, and **V11 Тайна Preview**) with its Author's
-  Notebook, and the two **Pura Director** engines (below).
+  Notebook, **Adapted** versions of the first three (VCRP's writing rules on V11), and the two
+  **Pura Director** engines (below).
 - **Presets:** VCRP V10 Universal, VCRP V10 Megumin Original, VCRP V11 Megumin Original.
 - **Tabs:** Presets & CoT (with Story Config), Writing Style (+ Anime Mode), Global Toggles & Add-ons,
   Blocks, Story Director, Dynamic Ban List, Focus, NPCs Bank, Memory (Story Memory), Knowledgebase,
@@ -331,6 +332,16 @@ the V10 Megumin Originals above are unchanged.
   rule included), formatting rules and final reminder, word for word as VCRP V10 Universal has them
   (read from its layout, `data/skeleton.js`). Switch engines without switching presets; only the V10
   Megumin Originals still want VCRP V10 Megumin Original.
+- **V11 Тайна · Adapted**, and Adapted versions of its Writers' Room and DeepSeek engines: V11 run
+  as a VCRP engine, the way Pura Director · Adapted is Pura's (`data/modes/v11Adapted.js`). V11's
+  engine text, thinking, Author's Notebook and turn frame stay as they are; VCRP's modules take over
+  the writing rules: VCRP's ban list in V11's `<banlist>` (dash rule, stripped articles, pattern
+  descriptions, stock phrases), VCRP's dash line in V11's final check, the dash cleaner, and VCRP's
+  own wording of the writing styles, add-ons, Story Config and Story Director. V11's story settings
+  already win over its text; a writing style other than V11's own gets a lead-in of its own and wins
+  over V11's narration section too. They are built from the Megumin Originals as they load, so a new
+  V11 release carries over (a lead-in gone from V11's text fails the tests). The Originals stay word
+  for word.
 - **The {{user}} rule** is V11's wording on VCRP's engines and on V11 ("the response does not
   speak, think, feel, or act for {{user}}, and it shows everything {{user}} reached for"), the last
   line of each preset's final list (3 in VCRP's, 5 in V11's), and left out on Impersonate.

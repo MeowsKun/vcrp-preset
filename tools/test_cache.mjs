@@ -389,5 +389,43 @@ ok(!puraSum.map(textOf).join("\n").includes("READ THIS LAST"), "the summary call
 const puraRpRead = prefix(puraRp, marked(puraRp).at(-1)), puraSumMk = marked(puraSum), puraSumRead = prefix(puraSum, puraSumMk.at(-2) ?? puraSumMk.at(-1));
 ok(puraSumMk.length >= 1 && JSON.stringify(puraRpRead.slice(0, puraSumRead.length)) === JSON.stringify(puraSumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(puraRpRead, puraSumRead));
 
+// ── V11 Тайна · Adapted ───────────────────────────────────────────────────────
+// V11's frame with VCRP's ban list: the list cached with the engine text, V11's final check
+// (VCRP's dash line in it) after the cached part, and the summary call without it.
+section("V11 Тайна · Adapted: VCRP's ban list cached, V11's final check after");
+chat.length = 0;
+for (const k of Object.keys(meta)) delete meta[k];
+Object.assign(q, { mode: "v11-voice-adapted", model: "cot-v11-voice-english", activeStyleId: "dir_v11",
+    aiRule: "an overt narrator teller with a voice and opinions, present in every paragraph. Do not write as an effaced narrator or a camera." });
+chat.push({ is_user: false, name: "Mara", send_date: "d0", mes: "\"We're closed,\" Mara says." });
+cc.vcrpCacheCheckReset();
+const adPrompts = [];
+for (let t = 1; t <= 4; t++) {
+    const p = await send("normal");
+    adPrompts.push(p);
+    await arrive(t);
+    if (t > 1) {
+        const rep = cc.vcrpCacheCheckReport();
+        ok(rep && !cc.vcrpCacheCheckTrouble(rep), `Adapted, turn ${t}: ${rep ? (cc.vcrpCacheCheckTrouble(rep) ? `TROUBLE: ${JSON.stringify(rep.change).slice(0, 240)}` : "only the newest messages changed") : "no report"}`);
+        const prev = adPrompts.at(-2), a = prefix(prev, marked(prev).at(-1)), b = prefix(p, marked(p).at(-2));
+        ok(JSON.stringify(a) === JSON.stringify(b), `Adapted, turn ${t}: the previous turn's cached part is read back byte for byte`, firstDiff(a, b));
+    }
+}
+const adLast = adPrompts.at(-1);
+const adCached = prefix(adLast, marked(adLast).at(-1)).join("\n"), adAll = adLast.map(textOf).join("\n");
+ok(adCached.includes("You are the narrator of an ongoing story") && adCached.includes("**dashes:**"), "V11's engine text and VCRP's ban list, dash rule included, in the cached part");
+ok(adAll.includes("<final_check>") && !adCached.includes("<final_check>") && /\d\. No em dashes/.test(adAll), "V11's final check, VCRP's dash line in it: sent, and after the cached part");
+const adRp = await send("normal");
+await arrive(5);
+memory.setMemoryTaskActive(true, null);
+gen.vcrpSetGenerationType("quiet", {}, false);
+const adSum = buildPrompt();
+adSum.push({ role: "system", content: `${TASK_MARKER}: not a story turn.] Summarize the stretch.` });
+await handlePromptInjection({ chat: adSum, dryRun: false });
+memory.setMemoryTaskActive(false);
+ok(!adSum.map(textOf).join("\n").includes("<final_check>"), "the summary call leaves the final check out");
+const adRpRead = prefix(adRp, marked(adRp).at(-1)), adSumMk = marked(adSum), adSumRead = prefix(adSum, adSumMk.at(-2) ?? adSumMk.at(-1));
+ok(adSumMk.length >= 1 && JSON.stringify(adRpRead.slice(0, adSumRead.length)) === JSON.stringify(adSumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(adRpRead, adSumRead));
+
 console.log(`\n${fail ? `${fail} PROBLEM(S)` : "ALL CHECKS PASSED"} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

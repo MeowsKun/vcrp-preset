@@ -11,6 +11,8 @@
 // VCRP's own engines and Pura's ("vcrp") run on this preset too, with VCRP's rules: the ban
 // list, formatting rules and final reminder as the "VCRP V10 Universal" preset words them,
 // read from its layout (data/skeleton.js, generated from it), so one preset serves them all.
+// V11's Adapted engines (data/modes/v11Adapted.js) keep V11 Тайна's frame with VCRP's ban list
+// in its <banlist> and VCRP's dash line in its final check, and their add-ons in VCRP's words.
 //
 // Only the "VCRP V11 Megumin Original" preset carries these tags. VCRP's own sections stay
 // VCRP's: the thinking is VCRP's [[THINK]], the colors carry VCRP's lock note, and Dice, Death,
@@ -43,8 +45,11 @@ export const UNIVERSAL_RULES = (() => {
     };
 })();
 
+// VCRP's final-reminder line on dashes, for V11's Adapted engines.
+const UNIVERSAL_DASH_CHECK = UNIVERSAL_RULES.reminderChecks.map(l => l.replace(/^\s*\d+[.)]\s*/, "").trim()).find(l => /em dash/i.test(l)) || "";
+
 /** The frame an engine's sections are built on: "v11", "vcrp" (VCRP's and Pura's engines), or undefined. */
-export const sectionFrame = engine => (engine && !isMeguminEngine(engine) ? "vcrp" : v11Frame(engine));
+export const sectionFrame = engine => v11Frame(engine) || (engine && !isMeguminEngine(engine) ? "vcrp" : undefined);
 
 const filled = parts => parts.map(p => String(p || "").trim()).filter(Boolean);
 // Same text, ignoring spacing: is this still the shipped default?
@@ -76,10 +81,13 @@ export function formattingSection({ dnratio, color, dn }, frame) {
     return `${MEGUMIN_V11.formattingHeader}\n\n${parts.join("\n")}`;
 }
 
-/** [[banned]]: the built-in list (V11 Тайна's own on its frame, VCRP's on its) and your phrases, in one <banlist>. */
-export function bannedSection(additions, frame) {
-    const list = frame === "v11" ? MEGUMIN_V11.banListV11
-        : frame === "vcrp" && UNIVERSAL_RULES.banList ? UNIVERSAL_RULES.banList : MEGUMIN_V11.banList;
+/**
+ * [[banned]]: the built-in list (V11 Тайна's own on its frame, VCRP's on its, and VCRP's in V11's
+ * frame for the Adapted engines) and your phrases, in one <banlist>.
+ */
+export function bannedSection(additions, frame, { adapted = false } = {}) {
+    const vcrp = (frame === "vcrp" || adapted) && UNIVERSAL_RULES.banList;
+    const list = vcrp ? UNIVERSAL_RULES.banList : frame === "v11" ? MEGUMIN_V11.banListV11 : MEGUMIN_V11.banList;
     const parts = filled([list, additions]);
     return `<banlist>\n${parts.join(frame === "v11" ? "\n\n" : "\n")}\n</banlist>`;
 }
@@ -87,9 +95,10 @@ export function bannedSection(additions, frame) {
 /**
  * [[reminder]]: the final checks, numbered as they are built: the shared ones, the ban list's,
  * the engine's own, then the {{user}} rule (left out when `userLine` is empty). On VCRP's
- * frame, VCRP's final reminder, the {{user}} rule in its place.
+ * frame, VCRP's final reminder, the {{user}} rule in its place. The Adapted engines add VCRP's
+ * dash line after the ban list's.
  */
-export function reminderSection({ presetChecks, userLine }, frame) {
+export function reminderSection({ presetChecks, userLine, adapted = false }, frame) {
     if (frame === "vcrp" && UNIVERSAL_RULES.reminderHeader) {
         const lines = UNIVERSAL_RULES.reminderChecks.flatMap(l => checkLines(l.trim() === "[[user]]" ? userLine : l));
         return `${UNIVERSAL_RULES.reminderHeader}\n${lines.map((l, i) => `${i + 1}. ${l}`).join("\n")}`;
@@ -97,6 +106,7 @@ export function reminderSection({ presetChecks, userLine }, frame) {
     const lines = [
         ...checkLines(MEGUMIN_V11.finalChecks),
         MEGUMIN_V11.banlistCheck,
+        ...(adapted ? checkLines(UNIVERSAL_DASH_CHECK) : []),
         ...checkLines(presetChecks),
         ...checkLines(userLine),
     ];
@@ -121,13 +131,14 @@ export function languageLine(lang) {
 
 /**
  * [[addon_rules]]: the add-ons that go up top, each in its own tag. A shipped text gets V11's
- * wording; one you edited keeps yours, in a tag. On VCRP's frame, VCRP's own, as they are.
- * @param {{ onomato: string, onomatoShipped: string, styled: boolean, html: string }} parts
+ * wording; one you edited keeps yours, in a tag. On VCRP's frame, VCRP's own, as they are; on
+ * an Adapted engine, VCRP's own in V11's tags.
+ * @param {{ onomato: string, onomatoShipped: string, styled: boolean, html: string, adapted?: boolean }} parts
  */
-export function addonRulesSection({ onomato, onomatoShipped, styled, html }, frame) {
+export function addonRulesSection({ onomato, onomatoShipped, styled, html, adapted = false }, frame) {
     if (frame === "vcrp") return filled([onomato, html]).join("\n\n");
     const sound = String(onomato || "").trim()
-        ? (sameText(onomato, onomatoShipped) ? (styled ? MEGUMIN_V11.soundStyled : MEGUMIN_V11.sound) : wrapAddon("sound", onomato))
+        ? (!adapted && sameText(onomato, onomatoShipped) ? (styled ? MEGUMIN_V11.soundStyled : MEGUMIN_V11.sound) : wrapAddon("sound", onomato))
         : "";
     return filled([sound, wrapAddon("render", html)]).join("\n\n");
 }
@@ -141,13 +152,14 @@ export function addonRulesSection({ onomato, onomatoShipped, styled, html }, fra
  */
 export function applyMeguminV11Sections(dict, engine, { gen = "reply", onomatoShipped = "", styled = false } = {}) {
     const frame = sectionFrame(engine);
+    const adapted = Boolean(engine && engine.adapted);
     // Thinking is for a fresh reply only (Continue and Impersonate drop it, generation.js).
     dict["[[thinking]]"] = gen === "reply" ? thinkingSection(dict["[[THINK]]"], frame) : "";
     dict["[[formatting]]"] = formattingSection({ dnratio: dict["[[DNRATIO]]"], color: dict["[[COLOR]]"], dn: dict["[[DN]]"] }, frame);
-    dict["[[banned]]"] = bannedSection(dict["[[banlist]]"], frame);
+    dict["[[banned]]"] = bannedSection(dict["[[banlist]]"], frame, { adapted });
     // Impersonate writes as {{user}}: the rule against it would argue with the request.
-    dict["[[reminder]]"] = reminderSection({ presetChecks: engine && engine.reminderChecks, userLine: gen === "impersonate" ? "" : dict["[[user]]"] }, frame);
+    dict["[[reminder]]"] = reminderSection({ presetChecks: engine && engine.reminderChecks, userLine: gen === "impersonate" ? "" : dict["[[user]]"], adapted }, frame);
     dict["[[content]]"] = String((engine && engine.contentRules) || "");
-    dict["[[addon_rules]]"] = addonRulesSection({ onomato: dict["[[onomato]]"], onomatoShipped, styled, html: dict["[[html]]"] }, frame);
+    dict["[[addon_rules]]"] = addonRulesSection({ onomato: dict["[[onomato]]"], onomatoShipped, styled, html: dict["[[html]]"], adapted }, frame);
     return dict;
 }

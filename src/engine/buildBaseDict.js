@@ -14,6 +14,7 @@ import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine, isPuraEn
 import { meguminStyleRule, meguminAddonText, meguminPlanTemplate } from "./meguminOriginal.js";
 import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING, MEGUMIN_V11, MEGUMIN_V11_CONFIG } from "../../data/megumin.js";
 import { v11Frame, applyMeguminV11Sections, storySettingsSection, languageLine } from "./meguminV11.js";
+import { V11_ADAPTED_STYLE_LEADS } from "../../data/modes/v11Adapted.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
 import { notebookCraft } from "../vcrp/notebook/index.js";
 import { castMemoryNote } from "../vcrp/castMemory.js";
@@ -264,6 +265,16 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
             // 1. Inject [[aiprompt]] directly into the engine prompts (like p6) where the tag exists
             // V11 Тайна's text always names its narrator ("You narrate as"): V11 Default when no style is picked.
             const aiPromptVal = dict["[[aiprompt]]"] || (frame ? MEGUMIN_V11.styleRule : "") || "";
+            // V11's Adapted engines: a style other than V11's own gets a lead-in of its own, and
+            // wins over V11's narration section (data/modes/v11Adapted.js).
+            const v11Style = [MEGUMIN_V11.styleRule, MEGUMIN_V11.insideRule].some(r => String(r || "").replace(/\s+/g, " ").trim() === aiPromptVal.replace(/\s+/g, " ").trim());
+            if (activeEngine.adapted && !v11Style) {
+                for (let i = 1; i <= 6; i++) {
+                    for (const [lead, own] of V11_ADAPTED_STYLE_LEADS) {
+                        if (dict[`[[prompt${i}]]`]) dict[`[[prompt${i}]]`] = dict[`[[prompt${i}]]`].split(lead).join(own);
+                    }
+                }
+            }
             for (let i = 1; i <= 6; i++) {
                 if (dict[`[[prompt${i}]]`] && dict[`[[prompt${i}]]`].includes("[[aiprompt]]")) {
                     dict[`[[prompt${i}]]`] = dict[`[[prompt${i}]]`].split("[[aiprompt]]").join(aiPromptVal);
