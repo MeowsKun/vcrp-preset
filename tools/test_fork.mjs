@@ -410,6 +410,10 @@ console.log("14 ok Ukiyo (temperature, menu, strangers, trims, no em dashes)");
         msgs = await run("VCRP V10 Universal.json");
         assert(msgs[0].role === "system" && !afterChatRoles(msgs).includes("system"), `OpenRouter + ${model}: nothing after the chat is a system message`);
         assert(msgs.every(m => typeof m.content === "string"), `OpenRouter + ${model}: no cache markers`);
+        // Gemini wants user and model turns to alternate (a 400 otherwise): neighbours joined, text kept.
+        const roles = msgs.filter(m => m.role !== "system").map(m => m.role);
+        assert(roles.every((r, i) => i === 0 || r !== roles[i - 1]), `OpenRouter + ${model}: user and model alternate (${roles.join(",")})`);
+        assert(msgs.at(-1).role === "user" && msgs.at(-1).content.includes("latest user msg") && msgs.some(m => m.content.includes("final reminder")), `OpenRouter + ${model}: every part still there, the newest message in the last turn`);
     }
     for (const [source, field, model] of [["claude", "claude_model", "claude-opus-5-5"], ["openrouter", "openrouter_model", "z-ai/glm-5"], ["makersuite", "google_model", "gemini-4-argon"]]) {
         Object.assign(chatCompletionSettings, { chat_completion_source: source, [field]: model });
@@ -4167,6 +4171,8 @@ console.log("55 ok Megumin Suite V11 (V11 Тайна on its own preset and VCRP'
     // A color in the style wins on screen: it counts, and goes when the lock puts theirs back.
     r = colors.lockReplyColors(`<font style="color:#00ff00; font-weight:bold" title="Mara">"E."</font>`, names, { readable: false });
     assert.equal(r.text, `<font color="#ff69b4" style="font-weight:bold" title="Mara">"E."</font>`, "a known character's color in the style: put back, the style's other rules kept");
+    r = colors.lockReplyColors(`<font style="font-family:'Courier New'; color:#00ff00" title="Mara">"G."</font>`, names, { readable: false });
+    assert.equal(r.text, `<font color="#ff69b4" style="font-family:'Courier New'" title="Mara">"G."</font>`, "a font name in quotes inside the style survives");
     const fresh = {};
     colors.lockReplyColors(`<font style="color: crimson" title="Ann">"F."</font>`, fresh, { readable: false });
     assert(fresh.ann && fresh.ann.color === "#dc143c", "someone new colored by their style: learned");
@@ -4470,6 +4476,8 @@ console.log("59 ok V11's Adapted engines (built from the originals with V11's te
     const f = L.parseFactChanges("1. + **person** | Okafor owes Mara money\n2) ~ **F3** | the ring is fake\n* + [place] | Vault sits under the pier\n+ item: a brass key\n- F7 — settled\n- - F8\n`+ thread | the ledger`\n(none)");
     assert.deepEqual(f.ops.map(o => `${o.op}${o.cat || o.id}`), ["+person", "~F3", "+place", "+item", "-F7", "-F8", "+thread"], `every fact line read: ${JSON.stringify(f)}`);
     assert(f.ops[0].text === "Okafor owes Mara money" && f.ops[3].text === "a brass key" && f.ops[4].reason === "settled" && !f.skipped.length, "texts and reasons kept, nothing skipped");
+    const words = L.parseFactChanges("+ location: The Lantern closes at two\n+ Mara: owes Okafor money").ops;
+    assert(words[0].cat === "place" && words[0].text === "The Lantern closes at two" && words[1].cat === "world" && words[1].text === "Mara owes Okafor money", `a category's synonym filed under it; a name before the colon kept in the fact (${JSON.stringify(words)})`);
     for (const v of ["OK", "**OK**", "OK.", "ok", "Verdict: OK", "OK — the summary is accurate.", "<think>checking</think>\nOK"]) assert.equal(L.parseCheck(v).verdict, "ok", `"${v}" reads as OK`);
     assert.equal(L.parseCheck("Not OK: the ring was never found.").verdict, "unreadable", "not OK is not OK");
     const fenced = L.parseSummary("<think>reading</think>\n**Summary**\n```xml\n<chapter_gist>G</chapter_gist>\n<chapter>\nC\n</chapter>\n<fact_changes>\n1. + **person** | P\n</fact_changes>\n```");

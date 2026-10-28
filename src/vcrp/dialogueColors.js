@@ -218,9 +218,11 @@ const styleColor = attrs => { const m = attr(attrs, "style").match(STYLE_COLOR);
 const withColor = (tag, hex) => (/\bcolor\s*=/i.test(tag)
     ? tag.replace(/(\bcolor\s*=\s*)(?:"[^"]*"|'[^']*'|“[^”]*”|[^\s>]+)/i, `$1"${hex}"`)
     : tag.replace(/^<font\b/i, `<font color="${hex}"`))
-    .replace(/\s*\bstyle\s*=\s*(["'“])([^"'”]*)["'”]/i, (all, q, css) => {
+    // The style runs to its own closing quote: a font name inside it ('Courier') keeps its quotes.
+    .replace(/\s*\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|“([^”]*)”)/i, (all, dq, sq, cq) => {
+        const css = dq ?? sq ?? cq;
         const rest = css.replace(STYLE_COLOR, "$1").replace(/^[\s;]+|[\s;]+$/g, "");
-        return rest ? ` style="${rest}"` : "";
+        return !rest ? "" : sq !== undefined ? ` style='${rest}'` : ` style="${rest}"`;
     });
 
 /**

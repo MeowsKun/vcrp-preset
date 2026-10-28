@@ -36,6 +36,13 @@ const stripThinking = text => String(text || "").replace(/<(think|thinking)>[\s\
  * colon or a dash for the bar ("+ person: ...", "- F7 — reason"). Gemini writes all of these.
  */
 const SEP = "(?:\\||:|—|–|-(?=\\s))";
+// Words models write in place of a category.
+const CATEGORY_WORDS = {
+    character: "person", npc: "person", people: "person", location: "place", object: "item", possession: "item",
+    inventory: "item", status: "condition", state: "condition", health: "condition", injury: "condition", quest: "thread",
+    goal: "thread", plot: "thread", event: "world", lore: "world", fact: "world", setting: "world", bond: "relationship",
+    relation: "relationship", vow: "promise", oath: "promise", deal: "promise", mystery: "secret",
+};
 const ADD = new RegExp(`^\\+\\s*\\[?([A-Za-z]+)\\]?\\s*${SEP}\\s*(.+)$`);
 const REWORD = new RegExp(`^~\\s*\\[?(F\\d+)\\]?\\s*${SEP}\\s*(.+)$`, "i");
 const RETIRE = new RegExp(`^-\\s*\\[?(F\\d+)\\]?\\s*(?:${SEP}\\s*(.*))?$`, "i");
@@ -48,8 +55,11 @@ export function parseFactChanges(block) {
         line = line.replace(/^\d+[.)]\s+/, "").replace(/^[*•]\s+/, "").replace(/^-\s+(?=[+~])/, "").replace(/^-\s+(?=-\s*\[?F\d)/i, "");
         let m;
         if ((m = line.match(ADD))) {
-            const cat = m[1].toLowerCase();
-            ops.push({ op: "+", cat: FACT_CATEGORIES.includes(cat) ? cat : "world", text: m[2].trim() });
+            // A category, or a word models use for one; any other word is the fact's own
+            // subject ("+ Mara: owes Okafor money") and stays in its text.
+            const low = m[1].toLowerCase();
+            const cat = FACT_CATEGORIES.includes(low) ? low : CATEGORY_WORDS[low] || null;
+            ops.push({ op: "+", cat: cat || "world", text: cat ? m[2].trim() : `${m[1]} ${m[2].trim()}` });
         } else if ((m = line.match(REWORD))) {
             ops.push({ op: "~", id: m[1].toUpperCase(), text: m[2].trim() });
         } else if ((m = line.match(RETIRE))) {

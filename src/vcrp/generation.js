@@ -114,6 +114,30 @@ export function vcrpRouteHoistsSystem() {
 }
 
 /**
+ * True when the route wants the turns to alternate (Gemini on OpenRouter). Sending what follows
+ * the chat as user messages puts several in a row, and Gemini expects user and model turns to
+ * alternate ("Please ensure that multiturn requests alternate between user and model": a 400).
+ */
+export function vcrpRouteNeedsAlternation() {
+    const { source, model } = vcrpActiveModel();
+    return source === "openrouter" && /gemini/.test(model);
+}
+
+/**
+ * Joins neighbouring messages of one role (user or assistant) into one, text unchanged and in
+ * order. Runs last, on the finished prompt: the start of the prompt joins the same way every
+ * turn, so the cache keeps it. A message with parts (an image) is left as it is.
+ */
+export function vcrpJoinSameRole(messages) {
+    for (let i = messages.length - 1; i > 0; i--) {
+        const a = messages[i - 1], b = messages[i];
+        if (!a || !b || a.role !== b.role || a.role === "system" || typeof a.content !== "string" || typeof b.content !== "string") continue;
+        a.content = `${a.content}\n\n${b.content}`;
+        messages.splice(i, 1);
+    }
+}
+
+/**
  * True when VCRP may put Anthropic's cache markers on the request (OpenRouter + Claude).
  * Gemini caches a repeated prompt start by itself, free; markers would switch it to its paid
  * explicit cache instead.

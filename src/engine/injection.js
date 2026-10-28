@@ -22,7 +22,7 @@ import { npcBuildDossierPrompt } from "../features/npc/fields.js";
 import { escapeRegex } from "../utils/regex.js";
 import { buildBaseDict } from "./buildBaseDict.js";
 import { meguminAllSlotTriggers } from "../../data/slots.js";
-import { vcrpApplyGenerationToDict, vcrpFinalizeMessages, vcrpGenerationKind } from "../vcrp/generation.js";
+import { vcrpApplyGenerationToDict, vcrpFinalizeMessages, vcrpGenerationKind, vcrpRouteNeedsAlternation, vcrpJoinSameRole } from "../vcrp/generation.js";
 import { buildFocusAuditMessages, plotFocusForDirector } from "../vcrp/focus/index.js";
 import { vcrpCostAfterPrompt, vcrpCostRequestCancelled } from "../vcrp/replyCost.js";
 import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone, vcrpCountBackgroundPrompt, memoryTaskActive } from "../vcrp/memory/index.js";
@@ -350,6 +350,8 @@ export async function handlePromptInjection(data, type) {
 
     // Cache markers go on last: they turn message text into parts.
     if (replacementsMade > 0) vcrpMemoryMarkCache(messages, data?.dryRun === true);
+    // Gemini on OpenRouter: neighbouring turns of one role joined, so user and model alternate.
+    if (replacementsMade > 0 && vcrpRouteNeedsAlternation()) vcrpJoinSameRole(messages);
 
     if (replacementsMade > 0 && !activeGenerationOrder) {
         console.log(`[${extensionName}] ✅ Executed ${replacementsMade} block replacements.`);
