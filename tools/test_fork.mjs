@@ -4262,4 +4262,63 @@ console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror
 }
 console.log("57 ok Megumin Suite V11's 24-25/10 update (V11 Тайна, its Writers' Room and DeepSeek version beside the Preview, their thinking, V11 Inside; the V11 preset in slots: pronouns in <reader>, V11's ban list, content, story settings, repetition, formatting and final check in its order; Continue and Impersonate; the Preview's older headings; V11's Story Config wording; the notebook off {{user}}; Setup Check names the old V11 preset)");
 
+// 58. One preset for every engine: VCRP's own engines and Pura's on the V11 preset take VCRP's
+//     rules as the Universal preset words them (read from it); the Megumin engines keep V11's.
+{
+    const { UNIVERSAL_RULES } = await imp("src/engine/meguminV11.js");
+    const { MEGUMIN_V11 } = await imp("data/megumin.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const q = state.localProfile;
+    const keep = { mode: q.mode, model: q.model, addons: q.addons, api: ctx.mainApi };
+    const uni = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    const uniAll = uni.prompts.map(p => String(p.content || "")).join("\n");
+    for (const [k, v] of Object.entries(UNIVERSAL_RULES)) {
+        const parts = Array.isArray(v) ? v : [v];
+        assert(parts.length && parts.every(s => s && uniAll.includes(s)), `VCRP's ${k}: read from the Universal preset (${JSON.stringify(v).slice(0, 80)})`);
+    }
+
+    q.addons = [...new Set([...(q.addons || []), "color"])];
+    chat.length = 0;
+    const banOf = t => ((t.match(/<banlist>\n([\s\S]*?)<\/banlist>/) || [])[1] || "").trim();
+    const reminderOf = t => (t.match(/## final reminder:\n[^\n]*\n(?:\d+\. [^\n]*(?:\n|$))+/) || [""])[0].trim();
+    const unnumbered = r => r.split("\n").map(l => l.replace(/^\d+\. /, ""));
+    for (const mode of ["pura-original", "pura-adapted", "v10-core"]) {
+        Object.assign(q, { mode, model: "cot-v10-ukiyo-english" });
+        const onUni = text(await run("VCRP V10 Universal.json"));
+        const msgs = await run("VCRP V11 Megumin Original.json");
+        const onV11 = text(msgs);
+        assert.deepEqual(leftovers(msgs), [], `${mode} on the V11 preset: every tag filled`);
+        assert(banOf(onV11) && banOf(onV11) === banOf(onUni), `${mode}: the same ban list as on Universal`);
+        assert(onV11.includes(UNIVERSAL_RULES.formattingRules) && !onV11.includes(MEGUMIN_V11.formattingRules), `${mode}: VCRP's formatting rules, not V11's`);
+        const rem = reminderOf(onV11);
+        assert(rem && JSON.stringify(unnumbered(rem)) === JSON.stringify(unnumbered(reminderOf(onUni))), `${mode}: VCRP's final reminder, line for line:\n${rem}`);
+        assert(rem.split("\n").slice(2).every((l, i) => l.startsWith(`${i + 1}. `)), `${mode}: numbered in order:\n${rem}`);
+        assert(!/<final_check>|Before you output, check:|<story_settings>|<repetition>/.test(onV11), `${mode}: none of V11's own sections`);
+    }
+    // The Megumin engines on it keep V11's words.
+    Object.assign(q, { mode: "v11-room-megumin", model: "cot-v11-english" });
+    let t = text(await run("VCRP V11 Megumin Original.json"));
+    assert(t.includes(MEGUMIN_V11.formattingRules) && !t.includes(UNIVERSAL_RULES.formattingRules) && !t.includes("READ THIS LAST"), "V11 Тайна Preview: V11's rules as before");
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
+    t = text(await run("VCRP V11 Megumin Original.json"));
+    assert(t.includes("<final_check>") && !t.includes("**stripped articles:**"), "V11 Тайна: its own frame as before");
+
+    // Setup Check: quiet for Pura on the V11 preset, still pointing a VCRP engine off V10's original one.
+    ctx.mainApi = "openai";
+    const titles = file => {
+        const pr = JSON.parse(readFileSync(join(REPO, "Presets", file), "utf8"));
+        Object.assign(chatCompletionSettings, { prompts: pr.prompts, prompt_order: pr.prompt_order });
+        return vcrpHealthCheck().items.map(i => i.title);
+    };
+    Object.assign(q, { mode: "pura-original", model: "cot-v10-ukiyo-english" });
+    assert(!titles("VCRP V11 Megumin Original.json").some(s => /Megumin Original (engine|preset)|V11 Megumin Original/.test(s)), "Setup Check: Pura on the V11 preset says nothing");
+    assert(titles("VCRP V10 Megumin Original.json").includes("VCRP engine on the Megumin Original preset"), "Setup Check: Pura on V10's Megumin Original preset is still told");
+    delete chatCompletionSettings.prompts; delete chatCompletionSettings.prompt_order;
+
+    chat.length = 0;
+    Object.assign(q, { mode: keep.mode, model: keep.model, addons: keep.addons });
+    ctx.mainApi = keep.api;
+}
+console.log("58 ok one preset for every engine: VCRP's engines and Pura's on the V11 preset take VCRP's ban list, formatting rules and final reminder, read from the Universal preset; the V11 engines keep V11's; Setup Check is quiet for them");
+
 console.log("\nALL FORK CHECKS PASSED");

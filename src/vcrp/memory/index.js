@@ -491,7 +491,7 @@ export function vcrpMemoryShapeTask(messages) {
 // and, when switched on, its "jealbreak plus", in the chat beside Output RULES.
 const STORY_TURN_SLOTS = [
     /^\s*<\/history>/, /## your thinking steps:/,
-    /## final reminder:\nBefore you output, check:/, /<final_check>\nBefore you output, check:/,
+    /## final reminder:\n(?:Before you output, check:|BEFORE YOU OUTPUT, READ THIS LAST:)/, /<final_check>\nBefore you output, check:/,
     /^\s*# Content \(NORA\)/, /^\s*This is a work of fiction, rated M for mature/,
 ];
 export const isStoryTurnSlot = m => typeof (m && m.content) === "string" && STORY_TURN_SLOTS.some(re => re.test(m.content));

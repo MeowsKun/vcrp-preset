@@ -348,5 +348,46 @@ ok(!voiceSumText.includes("<final_check>") && !voiceSumText.includes("<content>\
 const voiceRpRead = prefix(voiceRp, marked(voiceRp).at(-1)), voiceSumMk = marked(voiceSum), voiceSumRead = prefix(voiceSum, voiceSumMk.at(-2) ?? voiceSumMk.at(-1));
 ok(voiceSumMk.length >= 1 && JSON.stringify(voiceRpRead.slice(0, voiceSumRead.length)) === JSON.stringify(voiceSumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(voiceRpRead, voiceSumRead));
 
+// ── Pura on the V11 preset ────────────────────────────────────────────────────
+// One preset for every engine: Pura there takes VCRP's own rules (as on V10 Universal), its
+// ban list cached, its formatting rules and final reminder after the cached part, and a summary
+// call leaves those out as it does on Universal.
+section("Pura Director on the V11 preset: VCRP's rules, the cache read back");
+chat.length = 0;
+for (const k of Object.keys(meta)) delete meta[k];
+Object.assign(q, { mode: "pura-original", model: "cot-v10-ukiyo-english" });
+chat.push({ is_user: false, name: "Mara", send_date: "c0", mes: "\"We're closed,\" Mara says." });
+cc.vcrpCacheCheckReset();
+const puraPrompts = [];
+for (let t = 1; t <= 4; t++) {
+    const p = await send("normal");
+    puraPrompts.push(p);
+    await arrive(t);
+    if (t > 1) {
+        const rep = cc.vcrpCacheCheckReport();
+        ok(rep && !cc.vcrpCacheCheckTrouble(rep), `Pura on V11, turn ${t}: ${rep ? (cc.vcrpCacheCheckTrouble(rep) ? `TROUBLE: ${JSON.stringify(rep.change).slice(0, 240)}` : "only the newest messages changed") : "no report"}`);
+        const prev = puraPrompts.at(-2), a = prefix(prev, marked(prev).at(-1)), b = prefix(p, marked(p).at(-2));
+        ok(JSON.stringify(a) === JSON.stringify(b), `Pura on V11, turn ${t}: the previous turn's cached part is read back byte for byte`, firstDiff(a, b));
+    }
+}
+const puraLast = puraPrompts.at(-1);
+const puraCached = prefix(puraLast, marked(puraLast).at(-1)).join("\n"), puraAll = puraLast.map(textOf).join("\n");
+ok(puraCached.includes("**stripped articles:**") && puraCached.includes("**dashes:**"), "VCRP's ban list, dash rule included, in the cached part");
+for (const [what, s] of [["VCRP's formatting rules", "- response_shape: |"], ["VCRP's final reminder", "## final reminder:\nBEFORE YOU OUTPUT, READ THIS LAST:"]]) {
+    ok(puraAll.includes(s) && !puraCached.includes(s), `${what}: sent, and after the cached part`);
+}
+ok(!puraAll.includes("<final_check>") && !puraAll.includes("Before you output, check:"), "no Megumin final check");
+const puraRp = await send("normal");
+await arrive(5);
+memory.setMemoryTaskActive(true, null);
+gen.vcrpSetGenerationType("quiet", {}, false);
+const puraSum = buildPrompt();
+puraSum.push({ role: "system", content: `${TASK_MARKER}: not a story turn.] Summarize the stretch.` });
+await handlePromptInjection({ chat: puraSum, dryRun: false });
+memory.setMemoryTaskActive(false);
+ok(!puraSum.map(textOf).join("\n").includes("READ THIS LAST"), "the summary call leaves VCRP's final reminder out");
+const puraRpRead = prefix(puraRp, marked(puraRp).at(-1)), puraSumMk = marked(puraSum), puraSumRead = prefix(puraSum, puraSumMk.at(-2) ?? puraSumMk.at(-1));
+ok(puraSumMk.length >= 1 && JSON.stringify(puraRpRead.slice(0, puraSumRead.length)) === JSON.stringify(puraSumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(puraRpRead, puraSumRead));
+
 console.log(`\n${fail ? `${fail} PROBLEM(S)` : "ALL CHECKS PASSED"} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

@@ -326,6 +326,11 @@ the V10 Megumin Originals above are unchanged.
   in VCRP they change turn to turn and would break the cache in the cached part. V11's Current Info
   and This Turn are VCRP's `[[blocks]]`, which carry the kept state the same way. **Re-import it**
   after updating: Setup Check names the old one. Your V10 presets need no re-import.
+- **One preset for every engine but the V10 Megumin Originals.** The Pura Director engines and
+  VCRP's own V10 Ukiyo and Shura run on the V11 preset too, with VCRP's rules: the ban list (dash
+  rule included), formatting rules and final reminder, word for word as VCRP V10 Universal has them
+  (read from its layout, `data/skeleton.js`). Switch engines without switching presets; only the V10
+  Megumin Originals still want VCRP V10 Megumin Original.
 - **The {{user}} rule** is V11's wording on VCRP's engines and on V11 ("the response does not
   speak, think, feel, or act for {{user}}, and it shows everything {{user}} reached for"), the last
   line of each preset's final list (3 in VCRP's, 5 in V11's), and left out on Impersonate.
@@ -391,6 +396,9 @@ as two engines in PRESETS & COT, working with everything VCRP adds:
   {{user}} yours. Tense left on default stays Pura's present tense, and Pura's rotating inner
   thoughts come along when Story Config's point of view is third omniscient (the limited ones
   forbid changing heads mid-scene). The rewordings are listed in `src/vcrp/pura/index.js`.
+
+Both run on VCRP V10 Universal or on VCRP V11 Megumin Original, with VCRP's own ban list, formatting
+rules and final reminder on either.
 
 Every Pura setting is in **PRESETS & COT → Pura Director**, shown while a Pura engine is selected:
 narration voices (one of eight, or a random one each reply), Friction, NSFW, Gooner and Nightmare

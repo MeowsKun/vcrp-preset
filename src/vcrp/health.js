@@ -112,8 +112,9 @@ export function vcrpHealthCheck() {
     const prompts = Array.isArray(cc.prompts) ? cc.prompts : [];
     const hasText = s => prompts.some(p => p && typeof p.content === "string" && p.content.includes(s));
     const vcrpBanList = hasText("**stripped articles:**");
-    // Megumin's: its ban list as text (V10's preset), or V11's [[banned]] section.
-    const originalBanList = !vcrpBanList && (hasText("<banlist>") || hasText("[[banned]]"));
+    // Megumin's: its ban list as text (V10's preset). V11's builds its sections per engine,
+    // VCRP's own rules for VCRP's engines and Pura's (engine/meguminV11.js), so it fits them all.
+    const originalBanList = !vcrpBanList && hasText("<banlist>");
     const originalEngine = meguminOriginalActive();
     if (originalEngine && vcrpBanList && !isV11Engine(activeEngine())) {   // V11 has a note of its own below
         add("info", "Megumin Original engine on the VCRP preset",

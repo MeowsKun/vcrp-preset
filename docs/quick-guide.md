@@ -176,6 +176,11 @@ the thinking and tidy the history): allow them once in Extensions → Regex → 
 other VCRP presets don't need re-importing. Setup Check reminds you of all three: the regex, the old
 V11 preset, and V11 running on a V10 preset.
 
+**One preset for (almost) everything.** You can leave VCRP V11 Megumin Original selected and switch
+engines freely: the Pura Director engines and V10 Ukiyo and Shura run on it with VCRP's own rules
+(the same ban list, dash rule, formatting rules and final reminder as on VCRP V10 Universal). Only
+the V10 Megumin Originals still want their own preset, VCRP V10 Megumin Original.
+
 **The Notebook.** The story picks two or three hidden truths, drops small clues, and reveals each
 one when the story earns it. It's always on with V11; for any other engine, switch it on in the
 **Focus** tab.
