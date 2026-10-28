@@ -43,11 +43,35 @@ export const BUDGET_DEFAULTS = {
     safety: 0.92,
 };
 
-/** The price row for a model id, or null when it is unknown and no custom price is set. */
+/**
+ * The price row for a model id, or null when it is unknown and no custom price is set for it.
+ * A model the table knows keeps its own price: a custom one is for the others. Custom prices
+ * are kept per model ({ "google/gemini-4-argon": { input, output, read } }), so Gemini's never
+ * prices GLM, nor Claude; one saved before that (a bare { input, output, read }) still covers
+ * any model the table does not know.
+ */
 export function priceForModel(modelId, customPrice = null) {
-    if (customPrice && customPrice.input > 0) return { label: "Custom price", ...customPrice };
     const id = String(modelId || "").toLowerCase();
-    return MODEL_PRICES.find(p => p.re.test(id)) || null;
+    const known = MODEL_PRICES.find(p => p.re.test(id));
+    if (known) return known;
+    const own = customPriceFor(customPrice, id);
+    return own ? { label: "Custom price", ...own } : null;
+}
+
+/** The custom price saved for model `id` ({ input, output, read }), or null. */
+export function customPriceFor(customPrice, id) {
+    if (!customPrice || typeof customPrice !== "object") return null;
+    if (customPrice.input > 0) return customPrice;   // saved before prices were per model
+    const own = customPrice[String(id || "").toLowerCase()];
+    return own && own.input > 0 && own.output > 0 ? own : null;
+}
+
+/** The per-model custom prices with model `id`'s set to `price` (or removed when null). */
+export function withCustomPrice(customPrice, id, price) {
+    const map = customPrice && typeof customPrice === "object" && !(customPrice.input > 0) ? { ...customPrice } : {};
+    const key = String(id || "").toLowerCase();
+    if (price && price.input > 0 && price.output > 0) map[key] = price; else delete map[key];
+    return Object.keys(map).length ? map : null;
 }
 
 export const ttlMs = ttl => (ttl === "5m" ? 5 : 60) * 60 * 1000;

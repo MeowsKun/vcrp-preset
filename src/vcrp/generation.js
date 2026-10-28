@@ -70,7 +70,15 @@ const MODEL_FIELD = {
     nanogpt: "nanogpt_model", electronhub: "electronhub_model", chutes: "chutes_model",
 };
 const CLAUDE_NO_PREFILL = /claude[-.](?:opus|sonnet)[-.]4[-.][6-9]|claude[-.](?:opus|sonnet|haiku)[-.][5-9]|claude[-.][5-9]|fable/;
-const GEMINI_NO_PREFILL = /gemini-3\.[5-9]-flash/;
+// Gemini takes a prefill up to 3.4; newer ones refuse it with a 400 (Pura's notes say so from
+// 3.6 Flash; Gemini 4 "Argon" does too). A Gemini whose version is newer, or not in its name at
+// all, gets none: a missing prefill costs little, a refused one costs the whole reply.
+function geminiTakesPrefill(model) {
+    const v = String(model).match(/gemini-(\d+)(?:\.(\d+))?/);
+    if (!v) return false;
+    const major = Number(v[1]), minor = Number(v[2] || 0);
+    return major < 3 || (major === 3 && minor < 5);
+}
 
 export function vcrpActiveModel() {
     const s = getContext().chatCompletionSettings || {};
@@ -87,8 +95,8 @@ export function vcrpDetectPrefill() {
         return { prefill: !no, reason: no ? "this Claude model rejects prefill" : "Claude accepts prefill" };
     }
     if (/gemini|makersuite|vertexai/.test(id)) {
-        const no = GEMINI_NO_PREFILL.test(model);
-        return { prefill: !no, reason: no ? "this Gemini model rejects prefill" : "Gemini accepts prefill" };
+        if (geminiTakesPrefill(model)) return { prefill: true, reason: "Gemini accepts prefill" };
+        return { prefill: false, reason: /gemini-\d/.test(model) ? "this Gemini model rejects prefill" : "a Gemini whose version VCRP cannot read, no prefill to be safe" };
     }
     if (/glm|zai|zhipu/.test(id)) return { prefill: false, reason: "GLM follows the instruction without a prefill" };
     return { prefill: false, reason: "unknown model, instruction only" };

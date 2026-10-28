@@ -144,7 +144,18 @@ for (const preset of ["VCRP V10 Universal.json"]) {
     msgs = await run(preset);
     assert.notEqual(msgs.at(-1).role, "assistant", `${tag}: "Always off" must drop the prefill`);
     extension_settings.VCRP.globalSettings.cotPrefillMode = "auto";
-    console.log(`2 ok  ${tag} Gemini Pro prefill kept; "Always off" respected`);
+    // Newer Gemini refuses a prefill with a 400; one VCRP cannot date gets none either. Older ones keep it.
+    const { vcrpDetectPrefill } = await imp("src/vcrp/generation.js");
+    for (const [model, prefill] of [["gemini-2.5-pro", true], ["gemini-3.1-pro", true], ["gemini-3.5-flash", false], ["gemini-3.6-pro", false],
+        ["gemini-4-argon", false], ["gemini-4.0-argon", false], ["gemini-argon-4.0", false], ["google/gemini-4-argon", false], ["gemini-exp-1206", false]]) {
+        chatCompletionSettings.google_model = model;
+        assert.equal(vcrpDetectPrefill().prefill, prefill, `${model}: prefill ${prefill ? "kept" : "dropped"}`);
+    }
+    chatCompletionSettings.google_model = "gemini-4-argon";
+    msgs = await run(preset);
+    assert.notEqual(msgs.at(-1).role, "assistant", `${tag}: Gemini 4 Argon on Auto gets no prefill`);
+    chatCompletionSettings.google_model = "gemini-2.5-pro";
+    console.log(`2 ok  ${tag} Gemini Pro prefill kept; newer Gemini (4 Argon) and undated ones get none; "Always off" respected`);
 
     // 3. Knowledgebase, Anime Mode, Bold NPCs.
     p.knowledgebase.enabled = true; p.animeMode.enabled = true; p.addons = ["bold_npcs"];
@@ -427,6 +438,17 @@ console.log("16 ok cache safety: per-turn tags sit after the chat history");
     assert.equal(priceForModel("anthropic/claude-sonnet-5").label, "Claude Sonnet 5 / 5.5");
     assert.equal(priceForModel("openai/gpt-5"), null, "unknown model: no price");
     assert.equal(priceForModel("openai/gpt-5", { input: 1, output: 2, read: 0.1 }).label, "Custom price");
+    // A custom price is for the models the table does not know, each its own: Gemini's never
+    // prices Claude (it would budget Opus at a fraction of its cost) nor GLM.
+    {
+        const { withCustomPrice } = await imp("src/vcrp/memory/budget.js");
+        assert.equal(priceForModel("anthropic/claude-opus-4.6", { input: 2, output: 10, read: 0.1 }).label, "Claude Opus 4.5-4.8", "an old single custom price never covers a known model");
+        let custom = withCustomPrice({ input: 2, output: 10, read: 0.1 }, "google/gemini-4-argon", { input: 2, output: 10, read: 0.1 });
+        custom = withCustomPrice(custom, "z-ai/glm-5", { input: 0.6, output: 2.2, read: 0.11 });
+        assert(priceForModel("google/gemini-4-argon", custom).input === 2 && priceForModel("z-ai/glm-5", custom).output === 2.2, "each model its own price");
+        assert(priceForModel("anthropic/claude-opus-4.6", custom).input === 5 && priceForModel("deepseek/deepseek-v4", custom) === null, "Claude keeps its own; a model without one has none");
+        assert.equal(withCustomPrice(withCustomPrice(null, "a", { input: 1, output: 1 }), "a", null), null, "cleared, nothing left");
+    }
     const b = computeBudget(priceForModel("claude-opus-5-5"), { ttl: "1h", targetCost: 0.27 });
     assert.equal(b.coldTokens, 25300, "($0.27 - 2500 output tokens at $20/M) / $8/M written, with the 0.92 safety margin");
     assert.equal(computeBudget(priceForModel("claude-opus-5-5"), { ttl: "5m" }).coldTokens, 46000, "default $0.30; a 5-minute miss writes at 1.25x");

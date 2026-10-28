@@ -207,6 +207,41 @@ for (let k = 0; k < memCount; k++) {
     clicks += 5;
     console.log("  ✓ Reply length (Story Memory off): drawn, and each control reaches its setting");
 }
+// A custom price typed box by box, the way a phone does it: the first box keeps what was typed
+// while the next is empty; with input and output both in, it is saved for this model only, a
+// comma counting as a decimal point; cleared, it goes. Claude keeps its own price.
+{
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ Custom price: ${what}`); } };
+    const failedBefore = failures;
+    const keepCc = { ...ctx.chatCompletionSettings };
+    Object.assign(ctx.chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+    const saved = () => ((((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).customPrice || null);
+    seedMemory(); switchTab(memTab);
+    let box = $("#ps_stage_content");
+    check(/No price known for/.test(box.text()), "no note that the model has no price");
+    box.find("#vmem_price_in").val("2").trigger("change");
+    box = $("#ps_stage_content");
+    check(box.find("#vmem_price_in").val() === "2" && !saved(), `the input price vanished, or was saved alone: "${box.find("#vmem_price_in").val()}", ${JSON.stringify(saved())}`);
+    box.find("#vmem_price_out").val("10").trigger("change");
+    box = $("#ps_stage_content");
+    const argon = (saved() || {})["google/gemini-4-argon"];
+    check(argon && argon.input === 2 && argon.output === 10 && argon.read === 0.2, `input and output not saved for the model, with a tenth for the cached read: ${JSON.stringify(saved())}`);
+    check(box.find("#vmem_price_in").val() === "2" && box.find("#vmem_price_out").val() === "10" && !/No price known for/.test(box.text()), "the saved price is not shown, or the model still has none");
+    box.find("#vmem_price_read").val("0,1").trigger("change");
+    check(((saved() || {})["google/gemini-4-argon"] || {}).read === 0.1, `a comma is not read as a decimal point: ${JSON.stringify(saved())}`);
+    Object.assign(ctx.chatCompletionSettings, { openrouter_model: "anthropic/claude-opus-4.6" });
+    switchTab(memTab);
+    box = $("#ps_stage_content");
+    check(/has its own price, so this is not used/.test(box.text()) && box.find("#vmem_price_in").val() === "", "Claude shows Argon's custom price, or not its own");
+    Object.assign(ctx.chatCompletionSettings, { openrouter_model: "google/gemini-4-argon" });
+    switchTab(memTab);
+    box = $("#ps_stage_content");
+    for (const sel of ["#vmem_price_in", "#vmem_price_out", "#vmem_price_read"]) box.find(sel).val("");
+    box.find("#vmem_price_read").trigger("change");
+    check(saved() === null, `clearing the three boxes does not remove the price: ${JSON.stringify(saved())}`);
+    Object.assign(ctx.chatCompletionSettings, keepCc);
+    if (failures === failedBefore) console.log("  ✓ Custom price: typed box by box (kept while half done), saved per model, a comma as decimal point, Claude keeps its own, cleared");
+}
 // Background calls: their price shows before sending (Story Director, NPC scan, NPC update),
 // "Only New Messages" reaches its setting, and the Memory tab counts them in what was spent.
 {

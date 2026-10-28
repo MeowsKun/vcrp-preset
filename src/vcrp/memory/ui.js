@@ -14,7 +14,7 @@ import { localProfile } from "../../core/state.js";
 import { saveProfileToMemory } from "../../core/profile.js";
 import { escapeHtmlAttr } from "../../utils/html.js";
 import { vcrpActiveModel } from "../generation.js";
-import { BUDGET_DEFAULTS, priceForModel, costEstimate } from "./budget.js";
+import { BUDGET_DEFAULTS, priceForModel, costEstimate, customPriceFor, withCustomPrice } from "./budget.js";
 import {
     vcrpMemoryEnabled, memoryState, memoryBudgetSettings, currentMemoryBudget, resolveAnchor, refreshShownMemory, estimateTokens,
     forceCut, undoForceCut, previewRecall, vcrpMemoryUpdateVisuals, resetSpend, measuredOutputTokens,
@@ -279,7 +279,10 @@ export function renderVcrpMemoryPanel($c) {
 
     $c.find("#vmem_summarize").on("click", async () => {
         const stNow = memoryState();
-        const span = stNow && nextSpan(storyChat(), stNow, currentMemoryBudget(), { catchUp: true });
+        const budget = currentMemoryBudget();
+        // Without the model's price there is no budget to plan the chapters by: say so, not "nothing to do".
+        if (!budget) { if (typeof toastr !== "undefined") toastr.warning("Story Memory needs this model's price to plan the chapters. Set a custom price in this tab (Gemini, GLM and other non-Claude models), or connect a Claude model.", "VCRP Memory"); return; }
+        const span = stNow && nextSpan(storyChat(), stNow, budget, { catchUp: true });
         if (!span) { if (typeof toastr !== "undefined") toastr.info("Nothing to summarize yet: the recent messages stay word for word.", "VCRP Memory"); return; }
         await runCatchUp($c, 10);
     });
@@ -401,7 +404,8 @@ export function renderVcrpMemoryPanel($c) {
     renderReplyLength($c, s, budget, st, rerender);
 
     // ── Settings ──
-    const cp = s.customPrice || {};
+    // The custom price of the model connected now (each model keeps its own).
+    const cp = customPriceFor(s.customPrice, model) || {};
     $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title gold"><i class="fa-solid fa-sliders"></i> Budget</div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Target per request</div><div class="set-desc">The most one request should cost, in dollars. Breaks are what make a request expensive, so this sets how much story survives one.</div></div>
             <input id="vmem_target" type="number" min="0.05" max="5" step="0.01" class="ps-modern-input" style="width:90px;" value="${s.targetCost}"></div>
@@ -419,11 +423,11 @@ export function renderVcrpMemoryPanel($c) {
             <input id="vmem_markcache" type="checkbox" ${s.markCache ? "checked" : ""}></div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Review chapters before they count</div><div class="set-desc">New chapters and fact changes wait for your approval. Until approved, nothing new can be cut.</div></div>
             <input id="vmem_review" type="checkbox" ${s.review ? "checked" : ""}></div>
-        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Custom price ($ per million tokens)</div><div class="set-desc">Only for models VCRP doesn't know${priceForModel(model) ? "" : " (needed for the current one)"}. Input, output, cached read.</div></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Custom price ($ per million tokens)</div><div class="set-desc">For a model VCRP doesn't know, saved for that model only: ${priceForModel(model) ? `<b>${esc(model || "this model")}</b> has its own price, so this is not used.` : `<b>${esc(model || "the current model")}</b> (needed for it).`} Switch models and each keeps its own. Input, output, cached read (left empty: a tenth of the input price).</div></div>
             <div style="display:flex; gap:4px;">
-                <input id="vmem_price_in" type="number" min="0" step="0.01" class="ps-modern-input" style="width:64px;" placeholder="in" value="${cp.input ?? ""}">
-                <input id="vmem_price_out" type="number" min="0" step="0.01" class="ps-modern-input" style="width:64px;" placeholder="out" value="${cp.output ?? ""}">
-                <input id="vmem_price_read" type="number" min="0" step="0.01" class="ps-modern-input" style="width:64px;" placeholder="read" value="${cp.read ?? ""}">
+                <input id="vmem_price_in" type="text" inputmode="decimal" class="ps-modern-input" style="width:64px;" placeholder="in" value="${cp.input ?? ""}">
+                <input id="vmem_price_out" type="text" inputmode="decimal" class="ps-modern-input" style="width:64px;" placeholder="out" value="${cp.output ?? ""}">
+                <input id="vmem_price_read" type="text" inputmode="decimal" class="ps-modern-input" style="width:64px;" placeholder="read" value="${cp.read ?? ""}">
             </div></div>
         </div>`);
     const num = (sel, scale, dflt) => { const v = parseFloat($c.find(sel).val()); return Number.isFinite(v) && v > 0 ? v * scale : dflt; };
@@ -435,9 +439,18 @@ export function renderVcrpMemoryPanel($c) {
     $c.find("#vmem_cap").on("change", () => { saveSetting("memoryCap", num("#vmem_cap", 1, BUDGET_DEFAULTS.memoryCap)); rerender(); });
     $c.find("#vmem_markcache").on("change", () => { saveSetting("markCache", $c.find("#vmem_markcache").is(":checked")); rerender(); });
     $c.find("#vmem_review").on("change", () => { saveSetting("review", $c.find("#vmem_review").is(":checked")); rerender(); });
-    $c.find("#vmem_price_in, #vmem_price_out, #vmem_price_read").on("change", () => {
-        const p = { input: num("#vmem_price_in", 1, 0), output: num("#vmem_price_out", 1, 0), read: num("#vmem_price_read", 1, 0) };
-        saveSetting("customPrice", p.input > 0 && p.output > 0 ? p : null);
+    // The three price boxes are saved together. One filled in while the next is still empty is
+    // left as typed: redrawing the tab then would wipe it, and the next box could never be
+    // reached. All three cleared, the price goes. A comma counts as a decimal point (phone
+    // keyboards), and a cached read left empty is a tenth of the input price.
+    const PRICE_BOXES = ["#vmem_price_in", "#vmem_price_out", "#vmem_price_read"];
+    const priceBox = sel => { const v = parseFloat(String($c.find(sel).val() || "").trim().replace(",", ".")); return Number.isFinite(v) && v > 0 ? v : 0; };
+    $c.find(PRICE_BOXES.join(", ")).on("change", () => {
+        const p = { input: priceBox("#vmem_price_in"), output: priceBox("#vmem_price_out"), read: priceBox("#vmem_price_read") };
+        const cleared = PRICE_BOXES.every(sel => !String($c.find(sel).val() || "").trim());
+        if (!cleared && !(p.input > 0 && p.output > 0)) return;
+        if (!cleared && !p.read) p.read = p.input / 10;
+        saveSetting("customPrice", withCustomPrice(memoryBudgetSettings().customPrice, model, cleared ? null : p));
         rerender();
     });
 
