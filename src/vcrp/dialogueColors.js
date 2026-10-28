@@ -37,20 +37,35 @@ const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 // A title as the speaker's name: no "(softly)" or "[aside]", no quotes or emphasis around it.
 const speakerName = raw => String(raw || "").replace(/\([^)]*\)|\[[^\]]*\]/g, " ").replace(/["“”‘’*_`]|^'+|'+$/g, "").replace(/\s+/g, " ").trim();
 
+// Words that name a role, not a person: the "Guard" is not the "Guard Captain".
+const ROLE_WORDS = new Set([
+    "the", "a", "an", "old", "young", "little", "big", "tall", "short", "other", "another", "first", "second", "third", "head",
+    "guard", "guards", "soldier", "man", "woman", "boy", "girl", "child", "kid", "voice", "stranger", "servant", "maid",
+    "villager", "crowd", "figure", "someone", "person", "officer", "knight", "priest", "merchant", "bartender", "waiter",
+    "waitress", "clerk", "driver", "nurse",
+]);
+const holdsName = words => words.some(w => !ROLE_WORDS.has(w));
+
 /**
- * The key of a known character `name` stands for: the same name, or one that holds the other
- * word for word ("Mara" and "Mara Reyes") when only one known character does. Null otherwise.
+ * Who a title stands for, among the known characters: { key } for the one it names (the same
+ * name, or one holding the other word for word, "Mara" and "Mara Reyes", when only one known
+ * character does and the shorter is a name, not a role), { several: true } for a line given
+ * to more than one ("Mara and Jun"), else {}.
  */
 function knownKey(names, name) {
     const k = key(name);
-    if (!k) return null;
-    if (names[k]) return k;
+    if (!k) return {};
+    if (names[k]) return { key: k };
     const words = k.split(" ");
-    const hits = Object.keys(names).filter(other => {
+    const within = [], around = [];
+    for (const other of Object.keys(names)) {
         const theirs = other.split(" ");
-        return words.every(w => theirs.includes(w)) || theirs.every(w => words.includes(w));
-    });
-    return hits.length === 1 ? hits[0] : null;
+        if (words.every(w => theirs.includes(w)) && holdsName(words)) within.push(other);
+        else if (theirs.every(w => words.includes(w)) && holdsName(theirs)) around.push(other);
+    }
+    if (around.length > 1) return { several: true };
+    const hits = [...within, ...around];
+    return hits.length === 1 ? { key: hits[0] } : {};
 }
 
 // The color names models reach for, as hex. One not listed is left as the model wrote it.
@@ -194,10 +209,19 @@ export function forgetAllLockedColors() {
 // <font …> opening tags, with their color and title, wherever they sit in the text.
 const FONT_OPEN = /<font\b([^>]*)>/gi;
 const attr = (attrs, name) => { const m = String(attrs).match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|“([^”]*)”|([^\\s>]+))`, "i")); return m ? (m[1] ?? m[2] ?? m[3] ?? m[4] ?? "").trim() : ""; };
-// The tag with its color set to `hex`: the model's value replaced, or one added where it gave none.
+// A color set in the tag's style instead ("color: crimson", never a background's). It wins over
+// the color attribute on screen, so it is the one the line shows.
+const STYLE_COLOR = /(^|;)\s*color\s*:\s*([^;]*);?/i;
+const styleColor = attrs => { const m = attr(attrs, "style").match(STYLE_COLOR); return m ? m[2].trim() : ""; };
+// The tag with its color set to `hex`: the model's value replaced, or one added where it gave
+// none, and a color in its style taken out (the rest of the style kept).
 const withColor = (tag, hex) => (/\bcolor\s*=/i.test(tag)
     ? tag.replace(/(\bcolor\s*=\s*)(?:"[^"]*"|'[^']*'|“[^”]*”|[^\s>]+)/i, `$1"${hex}"`)
-    : tag.replace(/^<font\b/i, `<font color="${hex}"`));
+    : tag.replace(/^<font\b/i, `<font color="${hex}"`))
+    .replace(/\s*\bstyle\s*=\s*(["'“])([^"'”]*)["'”]/i, (all, q, css) => {
+        const rest = css.replace(STYLE_COLOR, "$1").replace(/^[\s;]+|[\s;]+$/g, "");
+        return rest ? ` style="${rest}"` : "";
+    });
 
 /**
  * One reply: learns the colors of characters seen for the first time (made readable, unless
@@ -214,10 +238,12 @@ export function lockReplyColors(text, names, { background = DARK_BG, readable = 
     const head = String(text).slice(0, from), tail = String(text).slice(from);
     const out = tail.replace(FONT_OPEN, (tag, attrs) => {
         const name = speakerName(attr(attrs, "title"));
-        const color = attr(attrs, "color");
+        const color = styleColor(attrs) || attr(attrs, "color");
         if (!name) return tag;
-        const k = knownKey(names, name);
-        const known = k ? names[k] : null;
+        // A line given to several characters at once is nobody's in particular.
+        const who = knownKey(names, name);
+        if (who.several) return tag;
+        const known = who.key ? names[who.key] : null;
         if (!known) {
             // Someone new: theirs is the color they first speak in, when it is one.
             const hex = asHex(color);

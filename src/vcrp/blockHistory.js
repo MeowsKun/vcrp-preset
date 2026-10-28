@@ -166,7 +166,7 @@ export function previousBlocksNote() {
     }
     const parts = [];
     const head = !info.whole ? "The blocks as your recent replies last wrote each one whole (none of them closed all of its blocks)."
-        : info.back ? "The blocks as they stood at the end of an earlier reply (the last one wrote none)."
+        : info.back ? "The blocks as they stood at the end of an earlier reply (your last reply did not write them whole)."
             : "The blocks as they stood at the end of your last reply.";
     // A block that reply left out or was cut off in: said where it comes from, and asked for whole.
     const filled = info.filled || [];

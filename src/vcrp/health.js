@@ -122,6 +122,10 @@ export function vcrpHealthCheck() {
     } else if (!originalEngine && originalBanList) {
         add("info", "VCRP engine on the Megumin Original preset",
             "The preset text is Megumin's original, without VCRP's ban list additions and dash rules. Pick a Megumin Original engine to match it, or select \"VCRP V10 Universal\".");
+    } else if (originalEngine && !isV11Engine(activeEngine()) && hasText("[[banned]]")) {
+        // The V11 preset fits every engine but V10's Megumin Originals: they get V11's rules there.
+        add("info", "V10 Megumin Original engine on the V11 preset",
+            "It works, but the ban list, formatting rules and final check are Megumin V11's, not V10's. For Megumin V10 word for word, select \"VCRP V10 Megumin Original\" in AI Response Configuration.");
     }
 
     // Always-on knowledgebase entries on a preset from before their cached slot.

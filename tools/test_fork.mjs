@@ -3432,7 +3432,7 @@ console.log("50 ok the cache: an older reply ends the same every turn, whoever t
         { is_user: true, mes: "go" }, { is_user: false, mes: "Prose cut short." });
     const info = bh.lastBlocksInfo();
     assert(info.state.includes("the docks, night") && info.back === 1, `the blocks from the reply before: ${JSON.stringify(info)}`);
-    assert(bh.previousBlocksNote().includes("The blocks as they stood at the end of an earlier reply (the last one wrote none).") && bh.previousBlocksNote().includes("the docks, night"), "said as such");
+    assert(bh.previousBlocksNote().includes("The blocks as they stood at the end of an earlier reply (your last reply did not write them whole).") && bh.previousBlocksNote().includes("the docks, night"), "said as such");
     chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose.\n<Blocks>\n<World_State>the pier, dawn</World_State>\n</Blocks>" });
     assert(bh.lastBlocksInfo().back === 0 && bh.previousBlocksNote().includes("at the end of your last reply") && !bh.previousBlocksNote().includes("the docks"), "the latest reply's own when it has them");
 
@@ -4133,6 +4133,19 @@ console.log("55 ok Megumin Suite V11 (V11 Тайна on its own preset and VCRP'
     const two = { "mara reyes": { name: "Mara Reyes", color: "#ff69b4" }, "mara stone": { name: "Mara Stone", color: "#00ffff" } };
     colors.lockReplyColors(`<font color="#ffd700" title="Mara">"?"</font>`, two, { readable: false });
     assert(two.mara && two.mara.color === "#ffd700" && two["mara reyes"].color === "#ff69b4", "two Maras known: a bare \"Mara\" is neither");
+    // A color in the style wins on screen: it counts, and goes when the lock puts theirs back.
+    r = colors.lockReplyColors(`<font style="color:#00ff00; font-weight:bold" title="Mara">"E."</font>`, names, { readable: false });
+    assert.equal(r.text, `<font color="#ff69b4" style="font-weight:bold" title="Mara">"E."</font>`, "a known character's color in the style: put back, the style's other rules kept");
+    const fresh = {};
+    colors.lockReplyColors(`<font style="color: crimson" title="Ann">"F."</font>`, fresh, { readable: false });
+    assert(fresh.ann && fresh.ann.color === "#dc143c", "someone new colored by their style: learned");
+    // A line for several characters is nobody's; a role is not the person holding it.
+    const group = { mara: { name: "Mara", color: "#ff69b4" }, jun: { name: "Jun", color: "#00ffff" } };
+    r = colors.lockReplyColors(`<font color="#123456" title="Mara and Jun">"Both!"</font>`, group, { readable: false });
+    assert(Object.keys(group).length === 2 && r.text.includes("#123456"), "a line for Mara and Jun: left alone, nobody new learned");
+    const roles = { guard: { name: "Guard", color: "#ff0000" }, pell: { name: "Pell", color: "#00ff00" } };
+    r = colors.lockReplyColors(`<font color="#0000ff" title="Guard Captain">"Halt."</font> <font color="#ffffff" title="Old Pell">"Eh."</font>`, roles, { readable: false });
+    assert(roles["guard captain"] && roles["guard captain"].color === "#0000ff" && !roles["old pell"] && r.text.includes(`color="#00ff00" title="Old Pell"`), `the Guard Captain is not the Guard; Old Pell is Pell (${r.text})`);
 
     // Blocks: one the last reply left out comes from where it was last whole, and is asked for.
     q.blockStack.order = ["world", "bonds"];
@@ -4313,6 +4326,10 @@ console.log("57 ok Megumin Suite V11's 24-25/10 update (V11 Тайна, its Writ
     Object.assign(q, { mode: "pura-original", model: "cot-v10-ukiyo-english" });
     assert(!titles("VCRP V11 Megumin Original.json").some(s => /Megumin Original (engine|preset)|V11 Megumin Original/.test(s)), "Setup Check: Pura on the V11 preset says nothing");
     assert(titles("VCRP V10 Megumin Original.json").includes("VCRP engine on the Megumin Original preset"), "Setup Check: Pura on V10's Megumin Original preset is still told");
+    // V10's Megumin Originals are the engines the V11 preset does not fit.
+    Object.assign(q, { mode: "v10-ukiyo-megumin", model: "cot-meg-ukiyo-english" });
+    assert(titles("VCRP V11 Megumin Original.json").includes("V10 Megumin Original engine on the V11 preset"), "Setup Check: a V10 Megumin Original on the V11 preset is told");
+    assert(!titles("VCRP V10 Megumin Original.json").some(s => /Megumin Original (engine|preset)|on the V11 preset/.test(s)), "and on its own preset, nothing");
     delete chatCompletionSettings.prompts; delete chatCompletionSettings.prompt_order;
 
     chat.length = 0;

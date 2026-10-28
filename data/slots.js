@@ -222,19 +222,20 @@ export const MEGUMIN_SLOT_REGISTRY = [
     { key: null, trigger: "[[block_rules]]", label: "Tracker Rules", scope: "auto", group: "live", where: "BLOCKS",
       hint: "VCRP: the full rules of the Pura trackers in the block, sent once in the cached part. The block itself carries only their format." },
     // VCRP: Megumin Suite V11's preset sections (src/engine/meguminV11.js). Only the "VCRP V11
-    // Megumin Original" preset carries them; each brings its own heading or tag, in V11's words.
+    // Megumin Original" preset carries them; each brings its own heading or tag, in V11's words
+    // (VCRP's own, as on VCRP V10 Universal, for VCRP's engines and Pura's).
     { key: null, trigger: "[[thinking]]", label: "Thinking Steps (V11)", scope: "auto", group: "live", where: "Preset & Thinking",
-      hint: "The thinking, under \"your thinking steps\" for V11 Тайна Preview; V11 Тайна's carries its own. Nothing with thinking off, or on a Continue." },
+      hint: "The thinking, under \"your thinking steps\" (V11 Тайна's carries its own). Nothing with thinking off, or on a Continue." },
     { key: null, trigger: "[[formatting]]", label: "Formatting (V11)", scope: "auto", group: "live", where: "Writing Style",
-      hint: "The dialogue ratio, the colors and the dialogue tags, under V11's heading (or in <formatting> for V11 Тайна)." },
+      hint: "The dialogue ratio, the colors and the dialogue tags, under V11's heading (in <formatting> for V11 Тайна; with VCRP's formatting rules for VCRP's engines and Pura's)." },
     { key: null, trigger: "[[banned]]", label: "Ban List (V11)", scope: "auto", group: "live", where: "Banned Phrases",
-      hint: "V11's built-in ban list (V11 Тайна's own on its engines) with your phrases, in one <banlist>." },
+      hint: "The built-in ban list with your phrases, in one <banlist>: V11's (V11 Тайна's own on its engines), or VCRP's for VCRP's engines and Pura's." },
     { key: null, trigger: "[[reminder]]", label: "Final Check (V11)", scope: "auto", group: "live", where: "Preset & Thinking",
-      hint: "V11's final checks, numbered: the shared ones, the ban list's, the engine's own, then Never Write For {{user}}." },
+      hint: "The final checks, numbered: V11's (the shared ones, the ban list's, the engine's own, then Never Write For {{user}}), or VCRP's final reminder for VCRP's engines and Pura's." },
     { key: null, trigger: "[[content]]", label: "Content (V11)", scope: "auto", group: "live", where: "Preset & Thinking",
       hint: "The V11 engine's Content section: what the story may show and how plainly. Other engines send nothing here." },
     { key: null, trigger: "[[addon_rules]]", label: "Add-on Rules (V11)", scope: "auto", group: "live", where: "Language & Add-ons",
-      hint: "Onomatopoeia and Immersive HTML, each in its own section, sent up top." },
+      hint: "Onomatopoeia and Immersive HTML, each in its own section, sent up top (as they are for VCRP's engines and Pura's)." },
     { key: null, trigger: "[[notebook]]", label: "Author's Notebook", scope: "auto", group: "live", where: "Focus",
       hint: "VCRP: how to keep the Author's Notebook (Megumin Suite V11), while it is on with an engine other than V11 Тайна (which carries its own). In Main 2, so it is cached; a preset without this tag gets it with the Tracker Rules. The live truths ride with the blocks, after the chat." },
     { key: null, trigger: "[[plotfocus]]", label: "Plot Focus", scope: "auto", group: "live", where: "Focus",
