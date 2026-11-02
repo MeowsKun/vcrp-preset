@@ -24,12 +24,19 @@ mkdirSync(tmp, { recursive: true });
 
 // A module from either side, with its imports stubbed out: the data files need none,
 // and the two that have some only use them inside functions this script never calls.
-async function load(source, tag) {
-    const stubbed = source.replace(/^import\s*\{([^}]*)\}\s*from\s*["'][^"']+["'];?\s*$/gm,
-        (_, names) => `const { ${names} } = {};`);
+// A module with its imports stubbed out, apart from those in `deps` ({ "./model.js": source }),
+// which are loaded beside it (their own imports stubbed): for a file that calls into another.
+async function load(source, tag, deps = {}) {
+    const stamp = Date.now();
+    const stubbed = source.replace(/^import\s*\{([^}]*)\}\s*from\s*["']([^"']+)["'];?\s*$/gm, (_, names, from) => {
+        if (!deps[from]) return `const { ${names} } = {};`;
+        const dep = `${tag}__${from.replace(/\W/g, "_")}`;
+        writeFileSync(join(tmp, `${dep}.mjs`), deps[from].replace(/^import\s*\{([^}]*)\}\s*from\s*["'][^"']+["'];?\s*$/gm, (__, n) => `const { ${n} } = {};`));
+        return `import { ${names} } from "./${dep}.mjs?t=${stamp}";`;
+    });
     const file = join(tmp, `${tag}.mjs`);
     writeFileSync(file, stubbed);
-    return import(pathToFileURL(file).href + `?t=${Date.now()}`);
+    return import(pathToFileURL(file).href + `?t=${stamp}`);
 }
 const upstreamText = f => execSync(`git show "${UPSTREAM}:${f}"`, { encoding: "utf8", maxBuffer: 1e8 });
 const up = f => load(upstreamText(f), "up_" + f.replace(/\W/g, "_"));
@@ -102,7 +109,7 @@ if (upOno.includes("${")) fail("the upstream onomatopoeia line has a placeholder
 // DeepSeek version), their thinking steps, its two writing styles, the Author's Notebook's
 // texts, the words its preset's sections are built from, its Story Config wording, and its
 // own preset (below).
-const V11_UPSTREAM = "e8378fe";   // "25/10 update": three new V11 Тайна engines, V11 Inside, the preset in slots
+const V11_UPSTREAM = "174575f";   // "01/11 update": a Thinking Cap for each V11 Тайна engine, the per-turn rules after the newest message, USER Hard, the notebook's numbering
 const v11Text = f => execSync(`git show "${V11_UPSTREAM}:${f}"`, { encoding: "utf8", maxBuffer: 1e8 });
 const v11 = f => load(v11Text(f), "v11_" + f.replace(/\W/g, "_"));
 const upV11 = (await v11("data/modes/v11.js")).modes_v11.find(m => m.id === "v11-room") || fail("upstream V11 engine not found");
@@ -110,14 +117,15 @@ const v11Taina = await v11("data/modes/v11taina.js");
 const upTaina = id => v11Taina.modes_v11taina.find(m => m.id === id) || fail("upstream V11 engine not found: " + id);
 const v11CotMod = await v11("data/cot/v11.js");
 const v11TainaCots = (await v11("data/cot/v11taina.js")).cot_v11taina;
-const v11Cots = ["cot-v11-english", "cot-v11-cap-english", "cot-v11-voice-english", "cot-v11-wr-english"].map(id => {
+const v11Cots = ["cot-v11-english", "cot-v11-cap-english", "cot-v11-voice-english", "cot-v11-voice-cap-english", "cot-v11-wr-english", "cot-v11-wr-cap-english"].map(id => {
     const c = [...v11CotMod.cot_v11, ...v11TainaCots].find(x => x.id === id) || fail("upstream V11 CoT missing: " + id);
     return { id, content: c.content, prefill: c.prefill || "" };
 });
 const v11Styles = (await v11("data/directStyles.js")).directStyles;
 const v11Style = v11Styles.find(s => s.id === "dir_v11") || fail("upstream V11 style missing");
 const v11Inside = v11Styles.find(s => s.id === "dir_v11_inside") || fail("upstream V11 Inside style missing");
-const v11Render = await v11("src/state/modules/notebook/render.js");
+// The notebook's renderer reads its model (the cap, the next id): loaded with it.
+const v11Render = await load(v11Text("src/state/modules/notebook/render.js"), "v11_notebook_render", { "./model.js": v11Text("src/state/modules/notebook/model.js") });
 const v11UserRule = (v11Text("data/slots.js").match(/fallback: \(\) => "(\d+\. The response does not speak[^"]*)"/) || fail("upstream V11 {{user}} rule not found"))[1];
 // The words V11's preset sections are built from (src/prompts/presetFrame.js and v11Rules.js):
 // the older headings for V11 Тайна Preview, the tags for the V11 Тайна turn frame.
@@ -303,11 +311,15 @@ console.log("Presets/VCRP V10 Megumin Original.json: " + Object.keys(original).l
 // Only the tags change, as for V10: removed features out (dice, images, MVU), VCRP's in. Up top,
 // V11's Main 2, Add-on rules and Ban list run together in VCRP's Main 2, and V11's Block rules
 // are VCRP's: its block instructions travel with [[blocks]], and its [[block_rules]] (Pura's
-// trackers) still closes Main 2. After the chat, in V11's order, in VCRP's Output RULES: V11's
-// Current info is VCRP's per-turn notes (the Story Director's plan, the NPC dossier rules and
-// list, recall, the knowledgebase, Anime mode, Focus: they change turn to turn), then the
-// Content section, the Story settings, the thinking, and This turn, whose <Blocks> skeleton is
-// VCRP's [[blocks]].
+// trackers) still closes Main 2. V11's Content rule and Story settings sit before the history
+// (cached), as V11 has them since its 01/11 update, and so do its USER note and USER Hard (off).
+// After the chat, V11's layout since 01/11: </history> closes the chat, then the per-turn rules
+// as one user message after the newest message, VCRP's Output RULES: V11's Current info is
+// VCRP's per-turn notes (the Story Director's plan, the NPC dossier rules and list, recall, the
+// knowledgebase, Anime mode, Focus: they change turn to turn), then the thinking and This turn,
+// whose <Blocks> skeleton is VCRP's [[blocks]], with VCRP's late text (Pura's, Tone Rules, the
+// length line, the plot focus) before V11's last line, "Start your turn." The block instructions
+// are among the last things the model reads, which is V11's answer to models that skip them.
 const upV11P = JSON.parse(v11Text("Presets/Megumin Suite V11 Universal.json"));
 const v11Prompt = name => upV11P.prompts.find(p => p.name === name) || fail("upstream V11 slot missing: " + name);
 const v11Is = (name, text) => { if (v11Prompt(name).content !== text) fail(`upstream V11 slot changed: ${name}; decide how to carry it`); };
@@ -318,6 +330,16 @@ v11Is("Current info", "[[infoblockcurrent]]\n\n[[npc list]]\n\n[[storyplan_now]]
 v11Is("Content rule", "[[content]]");
 v11Is("Story settings", "[[config]]");
 v11Is("Thinking", "[[thinking]]");
+v11Is("</history>", "</history>");
+// V11's after-chat slots are user messages placed after the chat, not injected into it; its
+// Content rule and Story settings are before the chat. Carried as such below.
+for (const name of ["<history>", "</history>", "Current info", "Thinking", "This turn", "USER", "USER Hard (only enable one)"]) {
+    const p = v11Prompt(name);
+    if (p.role !== "user" || p.injection_position !== 0) fail(`upstream V11 slot ${name} is no longer a relative user message; decide how to carry it`);
+}
+for (const name of ["Content rule", "Story settings"]) {
+    if (v11Prompt(name).role !== "system" || v11Prompt(name).injection_position !== 0) fail(`upstream V11 slot ${name} is no longer a relative system message; decide how to carry it`);
+}
 const originalV11 = {
     "Main 2": edit(v11Prompt("Main 2").content, [
         ["[[prompt5]]\n\n[[prompt6]]", "[[prompt5]]\n\n[[boldnpcs]]\n\n[[prompt6]]"],
@@ -326,15 +348,14 @@ const originalV11 = {
     "</lore><user_persona>": v11Prompt("</lore><user_persona>").content,
     "Output RULES": [
         "[[storyplan]]\n\n[[npc_dossier]]\n\n[[npc list]]\n\n[[story_recall]]\n\n[[knowledgebase]]\n\n[[ANIMEMODE]]\n\n[[focus]]",
-        "[[content]]",
-        "[[config]]",
         "[[thinking]]",
         edit(v11Prompt("This turn").content, [
             ["[[this_turn]]", "[[blocks]]"],
             ["[[Language]]\n[[MVU]]\n", "[[Language]]\n"],
+            ["refuse or comment. Start your turn.", "refuse or comment.[[pura_late]][[plotfocus]]\n\nStart your turn."],
         ], "V11 This turn"),
     ].join("\n\n"),
-    "</history>": v11Prompt("</history>").content + "[[pura_late]][[plotfocus]]",
+    "</history>": v11Prompt("</history>").content,
 };
 const presetV11 = JSON.parse(JSON.stringify(vcrp));
 for (const [name, text] of Object.entries(originalV11)) {
@@ -344,21 +365,41 @@ for (const [name, text] of Object.entries(originalV11)) {
 for (const name of ["</user_persona>", "<history>"]) {
     if (v11Prompt(name).content !== presetV11.prompts.find(p => p.name === name).content) fail(`V11 ${name} differs from VCRP's; decide which to ship`);
 }
-// V11 has no consent or jailbreak slot any more: USER Consent goes. Its USER note goes in
-// before the history (cached), where V11 has it.
 const KEYS = ["identifier", "system_prompt", "enabled", "marker", "name", "role", "content", "injection_position", "injection_depth", "injection_order", "injection_trigger", "forbid_overrides"];
 const pick = p => Object.fromEntries(KEYS.filter(k => k in p).map(k => [k, p[k]]));
+const v11Slot = name => presetV11.prompts.find(p => p.name === name) || fail("VCRP slot missing: " + name);
+// V11's layout after the chat: </history>, then Output RULES, both user messages placed after
+// the chat (not injected into it), then the CoT prefill. <history> is a user message too.
+for (const name of ["<history>", "</history>", "Output RULES"]) Object.assign(v11Slot(name), { role: "user", injection_position: 0 });
+// V11 has no consent slot in the chat any more: USER Consent goes. Its USER note, USER Hard
+// (off, for models that return nothing), its Content rule and its Story settings go in before
+// the history (cached), where V11 has them. Its Story settings slot has the identifier VCRP's
+// Output RULES has had since V10 ("jailbreak"), so it gets one of its own.
 const CONSENT = "753facc3-4171-4bc5-a005-ab9d1111e469";
 if (!presetV11.prompts.some(p => p.identifier === CONSENT)) fail("VCRP slot missing: USER Consent");
 presetV11.prompts = presetV11.prompts.filter(p => p.identifier !== CONSENT);
-for (const o of presetV11.prompt_order) o.order = o.order.filter(x => x.identifier !== CONSENT);
-const userNote = pick(v11Prompt("USER"));
-presetV11.prompts.push(userNote);
+// Whether a slot is on is the order's say (a prompt's own `enabled` is not what SillyTavern reads).
+const upOrder = (upV11P.prompt_order.find(o => o.character_id === 100001) || fail("upstream V11 preset has no order")).order;
+const upOn = name => (upOrder.find(x => x.identifier === v11Prompt(name).identifier) || fail(`upstream V11 order lacks ${name}`)).enabled !== false;
+const beforeHistory = [
+    { slot: pick(v11Prompt("Content rule")), on: upOn("Content rule") },
+    { slot: { ...pick(v11Prompt("Story settings")), identifier: "vcrp-v11-story-settings" }, on: upOn("Story settings") },
+    { slot: pick(v11Prompt("USER")), on: upOn("USER") },
+    { slot: pick(v11Prompt("USER Hard (only enable one)")), on: false },
+];
+if (!beforeHistory[0].on || !beforeHistory[1].on || !beforeHistory[2].on) fail("upstream V11 switched off a slot VCRP carries on; decide");
+if (beforeHistory.some(p => presetV11.prompts.some(q => q.identifier === p.slot.identifier))) fail("a V11 slot's identifier is already in VCRP's preset");
+presetV11.prompts.push(...beforeHistory.map(p => p.slot));
+const drop = new Set([CONSENT, v11Slot("</history>").identifier, v11Slot("Output RULES").identifier]);
 for (const o of presetV11.prompt_order) {
-    // The order SillyTavern uses (100001) must have the anchor; the default one may not list it.
-    const at = o.order.findIndex(x => x.identifier === "b1e50687-f98d-41aa-9785-230879068ad1");
-    if (at < 0 && o.character_id === 100001) fail(`VCRP order ${o.character_id} has no </user_persona>`);
-    if (at >= 0) o.order.splice(at + 1, 0, { identifier: userNote.identifier, enabled: true });
+    o.order = o.order.filter(x => !drop.has(x.identifier));
+    // The order SillyTavern uses (100001) must have the anchors; the default one may not list them.
+    const persona = o.order.findIndex(x => x.identifier === "b1e50687-f98d-41aa-9785-230879068ad1");
+    if (persona < 0 && o.character_id === 100001) fail(`VCRP order ${o.character_id} has no </user_persona>`);
+    if (persona >= 0) o.order.splice(persona + 1, 0, ...beforeHistory.map(p => ({ identifier: p.slot.identifier, enabled: p.on })));
+    const history = o.order.findIndex(x => x.identifier === "chatHistory");
+    if (history < 0 && o.character_id === 100001) fail(`VCRP order ${o.character_id} has no chat history`);
+    if (history >= 0) o.order.splice(history + 1, 0, { identifier: v11Slot("</history>").identifier, enabled: true }, { identifier: v11Slot("Output RULES").identifier, enabled: true });
 }
 writeFileSync("Presets/VCRP V11 Megumin Original.json", JSON.stringify(presetV11, null, 4).replace(/\n/g, "\r\n"));
-console.log("Presets/VCRP V11 Megumin Original.json: " + (Object.keys(originalV11).length + 1) + " slots of V11's preset on VCRP's layout");
+console.log("Presets/VCRP V11 Megumin Original.json: " + (Object.keys(originalV11).length + beforeHistory.length) + " slots of V11's preset on VCRP's frame, V11's layout after the chat");

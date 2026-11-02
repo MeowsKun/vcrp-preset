@@ -190,6 +190,22 @@ stay within the per-request target.
 - **A block a reply leaves out, or is cut off in,** is carried to the next reply from where it was
   last written whole (World State, Bonds, Character Sheet, Story Tracker), and the model is asked
   to write it in full again, so one bad reply doesn't drop it from every reply after.
+- **Missing blocks are asked for again** (`src/vcrp/blockRepair.js`): a reply that arrives without
+  its blocks, or stops inside them, or lacks a block it had to write (every block in the stack that
+  is written each turn; Pura's state-carrying trackers and the Notebook's updates are optional),
+  gets a quiet second call on the roleplay prompt as it stands: the reply in the history, the cache
+  warm from the request that wrote it, the block instructions the last thing read, no thinking and
+  no prefill. The `<Blocks>` it answers with is merged into the reply (an envelope that was whole but
+  short of a block keeps its own extras), the reply is saved and redrawn, and the NPC capture and
+  the Story Director's tracker read it again. Once per reply, never for a blank one, after the other
+  handlers; the switch is in the BLOCKS tab (*Ask again for missing blocks*, on by default).
+- **A blank reply is told apart** (`src/vcrp/blankReply.js`): nothing at all (on Gemini, its content
+  filter), stopped inside its thinking (the output limit), all reasoning with no story, or only
+  blocks. A toast says which and what to do. Such a reply is not measured as a reply (it would
+  shrink the room every reply is given), the one-shot direction stays for the swipe, no rolls note
+  is added to it and no blocks are asked for. Setup Check warns when a Safety cap is set on a model
+  that reasons before it writes (Gemini, DeepSeek, GLM, Kimi, Qwen; Claude with Request model
+  reasoning on): the reasoning counts against the cap.
 - **VCRP's own background calls** (summaries and their checks, audits, the Story Director, NPC
   scans and updates, the ban list, style generators) are each limited to 8,000 output tokens,
   well above what they write, so none can run away. Other extensions' calls are left alone.
@@ -315,12 +331,13 @@ the V10 Megumin Originals above are unchanged.
 
 - **The engines** (Megumin Originals, each keeping the Author's Notebook):
   - **V11 Тайна**: one storyteller writes the whole turn, plainly and with a voice of its own. The
-    base for every model. Picks **CoT V11 Тайна**.
+    base for every model. Picks **CoT V11 Тайна**; a **Thinking Cap** of its own for models that
+    over-think (Megumin Suite V11, 28/10).
   - **V11 Тайна · Writers' Room**: the same story, worked by a room of five in the thinking. Picks
-    **CoT V11 Тайна · Writers' Room**.
+    **CoT V11 Тайна · Writers' Room**, with a Thinking Cap of its own too.
   - **V11 Тайна DeepSeek**: V11 Тайна with one more line, so DeepSeek stops treating the character as
-    the player. DeepSeek tends to leave the blocks out; VCRP carries each one from where it was last
-    written whole. Picks CoT V11 Тайна.
+    the player. DeepSeek tends to leave the blocks out; VCRP asks for them in a second call (below,
+    under Blocks) and carries each one from where it was last written whole. Picks CoT V11 Тайна.
   - **V11 Тайна Preview**: the first V11 release, kept as it was (a writers' room of five, one overt
     narrator). Picks **CoT V11 Тайна Preview**; for models that over-think (GLM, Kimi, DeepSeek,
     Qwen), pick its **Thinking Cap**: five short lines of notes, no draft, no word count, and its
@@ -329,9 +346,16 @@ the V10 Megumin Originals above are unchanged.
 - **The styles**: **V11 Default** (an overt narrator with a voice and opinions) and **V11 Inside**
   (the narration rides inside one character at a time, never yours). Picking a V11 engine picks V11
   Default unless V11 Inside is already in use; switching between the V11 engines keeps it.
-- **The preset** `Presets/VCRP V11 Megumin Original.json`, on VCRP's layout. V11 keeps its words
-  in the extension now and its preset is only slots: its rules up top (cached) and what changes each
-  turn after the chat. VCRP builds the sections the way V11 does, from V11's words
+- **The preset** `Presets/VCRP V11 Megumin Original.json`, on VCRP's frame with V11's layout. V11
+  keeps its words in the extension now and its preset is only slots: its rules up top (cached) and
+  what changes each turn after the chat. Since V11's 01/11 update the per-turn rules come **after
+  your newest message**, as one user message that ends on V11's line "Start your turn.", so the
+  block instructions are among the last things the model reads (V11's answer to models that skip
+  the blocks); `</history>` closes the chat before them. V11's Content rule and Story settings sit
+  before the history, in the cached part (a Story Config change costs one cache miss, like a style
+  change). V11's USER note is sent, and its **USER Hard** prompt is carried switched off, for a
+  model that answers an adult scene with nothing (Gemini's content filter): turn it on in AI
+  Response Configuration's prompt list. VCRP builds the sections the way V11 does, from V11's words
   (`src/engine/meguminV11.js`): each engine's Content section, Story settings (with V11 Тайна's
   `<repetition>` rule), the thinking, the formatting, V11's ban list (V11 Тайна's own on its engines,
   your phrases under it) and the numbered final check. V11 Тайна and its versions take V11's tagged
@@ -374,9 +398,13 @@ reveals each one when the story earns it, instead of forgetting a secret or blur
 - **On** by itself with V11 Тайна (its own text speaks of it); a switch in the Focus tab for any
   other engine. The model writes the truths in a `<Notebook>` block, then only what changes in a
   `<Notebook_Update>` block (a clue planted, who found out, what came out).
-- **VCRP keeps the rules** (V11's): at most three live truths, ids that are VCRP's, a truth the
+- **VCRP keeps the rules** (V11's): as many live truths as you choose (**Truths kept at once** in
+  the Focus tab, 1 to 10, V11's three by default: the setup asks for that many, and each reply is
+  read under the count in force when it was written, so lowering it later drops nothing), ids that
+  are VCRP's (a truth you delete gives its number to the next new one, V11's 01/11 fix), a truth the
   model can never quietly rewrite, one clue per truth per reply, and a clue the reply never
-  actually shows is marked "not found in the reply".
+  actually shows is marked "not found in the reply". A reason a model writes into "Hidden from"
+  ("the reader, because it hasn't been shown") is left out of the names.
 - **Kept in the replies.** Each turn the notebook is read back from the chat's own notebook
   blocks, so a swipe, an edit or a deleted message changes it exactly as it changed the story.
   Your own changes in the Focus tab (edit a truth, mark it revealed, delete it, activate a past one

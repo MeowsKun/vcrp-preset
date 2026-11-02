@@ -283,8 +283,8 @@ for (let t = 1; t <= 5; t++) {
 }
 const v11Last = v11Prompts.at(-1), v11Mk = marked(v11Last);
 const v11Cached = prefix(v11Last, v11Mk.at(-1)).join("\n"), v11All = v11Last.map(textOf).join("\n");
-ok(v11Cached.includes("You are a writers' room of five") && v11Cached.includes("NORA, the Director"), "V11's engine text is in the cached part");
-for (const [what, s] of [["V11's Content section", "# Content (NORA)"], ["the live truths", "<Author_Notebook>"], ["the notebook's update rules", "write the Notebook_Update block only if"],
+ok(v11Cached.includes("You are a writers' room of five") && v11Cached.includes("NORA, the Director") && v11Cached.includes("# Content (NORA)"), "V11's engine text and its Content section are in the cached part (V11's layout since 01/11)");
+for (const [what, s] of [["the live truths", "<Author_Notebook>"], ["the notebook's update rules", "write the Notebook_Update block only if"],
     ["the clue planted on turn 3", "Mara flinches when Bob mentions the fire"], ["Ann, back as she left", "Characters on file"], ["Ann's last outfit", "green raincoat, red scarf"],
     ["the {{user}} rule, item 5", "5. The response does not speak, think, feel, or act for Bob"], ["Tone Rules", tone.TONE_HEADER], ["Existing cast only", castLock.CAST_LOCK_HEADER]]) {
     ok(v11All.includes(s) && !v11Cached.includes(s), `${what}: sent, and after the cached part`);
@@ -302,7 +302,7 @@ v11Sum.push({ role: "system", content: `${TASK_MARKER}: not a story turn.] Summa
 await handlePromptInjection({ chat: v11Sum, dryRun: false });
 memory.setMemoryTaskActive(false);
 const v11SumText = v11Sum.map(textOf).join("\n"), v11SMk = marked(v11Sum);
-ok(!v11SumText.includes("# Content (NORA)") && !v11SumText.includes("## your thinking steps:") && !v11SumText.includes("<Author_Notebook>"), "the summary call leaves V11's story-turn slots out (Output RULES known by its final check)");
+ok(!v11SumText.includes("## your thinking steps:") && !v11SumText.includes("<Author_Notebook>") && !v11SumText.includes("Start your turn."), "the summary call leaves V11's story-turn slots out (Output RULES known by its final check)");
 const v11RpRead = prefix(v11rp, v11RpMk.at(-1)), v11SumRead = prefix(v11Sum, v11SMk.at(-2) ?? v11SMk.at(-1));
 ok(v11SMk.length >= 1 && JSON.stringify(v11RpRead.slice(0, v11SumRead.length)) === JSON.stringify(v11SumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(v11RpRead, v11SumRead));
 
@@ -332,7 +332,10 @@ for (let t = 1; t <= 4; t++) {
 const voiceLast = voicePrompts.at(-1), voiceMk = marked(voiceLast);
 const voiceCached = prefix(voiceLast, voiceMk.at(-1)).join("\n"), voiceAll = voiceLast.map(textOf).join("\n");
 ok(voiceCached.includes("You are the narrator of an ongoing story") && voiceCached.includes("<banlist>") && voiceCached.includes("rides inside one character at a time"), "V11 Тайна's text, its ban list and V11 Inside are in the cached part");
-for (const [what, s] of [["its Content section", "<content>\nThis story is rated"], ["its repetition rule", "<repetition>"], ["its final check", "<final_check>"], ["its formatting", "<formatting>"], ["its language line", "Write the response in English."]]) {
+for (const [what, s] of [["its Content section", "<content>\nThis story is rated"], ["its story settings", "<story_settings>"], ["its repetition rule", "<repetition>"]]) {
+    ok(voiceCached.includes(s), `${what}: in the cached part, before the chat (V11's layout since 01/11)`);
+}
+for (const [what, s] of [["its final check", "<final_check>"], ["its formatting", "<formatting>"], ["its language line", "Write the response in English."], ["V11's last line", "Start your turn."]]) {
     ok(voiceAll.includes(s) && !voiceCached.includes(s), `${what}: sent, and after the cached part`);
 }
 const voiceRp = await send("normal");
@@ -344,7 +347,7 @@ voiceSum.push({ role: "system", content: `${TASK_MARKER}: not a story turn.] Sum
 await handlePromptInjection({ chat: voiceSum, dryRun: false });
 memory.setMemoryTaskActive(false);
 const voiceSumText = voiceSum.map(textOf).join("\n");
-ok(!voiceSumText.includes("<final_check>") && !voiceSumText.includes("<content>\nThis story is rated") && !voiceSumText.includes("<repetition>"), "the summary call leaves V11 Тайна's story-turn sections out");
+ok(!voiceSumText.includes("<final_check>") && !voiceSumText.includes("<formatting>") && !voiceSumText.includes("Start your turn.") && voiceSumText.includes("<content>\nThis story is rated"), "the summary call leaves V11 Тайна's per-turn sections out and keeps the cached part (its Content section) as it is");
 const voiceRpRead = prefix(voiceRp, marked(voiceRp).at(-1)), voiceSumMk = marked(voiceSum), voiceSumRead = prefix(voiceSum, voiceSumMk.at(-2) ?? voiceSumMk.at(-1));
 ok(voiceSumMk.length >= 1 && JSON.stringify(voiceRpRead.slice(0, voiceSumRead.length)) === JSON.stringify(voiceSumRead), "and its cached part matches the roleplay prompt's, byte for byte", firstDiff(voiceRpRead, voiceSumRead));
 

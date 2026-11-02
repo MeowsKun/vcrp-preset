@@ -40,6 +40,12 @@ export function setActiveFocusAudit(v) { activeFocusAudit = v; }
 export let activeGenerationOrder = null;
 export function setActiveGenerationOrder(v) { activeGenerationOrder = v; }
 
+// VCRP: the blocks a reply left out, asked for in a second call: { index, tags }
+// (vcrp/blockRepair.js). The roleplay prompt as it is, the block instructions kept, the
+// thinking and the prefill not.
+export let activeBlockRepair = null;
+export function setActiveBlockRepair(v) { activeBlockRepair = v; }
+
 // ── NPC reference images for the current generation ──────────────────────────
 // An array rather than a single payload: several NPCs can be attached at once.
 // Pushed into during collection, emptied at the start and end of a run.
@@ -63,6 +69,7 @@ export function isBackgroundGenerationActive() {
         activeBanListChat ||
         activeNpcUpdateRequest ||
         activeGenerationOrder ||
-        activeFocusAudit
+        activeFocusAudit ||
+        activeBlockRepair
     );
 }

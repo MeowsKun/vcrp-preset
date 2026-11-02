@@ -13,6 +13,7 @@
 import { getContext, updateMessageBlock } from "../st.js";
 import { estimateTokens } from "./memory/index.js";
 import { replyLimitTokens, sentReplyLimit } from "./replyLength.js";
+import { blockRepairOn } from "./blockRepair.js";
 
 const NEAR = 0.85;   // a reply this close to the limit is taken to have reached it (the count is an estimate)
 const LOOKBACK = 1500;   // characters searched back for the last full sentence
@@ -70,16 +71,20 @@ export function vcrpCutOnReply(messageId, type) {
     if (written < limit * NEAR) return;
     const cut = cutReply(msg.mes);
     if (!cut) return;
+    // Where it was cut, for the handlers after this one (blankReply.js says nothing twice).
+    msg.extra = { ...(msg.extra || {}), vcrp_cut: cut.where };
     const toast = (m) => { if (typeof toastr !== "undefined") toastr.info(m, "VCRP: length limit", { timeOut: 8000 }); };
+    // With the blocks asked for in a second call (blockRepair.js), that is what happens next.
+    const blocksNext = blockRepairOn() ? "VCRP asks the model for its blocks in a small second call." : "the next reply carries the last complete ones.";
     if (cut.where === "story") {
         msg.mes = cut.text;
         if (Array.isArray(msg.swipes) && typeof msg.swipe_id === "number") msg.swipes[msg.swipe_id] = cut.text;
         try {
             if (typeof document !== "undefined" && document.querySelector(`#chat .mes[mesid="${id}"]`)) updateMessageBlock(id, msg);
         } catch (e) { console.warn("[VCRP] Length limit: could not redraw message", id, e); }
-        toast(`This reply reached the ${limit.toLocaleString("en-US")}-token limit mid-sentence, so it now ends on its last full sentence. Its blocks were not written: the next reply carries the last complete ones. Continue writes the rest.`);
+        toast(`This reply reached the ${limit.toLocaleString("en-US")}-token limit mid-sentence, so it now ends on its last full sentence. Its blocks were not written: ${blocksNext} Continue writes the rest.`);
     } else if (cut.where === "blocks") {
-        toast(`This reply reached the ${limit.toLocaleString("en-US")}-token limit inside its blocks. The story is whole; Continue finishes the blocks, or the next reply carries the last complete ones.`);
+        toast(`This reply reached the ${limit.toLocaleString("en-US")}-token limit inside its blocks. The story is whole; ${blocksNext}`);
     } else {
         toast(`This reply reached the ${limit.toLocaleString("en-US")}-token limit while still thinking. Swipe for another, or raise the limit (Memory tab, Reply length).`);
     }

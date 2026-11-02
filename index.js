@@ -107,6 +107,9 @@ import { vcrpInstallQuickPanel, refreshQuickPanel } from "./src/vcrp/quickPanel.
 import { vcrpCostOnReply, drawCostBadge, drawAllCostBadges, forgetCostPending } from "./src/vcrp/replyCost.js";
 import { vcrpOneShotOnReply, forgetOneShotPending } from "./src/vcrp/oneShot.js";
 import { vcrpCutOnReply } from "./src/vcrp/replyCut.js";
+import { vcrpBlankOnReply } from "./src/vcrp/blankReply.js";
+import { vcrpNotebookStampOnReply } from "./src/vcrp/notebook/index.js";
+import { vcrpBlockRepairOnReply, onBlocksRepaired } from "./src/vcrp/blockRepair.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpApplyReplyCap, forgetReplyRoom } from "./src/vcrp/replyLength.js";
 import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
@@ -441,6 +444,10 @@ jQuery(async () => {
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpMemoryCountReply));
             // VCRP: a reply the length limit cut off mid-sentence ends on its last full sentence.
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpCutOnReply));
+            // VCRP: a reply that came back blank (Gemini's filter, a cut, all reasoning) is said, with why.
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpBlankOnReply));
+            // VCRP: a reply that writes to the Author's Notebook is stamped with the truths cap in force.
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpNotebookStampOnReply));
             // Pura: a tracker written in the story (or a ((OOC)) note) moves into <Blocks>
             // first, so the dash cleaner (which leaves blocks alone) never rewrites one: its
             // "| — |" placeholders and dashed fields stay as the model wrote them.
@@ -453,6 +460,9 @@ jQuery(async () => {
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpDedashOnReply));
             // Dialogue Colors: each character keeps the color they first spoke in.
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpDialogueColorsOnReply));
+            // VCRP: a reply without its blocks gets them asked for in a second call, once the
+            // handlers above have had it (it waits for the reply to be saved and drawn).
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpBlockRepairOnReply));
             // Reply length: the safety cap on the request itself (where SillyTavern has the event).
             if (event_types.CHAT_COMPLETION_SETTINGS_READY) eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, whenOn(vcrpApplyReplyCap));
             // VCRP budgeted memory: summarize the next stretch after a reply, when due.
@@ -460,7 +470,11 @@ jQuery(async () => {
             // VCRP Focus: audit the recent replies for drift every N replies (after Story Memory).
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpFocusAfterReply));
             // IMAGE GEN AUTO-GEN & SWIPE TRIGGERS
-            eventSource.on(event_types.MESSAGE_RECEIVED, async () => {
+            // VCRP: what a reply is read for once it is in (the Story Director's tracker, the NPC
+            // sheets and updates). Run on every reply, and again on one whose missing blocks were
+            // asked for and added (vcrp/blockRepair.js): the sheets and the tracker are in them.
+            const replyAt = (messageId, chat) => (Number.isInteger(Number(messageId)) && Number(messageId) >= 0 && Number(messageId) < chat.length ? Number(messageId) : chat.length - 1);
+            const vcrpCaptureReply = async (messageId) => {
                 vcrpMemoryUpdateVisuals();
                 // VCRP off: nothing runs after a reply (the Story Director, the NPC capture).
                 if (!vcrpOn()) return;
@@ -474,7 +488,7 @@ jQuery(async () => {
                 if (sp && sp.enabled) {
                     const chat = getContext().chat;
                     if (chat && chat.length > 0) {
-                        const lastIndex = chat.length - 1;
+                        const lastIndex = replyAt(messageId, chat);
                         const lastMsg = chat[lastIndex];
                         if (!lastMsg.is_user && !lastMsg.is_system) {
                             
@@ -572,7 +586,8 @@ jQuery(async () => {
                 } else if (npcBank && npcBank.enabled) {
                     const chat = getContext().chat;
                     if (chat && chat.length) {
-                        const lastMsg = chat[chat.length - 1];
+                        const lastIndex = replyAt(messageId, chat);
+                        const lastMsg = chat[lastIndex];
                         if (!lastMsg.is_user && !lastMsg.is_system) {
                             const dossiers = meguminFindNpcDossiers(lastMsg.mes);
                             let added = false;
@@ -587,7 +602,7 @@ jQuery(async () => {
                                     npcBank.npcs.push(npcCreateRecord({
                                         parsed,
                                         name: npcName,
-                                        messageIndex: chat.length - 1
+                                        messageIndex: lastIndex
                                     }));
                                     added = true;
                                     toastr.success(`NPC added to Bank: ${npcName}`, "VCRP");
@@ -600,7 +615,7 @@ jQuery(async () => {
                             // the update has someone to apply to.
                             const parsedUpdates = npcParseUpdateBlocks(lastMsg.mes);
                             if (parsedUpdates.length) {
-                                const { applied, refused } = npcApplyUpdates(parsedUpdates, { messageIndex: chat.length - 1 });
+                                const { applied, refused } = npcApplyUpdates(parsedUpdates, { messageIndex: lastIndex });
                                 if (applied.length) {
                                     added = true;
                                     const who = [...new Set(applied.map(e => e.npc))].join(", ");
@@ -617,7 +632,7 @@ jQuery(async () => {
                             }
 
                             // VCRP: Pura's tier upgrades and relationship changes, for NPCs already on file.
-                            const puraChanges = puraApplyNpcChanges(lastMsg.mes, { messageIndex: chat.length - 1 });
+                            const puraChanges = puraApplyNpcChanges(lastMsg.mes, { messageIndex: lastIndex });
                             if (puraChanges.applied.length) {
                                 added = true;
                                 const who = [...new Set(puraChanges.applied.map(e => e.npc))].join(", ");
@@ -631,12 +646,14 @@ jQuery(async () => {
                                 // line shows the dossier that failed to parse rather than prose.
                                 const npcMes = lastMsg.mes || "";
                                 const npcAt = Math.max(0, npcMes.search(/New[ _]NPC/i));
-                                console.debug(`[VCRP] New NPC block present but unparseable in message ${chat.length - 1}`, npcMes.slice(npcAt, npcAt + 200));
+                                console.debug(`[VCRP] New NPC block present but unparseable in message ${lastIndex}`, npcMes.slice(npcAt, npcAt + 200));
                             }
                         }
                     }
                 }
-            });
+            };
+            eventSource.on(event_types.MESSAGE_RECEIVED, (messageId) => vcrpCaptureReply(messageId));
+            onBlocksRepaired(id => vcrpCaptureReply(id));
         }
 
         $("body").on("click", "#prompt-slot-fixed-btn", function () { initProfile(); updateCharacterDisplay(); switchTab(0); $("#prompt-slot-modal-overlay").fadeIn(250).css("display", "flex"); });

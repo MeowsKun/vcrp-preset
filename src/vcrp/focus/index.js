@@ -33,7 +33,7 @@ import { localProfile } from "../../core/state.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
 import {
     activeFocusAudit, setActiveFocusAudit,
-    activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder,
+    activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder, activeBlockRepair,
 } from "../../core/activeRequests.js";
 import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
 import { resolveAnchor, anchorOf, estimateTokens, vcrpCountBackgroundOutput } from "../memory/index.js";
@@ -228,7 +228,7 @@ export const focusAuditRunning = () => auditing;
 
 /** Another background call swaps in its own prompt while it runs: never overlap one. */
 const busy = () => auditing || memorySummaryRunning() || (typeof isGenerating === "function" && isGenerating())
-    || !!(activeStoryPlanRequest || activeBanListChat || activeNpcScanRequest || activeNpcUpdateRequest || activeGenerationOrder || activeFocusAudit);
+    || !!(activeStoryPlanRequest || activeBanListChat || activeNpcScanRequest || activeNpcUpdateRequest || activeGenerationOrder || activeFocusAudit || activeBlockRepair);
 
 const changeListeners = new Set();
 /** The Focus tab redraws itself when an audit lands. */

@@ -24,6 +24,7 @@ import { extensionName } from "../../core/constants.js";
 import { localProfile } from "../../core/state.js";
 import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
 import { vcrpActiveModel, vcrpIsDryRun, vcrpRouteMarksCache, vcrpWithoutSwipedReply, vcrpGenerationKind } from "../generation.js";
+import { blankReplyKind } from "../blankReply.js";
 import { priceForModel, computeBudget, requestCost, BUDGET_DEFAULTS } from "./budget.js";
 import { planWindow, isCold, chapterEndAtOrBefore } from "./window.js";
 import { composeMemory } from "./ledger.js";
@@ -391,8 +392,10 @@ export function vcrpMemoryCountReply(messageId, type) {
     st.spend.replyCost += cost;
     st.spend.last.cost += cost;
     st.spend.last.output = out;
-    // A whole reply's size, for the budget and the Reply length panel; a Continue is a part.
-    if (!continued) st.spend.recentOut = [...(st.spend.recentOut || []), out].slice(-RECENT_OUT);
+    // A whole reply's size, for the budget and the Reply length panel; a Continue is a part. A
+    // blank reply (Gemini's filter, a cut) is no measure of one: counted, it would drag the
+    // average down, and with it the room every reply is given.
+    if (!continued && !blankReplyKind(msg.mes)) st.spend.recentOut = [...(st.spend.recentOut || []), out].slice(-RECENT_OUT);
     spendUndo = null;
 }
 

@@ -24,6 +24,7 @@ import { trackerCostLabel, trackersCost, usd, puraPrice } from "../../vcrp/pura/
 import { meguminSlotByTrigger } from "../../../data/slots.js";
 import { hasSharedFragment } from "../../core/sharedFragments.js";
 import { castMemoryOn } from "../../vcrp/castMemory.js";
+import { blockRepairOn, setBlockRepairOn } from "../../vcrp/blockRepair.js";
 import { notebookOn } from "../../vcrp/notebook/index.js";
 
 // Mirrors customBadge() in ui/tabs/globalAndBlocks.js: a block whose text was
@@ -88,6 +89,22 @@ export function renderBlocksTab(c) {
 
     // ── IN THE BLOCK ──
     left.append(`<div class="wstyle-section-head gold"><i class="fa-solid fa-list-ol"></i> Inside the master block</div>`);
+    // VCRP: the blocks a reply leaves out, asked for in a second call (vcrp/blockRepair.js).
+    const repairOn = blockRepairOn();
+    const repair = $(`
+        <div class="blk-sub" style="margin-bottom:10px;">
+            <div class="blk-sub-row">
+                <div>
+                    <div class="blk-sub-label">Ask again for missing blocks</div>
+                    <div class="blk-sub-desc">When a reply arrives without its blocks, or with one cut off, VCRP asks the model for just the blocks in a small second call (it reads the cache) and adds them to the reply. Gemini and DeepSeek skip them now and then.</div>
+                </div>
+                <div class="ps-toggle-card ${repairOn ? 'active' : ''}" id="blk_repair_toggle" style="padding:2px; min-width:40px; background:transparent; border-color:${repairOn ? '#10b981' : 'var(--border-color)'}; cursor:pointer;">
+                    <div class="ps-switch" style="transform: scale(0.7); ${repairOn ? 'background:#10b981;' : ''}"></div>
+                </div>
+            </div>
+        </div>`);
+    repair.find("#blk_repair_toggle").on("click", () => { setBlockRepairOn(!blockRepairOn()); saveProfileToMemory(); renderBlocksTab(c); });
+    left.append(repair);
     const list = $(`<div class="blk-stack"></div>`);
 
     if (!inStack.length) {

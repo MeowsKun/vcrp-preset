@@ -12,9 +12,12 @@
 import { extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "../core/constants.js";
 
-export const WHATS_NEW_ID = "10.0.0-vcrp.7";
+export const WHATS_NEW_ID = "10.0.0-vcrp.8";
 
 const ITEMS = [
+    "<b>Megumin Suite V11's 28/10 and 01/11 updates.</b> The per-turn rules now come <i>after</i> your newest message, ending on V11's line \"Start your turn.\", so the block instructions are the last thing the model reads (V11's answer to models that skip the blocks); Story settings moved into the cached part. A <b>Thinking Cap</b> for V11 Тайна and for its Writers' Room. V11's <b>USER Hard</b> prompt, carried switched off, for a model that answers an adult scene with nothing. The Notebook: a truth you delete gives its number to the next new one, reasons models write into \"Hidden from\" are left out, and <b>Truths kept at once</b> (Focus tab) sets how many it keeps. <b>Re-import the VCRP V11 Megumin Original preset.</b>",
+    "<b>Missing blocks are asked for again.</b> A reply that arrives without its blocks, or stops inside them, gets a small second call that reads the cache and answers with just the blocks, merged into the reply. BLOCKS tab, <i>Ask again for missing blocks</i> (on).",
+    "<b>Blank replies are explained.</b> A reply that comes back empty (on Gemini, usually its content filter), all reasoning, or only blocks gets a toast with the cause and what to do. It is not counted as a normal reply, and your <i>Next reply only</i> steer stays for the swipe. Setup Check warns when a Safety cap is set on a model that reasons before it writes: that reasoning counts against the cap.",
     "<b>Story Memory on Gemini 4 Argon, and a full memory sweep.</b> Gemini's cache now works: OpenRouter folded VCRP's per-turn rules into Gemini's system instruction, so almost nothing was cached; now about 90% of each prompt is. Story Memory prices Gemini right (no Claude-style cache-write surcharge, a 5-minute cache) and never lets a request outgrow your target even if the cache lapsed. Enter Argon's price once in the Memory tab (2, 10, 0.1).",
     "<b>Memory fixes.</b> A cut now always lands where a chapter ends: before, it could hide the start of a chapter that the memory text then left out. Summaries are read the way Gemini writes them (bold labels, numbered fact lines, \"**OK**\"), so no fact is dropped. Recall brings a fact back when the scene names something rare in it, and no longer matches on words like \"the\". Setup Check now runs its Story Memory checks on Gemini too. On Gemini, VCRP's turns always alternate between you and the model (Gemini can refuse a request with two in a row). A colored line whose style names a font in quotes keeps its markup whole.",
     "<b>V11 Тайна · Adapted</b>, with its <b>Writers' Room</b> and <b>DeepSeek</b> versions: V11's engines run as VCRP engines. V11's text, thinking and Author's Notebook, with VCRP's ban list (dash rule included), the dash cleaner, and VCRP's own wording of your writing style, add-ons and Story Config. Any writing style fits. The Megumin Originals stay word for word beside them. In PRESETS &amp; COT, under V11.",
@@ -43,7 +46,7 @@ export function markWhatsNewSeen() {
 /** Once, when SillyTavern is ready: the one thing that needs doing. */
 export function whatsNewToast() {
     if (!hasUnseenWhatsNew() || typeof toastr === "undefined") return;
-    toastr.info("New: Story Memory and caching on Gemini 4 Argon, memory fixes, V11 Тайна Adapted. If you have not since 10.0.0-vcrp.5, re-import the VCRP V11 Megumin Original preset from the extension's Presets folder, replacing the old one. What's new: VCRP → Global Settings.", `VCRP updated to ${WHATS_NEW_ID}`, { timeOut: 20000, extendedTimeOut: 10000 });
+    toastr.info("New: Megumin's 01/11 update (its rules after your message, Thinking Caps for V11 Тайна), missing blocks asked for again, blank replies explained. Re-import the VCRP V11 Megumin Original preset from the extension's Presets folder, replacing the old one. What's new: VCRP → Global Settings.", `VCRP updated to ${WHATS_NEW_ID}`, { timeOut: 20000, extendedTimeOut: 10000 });
 }
 
 /** The card at the top of Global Settings, with a "Got it" button (#vcrp_whats_new_ok). */

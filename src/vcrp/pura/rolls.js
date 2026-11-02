@@ -16,6 +16,7 @@
 
 import { getContext, chat_metadata, updateMessageBlock } from "../../st.js";
 import { rollRandoms, pickLabel } from "./macros.js";
+import { blankReplyKind } from "../blankReply.js";
 
 const META = "vcrp_rolls_last";
 export const ROLLS_HEAD = "🎲 Rolled this reply";
@@ -101,6 +102,8 @@ export function vcrpPuraRollsOnReply(messageId, type, { show = true } = {}) {
     const msg = Array.isArray(chat) ? chat[id] : null;
     if (!msg || msg.is_user || msg.is_system || typeof msg.mes !== "string") return;
     if (Number.isInteger(pending.index) && pending.index !== id) return;
+    // A blank reply (Gemini's filter, a cut) gets no rolls note; the rolls stay for the swipe.
+    if (blankReplyKind(msg.mes)) return;
     const { rolls } = pending;
     if (chat_metadata) chat_metadata[META] = { index: id, rolls, answers: answerOf(chat, id) };
     if (!rolls.length || !show) { pending = null; return; }

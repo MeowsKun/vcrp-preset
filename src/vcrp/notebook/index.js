@@ -28,10 +28,10 @@ import { MEGUMIN_V11 } from "../../../data/megumin.js";
 import { vcrpWithoutSwipedReply } from "../generation.js";
 import {
     emptyNotebook, parseNotebook, applyNotebook, liveTruths, pastTruths, notebookPhase, renderNotebookForPrompt,
-    describeNotebookChange, statKey, NOTEBOOK_TAGS, LIVE_CAP,
+    describeNotebookChange, statKey, NOTEBOOK_TAGS, LIVE_CAP, MAX_LIVE_CAP, clampLiveCap, truthCountWords,
 } from "./model.js";
 
-export { NOTEBOOK_TAGS, LIVE_CAP, liveTruths, pastTruths, describeNotebookChange };
+export { NOTEBOOK_TAGS, LIVE_CAP, MAX_LIVE_CAP, liveTruths, pastTruths, describeNotebookChange, truthCountWords };
 
 const META = "vcrp_notebook";   // { ops: [{ op, id, fields?, at }] }: the reader's own changes
 
@@ -54,6 +54,27 @@ export function setNotebookOn(on) {
     localProfile.notebook.enabled = Boolean(on);
 }
 
+/** How many truths may be live at once (the reader's setting, Megumin Suite V11's three by default). */
+export function notebookLiveCap() {
+    return clampLiveCap(localProfile && localProfile.notebook && localProfile.notebook.liveCap);
+}
+
+/** The reader's choice, 1 to MAX_LIVE_CAP (the caller saves the profile). */
+export function setNotebookLiveCap(n) {
+    if (!localProfile) return;
+    if (!localProfile.notebook || typeof localProfile.notebook !== "object") localProfile.notebook = {};
+    localProfile.notebook.liveCap = clampLiveCap(n);
+}
+
+// V11's setup and update rules are generated at its default of three truths (data/megumin.js);
+// the count in them follows the reader's setting. The lines they stand in are V11's own
+// wording: a test keeps the anchors true to the generated text.
+export const notebookSetupText = (cap = notebookLiveCap()) => MEGUMIN_V11.notebookSetup.replace("two or three truths", truthCountWords(cap));
+export const notebookUpdateText = (cap = notebookLiveCap()) => {
+    const n = clampLiveCap(cap);
+    return MEGUMIN_V11.notebookUpdate.replace(/Truth\+: T3(\s+)a new truth, only while fewer than 3 are live/, (m, sp) => `Truth+: T${n}${sp}a new truth, only while fewer than ${n} are live`);
+};
+
 const readerOps = () => {
     const m = chat_metadata && chat_metadata[META];
     return m && Array.isArray(m.ops) ? m.ops : [];
@@ -63,8 +84,23 @@ const readerOps = () => {
  * The notebook as `chat` stands: { state, changes } (changes: what each message did, by its
  * index). The reader's changes apply after the message that was newest when they were made.
  */
+// The cap a reply was written under, stamped on it as it arrives (vcrpNotebookStampOnReply):
+// the chat is read back each turn, and lowering the cap later must not drop truths the model
+// wrote when it was higher. A reply without a stamp (an older chat) reads under the cap of now.
+const STAMP = "vcrp_nb_cap";
+const capOf = (m, now) => (m && m.extra && Number.isFinite(Number(m.extra[STAMP])) ? clampLiveCap(m.extra[STAMP]) : now);
+
+/** MESSAGE_RECEIVED: a reply that writes to the notebook is stamped with the cap in force. */
+export function vcrpNotebookStampOnReply(messageId, type) {
+    if (type === "first_message" || !notebookOn()) return;
+    const msg = ctxChat()[Number(messageId)];
+    if (!msg || msg.is_user || msg.is_system || typeof msg.mes !== "string" || !/<Notebook/i.test(msg.mes)) return;
+    msg.extra = { ...(msg.extra || {}), [STAMP]: notebookLiveCap() };
+}
+
 export function notebookFromChat(chat = ctxChat(), ops = readerOps()) {
     let state = emptyNotebook();
+    const liveCap = notebookLiveCap();
     const changes = new Map();
     const at = new Map();
     for (const o of ops) {
@@ -74,7 +110,7 @@ export function notebookFromChat(chat = ctxChat(), ops = readerOps()) {
     }
     const reader = i => {
         const list = at.get(i);
-        if (list && list.length) state = applyNotebook(state, { ops: list }, { seq: Math.max(0, i) }).state;
+        if (list && list.length) state = applyNotebook(state, { ops: list }, { seq: Math.max(0, i), liveCap }).state;
     };
     reader(-1);
     for (let i = 0; i < chat.length; i++) {
@@ -82,7 +118,7 @@ export function notebookFromChat(chat = ctxChat(), ops = readerOps()) {
         if (m && !m.is_user && !m.is_system && typeof m.mes === "string" && /<Notebook/i.test(m.mes)) {
             const parsed = parseNotebook(m.mes);
             if (parsed) {
-                const r = applyNotebook(state, parsed, { seq: i });
+                const r = applyNotebook(state, parsed, { seq: i, liveCap: capOf(m, liveCap) });
                 state = r.state;
                 if (r.applied.length) changes.set(i, r.applied);
             }
@@ -131,11 +167,12 @@ export function notebookCraft() {
 export function notebookBlockRequest(chat = vcrpWithoutSwipedReply(ctxChat())) {
     if (!notebookOn()) return null;
     const { state } = notebookFromChat(chat);
+    const cap = notebookLiveCap();
     if (notebookPhase(state) === "setup") {
-        return { rules: MEGUMIN_V11.notebookSetup, template: "<Notebook>\n[two or three truths, each in the form above]\n</Notebook>" };
+        return { rules: notebookSetupText(cap), template: `<Notebook>\n[${truthCountWords(cap)}, each in the form above]\n</Notebook>` };
     }
     return {
-        rules: `${renderNotebookForPrompt(state)}\n\n${MEGUMIN_V11.notebookUpdate}`,
+        rules: `${renderNotebookForPrompt(state, { cap })}\n\n${notebookUpdateText(cap)}`,
         template: "<Notebook_Update>\n[change lines; leave this block out when nothing changed]\n</Notebook_Update>",
     };
 }
@@ -144,7 +181,8 @@ export function notebookBlockRequest(chat = vcrpWithoutSwipedReply(ctxChat())) {
 
 /** Edits one truth: `fields` among truth, hiddenFrom (a list), when, changes, clueIdeas, clues. */
 export const editTruth = (id, fields) => readerChange({ op: "edit", id, fields });
-export const forgetTruth = id => readerChange({ op: "forget", id });
+/** Deletes one truth; the next new truth takes its number (model.js). */
+export const forgetTruth = id => readerChange({ op: "forget", id, reuse: true });
 export const revealTruth = id => readerChange({ op: "reveal", id });
 export const restoreTruth = id => readerChange({ op: "restore", id });
 

@@ -102,6 +102,14 @@ export function vcrpHealthCheck() {
     }
     add("info", `Model: ${modelLabel}`,
         mode === "auto" ? `CoT prefill: Auto → ${det.prefill ? "prefilling" : "not prefilling"} (${det.reason}).` : `CoT prefill: ${mode === "on" ? "Always on" : "Always off"}.`);
+    // A Safety cap on a model that reasons before it writes: the reasoning counts against the
+    // cap, so a cap near the usual reply leaves nothing for the reply (blank, or cut off).
+    const cap = replyCapTokens();
+    const reasons = /gemini|deepseek|glm|zai|kimi|moonshot|qwen|minimax|grok|\bo[134]\b|gpt-5/.test(`${source} ${model}`) || cc.show_thoughts === true;
+    if (cap && reasons) {
+        add(cap < 4000 ? "warn" : "info", `Safety cap (${cap.toLocaleString()} tokens) on a model that reasons before it writes`,
+            "Gemini, DeepSeek, GLM, Kimi and Qwen think before the reply (Claude too, with Request model reasoning on), and that thinking counts against the cap. A cap near your usual reply leaves nothing for the reply itself: it comes back blank, or cut off in its blocks. Set the cap to 0 (off) and let Hold each reply to the target do the limiting, or to 4,000 or more (Memory tab, Reply length).");
+    }
     if (vcrpRouteHoistsSystem()) {
         const gemini = /gemini/.test(String(model || ""));
         add("info", `OpenRouter + ${gemini ? "Gemini" : "Claude"}: after-chat instructions go as user messages`,
@@ -153,6 +161,13 @@ export function vcrpHealthCheck() {
         } else {
             add("info", "V11 Тайна is picked on a preset made for V10", "It works, but V11 rewrote its preset around its engines (its Content section, its story settings, a final check, a USER note). Import \"VCRP V11 Megumin Original\" from the extension's Presets folder and select it.");
         }
+    }
+    // The V11 preset from 25/10 carried the Content rule and the story settings in the per-turn
+    // rules, inside the chat. Since Megumin's 01/11 update they sit before the chat (cached), and
+    // the per-turn rules follow the newest message, ending "Start your turn."
+    if (carries("[[reminder]]") && prompts.some(p => p && typeof p.content === "string" && p.content.includes("[[reminder]]") && p.content.includes("[[content]]"))) {
+        add("info", "Re-import the VCRP V11 Megumin Original preset for V11's newest layout",
+            "The one you have is from before Megumin's 01/11 update: its per-turn rules sit before your newest message. Since 01/11 they follow it, ending on \"Start your turn.\", so the block instructions are the last thing the model reads, and V11's Content rule and story settings are cached. Import \"VCRP V11 Megumin Original\" again from the extension's Presets folder, replacing the old one.");
     }
     const plot = peekFocusState() && peekFocusState().plot;
     if (plot && plot.active && !carries("[[plotfocus]]")) focusOff.push("the plot focus");

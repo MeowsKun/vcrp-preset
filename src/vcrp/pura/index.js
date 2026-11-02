@@ -232,7 +232,8 @@ export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { lang
  */
 export function thinkingCapNudge(gen = "reply") {
     if (gen !== "reply" || !localProfile || localProfile.cotEnabled === false) return "";
-    return localProfile.model === "cot-v11-cap-english" ? MEGUMIN_V11.capNudge : "";
+    // Every V11 Thinking Cap: the Preview's, V11 Тайна's and the Writers' Room's (Megumin Suite V11).
+    return /^cot-v11-(?:voice-|wr-)?cap-/.test(String(localProfile.model || "")) ? MEGUMIN_V11.capNudge : "";
 }
 
 /**

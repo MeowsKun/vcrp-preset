@@ -165,7 +165,9 @@ Edit Prompts. The paid drift audits on the same tab are separate and can stay of
 **The engines.** PRESETS & COT, under V11. All four are Megumin Suite V11's own, word for word,
 and each picks its own thinking:
 - **V11 Тайна · Megumin Original**: one storyteller writes the whole turn. The base for every model.
+  It has a **Thinking Cap** of its own now, for models that over-think.
 - **V11 Тайна · Writers' Room**: the same, with a room of five talking each turn over in the thinking.
+  With a Thinking Cap of its own too.
 - **V11 Тайна DeepSeek**: V11 Тайна with one more line for DeepSeek, which tends to treat the
   character as the player.
 - **V11 Тайна Preview**: the first V11 release, kept as it was. On **GLM, Kimi, DeepSeek or Qwen**,
@@ -195,9 +197,18 @@ engines freely: the Pura Director engines and V10 Ukiyo and Shura run on it with
 (the same ban list, dash rule, formatting rules and final reminder as on VCRP V10 Universal). Only
 the V10 Megumin Originals still want their own preset, VCRP V10 Megumin Original.
 
+**Its layout (Megumin's 01/11 update).** The per-turn rules now come *after* your newest message,
+ending on V11's line "Start your turn.", so the block instructions are the last thing the model
+reads: that is Megumin's answer to models that skip the blocks. Story settings moved into the
+cached part, so changing Story Config costs one cache miss, like changing the style. The preset
+also carries V11's **USER Hard** prompt, switched off: turn it on (AI Response Configuration →
+prompt list) if a model keeps answering an adult scene with nothing. **Re-import the preset** to
+get all of this.
+
 **The Notebook.** The story picks two or three hidden truths, drops small clues, and reveals each
 one when the story earns it. It's always on with V11; for any other engine, switch it on in the
-**Focus** tab.
+**Focus** tab. **Truths kept at once** (same tab) sets how many it keeps, 1 to 10; a truth you
+delete gives its number to the next new one.
 - **On a reply's card:** a 📓 **Notebook** tab shows what that reply changed, blurred until you
   hover or tap a line.
 - **In the Focus tab:** the live truths sit behind a spoiler warning. You can edit one, mark it
@@ -224,3 +235,15 @@ Switch it off in Global Settings → Behaviour → *Lore for background calls*.
 - **Better caching:** an older reply no longer changes its text a turn later, which could make the
   cache miss every turn. Expect more green cost badges.
 - **Cut-off replies** keep the block state: the next reply carries the last complete blocks.
+- **Missing blocks are asked for again.** When a reply arrives without its blocks (Gemini and
+  DeepSeek skip them now and then), or stops inside them, VCRP asks the model for just the blocks
+  in a small second call that reads the cache, and adds them to the reply. A toast says so. The
+  switch is in the BLOCKS tab, *Ask again for missing blocks*.
+- **Blank replies are explained.** A reply that comes back empty, all reasoning, or only blocks
+  gets a toast with the likely cause and what to do: on Gemini an empty reply is usually its
+  content filter (swipe, or turn on the V11 preset's USER Hard prompt); a reply that stops while
+  thinking is the output limit. Such a reply is not counted as a normal one, and the *Next reply
+  only* steer you wrote stays for the swipe.
+- **Safety cap and reasoning models.** On Gemini, DeepSeek, GLM, or Claude with *Request model
+  reasoning* on, the model's hidden reasoning counts against the Safety cap. Setup Check now warns
+  when the cap is set on such a model; 0 (off) or 4,000 and up is safe.

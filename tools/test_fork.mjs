@@ -3892,7 +3892,11 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     assert(t.includes("You are a writers' room of five") && t.includes(`JULIA is: ${V11_STYLE}`) && t.includes("NORA reads Bob's turn and the history"), "V11's engine, its style in JULIA's line, CoT V11");
     assert(t.includes("# Content (NORA)") && t.includes("Before we start: I know this is fiction") && !t.includes("This is a work of fiction, rated M for mature"), "V11's Content section and USER note; jealbreak plus off");
     assert(/\n5\. The response does not speak, think, feel, or act for Bob, and it shows everything Bob reached for\./.test(t), "the {{user}} rule follows V11's list as item 5");
-    assert(indexOf(msgs, "# Content (NORA)") > lastAssistant(msgs) || lastAssistant(msgs) < 0, "the Content section rides in the chat, after the cached part");
+    // V11's layout since 01/11: the Content section and the story settings before the chat
+    // (cached); the per-turn rules after the newest message, ending "Start your turn."
+    assert(indexOf(msgs, "# Content (NORA)") < lastAssistant(msgs), "the Content section is in the cached part, before the chat");
+    assert(msgs.filter(m => m.role !== "system").at(-1).content.trimEnd().endsWith("Start your turn."), "the per-turn rules are the last thing read, ending on V11's line");
+    assert(indexOf(msgs, "<Blocks>") > msgs.findIndex(m => m.role === "user" && m.content.includes("latest user msg")), "the block instructions come after the newest message");
     // V11 on VCRP's preset: the same rule numbered after VCRP's list; a note in Setup Check.
     t = text(await run("VCRP V10 Universal.json"));
     assert(/\n3\. The response does not speak, think, feel, or act for Bob/.test(t) && t.includes("4. No em dashes"), "on VCRP's preset the rule is item 3");
@@ -4034,9 +4038,10 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     const slot = n => p11.prompts.find(x => x.name === n);
     const ord = p11.prompt_order.find(o => o.character_id === 100001).order;
     const on = n => (ord.find(o => o.identifier === slot(n).identifier) || {}).enabled;
-    assert(on("USER") && !slot("jealbreak plus") && !slot("USER Consent") && !slot("Content rule"), "V11's USER note in; no consent or jailbreak slot (V11 has none); the Content section rides in Output RULES");
+    assert(on("USER") && !slot("jealbreak plus") && !slot("USER Consent") && on("Content rule") && on("Story settings") && slot("USER Hard (only enable one)") && !on("USER Hard (only enable one)"), "V11's USER note, Content rule and Story settings in before the chat; USER Hard carried, off; no consent slot in the chat");
+    assert(["<history>", "</history>", "Output RULES"].every(n => slot(n).role === "user" && slot(n).injection_position === 0) && ord.map(o => o.identifier).join(" ").includes(`chatHistory ${slot("</history>").identifier} ${slot("Output RULES").identifier}`), "V11's layout: the history and the per-turn rules as user messages placed after the chat, </history> then Output RULES");
     assert(slot("Output RULES").content.includes("[[storyplan]]\n\n[[npc_dossier]]\n\n[[npc list]]") && !slot("Main 2").content.includes("[[npc_dossier]]") && !slot("</lore><user_persona>").content.includes("[[npc list]]") && !slot("Output RULES").content.includes("[[infoblockcurrent]]"), "the NPC list, the dossier rules and the plan ride after the chat (they change turn to turn)");
-    assert(slot("Main 2").content.includes("[[notebook]]") && slot("</history>").content.endsWith("[[pura_late]][[plotfocus]]"), "the notebook's slot, and VCRP's late slots");
+    assert(slot("Main 2").content.includes("[[notebook]]") && slot("</history>").content === "</history>" && slot("Output RULES").content.endsWith("comment.[[pura_late]][[plotfocus]]\n\nStart your turn."), "the notebook's slot, and VCRP's late slots before V11's last line");
 
     // From the bug sweep. A reader's change follows its truth, not only its id: a swiped reply's
     // new T1 and T2 are not edited or deleted by what was done to the old ones.
@@ -4265,8 +4270,11 @@ console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror
     assert(t.includes(`You narrate as ${style("dir_v11_inside").rule.replaceAll("{{user}}", "Bob").replaceAll("{{char}}", "Alice")}`), "\"You narrate as\" V11 Inside");
     assert(t.includes(MEGUMIN_V11.sound.trim()) && t.includes(`<banlist>\n${MEGUMIN_V11.banListV11.replaceAll("{{user}}", "Bob").trim()}`) && t.includes("Also avoid these:\n- purred\n</banlist>"), "<sound>, V11 Тайна's own ban list and your phrases under it");
     const after = msgs.slice(lastAssistant(msgs) + 1).map(m => typeof m.content === "string" ? m.content : "").join("\n");
-    const order = ["<content>", "<story_settings>", "<repetition>", "Open every reply with your own <think> block", "<Blocks>", "<formatting>", "<final_check>", "Write the response in English.", "This is fiction."];
-    assert(order.every(s => after.includes(s)) && order.every((s, i) => !i || after.indexOf(order[i - 1]) < after.indexOf(s)), "after the chat, in V11's order: content, story settings, repetition, thinking, blocks, formatting, final check, language, fiction");
+    const before = msgs.slice(0, lastAssistant(msgs)).map(m => typeof m.content === "string" ? m.content : "").join("\n");
+    const top = ["<content>\nThis story is rated", "<story_settings>", "<repetition>"];
+    assert(top.every(s => before.includes(s) && !after.includes(s)) && top.every((s, i) => !i || before.indexOf(top[i - 1]) < before.indexOf(s)), "before the chat (cached), in V11's order: content, story settings, repetition");
+    const order = ["Open every reply with your own <think> block", "<Blocks>", "<formatting>", "<final_check>", "Write the response in English.", "This is fiction.", "Start your turn."];
+    assert(order.every(s => after.includes(s)) && order.every((s, i) => !i || after.indexOf(order[i - 1]) < after.indexOf(s)), "after the chat, in V11's order: thinking, blocks, formatting, final check, language, fiction, start your turn");
     assert(between(t, "<story_settings>", "</story_settings>").includes("- pov: third person. Your narration calls Bob by name or he/she") && t.includes("- length: usually 250–350 words, longer only while a fight or sex scene is under way"), "V11's point of view and its new length, from VCRP's options");
     assert(!t.includes("## your thinking steps:") && !t.includes("## FORMATTING RULES:") && !t.includes("## final reminder:") && !t.includes("[LANGUAGE RULE]"), "none of the older headings");
     const check = between(t, "<final_check>", "</final_check>");
@@ -4309,7 +4317,7 @@ console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror
     // The preset as generated: V11's slots, its words left to the extension, VCRP's tags in.
     const slot = n => presetJson.prompts.find(x => x.name === n);
     assert(slot("Main 2").content.includes("[[aiprompt]]\n\n[[notebook]]\n\n[[addon_rules]]\n\n[[knowledgebase_always]]\n\n[[banned]][[pura_system]][[block_rules]]"), "up top: the add-on rules, the ban list, VCRP's cached slots");
-    assert(slot("Output RULES").content.includes("[[focus]]\n\n[[content]]\n\n[[config]]\n\n[[thinking]]\n\n[[blocks]]\n\n[[formatting]]\n\n[[reminder]]\n[[Language]]"), "after the chat, V11's order");
+    assert(slot("Output RULES").content.includes("[[focus]]\n\n[[thinking]]\n\n[[blocks]]\n\n[[formatting]]\n\n[[reminder]]\n[[Language]]") && slot("Content rule").content === "[[content]]" && slot("Story settings").content === "[[config]]", "after the chat, V11's order; its Content rule and Story settings before it");
     assert(!presetJson.prompts.some(p => /\[\[(dice_rules|img_rules|npc_rules|this_turn|MVU|infoblockcurrent|storyplan_now|storyplan_rules)\]\]/.test(String(p.content || ""))), "none of V11's tags for what VCRP leaves out or does its own way");
 
     chat.length = 0;
@@ -4551,5 +4559,291 @@ console.log("59 ok V11's Adapted engines (built from the originals with V11's te
     ctx.mainApi = keepApi;
 }
 console.log("60 ok Story Memory on Gemini 4 Argon (Gemini's way of writing facts and verdicts; cuts on chapters' ends, an old cut inside a chapter repaired; no write surcharge, 5-minute cache, no warm ceiling; recall on rare words across the memory; Setup Check)");
+
+// 61. Megumin Suite V11's 28/10 and 01/11 updates: a Thinking Cap for V11 Тайна and its Writers'
+//     Room, the per-turn rules after the newest message on every engine (VCRP's late text before
+//     "Start your turn."), USER Hard carried off, Gemini's turns still alternating.
+{
+    const { cot_megumin, MEGUMIN_V11 } = await imp("data/megumin.js");
+    const { isThinkingCap, meguminCotForMode } = await imp("data/cot/index.js");
+    const { thinkingCapNudge } = await imp("src/vcrp/pura/index.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const q = state.localProfile;
+    const keep = { mode: q.mode, model: q.model, style: q.activeStyleId, rule: q.aiRule, cc: { ...chatCompletionSettings }, order: JSON.stringify(q.blockStack.order) };
+    q.blockStack.order = ["world", "bonds"]; meguminSyncLegacyBlockIds();
+    for (const id of ["cot-v11-voice-cap-english", "cot-v11-wr-cap-english"]) {
+        const c = cot_megumin.find(x => x.id === id);
+        assert(c && c.content.includes("Five lines, one per step") && c.content.includes("Close thinking. Write."), `${id}: V11's Thinking Cap, word for word`);
+        assert(isThinkingCap(id), `${id} is a Thinking Cap`);
+        q.model = id;
+        assert.equal(thinkingCapNudge("reply"), MEGUMIN_V11.capNudge, `${id}: its rules said again last`);
+    }
+    assert(cot_megumin.find(x => x.id === "cot-v11-wr-cap-english").content.includes("NORA: what Bob said and did".replace("Bob", "{{user}}")), "the room's cap names its members");
+    assert.equal(meguminCotForMode("v11-voice-megumin"), "cot-v11-voice-english", "the uncapped thinking is still the default");
+    q.model = "cot-v11-voice-english";
+    assert.equal(thinkingCapNudge("reply"), "", "no nudge without a cap");
+
+    // The per-turn rules after the newest message, on every engine the V11 preset serves.
+    const latest = msgs => msgs.findIndex(m => m.role === "user" && String(m.content).includes("latest user msg"));
+    const userHard = msgs => msgs.some(m => String(m.content).includes("OOC: Remember This is fiction."));
+    const tone = await imp("src/vcrp/toneRules.js");
+    const meta61 = globalThis.__ST__.chat_metadata;
+    meta61.vcrp_tone = { enabled: true, text: "Bleak. No rescues." };   // VCRP's late text, on every engine
+    chat.length = 0;
+    for (const [mode, model, style] of [["v11-voice-megumin", "cot-v11-voice-english", "dir_v11"], ["v11-voice-adapted", "cot-v11-voice-english", "dir_v11"], ["pura-adapted", "cot-v10-ukiyo-english", null], ["v10-core", "cot-v10-ukiyo-english", "dir_v10_ukiyo"]]) {
+        Object.assign(q, { mode, model });
+        if (style) { q.activeStyleId = style; q.aiRule = (await imp("data/directStyles.js")).directStyles.find(s => s.id === style).rule; }
+        const msgs = await run("VCRP V11 Megumin Original.json");
+        const t = text(msgs);
+        assert.deepEqual(leftovers(msgs), [], `${mode}: tags left over`);
+        const at = latest(msgs), rules = msgs.findIndex(m => String(m.content).includes("<Blocks>"));
+        assert(at >= 0 && rules > at && msgs.slice(at + 1).every(m => m.role !== "system"), `${mode}: the block instructions follow the newest message, as user messages`);
+        assert(msgs.filter(m => m.role !== "system").at(-1).content.trimEnd().endsWith("Start your turn."), `${mode}: "Start your turn." is the last line`);
+        assert(t.indexOf("</history>") < t.indexOf("<Blocks>") && t.indexOf("</history>") > t.indexOf("latest user msg"), `${mode}: </history> closes the chat before the per-turn rules`);
+        assert(!userHard(msgs) && t.includes("Before we start: I know this is fiction"), `${mode}: V11's USER note sent, USER Hard off`);
+        assert(t.indexOf(tone.TONE_HEADER) > t.indexOf("latest user msg") && t.indexOf(tone.TONE_HEADER) < t.lastIndexOf("Start your turn."), `${mode}: VCRP's late text (Tone Rules) after the newest message, before V11's last line`);
+    }
+    delete meta61.vcrp_tone;
+    // Gemini on OpenRouter: user and model still alternate with the new layout.
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
+    let msgs = await run("VCRP V11 Megumin Original.json");
+    const roles = msgs.filter(m => m.role !== "system").map(m => m.role);
+    assert(roles.every((r, i) => i === 0 || r !== roles[i - 1]) && msgs.at(-1).role === "user" && msgs.at(-1).content.trimEnd().endsWith("Start your turn."), `Gemini: the turns alternate and end on the rules (${roles.join(",")})`);
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    // Story Memory's summary call: the per-turn rules out, the cached part (Content, settings) kept.
+    const memory = await imp("src/vcrp/memory/index.js");
+    const { TASK_MARKER } = await imp("src/vcrp/memory/prompts.js");
+    memory.setMemoryTaskActive(true, null);
+    msgs = buildQuietPrompt("VCRP V11 Megumin Original.json", `${TASK_MARKER}: not a story turn.] Summarize.`);
+    vcrpSetGenerationType("quiet", {}, false);
+    await handlePromptInjection({ chat: msgs, dryRun: false });
+    memory.setMemoryTaskActive(false);
+    vcrpSetGenerationType("normal", {}, false);
+    const st = text(msgs);
+    assert(!st.includes("Start your turn.") && !st.includes("<final_check>") && !st.includes("</history>") && st.includes("<content>") && msgs.at(-1).content.includes(TASK_MARKER), "a summary call: the per-turn rules and </history> out, the cached Content section in, the task last");
+    // Setup Check names the V11 preset from 25/10 (its Output RULES carried [[content]] and [[config]]).
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const p11 = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
+    const keepApi61 = ctx.mainApi;
+    ctx.mainApi = "openai";
+    const setPrompts = prompts => Object.assign(chatCompletionSettings, { preset_settings_openai: "VCRP V11 Megumin Original", prompts, prompt_order: p11.prompt_order, extensions: p11.extensions });
+    setPrompts(p11.prompts.map(p => (p.name === "Output RULES" ? { ...p, content: p.content.replace("[[thinking]]", "[[content]]\n\n[[config]]\n\n[[thinking]]") } : p)));
+    assert(vcrpHealthCheck().items.some(i => /newest layout/.test(i.title)), "the 25/10 preset: re-import for the 01/11 layout");
+    setPrompts(p11.prompts);
+    assert(!vcrpHealthCheck().items.some(i => /newest layout|Re-import the VCRP V11/.test(i.title)), "the 01/11 one: nothing to say");
+    for (const k of ["preset_settings_openai", "prompts", "prompt_order", "extensions"]) delete chatCompletionSettings[k];
+    ctx.mainApi = keepApi61;
+    chat.length = 0;
+    Object.assign(q, { mode: keep.mode, model: keep.model, activeStyleId: keep.style, aiRule: keep.rule });
+    q.blockStack.order = JSON.parse(keep.order); meguminSyncLegacyBlockIds();
+}
+console.log("61 ok Megumin Suite V11's 28/10 and 01/11 updates (Thinking Caps for V11 Тайна and the Writers' Room, the per-turn rules after the newest message on every engine, VCRP's late text before \"Start your turn.\", USER Hard carried off, Gemini's turns alternate, the summary call)");
+
+// 62. The Author's Notebook, as V11 has it since 01/11: a deleted truth's number is used again,
+//     reasons written into "Hidden from" are left out, and the reader picks how many truths
+//     stay live.
+{
+    const M = await imp("src/vcrp/notebook/model.js");
+    const nb = await imp("src/vcrp/notebook/index.js");
+    const { MEGUMIN_V11 } = await imp("data/megumin.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const entry = (id, truth, hidden = "Bob, the reader") => `${id}\nTruth: ${truth}\nHidden from: ${hidden}\nComes out when: soon\nWhat it changes: much\nClue ideas: a hint`;
+    const setup = ["The well is poisoned.", "Mara burned her bar.", "Ann is a spy."].map((t, i) => entry(`T${i + 1}`, t)).join("\n\n");
+    let r = M.applyNotebook(M.emptyNotebook(), M.parseNotebook(`<Notebook>\n${setup}\n</Notebook>`), { seq: 1 });
+    assert(Object.keys(r.state.truths).join() === "T1,T2,T3" && M.peekNextId(r.state) === "T4", "three truths, the next is T4");
+    r = M.applyNotebook(r.state, { ops: [{ op: "forget", id: "T2", reuse: true }] }, { seq: 2 });
+    assert(!r.state.truths.T2 && M.peekNextId(r.state) === "T2" && M.renderNotebookForPrompt(r.state).includes("Next id: T2."), "a deleted truth frees its number: the next one is T2 again");
+    r = M.applyNotebook(r.state, M.parseNotebook(`<Notebook_Update>\nTruth+: T9\n${entry("", "Jun owes the docks.").replace(/^\n/, "")}\n</Notebook_Update>`), { seq: 3 });
+    assert(r.state.truths.T2 && r.state.truths.T2.truth === "Jun owes the docks." && M.peekNextId(r.state) === "T4", "the new truth takes T2 whatever the model wrote; T4 is next");
+    const old = M.applyNotebook(r.state, { ops: [{ op: "forget", id: "T3" }] }, { seq: 4 });
+    assert(!old.state.truths.T3 && M.peekNextId(old.state) === "T4", "a deletion from before (no reuse flag) replays as it did: T3 stays gone");
+    assert.deepEqual(M.splitNames("the reader, because it hasn't been shown; Mira, who suspects and Tomas doesn't know (yet), The Reader"), ["the reader", "Mira", "Tomas"], "reasons and asides written into Hidden from are left out; the reader once");
+
+    // The live cap: the reader's setting, applied as the chat is read and told to the model.
+    assert.equal(nb.notebookLiveCap(), 3, "three by default");
+    const five = M.applyNotebook(M.emptyNotebook(), M.parseNotebook(`<Notebook>\n${[1, 2, 3, 4, 5].map(i => entry(`T${i}`, `Truth ${i}.`)).join("\n\n")}\n</Notebook>`), { seq: 1, liveCap: 5 });
+    assert(M.liveTruths(five.state).length === 5 && M.renderNotebookForPrompt(five.state, { cap: 5 }).includes("Live truths: 5 of 5. Next id: T6."), "five live with a cap of five");
+    assert.equal(M.liveTruths(M.applyNotebook(M.emptyNotebook(), M.parseNotebook(`<Notebook>\n${[1, 2, 3, 4, 5].map(i => entry(`T${i}`, `Truth ${i}.`)).join("\n\n")}\n</Notebook>`), { seq: 1 }).state).length, 3, "three by default, as before");
+    assert(M.truthCountWords(1) === "one truth" && M.truthCountWords(3) === "two or three truths" && M.truthCountWords(7) === "two to 7 truths" && M.clampLiveCap(40) === 10 && M.clampLiveCap("x") === 3, "the count in words; the cap clamped");
+    // V11's generated texts carry the count: the anchors hold (a reworded upstream fails here).
+    assert(nb.notebookSetupText(3) === MEGUMIN_V11.notebookSetup && nb.notebookSetupText(5).includes("with two to 5 truths") && !nb.notebookSetupText(5).includes("two or three truths"), "the setup asks for the reader's count");
+    assert(nb.notebookUpdateText(3) === MEGUMIN_V11.notebookUpdate && /Truth\+: T5\s+a new truth, only while fewer than 5 are live/.test(nb.notebookUpdateText(5)), "the update rules say the reader's count");
+    q.notebook = { enabled: true, liveCap: 5 };
+    q.blockStack.order = [];
+    chat.length = 0;
+    delete meta.vcrp_notebook;
+    chat.push({ is_user: false, mes: "Greeting." }, { is_user: true, mes: "go" });
+    let req = nb.notebookBlockRequest();
+    assert(req.rules.includes("two to 5 truths") && req.template.includes("[two to 5 truths, each in the form above]"), "the envelope asks for five");
+    chat.push({ is_user: false, mes: `Prose.\n<Blocks>\n<Notebook>\n${[1, 2, 3, 4].map(i => entry(`T${i}`, `Truth ${i}.`)).join("\n\n")}\n</Notebook>\n</Blocks>` }, { is_user: true, mes: "go" });
+    nb.vcrpNotebookStampOnReply(2, "normal");   // as the reply arrives: the cap it was written under
+    assert.equal(chat[2].extra.vcrp_nb_cap, 5, "the reply is stamped with the cap in force");
+    assert.equal(nb.liveTruths(nb.notebookFromChat().state).length, 4, "four live from the chat, under a cap of five");
+    req = nb.notebookBlockRequest();
+    assert(req.rules.includes("Live truths: 4 of 5. Next id: T5.") && req.rules.includes("fewer than 5 are live"), "the model is told the cap it has");
+    nb.forgetTruth("T2");
+    assert(nb.notebookBlockRequest().rules.includes("Next id: T2."), "deleted in the Focus tab: T2 is next");
+    nb.setNotebookLiveCap(2);
+    assert(nb.notebookLiveCap() === 2 && nb.liveTruths(nb.notebookFromChat().state).length === 3, "a lower cap keeps what the model wrote under the higher one");
+    chat.push({ is_user: false, mes: `Prose.\n<Blocks>\n<Notebook_Update>\nTruth+: T9\n${entry("", "Truth 9.").replace(/^\n/, "")}\n</Notebook_Update>\n</Blocks>` }, { is_user: true, mes: "go" });
+    nb.vcrpNotebookStampOnReply(4, "normal");
+    assert(chat[4].extra.vcrp_nb_cap === 2 && nb.liveTruths(nb.notebookFromChat().state).length === 3, "...and takes no new truth past it");
+    delete chat[2].extra;
+    // Unstamped (an older chat): two of its four truths are taken; the deletion leaves one, so the stamped reply's new truth fits.
+    assert.equal(nb.liveTruths(nb.notebookFromChat().state).length, 2, "an older chat's reply, unstamped, reads under the cap of now");
+    q.notebook = { enabled: false };
+    chat.length = 0;
+    delete meta.vcrp_notebook;
+}
+console.log("62 ok the Author's Notebook as V11 has it since 01/11 (a deleted truth's number used again, older deletions replay as before, reasons left out of Hidden from, the reader's live cap read, told and asked for)");
+
+// 63. Blank replies and missing blocks, mainly Gemini's: a blank reply is told apart and left
+//     alone by the handlers (no measure, the one-shot direction kept, no rolls note); a reply
+//     without its blocks gets them asked for in a second call that keeps the block instructions.
+{
+    const { blankReplyKind, vcrpBlankOnReply } = await imp("src/vcrp/blankReply.js");
+    const repair = await imp("src/vcrp/blockRepair.js");
+    const oneShot = await imp("src/vcrp/oneShot.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const { vcrpOneShotOnReply } = oneShot;
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { mode: q.mode, model: q.model, order: JSON.stringify(q.blockStack.order), mem: q.vcrpMemory.enabled, budget: JSON.stringify(extension_settings.VCRP.globalSettings.memoryBudget || null), cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+
+    for (const [mes, kind] of [["", "empty"], ["  \n ", "empty"], ["<think>plan", "thinking-open"], ["<think>plan</think>\n\n", "thinking"], ["<think>plan</think>\n<Blocks>\n<World_State>x</World_State>\n</Blocks>", "blocks"], ["<Blocks>\n<World_State>x</World_State>", "blocks"], ["Prose.", null], ["<think>plan</think>\nProse.\n<Blocks>\n</Blocks>", null], ["<think>a</think><think>b</think>\n\"Hi,\" she said.", null]]) {
+        assert.equal(blankReplyKind(mes), kind, `blank kind of ${JSON.stringify(mes)}`);
+    }
+
+    // The handlers leave a blank reply alone.
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english" });
+    q.blockStack.order = ["world", "bonds"]; meguminSyncLegacyBlockIds();
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "Greeting." });
+    chat.push({ is_user: true, mes: "go" });
+    oneShot.setOneShot("Mara finally says why.");
+    await run("VCRP V10 Universal.json");   // records the direction as sent with this request
+    chat.push({ is_user: false, mes: "", swipes: [""], swipe_id: 0 });
+    vcrpOneShotOnReply(chat.length - 1, "normal");
+    assert.equal(oneShot.oneShot().text, "Mara finally says why.", "a blank reply does not use the one-shot direction up");
+    chat.pop();
+    chat.push({ is_user: false, mes: "\"Because the ring was his,\" Mara says.", swipes: [""], swipe_id: 0 });
+    vcrpOneShotOnReply(chat.length - 1, "normal");
+    assert.equal(oneShot.oneShot().text, "", "a real reply does");
+    q.vcrpMemory.enabled = true;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-4-6" });
+    delete meta.vcrp_memory;
+    const st = memory.memoryState();
+    st.spend = { replies: 2, replyCost: 0, tasks: 0, taskCost: 0, bgCalls: 0, bgCost: 0, last: { at: 1, cost: 0, cold: false, tokens: 100 }, recentOut: [2000, 2200, 2100] };
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "<think>plan</think>\n", swipes: [""], swipe_id: 0 });
+    memory.vcrpMemoryCountReply(chat.length - 1, "normal");
+    assert.deepEqual(st.spend.recentOut, [2000, 2200, 2100], "a blank reply is not measured as a reply (it would shrink the room every reply gets)");
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose. ".repeat(100), swipes: [""], swipe_id: 0 });
+    memory.vcrpMemoryCountReply(chat.length - 1, "normal");
+    assert.equal(st.spend.recentOut.length, 4, "a real one is");
+    // Said once, with why; an all-reasoning reply SillyTavern moved into its box is told as such.
+    const toasts = [];
+    const toastrWas = globalThis.toastr;
+    globalThis.toastr = { warning: (m, t) => toasts.push(`${t}: ${m}`), info: (m, t) => toasts.push(`${t}: ${m}`), success() {}, error() {} };
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "", extra: { reasoning: "I thought about it at length." }, swipes: [""], swipe_id: 0 });
+    vcrpBlankOnReply(chat.length - 1, "normal");
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "", swipes: [""], swipe_id: 0 });
+    vcrpBlankOnReply(chat.length - 1, "normal");
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "<think>plan", extra: { vcrp_cut: "thinking" }, swipes: [""], swipe_id: 0 });
+    vcrpBlankOnReply(chat.length - 1, "normal");
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose.", swipes: [""], swipe_id: 0 });
+    vcrpBlankOnReply(chat.length - 1, "normal");
+    assert(toasts.length === 2 && /is its reasoning/.test(toasts[0]) && /content filter|USER Hard/.test(toasts[1]), `blank replies said, with why (${JSON.stringify(toasts)})`);
+    globalThis.toastr = toastrWas;
+    // Setup Check: a Safety cap on a model that reasons before it writes.
+    ctx.mainApi = "openai";
+    const vp = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: vp.prompts, prompt_order: vp.prompt_order, show_thoughts: false });
+    extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 2000 };
+    let items = vcrpHealthCheck().items;
+    assert(items.some(i => i.level === "warn" && /Safety cap \(2,000 tokens\) on a model that reasons/.test(i.title)), "Gemini with a 2,000 cap: warned");
+    extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 6000 };
+    assert(vcrpHealthCheck().items.some(i => i.level === "info" && /Safety cap \(6,000 tokens\)/.test(i.title)), "a roomy cap: a note");
+    Object.assign(chatCompletionSettings, { openrouter_model: "anthropic/claude-opus-4.6", show_thoughts: true });
+    extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 2000 };
+    assert(vcrpHealthCheck().items.some(i => i.level === "warn" && /on a model that reasons/.test(i.title)), "Claude with Request model reasoning on: warned too");
+    Object.assign(chatCompletionSettings, { show_thoughts: false });
+    assert(!vcrpHealthCheck().items.some(i => /on a model that reasons/.test(i.title)), "Claude without it: nothing");
+    delete extension_settings.VCRP.globalSettings.memoryBudget;
+    for (const k of ["prompts", "prompt_order", "show_thoughts"]) delete chatCompletionSettings[k];
+
+    // Missing blocks: what is missing, the model's answer read, the reply mended.
+    const req = [{ tag: "World_State", label: "World State" }, { tag: "Bonds", label: "Bonds" }];
+    assert.equal(repair.missingBlocks("Prose.", req).how, "none", "no envelope: none");
+    assert.equal(repair.missingBlocks("Prose.\n<Blocks>\n<World_State>x</World_State>\n<Bonds>\nMara", req).how, "cut", "stopped inside: cut");
+    assert.deepEqual(repair.missingBlocks("Prose.\n<Blocks>\n<World_State>x</World_State>\n</Blocks>", req).tags.map(b => b.tag), ["Bonds"], "a whole envelope short of Bonds");
+    assert.equal(repair.missingBlocks("<think>d <Blocks></think>\nProse.\n<Blocks>\n<World_State>x</World_State>\n<Bonds>\nm\n</Bonds>\n</Blocks>", req), null, "whole: nothing (a <Blocks> in the thinking does not count)");
+    assert.equal(repair.missingBlocks("Prose.", []), null, "nothing required: nothing");
+    const env = "<Blocks>\n<World_State>\nnew\n</World_State>\n<Bonds>\nMara: 1\n</Bonds>\n</Blocks>";
+    assert.equal(repair.envelopeIn(`<think>sure</think>\nHere:\n${env}\nDone.`), env, "the envelope in the answer, thinking and chatter left out");
+    assert.equal(repair.envelopeIn("<Blocks>\n<World_State>\nnew\n</World_State>"), "<Blocks>\n<World_State>\nnew\n</World_State>\n</Blocks>", "one that ran to the end is closed");
+    assert.equal(repair.envelopeIn("Sorry, no blocks."), null, "no envelope: null");
+    assert.equal(repair.withRepairedBlocks("<think>t</think>\nProse.\n\n", env, "none"), `<think>t</think>\nProse.\n\n${env}`, "appended after the story");
+    assert.equal(repair.withRepairedBlocks("Prose.\n\n<Blocks>\n<World_State>old", env, "cut"), `Prose.\n\n${env}`, "a cut envelope replaced from where it opened");
+    const mended = repair.withRepairedBlocks("Prose.\n<Blocks>\n<World_State>old</World_State>\n<Pura_Scene>\n[SCENE|x]\n</Pura_Scene>\n</Blocks>", "<Blocks>\n<World_State>new</World_State>\n<Bonds>\nMara: 1\n</Bonds>\n</Blocks>", "some");
+    assert(mended.includes("<World_State>new</World_State>") && mended.includes("<Bonds>") && mended.includes("<Pura_Scene>") && !mended.includes("old") && (mended.match(/<Blocks>/g) || []).length === 1, `a whole envelope short of a block: the answer's blocks, its own extras kept:\n${mended}`);
+
+    // The call itself: the roleplay prompt with the block instructions kept and the thinking
+    // out, the instruction last; the reply mended, once; the follow-up run.
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "Greeting.\n<Blocks>\n<World_State>the docks</World_State>\n<Bonds>\nMara: 10\n</Bonds>\n</Blocks>" }, { is_user: true, mes: "go" }, { is_user: false, mes: "<think>plan</think>\n\"Ring's gone,\" Mara says.", swipes: ["x"], swipe_id: 0 });
+    const cotBody = (await imp("data/cot/index.js")).models.find(m => m.id === "cot-v10-ukiyo-english").content.trim().slice(0, 60);
+    const asked = [];
+    quietImpl = async ({ quietPrompt }) => {
+        vcrpSetGenerationType("quiet", {}, false);
+        const msgs = buildQuietPrompt("VCRP V10 Universal.json", quietPrompt);
+        await handlePromptInjection({ chat: msgs, dryRun: false });
+        asked.push(msgs);
+        return `<think>ok</think>\n${env}`;
+    };
+    const followed = [];
+    repair.onBlocksRepaired(id => followed.push(id));
+    assert.equal((await repair.repairBlocksNow(0)).status, "whole", "the greeting: nothing to do");
+    let r = await repair.repairBlocksNow(2);
+    assert.equal(r.status, "done", `the reply without blocks: asked and mended (${JSON.stringify(r)})`);
+    assert(chat[2].mes === `<think>plan</think>\n"Ring's gone," Mara says.\n\n${env}` && chat[2].swipes[0] === chat[2].mes && chat[2].extra.vcrp_blocks_repair === "done", "the blocks added to the reply and its swipe");
+    assert.deepEqual(followed, [2], "the follow-up ran on it (the NPC capture, the tracker)");
+    const call = asked[0], callText = text(call);
+    assert(callText.includes("<World_State>") && callText.includes("<Bonds>") && callText.includes("your last reply did not write them whole") && callText.includes("the docks") && !callText.includes(cotBody) && !callText.includes("<think>\n<think>"), `the call keeps the block instructions (and last turn's blocks), drops the thinking and the prefill`);
+    assert(call.at(-1).content.includes("[VCRP BLOCKS") && call.at(-1).content.includes("ends without its <Blocks> section") && call.at(-1).role !== "assistant", "the instruction is last, naming what is missing");
+    // (SillyTavern builds the quiet prompt from the chat itself, the reply included; this harness builds a fixed history.)
+    assert.equal((await repair.repairBlocksNow(2)).status, "asked", "mended: not asked again");
+    asked.length = 0;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "", swipes: [""], swipe_id: 0 });
+    assert.equal((await repair.repairBlocksNow(4)).status, "blank", "a blank reply gets no call");
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose.", swipes: ["Prose."], swipe_id: 0 });
+    quietImpl = async () => "I'd rather not.";
+    r = await repair.repairBlocksNow(6);
+    assert(r.status === "failed" && chat[6].mes === "Prose." && chat[6].extra.vcrp_blocks_repair === "failed", "an answer without blocks changes nothing, and is not asked again");
+    assert.equal((await repair.repairBlocksNow(6)).status, "asked", "...and never asked again (once per reply)");
+    repair.setBlockRepairOn(false);
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose.", swipes: ["Prose."], swipe_id: 0 });
+    assert.equal((await repair.repairBlocksNow(8)).status, "off", "switched off: no call");
+    repair.setBlockRepairOn(true);
+    assert(asked.length === 0, "no call went out for those");
+    quietImpl = null;
+
+    chat.length = 0;
+    delete meta.vcrp_memory;
+    delete meta.vcrp_oneshot;
+    q.vcrpMemory.enabled = keep.mem;
+    extension_settings.VCRP.globalSettings.memoryBudget = JSON.parse(keep.budget) || undefined;
+    if (!extension_settings.VCRP.globalSettings.memoryBudget) delete extension_settings.VCRP.globalSettings.memoryBudget;
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+    Object.assign(q, { mode: keep.mode, model: keep.model });
+    q.blockStack.order = JSON.parse(keep.order); meguminSyncLegacyBlockIds();
+}
+console.log("63 ok blank replies and missing blocks (a blank reply told apart and said with why, not measured, the one-shot direction kept; Setup Check on a cap with a model that reasons; the blocks a reply left out asked for in a second call that keeps the block instructions, the answer merged, once per reply, never for a blank one)");
 
 console.log("\nALL FORK CHECKS PASSED");

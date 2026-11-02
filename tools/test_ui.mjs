@@ -701,7 +701,14 @@ for (const view of ["landing", "editor"]) {
     p.activeStyleId = "dir_v11_inside"; p.aiRule = "inside";
     card(/^\s*V11 Тайна · Megumin Original/).trigger("click"); await tick();
     check(p.mode === "v11-voice-megumin" && p.model === "cot-v11-voice-english" && p.activeStyleId === "dir_v11_inside", `picking V11 Тайна does not pick its thinking or keep V11 Inside: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
-    check(card(/CoT V11 Тайна · Megumin Original/).length === 1 && card(/CoT V11 Тайна · Writers' Room · Megumin Original/).length === 1, "no V11 Тайна thinking cards");
+    check(card(/CoT V11 Тайна · Megumin Original(?!.*Thinking Cap)/).length === 1 && card(/CoT V11 Тайна · Writers' Room · Megumin Original(?!.*Thinking Cap)/).length === 1, "no V11 Тайна thinking cards");
+    // Each V11 Тайна engine has its own Thinking Cap (Megumin Suite V11, 28/10); picking one keeps the engine.
+    const voiceCap = card(/CoT V11 Тайна · Megumin Original — Thinking Cap/), wrCap = card(/CoT V11 Тайна · Writers' Room · Megumin Original — Thinking Cap/);
+    check(voiceCap.length === 1 && wrCap.length === 1, "no Thinking Cap cards for V11 Тайна and its Writers' Room");
+    voiceCap.trigger("click"); await tick();
+    check(p.model === "cot-v11-voice-cap-english" && p.mode === "v11-voice-megumin", `V11 Тайна's Thinking Cap card does not pick it: ${p.model}, ${p.mode}`);
+    const flagged = re => $("#ps_stage_content").find(".mtab-eng-card").filter((i, el) => re.test($(el).find(".ecard-title").text()) && /May be Incompatible/.test($(el).text())).length;
+    check(flagged(/CoT V11 Тайна · Megumin Original — Thinking Cap/) === 0 && flagged(/Writers' Room · Megumin Original — Thinking Cap/) === 1 && flagged(/Preview · Megumin Original — Thinking Cap/) === 1, "V11 Тайна's own cap is allowed; the Writers' Room's and the Preview's are flagged for it");
     card(/^\s*V11 Тайна · Writers' Room · Megumin Original/).trigger("click"); await tick();
     check(p.mode === "v11-writers-room-megumin" && p.model === "cot-v11-wr-english" && p.activeStyleId === "dir_v11_inside", `the Writers' Room: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
     // V11's Adapted engines: a card each, described, with V11's thinking.
@@ -735,6 +742,11 @@ for (const view of ["landing", "editor"]) {
     chat.push({ is_user: false, name: "Mara", mes: "Story.\n<Blocks>\n<Notebook>\nT1\nTruth: The well is poisoned.\nHidden from: Bob, the reader\nComes out when: Bob drinks\nWhat it changes: everything\nClue ideas: a dead crow\n</Notebook>\n</Blocks>" });
     switchTab(tabsUI.findIndex(t => t.title === "Focus"));
     check(/1<\/b> of 3 truths live|1 of 3 truths live/.test(box.find("#focus_nb_status").html() || ""), `the live count is not shown: ${box.find("#focus_nb_status").text()}`);
+    // How many truths stay live: the reader's number, saved, and the status follows it.
+    check(box.find("#focus_nb_cap").length === 1 && box.find("#focus_nb_cap").val() === "3", "the truths-kept setting is missing or not three by default");
+    box.find("#focus_nb_cap").val("5").trigger("change"); await tick();
+    check(p.notebook && p.notebook.liveCap === 5 && /of 5 truths live/.test($("#ps_stage_content").find("#focus_nb_status").text()), `the truths-kept setting does not save or show: ${JSON.stringify(p.notebook)}`);
+    $("#ps_stage_content").find("#focus_nb_cap").val("3").trigger("change"); await tick();
     check(box.find("#focus_notebook_panel details").first().find(".nb_field[data-key='truth']").val() === "The well is poisoned.", "the live truth is not behind the spoiler");
     box.find(".nb_spoiler[data-which='live']").prop("open", true).trigger("toggle");
     box.find(".nb_field[data-id='T1'][data-key='truth']").val("The innkeeper poisoned the well.");
@@ -795,6 +807,15 @@ for (const view of ["landing", "editor"]) {
     p.blockStack.order = ["world", "bonds"];
     switchTab(tabsUI.findIndex(t => t.title === "BLOCKS"));
     check(box.find("#blk_cast_memory_toggle").length === 1 && box.find("#blk_cast_memory_toggle").hasClass("active"), "Remember every character is missing or not on by default");
+    // Missing blocks asked for in a second call: on by default, the switch reaches its setting.
+    delete p.blockRepair;
+    switchTab(tabsUI.findIndex(t => t.title === "BLOCKS"));
+    check(box.find("#blk_repair_toggle").length === 1 && box.find("#blk_repair_toggle").hasClass("active"), "Ask again for missing blocks is missing or not on by default");
+    box.find("#blk_repair_toggle").trigger("click"); await tick();
+    check(p.blockRepair && p.blockRepair.enabled === false && !$("#ps_stage_content").find("#blk_repair_toggle").hasClass("active"), "switching the block repair off is not saved");
+    $("#ps_stage_content").find("#blk_repair_toggle").trigger("click"); await tick();
+    check(p.blockRepair && p.blockRepair.enabled === true, "switching the block repair back on is not saved");
+    delete p.blockRepair;
     box.find("#blk_cast_memory_toggle").trigger("click"); await tick();
     check(p.castMemory && p.castMemory.enabled === false, "the switch does not save");
     delete p.castMemory;

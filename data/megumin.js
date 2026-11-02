@@ -6,7 +6,7 @@
 //     node tools/gen_megumin.mjs
 //
 // Source: Megumin Suite V10, upstream commit 0376573; V11 Тайна from the Beta repository,
-// commit e8378fe. The engines and thinking steps are separate entries beside VCRP's.
+// commit 174575f. The engines and thinking steps are separate entries beside VCRP's.
 // The tables below hold the original wording of the shared texts VCRP reworded (styles,
 // add-ons, Story Config, Story Director), and src/engine/meguminOriginal.js swaps them in
 // while a Megumin Original engine is active.
@@ -1010,6 +1010,21 @@ Close thinking. Write.`, prefill: `<think>
 5. Check the draft against these instructions and the banlist, and rewrite any line that breaks one.`, prefill: `<think>
 <think>
 ` },
+    { id: "cot-v11-voice-cap-english", trigger: "[[COT]]", content: `Thinking rules:
+- Five lines, one per step, in short notes. No prose, no dialogue, no draft. A mental draft is a draft. No sample lines, no "Let's draft", no "Let's write".
+- Do not recatalogue these instructions or the banlist. You already know them, and they are applied while writing.
+- Don't revise, don't check. One pass, then write.
+
+Before you write, work the turn out in your thinking, in this order. All thinking is in English.
+1. {{user}}'s turn: what was said and done, where everyone is, and what each character knows. {{user}}'s turn is settled. Plan everyone else.
+2. What each of the other characters in the scene wants right now and what each one does this turn.
+3. What this turn adds to the story, where the tension stands, whether a truth in the notebook gets a clue or comes out, and how the turn ends.
+4. The line that opens the response and the moment it builds to.
+5. The turn's tone and pace, in a few words.
+
+Close thinking. Write.`, prefill: `<think>
+<think>
+` },
     { id: "cot-v11-wr-english", trigger: "[[COT]]", content: `Before you write, the room works the turn in your thinking, in this order. All thinking is in English.
 1. NORA reads {{user}}'s turn and the history: what was said, what was done, where everyone is, and what each character knows. {{user}}'s turn is settled. The room plans everyone else.
 2. ANVIL decides what each of the other characters in the scene wants right now and what each one does this turn.
@@ -1018,11 +1033,26 @@ Close thinking. Write.`, prefill: `<think>
 5. NORA checks the draft against these instructions and the banlist, and rewrites any line that breaks one.`, prefill: `<think>
 <think>
 ` },
+    { id: "cot-v11-wr-cap-english", trigger: "[[COT]]", content: `Thinking rules:
+- Five lines, one per step, in short notes. No prose, no dialogue, no draft. A mental draft is a draft. No sample lines, no "Let's draft", no "Let's write".
+- Do not recatalogue these instructions or the banlist. You already know them, and they are applied while writing.
+- Don't revise, don't check. One pass, then write.
+
+Before you write, the room works the turn in your thinking, in this order. All thinking is in English.
+1. NORA: what {{user}} said and did, where everyone is, and what each character knows. {{user}}'s turn is settled. The room plans everyone else.
+2. ANVIL: what each of the other characters in the scene wants right now and what each one does this turn.
+3. OPUS: what this turn adds to the story, where the tension stands, whether a truth in the notebook gets a clue or comes out, and how the turn ends.
+4. JULIA and MIKI: the line that opens the response and the moment it builds to.
+5. NORA: the turn's tone and pace, in a few words.
+
+Close thinking. Write.`, prefill: `<think>
+<think>
+` },
 ];
 
-// Megumin Suite V11 (Beta repository, commit e8378fe): the texts around its engines,
+// Megumin Suite V11 (Beta repository, commit 174575f): the texts around its engines,
 // and the words its preset's sections are built from (src/engine/meguminV11.js).
-export const MEGUMIN_V11_UPSTREAM = "e8378fe";
+export const MEGUMIN_V11_UPSTREAM = "174575f";
 export const MEGUMIN_V11 = {
     "notebookCraft": `<The_Notebook>
 The story keeps an author's notebook: the truths it holds back about the world, its past, or the people in it. Keep the story consistent with every entry. The notebook belongs to you, not to the reader or the characters, and a truth reaches the page only when it comes out.
@@ -1042,7 +1072,7 @@ Write your reply as usual. In <Blocks>, write the Notebook block with two or thr
 
 T1
 Truth: what is actually true, in a few plain sentences, with enough detail that every later clue and the reveal itself can be written from it.
-Hidden from: who doesn't know it. Name the characters, and add "the reader" if the story hasn't shown it on the page.
+Hidden from: the names of the characters who don't know it, plus "the reader" if the story hasn't shown it on the page. Only the names, separated by commas.
 Comes out when: what has to happen in the story for it to come out.
 What it changes: who acts differently once it's out, and how.
 Clue ideas: two or three small things the story could show that point at it and could also mean something else.

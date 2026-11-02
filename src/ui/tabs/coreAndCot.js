@@ -322,6 +322,8 @@ export function renderCoreAndCot(c) {
         // but its capped ids do share one with its own uncapped ids.
         const model = localProfile.model || "";
         if (model.startsWith("cot-v11-cap-")) currentType = "v11-cap";
+        else if (model.startsWith("cot-v11-voice-cap-")) currentType = "v11-voice-cap";
+        else if (model.startsWith("cot-v11-wr-cap-")) currentType = "v11-wr-cap";
         else if (model.startsWith("cot-v11-voice-")) currentType = "v11-voice";
         else if (model.startsWith("cot-v11-wr-")) currentType = "v11-wr";
         else if (model.startsWith("cot-v11-")) currentType = "v11";
@@ -342,9 +344,9 @@ export function renderCoreAndCot(c) {
 
         let allowedCotTypes = null;
         // V11's pairings: V11 Тайна (and its DeepSeek version) and its Writers' Room each have
-        // their own thinking; the Thinking Cap is the Preview's.
-        if (/^v11-(voice|deepseek)/.test(localProfile.mode)) allowedCotTypes = ["v11-voice"];
-        else if (localProfile.mode.startsWith("v11-writers-room")) allowedCotTypes = ["v11-wr"];
+        // their own thinking and their own Thinking Cap; the Preview has its own pair.
+        if (/^v11-(voice|deepseek)/.test(localProfile.mode)) allowedCotTypes = ["v11-voice", "v11-voice-cap"];
+        else if (localProfile.mode.startsWith("v11-writers-room")) allowedCotTypes = ["v11-wr", "v11-wr-cap"];
         else if (localProfile.mode.startsWith("v11")) allowedCotTypes = ["v11", "v11-cap"];
         else if (localProfile.mode.includes("megumin")) allowedCotTypes = ["meg-ukiyo", "meg-ukiyo-cap", "meg-shura", "meg-shura-cap"];
         else if (localProfile.mode.includes("v10")) allowedCotTypes = ["v10-ukiyo", "v10-ukiyo-cap", "v10-shura", "v10-shura-cap"];
@@ -362,7 +364,9 @@ export function renderCoreAndCot(c) {
             { id: "meg-shura", label: "CoT V10 Shura \u00b7 Megumin Original", desc: "Megumin Suite's own seven rules, word for word. Built for the Megumin Original Shura.", isNew: true },
             { id: "meg-shura-cap", label: "CoT V10 Shura \u00b7 Megumin Original \u2014 Thinking Cap", desc: "Megumin Suite's own capped seven rules, word for word.", isNew: true },
             { id: "v11-voice", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Megumin Original", desc: "Five steps in order: read your turn and the history, decide what each other character does, decide what the turn adds and whether a hidden truth gets a clue, write, then check the draft. Made for V11 \u0422\u0430\u0439\u043d\u0430 and its DeepSeek version.", isNew: true },
+            { id: "v11-voice-cap", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Megumin Original \u2014 Thinking Cap", desc: "V11 \u0422\u0430\u0439\u043d\u0430's five steps as one short line of notes each, no draft, written once in the reply; its rules are said again as the last thing the model reads. For models that over-think (GLM, Kimi, DeepSeek, Qwen). No word count: it sets its own length.", isNew: true },
             { id: "v11-wr", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Writers' Room \u00b7 Megumin Original", desc: "The same five steps, worked by the room: the director reads, the psychologist decides what each other character does, the story architect picks what the turn adds, the storyteller and dialogue writer write, and the director checks.", isNew: true },
+            { id: "v11-wr-cap", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Writers' Room \u00b7 Megumin Original \u2014 Thinking Cap", desc: "The room's five steps as one short line of notes each, no draft, written once in the reply; its rules are said again as the last thing the model reads. For models that over-think. No word count: it sets its own length.", isNew: true },
             { id: "v11", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 Preview \u00b7 Megumin Original", desc: "The writers' room works the turn in order: the director reads it, the psychologist decides what each character wants, the story architect decides what is new and what the notebook does, the storyteller and the dialogue writer draft, and the director checks the draft. Built for V11 \u0422\u0430\u0439\u043d\u0430 Preview.", isNew: true },
             { id: "v11-cap", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 Preview \u00b7 Megumin Original \u2014 Thinking Cap", desc: "The same five steps as one short line of notes each, no draft, written once in the reply; its rules are said again as the last thing the model reads. For models that over-think (GLM, Kimi, DeepSeek, Qwen). No word count: it sets its own length.", isNew: true },
         ];

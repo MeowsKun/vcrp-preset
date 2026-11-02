@@ -12,6 +12,7 @@
 
 import { extension_settings, getContext } from "../st.js";
 import { extensionName } from "../core/constants.js";
+import { activeBlockRepair } from "../core/activeRequests.js";
 
 // ── Generation type ──────────────────────────────────────────────────────────
 
@@ -54,6 +55,9 @@ export function vcrpIsDryRun() {
 
 // Tags that only make sense in a normal story reply.
 const REPLY_ONLY_TAGS = ["[[THINK]]", "[[thinking]]", "[[COT]]", "[[prefill]]", "[[blocks]]", "[[storytracker]]"];
+// A call that asks for a reply's missing blocks (vcrp/blockRepair.js) keeps the block
+// instructions: they are what it is answering.
+const BLOCK_REPAIR_KEEPS = new Set(["[[blocks]]", "[[storytracker]]"]);
 
 const EMPTY_VOICE = /^[ \t]*- (?:\*\*)?voice:(?:\*\*)?[ \t]*(?:\r?\n|$)/gm;
 
@@ -163,7 +167,8 @@ export function vcrpShouldPrefill() {
 /** Adjusts the tag table for this generation. Dry runs (token counts) always show the normal reply. */
 export function vcrpApplyGenerationToDict(dict, dryRun) {
     const gen = dryRun ? "reply" : currentGen;
-    if (gen !== "reply") REPLY_ONLY_TAGS.forEach(t => { if (t in dict) dict[t] = ""; });
+    const repair = gen === "quiet" && !!activeBlockRepair;
+    if (gen !== "reply") REPLY_ONLY_TAGS.forEach(t => { if (t in dict && !(repair && BLOCK_REPAIR_KEEPS.has(t))) dict[t] = ""; });
     else if (!vcrpShouldPrefill()) dict["[[prefill]]"] = "";
     // Impersonate writes AS {{user}}: the final reminder's "never write for {{user}}" would
     // contradict the request itself.

@@ -9,8 +9,8 @@ import { escapeHtmlAttr } from "../../utils/html.js";
 import { saveProfileToMemory } from "../../core/profile.js";
 import { splitNames } from "./model.js";
 import {
-    notebookOn, notebookForced, setNotebookOn, notebookFromChat, liveTruths, pastTruths, LIVE_CAP,
-    editTruth, forgetTruth, revealTruth, restoreTruth, turnLabel,
+    notebookOn, notebookForced, setNotebookOn, notebookFromChat, liveTruths, pastTruths, MAX_LIVE_CAP, truthCountWords,
+    notebookLiveCap, setNotebookLiveCap, editTruth, forgetTruth, revealTruth, restoreTruth, turnLabel,
 } from "./index.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
@@ -25,10 +25,10 @@ function openedHere() {
     return opened;
 }
 
-function statusLine(on, live) {
+function statusLine(on, live, cap) {
     if (!on) return "Off. Nothing is sent.";
-    if (!live.length) return `<i class="fa-solid fa-pen" style="color:#0ea5e9;"></i> Empty: the next reply writes it, two or three truths built from the card, the setting and the story so far.`;
-    return `<i class="fa-solid fa-circle-check" style="color:#0ea5e9;"></i> <b>${live.length}</b> of ${LIVE_CAP} truths live. Each turn the model reads them after the chat (never cached) and notes a clue, who found out, or what came out.`;
+    if (!live.length) return `<i class="fa-solid fa-pen" style="color:#0ea5e9;"></i> Empty: the next reply writes it, ${truthCountWords(cap)} built from the card, the setting and the story so far.`;
+    return `<i class="fa-solid fa-circle-check" style="color:#0ea5e9;"></i> <b>${live.length}</b> of ${cap} truths live. Each turn the model reads them after the chat (never cached) and notes a clue, who found out, or what came out.`;
 }
 
 const clueRows = t => (t.clues || []).map(c => `<div class="set-desc" style="margin:2px 0 0 8px;">🔎 ${esc(turnLabel(c.seq))}: ${esc(c.text)}${c.found === false ? ` <span style="color:#f59e0b;">(not found in the reply)</span>` : ""}</div>`).join("");
@@ -54,14 +54,14 @@ function liveCard(t) {
         </div>`;
 }
 
-function pastRow(t, canRestore) {
+function pastRow(t, canRestore, cap) {
     const how = t.revealedHow === "user" ? "marked revealed by you" : t.revealedHow === "learned" ? "everyone found out" : "came out";
     return `
         <div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
             <div style="font-size:0.78rem;"><b>${esc(t.id)}</b> ${esc(t.truth)}</div>
             <div class="set-desc">${esc(how)} in ${esc(turnLabel(t.revealedSeq))}</div>
             ${clueRows(t)}
-            <button class="ps-modern-btn secondary nb_restore" data-id="${esc(t.id)}" style="font-size:0.68rem; margin-top:4px;" ${canRestore ? "" : `disabled title="${LIVE_CAP} truths are already live"`}><i class="fa-solid fa-rotate-left"></i> Activate again</button>
+            <button class="ps-modern-btn secondary nb_restore" data-id="${esc(t.id)}" style="font-size:0.68rem; margin-top:4px;" ${canRestore ? "" : `disabled title="${cap} truths are already live"`}><i class="fa-solid fa-rotate-left"></i> Activate again</button>
         </div>`;
 }
 
@@ -71,6 +71,7 @@ export function notebookPanel() {
     const forced = notebookForced();
     const { state } = notebookFromChat();
     const live = liveTruths(state), past = pastTruths(state);
+    const cap = notebookLiveCap();
     const open = openedHere();
     return `
         <div class="mtab-panel" id="focus_notebook_panel">
@@ -78,19 +79,27 @@ export function notebookPanel() {
             <div class="mtab-setting-row" style="padding-bottom:0; border:none;">
                 <div class="set-info">
                     <div class="set-label">The story keeps secrets and pays them off</div>
-                    <div class="set-desc">Megumin Suite V11's notebook: the story decides two or three hidden truths early, plants small clues and reveals each one when the story earns it, instead of forgetting a secret or blurting it out. VCRP keeps the rules (at most ${LIVE_CAP} live, a truth never quietly rewritten, a clue the reply never shows marked as such). It is read from this chat's replies, so swipes, edits and deletes undo exactly what a reply did. Its fixed rules sit in the cached part of the prompt; the live truths ride after the chat.${forced ? " <b>Always on with V11 Тайна</b>, whose own text speaks of its notebook." : ""}</div>
+                    <div class="set-desc">Megumin Suite V11's notebook: the story decides two or three hidden truths early, plants small clues and reveals each one when the story earns it, instead of forgetting a secret or blurting it out. VCRP keeps the rules (at most ${cap} live, a truth never quietly rewritten, a clue the reply never shows marked as such). It is read from this chat's replies, so swipes, edits and deletes undo exactly what a reply did. Its fixed rules sit in the cached part of the prompt; the live truths ride after the chat.${forced ? " <b>Always on with V11 Тайна</b>, whose own text speaks of its notebook." : ""}</div>
                 </div>
                 <input type="checkbox" id="focus_nb_on" ${on ? "checked" : ""} ${forced ? "disabled" : ""} />
             </div>
-            <div id="focus_nb_status" class="set-desc" style="margin-top:8px;">${statusLine(on, live)}</div>
+            <div class="mtab-setting-row" style="padding-top:4px; border:none;">
+                <div class="set-info">
+                    <div class="set-label">Truths kept at once</div>
+                    <div class="set-desc">How many hidden truths the story keeps live, 1 to ${MAX_LIVE_CAP} (Megumin Suite V11's default is three). The setup asks for that many, and a new one past it is left out; more truths cost a little more each turn. A truth you delete gives its number to the next new one.</div>
+                </div>
+                <input type="number" id="focus_nb_cap" class="ps-modern-input" min="1" max="${MAX_LIVE_CAP}" step="1" style="width:64px;" value="${cap}" ${on ? "" : "disabled"} />
+            </div>
+            <div id="focus_nb_status" class="set-desc" style="margin-top:8px;">${statusLine(on, live, cap)}</div>
             ${live.length ? `<details class="nb_spoiler" data-which="live" style="margin-top:8px;" ${open.live ? "open" : ""}><summary class="set-desc" style="cursor:pointer;"><i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b;"></i> Show the live truths (spoilers)</summary>${live.map(liveCard).join("")}</details>` : ""}
-            ${past.length ? `<details class="nb_spoiler" data-which="past" style="margin-top:8px;" ${open.past ? "open" : ""}><summary class="set-desc" style="cursor:pointer;">Past: ${past.length} ${past.length === 1 ? "truth" : "truths"} that came out</summary>${past.map(t => pastRow(t, live.length < LIVE_CAP)).join("")}</details>` : ""}
+            ${past.length ? `<details class="nb_spoiler" data-which="past" style="margin-top:8px;" ${open.past ? "open" : ""}><summary class="set-desc" style="cursor:pointer;">Past: ${past.length} ${past.length === 1 ? "truth" : "truths"} that came out</summary>${past.map(t => pastRow(t, live.length < cap, cap)).join("")}</details>` : ""}
         </div>`;
 }
 
 /** Its handlers; `rerender` redraws the tab. */
 export function wireNotebookPanel(c, rerender) {
     c.find("#focus_nb_on").on("change", function () { setNotebookOn($(this).is(":checked")); saveProfileToMemory(); rerender(); });
+    c.find("#focus_nb_cap").on("change", function () { setNotebookLiveCap($(this).val()); saveProfileToMemory(); rerender(); });
     c.find(".nb_spoiler").on("toggle", function () { openedHere()[String($(this).attr("data-which"))] = this.open; });
     c.find(".nb_save").on("click", function () {
         const id = String($(this).attr("data-id"));

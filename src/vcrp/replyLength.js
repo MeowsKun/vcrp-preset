@@ -37,12 +37,12 @@ import { requestCost } from "./memory/budget.js";
 import { isCold } from "./memory/window.js";
 import { vcrpGenerationKind, vcrpWithoutSwipedReply } from "./generation.js";
 import { meguminActiveBlocks } from "../features/blocks/registry.js";
-import { notebookCurrentPhase } from "./notebook/index.js";
+import { notebookCurrentPhase, notebookLiveCap } from "./notebook/index.js";
 import { activeEngine } from "../engine/meguminOriginal.js";
 import { isPuraEngine } from "../core/engines.js";
 import { isThinkingCap } from "../../data/cot/index.js";
 import {
-    activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder, activeFocusAudit,
+    activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder, activeFocusAudit, activeBlockRepair,
 } from "../core/activeRequests.js";
 
 const MIN_ROOM = 1500;            // the least room a reply is given, even when its prompt alone nears the target
@@ -136,12 +136,12 @@ const LINE_TAIL = "This overrides any longer length asked for above.";
 // The Author's Notebook writes in the blocks as well: a line now and then, which the measured
 // size already holds, but its setup (two or three full truths) once, on the reply that starts
 // it, and that one is counted on its own.
-const NOTEBOOK_SETUP_TOKENS = 400;
+const NOTEBOOK_SETUP_TOKENS = 400;   // V11's three truths; the reader's count scales it
 function blocksTokens() {
     let active = [];
     try { active = meguminActiveBlocks().filter(b => b && !b.transient && !b.slot); } catch (e) { active = []; }
     let setup = 0;
-    try { setup = notebookCurrentPhase(vcrpWithoutSwipedReply((getContext() || {}).chat || [])) === "setup" ? NOTEBOOK_SETUP_TOKENS : 0; } catch (e) { setup = 0; }
+    try { setup = notebookCurrentPhase(vcrpWithoutSwipedReply((getContext() || {}).chat || [])) === "setup" ? Math.round(NOTEBOOK_SETUP_TOKENS * notebookLiveCap() / 3) : 0; } catch (e) { setup = 0; }
     if (!active.length) return setup;
     let chat = [];
     try { chat = ((getContext() || {}).chat || []).filter(m => m && !m.is_user && !m.is_system && typeof m.mes === "string").slice(-10); } catch (e) { chat = []; }
@@ -231,7 +231,7 @@ export function vcrpReplyRoom(messages, dryRun) {
 /** A background call of VCRP's own is being sent: a summary or its check, an audit, the Director, an NPC scan. */
 function vcrpBackgroundCall() {
     return !!(memoryTaskActive() || activeStoryPlanRequest || activeBanListChat || activeNpcScanRequest
-        || activeNpcUpdateRequest || activeGenerationOrder || activeFocusAudit);
+        || activeNpcUpdateRequest || activeGenerationOrder || activeFocusAudit || activeBlockRepair);
 }
 
 /** Lowers the request's own output limit to `limit` (never raises it). */

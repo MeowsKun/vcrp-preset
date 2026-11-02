@@ -10,6 +10,7 @@
 
 import { getContext, chat_metadata, saveMetadata, debounce } from "../st.js";
 import { vcrpGenerationRaw } from "./generation.js";
+import { blankReplyKind } from "./blankReply.js";
 import { answerOf } from "./pura/rolls.js";
 
 const META = "vcrp_oneshot";   // { text, used: { text, index } }
@@ -66,6 +67,9 @@ export function vcrpOneShotOnReply(messageId, type) {
     if (type === "first_message" || !pending || !chat_metadata) return;
     const id = Number(messageId);
     if (pending.index !== id) return;
+    // A blank reply (Gemini's filter, a cut) did not answer the direction: it stays for the swipe.
+    const got = (((getContext() || {}).chat) || [])[id];
+    if (got && blankReplyKind(got.mes)) return;
     const cur = chat_metadata[META] && typeof chat_metadata[META] === "object" ? chat_metadata[META] : {};
     chat_metadata[META] = { text: String(cur.text || "").trim() === pending.text ? "" : String(cur.text || ""), used: { text: pending.text, index: id, answers: answerOf(((getContext() || {}).chat) || [], id) } };
     pending = null;
