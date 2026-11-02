@@ -4833,4 +4833,107 @@ console.log("62 ok the Author's Notebook as V11 has it since 01/11 (a deleted tr
 }
 console.log("63 ok blank replies and missing blocks (a blank reply told apart and said with why, not measured, the one-shot direction kept; Setup Check on a cap with a model that reasons; the blocks a reply left out asked for in a second call that keeps the block instructions, the answer merged, once per reply, never for a blank one)");
 
+// 64. After the trim (10.0.0-vcrp.9): a profile on a removed engine, thinking, style or toggle
+//     moves over on load; the slots that are gone are still stripped from a preset imported
+//     before; and the presets' regex scripts are Megumin's (V10's set without the image ones,
+//     the same patterns as V11's), the same in all three.
+{
+    const db = await imp("data/database.js");
+    const { MEGUMIN_SLOT_REGISTRY, meguminAllSlotTriggers } = await imp("data/slots.js");
+    const { meguminCotForMode } = await imp("data/cot/index.js");
+    const { handlePromptInjection: inject } = await imp("src/engine/injection.js");
+    const keepProfile = JSON.parse(JSON.stringify(extension_settings.VCRP.profiles["default"]));
+    const keepCc = { ...chatCompletionSettings };
+
+    // The data: what is shipped, and what is not.
+    assert.deepEqual(db.hardcodedLogic.directStyles.map(s => s.id), ["dir_v11", "dir_v11_inside", "dir_v10_ukiyo", "dir_v10_shura"], "the four styles of VCRP's engines, no others");
+    assert.deepEqual(db.hardcodedLogic.modes.map(m => m.id), ["v10-core", "v10-shura", "v10-ukiyo-megumin", "v10-shura-megumin", "v11-voice-megumin", "v11-writers-room-megumin", "v11-voice-adapted", "v11-writers-room-adapted", "pura-original", "pura-adapted"], "ten engines");
+    assert(!db.hardcodedLogic.modes.some(m => m.isNew || m.locked) && !db.hardcodedLogic.models.some(m => /^cot-v11-(cap-)?english$/.test(m.id)), "no New or lock flags; the Preview's thinking gone");
+    assert(!MEGUMIN_SLOT_REGISTRY.some(s => ["[[count]]", "[[Short-memory]]", "[[AI1]]", "[[AI2]]"].includes(s.trigger)), "the dead slots are out of the registry");
+    assert(["[[count]]", "[[Short-memory]]", "[[AI1]]", "[[AI2]]"].every(t => meguminAllSlotTriggers().includes(t)), "...and still in the leak guard");
+    for (const f of ["VCRP V10 Universal.json", "VCRP V10 Megumin Original.json", "VCRP V11 Megumin Original.json"]) {
+        const p = JSON.parse(readFileSync(join(REPO, "Presets", f), "utf8"));
+        assert(p.prompts.find(x => x.name === "<history>").content === "<history>\n\n[[long-Memory]]", `${f}: Story Memory's slot carries [[long-Memory]] alone`);
+    }
+
+    // A preset imported before still carries [[Short-memory]] (and could carry [[count]]): stripped with their lines.
+    const q = state.localProfile;
+    const keepMode = { mode: q.mode, model: q.model };
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english" });
+    vcrpSetGenerationType("normal", {}, false);
+    const old = [{ role: "system", content: "[[prompt1]]\n\n<history>\n\n[[long-Memory]]\n\n[[Short-memory]]\n[[count]]\n[[AI1]]" }, { role: "user", content: "go" }];
+    await inject({ chat: old, dryRun: false });
+    assert(old[0].content.slice(old[0].content.indexOf("<history>")).trim() === "<history>" && !old[0].content.includes("[["), `an old preset's gone slots are stripped with their lines: ${JSON.stringify(old[0].content.slice(-60))}`);
+    Object.assign(q, keepMode);
+
+    // Migrations on load: the Preview and the DeepSeek pair, their thinking, a removed style, the toggle.
+    const load = stored => {
+        extension_settings.VCRP.profiles["default"] = { ...JSON.parse(JSON.stringify(keepProfile)), ...stored };
+        initProfile();
+        return state.localProfile;
+    };
+    let p = load({ mode: "v11-room-megumin", model: "cot-v11-cap-english", activeStyleId: "dir_clinical", aiRule: "Adapt a clinical and objective narration style.", thinkingV2: true });
+    assert(p.mode === "v11-voice-megumin" && p.model === "cot-v11-voice-cap-english", `the Preview with its Thinking Cap moves to V11 Тайна's: ${p.mode}, ${p.model}`);
+    assert(p.activeStyleId === "dir_v11" && p.aiRule === db.hardcodedLogic.directStyles[0].rule && !("thinkingV2" in p), `a removed style becomes the engine's own; the toggle is gone: ${p.activeStyleId}`);
+    p = load({ mode: "v11-deepseek-adapted", model: "cot-v11-voice-english", activeStyleId: "dir_v9", aiRule: "x" });
+    assert(p.mode === "v11-voice-adapted" && p.model === "cot-v11-voice-english" && p.activeStyleId === "dir_v11", `DeepSeek Adapted moves to V11 Тайна · Adapted: ${p.mode}, ${p.activeStyleId}`);
+    p = load({ mode: "v11-deepseek-megumin", model: "cot-v11-english", activeStyleId: "dir_v11_inside", aiRule: "inside" });
+    assert(p.mode === "v11-voice-megumin" && p.model === "cot-v11-voice-english" && p.activeStyleId === "dir_v11_inside" && p.aiRule === "inside", "DeepSeek Original moves to V11 Тайна; a kept style stays");
+    p = load({ mode: "pura-original", model: "cot-v10-ukiyo-english", activeStyleId: "dir_simple", aiRule: "Adapt a simple narration style." });
+    assert(p.mode === "pura-original" && p.activeStyleId === null && p.aiRule === "", "a Pura engine on a removed style: no style (Pura's voices tell the story)");
+    p = load({ mode: "v10-shura", model: "cot-v10-shura-english", activeStyleId: "dir_v7_core", aiRule: "<narrative_style>" });
+    assert(p.activeStyleId === "dir_v10_shura" && p.aiRule === db.hardcodedLogic.directStyles.find(s => s.id === "dir_v10_shura").rule, "V10 Shura on a V7 style: V10 Shura Default");
+    p = load({ mode: "v10-core", model: "cot-v10-ukiyo-english", activeStyleId: "custom_1", aiRule: "My own.", customStyles: [{ id: "custom_1", name: "Mine", rule: "My own." }] });
+    assert(p.activeStyleId === "custom_1" && p.aiRule === "My own.", "a custom style is the reader's and stays");
+    assert.equal(meguminCotForMode("v11-deepseek-megumin"), "cot-v11-voice-english", "an old id still maps to a thinking (nothing crashes on it)");
+    extension_settings.VCRP.profiles["default"] = keepProfile;
+    initProfile();
+
+    // The regex scripts: the same in all three presets; Megumin V10's without the two image ones
+    // (image generation is not in VCRP); V11's patterns where the names meet (V11 switched three
+    // off: VCRP keeps them, its renderer's marker and the prompt cleanup among them).
+    const scripts = f => JSON.parse(readFileSync(join(REPO, "Presets", f), "utf8")).extensions.regex_scripts;
+    const KEYS = ["findRegex", "replaceString", "placement", "disabled", "markdownOnly", "promptOnly", "runOnEdit", "substituteRegex", "minDepth", "maxDepth"];
+    const shape = s => JSON.stringify(Object.fromEntries(KEYS.map(k => [k, s[k] ?? null])));
+    const uniS = scripts("VCRP V10 Universal.json");
+    for (const f of ["VCRP V10 Megumin Original.json", "VCRP V11 Megumin Original.json"]) {
+        const other = scripts(f);
+        assert.deepEqual(other.map(s => s.scriptName), uniS.map(s => s.scriptName), `${f}: the same regex scripts as Universal`);
+        other.forEach((s, i) => assert.equal(shape(s), shape(uniS[i]), `${f}: "${s.scriptName}" as in Universal`));
+    }
+    const ESSENTIAL = ["Blocks cleanup", "Blocks display marker", "Thinking cleanup A", "Thinking cleanup B", "Thinking Box"];
+    assert(ESSENTIAL.every(n => uniS.some(s => s.scriptName === n && !s.disabled)), "the essential scripts are there and on");
+    let up10 = null, up11 = null;
+    try {
+        up10 = JSON.parse(execSync("git show 0376573:\"Presets/Megumin Suite V10 Universal Cache Friendly.json\"", { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1e8 })).extensions.regex_scripts;
+        up11 = JSON.parse(execSync("git show 174575f:\"Presets/Megumin Suite V11 Universal.json\"", { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1e8 })).extensions.regex_scripts;
+    } catch (e) { up10 = up11 = null; }
+    if (up10 && up11) {
+        const byName = list => new Map(list.map(s => [s.scriptName, s]));
+        const u10 = byName(up10), u11 = byName(up11), ours = byName(uniS);
+        assert.deepEqual([...u10.keys()].filter(n => !ours.has(n)), ["image gen regex", "image clean up"], "Megumin V10's scripts VCRP leaves out: the image ones only");
+        for (const [n, s] of ours) assert.equal(shape(s), shape(u10.get(n)), `"${n}" is Megumin V10's, as it is`);
+        for (const [n, s] of ours) {
+            if (!u11.has(n)) { assert.equal(n, "narration|dialogue tags cleanup", `only the DN add-on's script is VCRP's alone next to V11 (${n})`); continue; }
+            const u = u11.get(n);
+            assert(s.findRegex === u.findRegex && s.replaceString === u.replaceString && JSON.stringify(s.placement) === JSON.stringify(u.placement) && !!s.markdownOnly === !!u.markdownOnly && !!s.promptOnly === !!u.promptOnly, `"${n}": V11's pattern and placement`);
+        }
+        assert.deepEqual([...u11.values()].filter(s => s.disabled && ours.has(s.scriptName) && !ours.get(s.scriptName).disabled).map(s => s.scriptName).sort(), ["Blocks cleanup", "Blocks display marker", "Thinking cleanup B"], "V11 switched these three off; VCRP keeps them on (known)");
+    }
+    // The display chain gives the same text in VCRP's order and in V11's (the color fix still bites after the box).
+    const S = Object.fromEntries(uniS.map(s => [s.scriptName, s]));
+    const apply = (t, s) => { const m = s.findRegex.match(/^\/([\s\S]*)\/([a-z]*)$/); return t.replace(new RegExp(m[1], m[2]), s.replaceString); };
+    const sample = `<think>\nPlan: <font color="#ff0000">red</font> here.\n</think>\n<font color="#ff69b4" title="Mara">"Hi."</font> Prose.\n\n<Blocks>\n<World_State>x</World_State>\n</Blocks>`;
+    const chain = names => names.reduce((t, n) => (!S[n] || S[n].disabled || !S[n].markdownOnly ? t : apply(t, S[n])), sample);
+    const shown = chain(uniS.map(s => s.scriptName));
+    assert.equal(shown, chain(["Thinking Hide A", "Thinking Hide B", "Blocks cleanup", "Blocks display marker", "Thinking cleanup B", "thinking color fix", "Thinking Box", "Thinking cleanup A"]), "the display regexes give the same text in VCRP's order and in V11's");
+    assert(shown.includes("Thinking Process") && !/<font[^>]*>red/.test(shown) && shown.includes("meg-blocks-src") && shown.includes(`title="Mara"`), "the thinking boxed and uncolored, the blocks marked, the story's colors kept");
+    const prompt = uniS.reduce((t, s) => (s.disabled || !s.promptOnly ? t : apply(t, s)), sample);
+    assert.equal(prompt, `<font color="#ff69b4" title="Mara">"Hi."</font> Prose.\n\n`, "the prompt regexes take the thinking and the blocks out of an older reply");
+
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keepCc);
+}
+console.log("64 ok after the trim: profiles on the removed engines, thinking, styles and toggle move over on load; the gone slots are still stripped from an old preset; the regex scripts are Megumin's (V10's minus the image ones, V11's patterns), the same in all three presets");
+
 console.log("\nALL FORK CHECKS PASSED");

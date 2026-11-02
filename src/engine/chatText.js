@@ -82,7 +82,6 @@ export function getCleanedChatHistory() {
     if (!context.chat || context.chat.length === 0) return "";
 
     const aiMessages = context.chat.filter(m => !m.is_user && !m.is_system).slice(-50);
-    const badStuffRegex = /(<disclaimer>.*?<\/disclaimer>)|(<guifan>.*?<\/guifan>)|(<danmu>.*?<\/danmu>)|(<options>.*?<\/options>)|```start|```end|<done>|`<done>`|(.*?<\/(?:ksc??|think(?:ing)?)>(\n)?)|(<(?:ksc??|think(?:ing)?)>[\s\S]*?<\/(?:ksc??|think(?:ing)?)>(\n)?)/gs;
 
     let cleanedMessages = aiMessages.map(m => meguminCleanChatHistoryText(m.mes));
 

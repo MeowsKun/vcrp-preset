@@ -18,9 +18,7 @@ import { V11_ADAPTED_STYLE_LEADS } from "../../data/modes/v11Adapted.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
 import { notebookCraft } from "../vcrp/notebook/index.js";
 import { castMemoryNote } from "../vcrp/castMemory.js";
-import {
-    activeNpcImages, pushActiveNpcImage, clearActiveNpcImages,
-} from "../core/activeRequests.js";
+import { pushActiveNpcImage, clearActiveNpcImages } from "../core/activeRequests.js";
 import { DEFAULT_PROMPTS } from "../prompts/index.js";
 import { hardcodedLogic } from "../../data/database.js";
 import { isThinkingCap } from "../../data/cot/index.js";
