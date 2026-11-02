@@ -159,7 +159,7 @@ export function vcrpHealthCheck() {
         if (carries("# Content (NORA)")) {
             add("warn", "Re-import the VCRP V11 Megumin Original preset", "The one you have is from before V11 Тайна, its Writers' Room and its DeepSeek version: it sends the first engine's Content section and final check to every V11 engine. Import \"VCRP V11 Megumin Original\" again from the extension's Presets folder, replacing the old one, and select it.");
         } else {
-            add("info", "V11 Тайна is picked on a preset made for V10", "It works, but V11 rewrote its preset around its engines (its Content section, its story settings, a final check, a USER note). Import \"VCRP V11 Megumin Original\" from the extension's Presets folder and select it.");
+            add("warn", "A V11 engine is picked on a preset made for V10", "Its Content section (what the story may show, which the engine's own text points to), its story settings, its final check and its USER note have no place in this preset and are not sent. Import \"VCRP V11 Megumin Original\" from the extension's Presets folder and select it: it fits every engine but the V10 Megumin Originals.");
         }
     }
     // The V11 preset from 25/10 carried the Content rule and the story settings in the per-turn

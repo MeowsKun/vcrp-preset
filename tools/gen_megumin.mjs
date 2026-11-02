@@ -105,19 +105,18 @@ if (upOno.includes("${")) fail("the upstream onomatopoeia line has a placeholder
 // ── V11 Тайна (Megumin Suite V11, from the Beta repository) ─────────────────
 // Megumin-Suite-Beta: git remote add megumin-beta https://github.com/Arif-salah/Megumin-Suite-Beta.git
 // V11 leaves the V10 engines, their thinking steps and the shared texts as they were; it adds
-// its engines (the first one, now "V11 Тайна Preview", and V11 Тайна, its Writers' Room and its
-// DeepSeek version), their thinking steps, its two writing styles, the Author's Notebook's
+// its engines (V11 Тайна and its Writers' Room; VCRP leaves out the first V11 engine, the
+// "Preview", and the DeepSeek version), their thinking steps, its two writing styles, the Author's Notebook's
 // texts, the words its preset's sections are built from, its Story Config wording, and its
 // own preset (below).
 const V11_UPSTREAM = "174575f";   // "01/11 update": a Thinking Cap for each V11 Тайна engine, the per-turn rules after the newest message, USER Hard, the notebook's numbering
 const v11Text = f => execSync(`git show "${V11_UPSTREAM}:${f}"`, { encoding: "utf8", maxBuffer: 1e8 });
 const v11 = f => load(v11Text(f), "v11_" + f.replace(/\W/g, "_"));
-const upV11 = (await v11("data/modes/v11.js")).modes_v11.find(m => m.id === "v11-room") || fail("upstream V11 engine not found");
 const v11Taina = await v11("data/modes/v11taina.js");
 const upTaina = id => v11Taina.modes_v11taina.find(m => m.id === id) || fail("upstream V11 engine not found: " + id);
 const v11CotMod = await v11("data/cot/v11.js");
 const v11TainaCots = (await v11("data/cot/v11taina.js")).cot_v11taina;
-const v11Cots = ["cot-v11-english", "cot-v11-cap-english", "cot-v11-voice-english", "cot-v11-voice-cap-english", "cot-v11-wr-english", "cot-v11-wr-cap-english"].map(id => {
+const v11Cots = ["cot-v11-voice-english", "cot-v11-voice-cap-english", "cot-v11-wr-english", "cot-v11-wr-cap-english"].map(id => {
     const c = [...v11CotMod.cot_v11, ...v11TainaCots].find(x => x.id === id) || fail("upstream V11 CoT missing: " + id);
     return { id, content: c.content, prefill: c.prefill || "" };
 });
@@ -128,7 +127,7 @@ const v11Inside = v11Styles.find(s => s.id === "dir_v11_inside") || fail("upstre
 const v11Render = await load(v11Text("src/state/modules/notebook/render.js"), "v11_notebook_render", { "./model.js": v11Text("src/state/modules/notebook/model.js") });
 const v11UserRule = (v11Text("data/slots.js").match(/fallback: \(\) => "(\d+\. The response does not speak[^"]*)"/) || fail("upstream V11 {{user}} rule not found"))[1];
 // The words V11's preset sections are built from (src/prompts/presetFrame.js and v11Rules.js):
-// the older headings for V11 Тайна Preview, the tags for the V11 Тайна turn frame.
+// the older headings (the V10 Megumin Originals on the V11 preset), the tags for the V11 Тайна turn frame.
 const v11Frame = await v11("src/prompts/presetFrame.js");
 const v11Rules = await v11("src/prompts/v11Rules.js");
 const language = v11Rules.languageLine("zzz");
@@ -181,7 +180,7 @@ const engine = (base, meta) => `    {
         megumin: true,
 ${["p1", "p2", "p3", "p4", "p5", "p6", "contentRules", "repetition", "reminderChecks"].filter(k => base[k] !== undefined).map(k => `        ${k}: ${tl(base[k])},`).join("\n")}
     }`;
-const v11Meta = (m, id, label, color) => `id: "${id}", label: "${label}", color: "${color}", isNew: true, isV11: true, isCoreClone: true, notebook: true${m.turnFrame ? `, turnFrame: "${m.turnFrame}"` : ""}`;
+const v11Meta = (m, id, label, color) => `id: "${id}", label: "${label}", color: "${color}", isV11: true, isCoreClone: true, notebook: true${m.turnFrame ? `, turnFrame: "${m.turnFrame}"` : ""}`;
 const obj = o => `{\n${Object.entries(o).map(([k, v]) => `    ${JSON.stringify(k)}: ${tl(v)},`).join("\n")}\n}`;
 
 const js = `// ─────────────────────────────────────────────────────────────────────────────
@@ -201,12 +200,10 @@ const js = `// ─────────────────────�
 export const MEGUMIN_UPSTREAM = "${UPSTREAM}";
 
 export const modes_megumin = [
-${engine(upUkiyo, `id: "v10-ukiyo-megumin", label: "V10 Ukiyo · Megumin Original", color: "#fb7185", isNew: true, isV10: true, isCoreClone: true`)},
-${engine(upShura, `id: "v10-shura-megumin", label: "V10 Shura · Megumin Original", color: "#c084fc", isNew: true, isV10: true, isCoreClone: true`)},
+${engine(upUkiyo, `id: "v10-ukiyo-megumin", label: "V10 Ukiyo · Megumin Original", color: "#fb7185", isV10: true, isCoreClone: true`)},
+${engine(upShura, `id: "v10-shura-megumin", label: "V10 Shura · Megumin Original", color: "#c084fc", isV10: true, isCoreClone: true`)},
 ${engine(upTaina("v11-voice"), v11Meta(upTaina("v11-voice"), "v11-voice-megumin", "V11 Тайна · Megumin Original", "#0ea5e9"))},
 ${engine(upTaina("v11-writers-room"), v11Meta(upTaina("v11-writers-room"), "v11-writers-room-megumin", "V11 Тайна · Writers' Room · Megumin Original", "#6366f1"))},
-${engine(upTaina("v11-deepseek"), v11Meta(upTaina("v11-deepseek"), "v11-deepseek-megumin", "V11 Тайна DeepSeek · Megumin Original", "#4d6bfe"))},
-${engine(upV11, v11Meta(upV11, "v11-room-megumin", "V11 Тайна Preview · Megumin Original", "#38bdf8"))},
 ];
 
 export const cot_megumin = [
@@ -245,7 +242,7 @@ export const MEGUMIN_CONFIG = {
 export const MEGUMIN_ONOMATO_STYLING = \`${upOno}\`;
 `;
 writeFileSync("data/megumin.js", js);
-console.log(`data/megumin.js: 6 engines, ${cots.length + v11Cots.length} thinking steps, ${Object.keys(styleRules).length} styles, ${Object.keys(addonTexts).length} add-ons, ${Object.keys(planTexts).length} director templates, ${Object.keys(cfgNotes).length} config notes, ${Object.keys(cfgValues).length} config values; V11: ${Object.keys(v11CfgNotes).length} config notes, ${Object.keys(v11CfgValues).length} config values`);
+console.log(`data/megumin.js: 4 engines, ${cots.length + v11Cots.length} thinking steps, ${Object.keys(styleRules).length} styles, ${Object.keys(addonTexts).length} add-ons, ${Object.keys(planTexts).length} director templates, ${Object.keys(cfgNotes).length} config notes, ${Object.keys(cfgValues).length} config values; V11: ${Object.keys(v11CfgNotes).length} config notes, ${Object.keys(v11CfgValues).length} config values`);
 
 // ── The preset ──────────────────────────────────────────────────────────────
 // VCRP's preset is the frame: slot order, roles, injection depths, the CoT Prefill
@@ -298,7 +295,8 @@ for (const [name, text] of Object.entries(original)) {
     const slot = preset.prompts.find(p => p.name === name) || fail("VCRP slot missing: " + name);
     slot.content = text;
 }
-for (const name of ["</user_persona>", "<history>"]) {
+// <history> is VCRP's: Story Memory's slot ([[long-Memory]] alone; V10's [[Short-memory]] is gone).
+for (const name of ["</user_persona>"]) {
     if (upText(name) !== preset.prompts.find(p => p.name === name).content) fail(`${name} differs from the original; decide which to ship`);
 }
 writeFileSync("Presets/VCRP V10 Megumin Original.json", JSON.stringify(preset, null, 4).replace(/\n/g, "\r\n"));
@@ -362,7 +360,7 @@ for (const [name, text] of Object.entries(originalV11)) {
     const slot = presetV11.prompts.find(p => p.name === name) || fail("VCRP slot missing: " + name);
     slot.content = text;
 }
-for (const name of ["</user_persona>", "<history>"]) {
+for (const name of ["</user_persona>"]) {
     if (v11Prompt(name).content !== presetV11.prompts.find(p => p.name === name).content) fail(`V11 ${name} differs from VCRP's; decide which to ship`);
 }
 const KEYS = ["identifier", "system_prompt", "enabled", "marker", "name", "role", "content", "injection_position", "injection_depth", "injection_order", "injection_trigger", "forbid_overrides"];

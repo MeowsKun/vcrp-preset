@@ -12,22 +12,14 @@
 import { extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "../core/constants.js";
 
-export const WHATS_NEW_ID = "10.0.0-vcrp.8";
+export const WHATS_NEW_ID = "10.0.0-vcrp.9";
 
 const ITEMS = [
-    "<b>Megumin Suite V11's 28/10 and 01/11 updates.</b> The per-turn rules now come <i>after</i> your newest message, ending on V11's line \"Start your turn.\", so the block instructions are the last thing the model reads (V11's answer to models that skip the blocks); Story settings moved into the cached part. A <b>Thinking Cap</b> for V11 Тайна and for its Writers' Room. V11's <b>USER Hard</b> prompt, carried switched off, for a model that answers an adult scene with nothing. The Notebook: a truth you delete gives its number to the next new one, reasons models write into \"Hidden from\" are left out, and <b>Truths kept at once</b> (Focus tab) sets how many it keeps. <b>Re-import the VCRP V11 Megumin Original preset.</b>",
-    "<b>Missing blocks are asked for again.</b> A reply that arrives without its blocks, or stops inside them, gets a small second call that reads the cache and answers with just the blocks, merged into the reply. BLOCKS tab, <i>Ask again for missing blocks</i> (on).",
-    "<b>Blank replies are explained.</b> A reply that comes back empty (on Gemini, usually its content filter), all reasoning, or only blocks gets a toast with the cause and what to do. It is not counted as a normal reply, and your <i>Next reply only</i> steer stays for the swipe. Setup Check warns when a Safety cap is set on a model that reasons before it writes: that reasoning counts against the cap.",
-    "<b>Story Memory on Gemini 4 Argon, and a full memory sweep.</b> Gemini's cache now works: OpenRouter folded VCRP's per-turn rules into Gemini's system instruction, so almost nothing was cached; now about 90% of each prompt is. Story Memory prices Gemini right (no Claude-style cache-write surcharge, a 5-minute cache) and never lets a request outgrow your target even if the cache lapsed. Enter Argon's price once in the Memory tab (2, 10, 0.1).",
-    "<b>Memory fixes.</b> A cut now always lands where a chapter ends: before, it could hide the start of a chapter that the memory text then left out. Summaries are read the way Gemini writes them (bold labels, numbered fact lines, \"**OK**\"), so no fact is dropped. Recall brings a fact back when the scene names something rare in it, and no longer matches on words like \"the\". Setup Check now runs its Story Memory checks on Gemini too. On Gemini, VCRP's turns always alternate between you and the model (Gemini can refuse a request with two in a row). A colored line whose style names a font in quotes keeps its markup whole.",
-    "<b>V11 Тайна · Adapted</b>, with its <b>Writers' Room</b> and <b>DeepSeek</b> versions: V11's engines run as VCRP engines. V11's text, thinking and Author's Notebook, with VCRP's ban list (dash rule included), the dash cleaner, and VCRP's own wording of your writing style, add-ons and Story Config. Any writing style fits. The Megumin Originals stay word for word beside them. In PRESETS &amp; COT, under V11.",
-    "<b>Sweep fixes.</b> Dialogue Colors: a color set in a style counts, a line for two characters is left alone, and a role (the Guard) is never merged with someone named like it (the Guard Captain). A reply cut off in the middle of a tag leaves no half tag in the history. Newer Gemini models (Gemini 4 Argon) no longer get a prefill they refuse with a 400 error. A custom price in the Memory tab is kept per model and never stands in for a model VCRP knows (it priced Claude at Gemini's rate), and its boxes keep what you type (they emptied themselves before the price was complete). Setup Check notes a V10 Megumin Original engine on the V11 preset.",
-    "<b>Megumin Suite V11's newest update, word for word.</b> <b>V11 Тайна</b> (one storyteller, the base for every model), <b>V11 Тайна · Writers' Room</b> and <b>V11 Тайна DeepSeek</b> join the first V11 engine, now called <b>V11 Тайна Preview</b>. Each picks its own thinking. In PRESETS &amp; COT, under V11.",
-    "<b>V11 Inside</b>, a new writing style from V11: the narration rides inside one character at a time (never yours) and sees the scene the way they would. Switching between the V11 engines keeps it.",
-    "<b>VCRP V11 Megumin Original, rebuilt</b> on V11's new preset: its rules up top, where they cache, and only what changes each turn after the chat. Each V11 engine brings its own Content section, story settings and final check. The notebook's hidden truths are now about the world and the other characters, never your own character's past (V11's fix).",
-    "<b>One preset for every engine</b> but the V10 Megumin Originals: leave VCRP V11 Megumin Original selected and pick a Pura Director engine, V10 Ukiyo or V10 Shura on it. They get VCRP's own rules there (ban list, dash rule, formatting rules, final reminder), word for word as on VCRP V10 Universal.",
-    "<b>Fixes.</b> Dialogue colors stay put on the Megumin Original engines (they now name who is speaking, so VCRP can hold each character to theirs). A reply after a break no longer gets cut off in its blocks: the request always leaves room for a whole reply. A block a reply leaves out, or is cut off in, is carried from where it was last written whole instead of dropping out.",
-];
+    "<b>A sweep of every feature on every engine.</b> Each module (Story Memory, Focus, the Notebook, the NPC Bank, the knowledgebase, Anime mode, the blocks and Pura's trackers, Tone Rules, Existing cast only, the one-shot direction, the length line, Dev Mode overrides and custom modules, every add-on and every Pura setting) was checked on all the engines on their presets, on Gemini 4 Argon and on Claude: all of it reaches the model, in the right place for the cache.",
+    "<b>Trimmed, after the sweep.</b> Gone: <b>V11 Тайна Preview</b> (the first V11 engine, with its thinking) and the <b>V11 Тайна DeepSeek</b> pair (a profile on one moves to V11 Тайна); the writing styles written for the V7–V9 engines and the five generic ones (the four of VCRP's engines remain; a profile on a removed one takes its engine's own); the <b>Gemini Thinking Override</b> (three &lt;think&gt; lines, from the Gemini 2 era); Dev Mode's dead Word Count, Short-term Memory and model acknowledgement slots; and the \"New\" badge every engine wore.",
+    "<b>Fixes.</b> Enhanced Dialogue is V10's alone (the flag could have swapped out a V11 engine's dialogue section). Setup Check now warns, not notes, when a V11 engine runs on a V10 preset: its Content section, which the engine's own text points to, is not sent there.",
+    "<b>The presets</b> no longer carry V10's empty Short-term Memory slot (Story Memory's text has its own). Re-importing is optional: a preset imported before still works, the old slot stripped as it always was.",
+]
 
 const settings = () => extension_settings[extensionName] && extension_settings[extensionName].globalSettings;
 
@@ -46,7 +38,7 @@ export function markWhatsNewSeen() {
 /** Once, when SillyTavern is ready: the one thing that needs doing. */
 export function whatsNewToast() {
     if (!hasUnseenWhatsNew() || typeof toastr === "undefined") return;
-    toastr.info("New: Megumin's 01/11 update (its rules after your message, Thinking Caps for V11 Тайна), missing blocks asked for again, blank replies explained. Re-import the VCRP V11 Megumin Original preset from the extension's Presets folder, replacing the old one. What's new: VCRP → Global Settings.", `VCRP updated to ${WHATS_NEW_ID}`, { timeOut: 20000, extendedTimeOut: 10000 });
+    toastr.info("New: a sweep of every feature on every engine, and a trim after it (V11 Тайна Preview, the DeepSeek pair, the old writing styles and the Gemini Thinking Override are gone; profiles on them move over). Details in Global Settings → What's new.", "VCRP " + WHATS_NEW_ID, { timeOut: 15000 });
 }
 
 /** The card at the top of Global Settings, with a "Got it" button (#vcrp_whats_new_ok). */
@@ -57,7 +49,7 @@ export function whatsNewCardHtml() {
             ${ITEMS.map(i => `<div class="set-desc" style="margin:6px 0;">${i}</div>`).join("")}
             <div class="mtab-callout gold" style="margin:10px 0 0;">
                 <i class="fa-solid fa-file-import"></i>
-                <span><b>For V11, re-import its preset</b> VCRP V11 Megumin Original from the extension's Presets folder, replacing the old one, select it while a V11 engine is picked, and allow its regex scripts (Extensions → Regex → Preset scripts). Setup Check tells you if the old one is still loaded. Your VCRP V10 presets need no re-import.</span>
+                <span><b>Nothing to re-import this time.</b> The presets changed only by losing an empty slot; the one you have keeps working. If you are still on a V11 preset from before Megumin's 01/11 update, Setup Check says so: re-import VCRP V11 Megumin Original from the extension's Presets folder, replacing the old one. Your VCRP V10 presets need no re-import.</span>
             </div>
             <div style="margin-top:10px;"><button id="vcrp_whats_new_ok" class="ps-modern-btn primary" style="font-size:0.75rem;"><i class="fa-solid fa-check"></i> Got it</button></div>
         </div>`;

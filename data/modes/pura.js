@@ -7,7 +7,7 @@
 //   ORIGINAL  Pura's writing text word for word, with Pura's own controls.
 //   ADAPTED   the same core, reworded only where VCRP's modules take over.
 
-const base = { color: "#ec4899", isNew: true, p1: "", p2: "", p3: "", p4: "", p5: "", p6: "" };
+const base = { color: "#ec4899", p1: "", p2: "", p3: "", p4: "", p5: "", p6: "" };
 
 export const modes_pura = [
     { ...base, id: "pura-original", label: "Pura Director · Original", pura: "original" },

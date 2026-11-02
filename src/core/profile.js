@@ -17,6 +17,7 @@ import { extensionName } from "./constants.js";
 import { localProfile, setLocalProfile, _loadedProfileKey, setLoadedProfileKey } from "./state.js";
 import { getCharacterKey, getRawAvatar, getAvatarKey, getParentChatKey, getProfileLevel } from "./keys.js";
 import { fireRefreshHook, REFRESH } from "./refreshHooks.js";
+import { lockedStyleIdFor } from "./engines.js";
 import { meguminSparsifyProfilePrompts, meguminRehydrateProfilePrompts } from "../prompts/storage.js";
 import { DEFAULT_PROMPTS } from "../prompts/defaults.js";
 import { hardcodedLogic } from "../../data/database.js";
@@ -295,11 +296,28 @@ export function initProfile() {
     // to its V10 counterpart (a Co-writer to its base engine, anything else to Ukiyo),
     // and a CoT that no longer exists falls back to the engine's own.
     if (typeof localProfile.mode === "string" && localProfile.mode.endsWith("-cw")) localProfile.mode = localProfile.mode.slice(0, -3);
+    // VCRP 10.0.0-vcrp.9: V11 Тайна Preview (the first V11 engine) and the DeepSeek pair were
+    // removed; a profile on one moves to V11 Тайна, and the Preview's thinking to V11 Тайна's.
+    const vcrpGoneModes = { "v11-room-megumin": "v11-voice-megumin", "v11-deepseek-megumin": "v11-voice-megumin", "v11-deepseek-adapted": "v11-voice-adapted" };
+    if (vcrpGoneModes[localProfile.mode]) localProfile.mode = vcrpGoneModes[localProfile.mode];
+    const vcrpGoneCots = { "cot-v11-english": "cot-v11-voice-english", "cot-v11-cap-english": "cot-v11-voice-cap-english" };
+    if (vcrpGoneCots[localProfile.model]) localProfile.model = vcrpGoneCots[localProfile.model];
     const vcrpKnownModes = [...hardcodedLogic.modes, ...(extension_settings[extensionName]?.customModes || [])];
     if (!vcrpKnownModes.some(m => m.id === localProfile.mode)) localProfile.mode = "v10-core";
     if (!hardcodedLogic.models.some(m => m.id === localProfile.model)) {
         localProfile.model = meguminCotForMode(localProfile.mode) || "cot-v10-ukiyo-english";
     }
+    // The writing styles of the V7-V9 generations and the generic ones were removed: a profile
+    // on one takes the engine's own style (a custom style is the reader's and stays).
+    const vcrpGoneStyles = ["dir_v9", "dir_v9lite", "dir_v8", "dir_v7_core", "dir_v7_gentle", "dir_v7.5", "dir_v7", "dir_simple", "dir_descriptive", "dir_dialogue", "dir_clinical", "dir_sensory"];
+    if (vcrpGoneStyles.includes(localProfile.activeStyleId)) {
+        const own = lockedStyleIdFor(vcrpKnownModes.find(m => m.id === localProfile.mode));
+        const ds = own && hardcodedLogic.directStyles.find(s => s.id === own);
+        localProfile.activeStyleId = ds ? own : null;
+        localProfile.aiRule = ds ? ds.rule : "";
+    }
+    // The "Gemini Thinking Override" (three <think> lines) was removed.
+    delete localProfile.thinkingV2;
     // VCRP: the Death, Combat, Direct Language, Dice, MVU and Organic NPCs add-ons were removed.
     if (Array.isArray(localProfile.addons)) {
         localProfile.addons = localProfile.addons.filter(id => !["death", "combat", "direct", "dice", "dice_all", "npc_events"].includes(id));

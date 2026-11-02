@@ -25,9 +25,8 @@ export function updateLiveTokenCount() {
 
     // Array of dynamic systems we do NOT want to count
     const excludeKeys = [
-        "[[long-Memory]]", "[[Short-memory]]", 
+        "[[long-Memory]]",
         "[[npc list]]", "[[npc_dossier]]", "[[npc_dossier2]]",
-        "[[img1]]", "[[img2]]",
         "[[storyplan]]", "[[storytracker]]", "[[storytracker2]]",
         "[[banlist]]", "[[focus]]", "[[plotfocus]]", "[[pura_late]]",
         // Both injection paths are built on every pass and only one of them ever
@@ -46,11 +45,11 @@ export function updateLiveTokenCount() {
         if (excludeKeys.includes(key)) return;
 
         // Categorize the text using exact matches to prevent overlap
-        if (key === "[[aiprompt]]" || key === "[[config]]" || key === "[[Language]]" || key === "[[pronouns]]" || key === "[[count]]" || key === "[[DNRATIO]]" || key === "[[onomato]]") {
+        if (key === "[[aiprompt]]" || key === "[[config]]" || key === "[[Language]]" || key === "[[pronouns]]" || key === "[[DNRATIO]]" || key === "[[onomato]]") {
             styleStr += value + " ";
         } else if (key === "[[COT]]" || key === "[[prefill]]" || key === "[[THINK]]") {
             cotStr += value + " ";
-        } else if (key.match(/^\[\[prompt[1-6]\]\]$/) || key === "[[main]]" || key === "[[AI1]]" || key === "[[AI2]]") {
+        } else if (key.match(/^\[\[prompt[1-6]\]\]$/)) {
             engineStr += value + " ";
         } else {
             addonsStr += value + " ";

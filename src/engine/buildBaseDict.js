@@ -10,7 +10,7 @@
 import { getContext, extension_settings, substituteParams } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
-import { isV7Engine, isModernEngine, isCoWriterEngine, isMeguminEngine, isPuraEngine, puraVariant, isV11Engine } from "../core/engines.js";
+import { isModernEngine, isCoWriterEngine, isMeguminEngine, isPuraEngine, puraVariant, isV10Engine, isV11Engine } from "../core/engines.js";
 import { meguminStyleRule, meguminAddonText, meguminPlanTemplate } from "./meguminOriginal.js";
 import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING, MEGUMIN_V11, MEGUMIN_V11_CONFIG } from "../../data/megumin.js";
 import { v11Frame, applyMeguminV11Sections, storySettingsSection, languageLine } from "./meguminV11.js";
@@ -47,7 +47,6 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
 
     const allAvailableModes = [...hardcodedLogic.modes, ...(extension_settings[extensionName].customModes || [])];
     const activeEngine = allAvailableModes.find(m => m.id === localProfile.mode);
-    const isV7 = isV7Engine(activeEngine);
     const isModern = isModernEngine(activeEngine);
     // A Megumin Original engine takes Megumin's own wording of every shared text
     // below (styles, add-ons, Story Config, Enhanced Dialogue, Story Director).
@@ -57,7 +56,7 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     const meguminV11 = megumin && isV11Engine(activeEngine);
     const frame = v11Frame(activeEngine);
 
-    // 1. GLOBAL DEFAULTS (Language, Pronouns, Word Count)
+    // 1. GLOBAL DEFAULTS (Language, Pronouns)
     const targetLang = (localProfile.userLanguage && localProfile.userLanguage.trim() !== "")
         ? localProfile.userLanguage.toUpperCase()
         : "ENGLISH";
@@ -69,10 +68,6 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     if (localProfile.userPronouns === "male") dict["[[pronouns]]"] = `{{user}} is male. Always portray and address him as such.`;
     else if (localProfile.userPronouns === "female") dict["[[pronouns]]"] = `{{user}} is female. Always portray and address her as such.`;
 
-    // The legacy word count is gone — length now lives in the Story Config block.
-    // The tag is still emitted as empty so any preset that still carries it gets it stripped.
-    dict["[[count]]"] = "";
-
     // Story Config (<config> block). Empty when the config is off or every field is on Default.
     // VCRP: Pura Director · Adapted hands its tense to Story Config; left on default, Pura's own.
     // Megumin Suite V11's engines: its wording; V11 Тайна's: its <story_settings>, then <repetition>.
@@ -83,26 +78,11 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
 
     // 2. STANDARD STAGE SELECTIONS (Stage 2, 4, 5, 6)
 
-    // VCRP: the Persona tab (narrator personalities, OOC/control protocols) was removed.
-    dict["[[AI1]]"] = "Understood."; // Default
-    dict["[[AI2]]"] = "Understood."; // Default
-
-    // POV moved out of the style library and into the Story Config block.
-    const povInjectionStr = "";
-
-    if (localProfile.mode === "v7.5") {
-        let narratorPersona = localProfile.aiRule ? localProfile.aiRule : "Adopt the narration of an unseen, witty observer who is vividly present in the scene. The narrator has a distinct personality—dry, occasionally judgmental, quietly amused, or sharply critical. Feel free to throw subtle shade at terrible decisions, point out the absurdity of a situation, or comment on the scene's chaos with a bit of comedic flair.";
-        
-        dict["[[aiprompt]]"] = `<Narration_style>\n narrator_persona: "${povInjectionStr}${narratorPersona}"\n quarantine_rule: "CRITICAL: This opinionated voice applies STRICTLY and EXCLUSIVELY to the narration. It MUST NOT bleed into <NPC_dialogue>. NPCs do not share the narrator's wit or perspective; their dialogue remains entirely bound by their own demographics, stress levels, and individual flaws."\n proportional_prose: "Match narrative intensity to the event. A spilled coffee is just a minor annoyance, not a catalyst for dramatic prose. Zero purple prose. Use grounded metaphors sparingly to anchor a scene, not distract from it."\n</Narration_style>`;
-    } else if (localProfile.aiRule) {
-        const aiRule = megumin ? meguminStyleRule(localProfile.activeStyleId, localProfile.aiRule) : localProfile.aiRule;
-        if (isV7 && localProfile.activeStyleId !== "dir_v7" && localProfile.activeStyleId !== "dir_v7_core" && localProfile.activeStyleId !== "dir_v7_gentle") {
-            dict["[[aiprompt]]"] = `<narrative_style>\n voice: ${povInjectionStr}${aiRule}\n  pacing: "Unhurried where it should be. A quiet moment can take a paragraph. A violent one can take a sentence. Match the rhythm to the content."\n  length_directive: "Typical outputs should run 3–6 substantial paragraphs, scaling with scene density. Lean toward the higher end during rich, atmospheric, or multi-character scenes. Go shorter — even a single paragraph — only when the moment genuinely demands economy: a held breath, a door closing, a line that hits harder alone. Never pad, never rush."\n</narrative_style>`;
-        } else {
-            dict["[[aiprompt]]"] = povInjectionStr + aiRule;
-        }
-    }
-    localProfile.addons.forEach(aId => {
+    // The writing style (POV lives in the Story Config block): Megumin's own wording of a
+    // shipped style while a Megumin Original engine is active.
+    if (localProfile.aiRule) {
+        dict["[[aiprompt]]"] = megumin ? meguminStyleRule(localProfile.activeStyleId, localProfile.aiRule) : localProfile.aiRule;
+    }    localProfile.addons.forEach(aId => {
         const item = hardcodedLogic.addons.find(a => a.id === aId);
         if (item) dict[item.trigger] = megumin ? meguminAddonText(item.id, item.content) : item.content;
     });
@@ -168,7 +148,10 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         // The swap is keyed on the engine's own id, so a clone gets its own
         // setting rather than inheriting the original's, and it is a no-op on any
         // engine whose prompts carry no <dialogue> tag.
-        const enhanced = Boolean(localProfile.enhancedDialogue
+        // VCRP: V10's engines only, as the cards offer it. Megumin Suite V11's engines carry a
+        // <dialogue> section of their own (the Writers' Room's is its dialogue writer's whole
+        // part), and the flag would swap it for V10's rules.
+        const enhanced = Boolean(isV10Engine(activeEngine) && localProfile.enhancedDialogue
             && localProfile.enhancedDialogue[activeEngine.id]);
         for (let i = 1; i <= 6; i++) {
             let val = activeEngine[`p${i}`] || "";
@@ -176,10 +159,6 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
             dict[`[[prompt${i}]]`] = val;
             dict[`[prompt${i}]`] = val;
         }
-
-        // Engine-specific AI Prefills (If defined in the engine)
-        if (activeEngine.A1) dict["[[AI1]]"] = activeEngine.A1;
-        if (activeEngine.A2) dict["[[AI2]]"] = activeEngine.A2;
 
         // [[user]] -- the rule telling the model to keep its hands off {{user}}.
         //
@@ -240,27 +219,7 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
             });
         }
 
-        // V7 Dynamic Stripping
-        if (isV7) {
-            if (!localProfile.toggles.v7_ooc && dict["[[prompt1]]"]) {
-                dict["[[prompt1]]"] = dict["[[prompt1]]"].replace(/<ooc_protocol>[\s\S]*?<\/ooc_protocol>/g, "");
-            }
-            if (dict["[[prompt4]]"]) {
-                if (!localProfile.toggles.v7_pcsolo) {
-                    dict["[[prompt4]]"] = dict["[[prompt4]]"].replace(/<pc_solo_physicality[\s\S]*?<\/pc_solo_physicality>/g, "");
-                }
-                if (!localProfile.toggles.v7_culture) {
-                    dict["[[prompt4]]"] = dict["[[prompt4]]"].replace(/<cultural_anchoring>[\s\S]*?<\/cultural_anchoring>/g, "");
-                }
-                if (!localProfile.toggles.v7_scene) {
-                    dict["[[prompt4]]"] = dict["[[prompt4]]"].replace(/<scene_choreography>[\s\S]*?<\/scene_choreography>/g, "");
-                }
-                if (!localProfile.toggles.v7_intro) {
-                    dict["[[prompt4]]"] = dict["[[prompt4]]"].replace(/\s*introduction_protocol:\s*"[^"]*"/g, "");
-                }
-            }
-        }
-        // V8/V9 Dynamic Injection & Stripping
+        // V10 and V11: the writing style goes into the engine's own text.
         if (isModern) {
             // 1. Inject [[aiprompt]] directly into the engine prompts (like p6) where the tag exists
             // V11 Тайна's text always names its narrator ("You narrate as"): V11 Default when no style is picked.
@@ -283,12 +242,6 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
             // 2. Wipe [[aiprompt]] from the dictionary so it gets erased from the main ST Preset!
             dict["[[aiprompt]]"] = "";
         }
-    }
-
-    // Modern engines carry no model acknowledgements.
-    if (isModern) {
-        dict["[[AI1]]"] = "";
-        dict["[[AI2]]"] = "";
     }
 
     // VCRP: a Pura Director engine writes its own main prompt and its two tags, and stands
@@ -331,9 +284,7 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     // above, and this line overwrote whatever it had put there. The add-on
     // could be edited and saved and never did anything.
     if (localProfile.cotEnabled !== false && dict["[[COT]]"]) {
-        const defaultWrapper = localProfile.thinkingV2
-            ? "<think>\n<think>\n<think>\n{Thinking}\n</think>"
-            : "<think>\n{Thinking}\n</think>";
+        const defaultWrapper = "<think>\n{Thinking}\n</think>";
 
         let wrapper = (dict["[[THINK]]"] && dict["[[THINK]]"].trim() !== "")
             ? dict["[[THINK]]"]
@@ -411,17 +362,13 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     // VCRP Focus: the plot focus, last in the prompt (after the newest message, outside the cache).
     dict["[[plotfocus]]"] = vcrpPlotFocusBlock();
 
-    if (localProfile.thinkingV2 && dict["[[prefill]]"]) {
-        dict["[[prefill]]"] = dict["[[prefill]]"].replace(/\n<think>[\s\S]*/, "\n<think>\n<think>");
-    }
-
     if (dict["[[cyoa]]"]) dict["[[cyoa2]]"] = "[CYOA block here]"; else dict["[[cyoa2]]"] = "";
     if (dict["[[infoblock]]"]) dict["[[infoblock2]]"] = "[World state block here]"; else dict["[[infoblock2]]"] = "";
     if (dict["[[storytracker]]"]) dict["[[storytracker2]]"] = "[Story tracker here]"; else dict["[[storytracker2]]"] = "";
     if (dict["[[npc_inner_chatter]]"]) dict["[[npc_inner_chatter2]]"] = "[Npc inner chatter here]"; else dict["[[npc_inner_chatter2]]"] = "";
 
     // Resolve early-evaluated tokens inside all other strings to prevent them from being missed and then cleaned up
-    const earlyTokens = ["[[count]]", "[[Language]]", "[[pronouns]]", "[[DNRATIO]]"];
+    const earlyTokens = ["[[Language]]", "[[pronouns]]", "[[DNRATIO]]"];
     earlyTokens.forEach(et => {
         if (dict[et] !== undefined) {
             const val = dict[et];
@@ -464,15 +411,8 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     });
 
     // --- 5. STORY MEMORY ---
-    // Initialize them as empty strings by default so the tags cleanly vanish if there are no memories
-    dict["[[long-Memory]]"] = "";
-    dict["[[Short-memory]]"] = "";
-
-    // The budgeted memory, when on, owns both tags: its snapshot changes only at a cut.
-    if (vcrpMemoryEnabled()) {
-        dict["[[long-Memory]]"] = vcrpMemoryBlock();
-        dict["[[Short-memory]]"] = "";
-    }
+    // Empty unless Story Memory is on, so the tag vanishes cleanly; its text changes only at a cut.
+    dict["[[long-Memory]]"] = vcrpMemoryEnabled() ? vcrpMemoryBlock() : "";
     // Old chapters the scene touches. After the chat, so it may change every turn.
     // A token count (the tabs' counters) sees the same text but records nothing.
     dict["[[story_recall]]"] = !vcrpMemoryEnabled() ? "" : isTokenCount ? previewRecall().text : vcrpMemoryRecall();

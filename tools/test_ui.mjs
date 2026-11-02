@@ -99,7 +99,7 @@ await renderAll("defaults");
 
 // Every remaining feature switched on.
 const p = state.localProfile;
-Object.assign(p, { mode: "v10-shura", model: "cot-v10-shura-english", cotEnabled: true, thinkingV2: true });
+Object.assign(p, { mode: "v10-shura", model: "cot-v10-shura-english", cotEnabled: true });
 p.knowledgebase.enabled = true; p.animeMode.enabled = true;
 p.addons = ["bold_npcs", "html", "color", "dn"];
 if (p.npcBank) { p.npcBank.enabled = true; p.npcBank.npcs = [{ name: "Mara", appearance: "tall", pfp: "" }]; }
@@ -358,7 +358,7 @@ for (let k = 0; k < memCount; k++) {
     check(!$("#vcrp_whats_new").length, "shown on a fresh install");
     delete gs.whatsNewSeen;
     switchTab(gear);
-    check($("#vcrp_whats_new").length === 1 && /re-import its preset/.test($("#vcrp_whats_new").text()), "not shown after an update");
+    check($("#vcrp_whats_new").length === 1 && /re-import/.test($("#vcrp_whats_new").text()), "not shown after an update");
     const dot = () => $(`#dot_${gear}`);
     check(dot().length === 1 && dot().hasClass("has-notice"), "no dot on the settings gear");
     $("#vcrp_whats_new_ok").trigger("click");
@@ -696,7 +696,8 @@ for (const view of ["landing", "editor"]) {
     p.cotEnabled = true;
     switchTab(tabsUI.findIndex(t => t.title === "PRESETS & COT"));
     const card = re => box.find(".mtab-eng-card").filter((i, el) => re.test($(el).find(".ecard-title").text()));
-    check(card(/^\s*V11 Тайна · Megumin Original/).length === 1 && card(/^\s*V11 Тайна · Writers' Room · Megumin Original/).length === 1 && card(/^\s*V11 Тайна DeepSeek · Megumin Original/).length === 1, "no card for V11 Тайна, its Writers' Room or its DeepSeek version");
+    check(card(/^\s*V11 Тайна · Megumin Original/).length === 1 && card(/^\s*V11 Тайна · Writers' Room · Megumin Original/).length === 1, "no card for V11 Тайна or its Writers' Room");
+    check(card(/DeepSeek|Preview · Megumin Original/).length === 0 && box.find(".ecard-badge.new").length === 0, "the DeepSeek and Preview cards are gone; no card wears a New badge");
     // Picking one keeps V11 Inside; moving between them keeps it too.
     p.activeStyleId = "dir_v11_inside"; p.aiRule = "inside";
     card(/^\s*V11 Тайна · Megumin Original/).trigger("click"); await tick();
@@ -708,27 +709,25 @@ for (const view of ["landing", "editor"]) {
     voiceCap.trigger("click"); await tick();
     check(p.model === "cot-v11-voice-cap-english" && p.mode === "v11-voice-megumin", `V11 Тайна's Thinking Cap card does not pick it: ${p.model}, ${p.mode}`);
     const flagged = re => $("#ps_stage_content").find(".mtab-eng-card").filter((i, el) => re.test($(el).find(".ecard-title").text()) && /May be Incompatible/.test($(el).text())).length;
-    check(flagged(/CoT V11 Тайна · Megumin Original — Thinking Cap/) === 0 && flagged(/Writers' Room · Megumin Original — Thinking Cap/) === 1 && flagged(/Preview · Megumin Original — Thinking Cap/) === 1, "V11 Тайна's own cap is allowed; the Writers' Room's and the Preview's are flagged for it");
+    check(flagged(/CoT V11 Тайна · Megumin Original — Thinking Cap/) === 0 && flagged(/Writers' Room · Megumin Original — Thinking Cap/) === 1, "V11 Тайна's own cap is allowed; the Writers' Room's is flagged for it");
     card(/^\s*V11 Тайна · Writers' Room · Megumin Original/).trigger("click"); await tick();
     check(p.mode === "v11-writers-room-megumin" && p.model === "cot-v11-wr-english" && p.activeStyleId === "dir_v11_inside", `the Writers' Room: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
     // V11's Adapted engines: a card each, described, with V11's thinking.
-    const adapted = [[/^\s*V11 Тайна · Adapted/, "v11-voice-adapted", "cot-v11-voice-english"], [/^\s*V11 Тайна · Writers' Room · Adapted/, "v11-writers-room-adapted", "cot-v11-wr-english"], [/^\s*V11 Тайна DeepSeek · Adapted/, "v11-deepseek-adapted", "cot-v11-voice-english"]];
+    const adapted = [[/^\s*V11 Тайна · Adapted/, "v11-voice-adapted", "cot-v11-voice-english"], [/^\s*V11 Тайна · Writers' Room · Adapted/, "v11-writers-room-adapted", "cot-v11-wr-english"]];
     for (const [re, mode, model] of adapted) {
         const c = card(re);
         check(c.length === 1 && /VCRP's ban list/.test(c.find(".ecard-desc").text()), `no described card for ${mode}`);
         c.trigger("click"); await tick();
         check(p.mode === mode && p.model === model && p.activeStyleId === "dir_v11_inside", `picking ${mode}: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
     }
-    const v11card = card(/^\s*V11 Тайна Preview · Megumin Original/);
-    check(v11card.length === 1, "no V11 Тайна Preview engine card");
+    // Picking a V11 engine from a V10 style lands on V11 Default.
     p.activeStyleId = "dir_v10_ukiyo";
-    v11card.trigger("click"); await tick();
-    check(p.mode === "v11-room-megumin" && p.model === "cot-v11-english" && p.activeStyleId === "dir_v11", `picking V11 does not pick its thinking and style: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
-    const capCard = card(/CoT V11 Тайна Preview · Megumin Original — Thinking Cap/);
-    check(capCard.length === 1, "no V11 Thinking Cap card");
-    capCard.trigger("click"); await tick();
-    check(p.model === "cot-v11-cap-english", `the V11 Thinking Cap card does not pick it: ${p.model}`);
+    card(/^\s*V11 Тайна · Megumin Original/).trigger("click"); await tick();
+    check(p.mode === "v11-voice-megumin" && p.model === "cot-v11-voice-english" && p.activeStyleId === "dir_v11", `picking V11 Тайна from a V10 style does not pick V11 Default: ${p.mode}, ${p.model}, ${p.activeStyleId}`);
+    card(/CoT V11 Тайна · Megumin Original — Thinking Cap/).trigger("click"); await tick();
+    check(p.model === "cot-v11-voice-cap-english", `the Thinking Cap card does not pick it: ${p.model}`);
     check(box.find("#ps_effort_cap_note").length === 1, "no note that Thinking Effort is not sent with a Thinking Cap");
+    check(box.text().includes("Thinking Effort") && !box.text().includes("Gemini Thinking Override"), "the Gemini Thinking Override is gone from the Reasoning section");
 
     // The Notebook's panel: forced on with V11; for another engine, a switch; the live truths
     // behind a spoiler, edited and saved with the chat.

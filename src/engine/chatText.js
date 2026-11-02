@@ -25,13 +25,8 @@ export function meguminCleanChatHistoryText(text) {
     if (!text) return "";
     let cleaned = text;
 
-    // 1. Remove Specific Megumin Suite Blocks (Inner Chatter, World State, CYOA, NPC Dossiers, Inline Images)
-    cleaned = cleaned.replace(/<img[^>]*?alt=["']KazumaInline["'][^>]*?>/gi, "");
-    cleaned = cleaned.replace(/<div[^>]*?title=["']KazumaFail\|[^>]*?>.*?<\/div>/gi, "");
-    
-    // Comprehensive Image Block Cleanup
-    cleaned = cleaned.replace(/<img\s+[^>]*\/>|<div class="kazuma-img-placeholder"[^>]*>[\s\S]*?<\/div>|<!-- kazuma-inline-start:[^>]*-->[\s\S]*?<!-- kazuma-inline-end:[^>]*-->/gi, "");
-    cleaned = cleaned.replace(/<details[^>]*>\s*<summary[^>]*>.*?💭.*?<b[^>]*>NPC Inner Chatter<\/b\s*><\/summary\s*>\s*([\s\S]*?)\s*<\/details\s*>/gi, "");
+    // 1. Remove Specific Megumin Suite Blocks (Inner Chatter, World State, CYOA, NPC Dossiers) and inline images
+    cleaned = cleaned.replace(/<img\s+[^>]*\/>/gi, "");    cleaned = cleaned.replace(/<details[^>]*>\s*<summary[^>]*>.*?💭.*?<b[^>]*>NPC Inner Chatter<\/b\s*><\/summary\s*>\s*([\s\S]*?)\s*<\/details\s*>/gi, "");
     cleaned = cleaned.replace(/<details[^>]*>\s*<summary[^>]*>.*?📌.*?<b[^>]*>World State<\/b\s*><\/summary\s*>\s*([\s\S]*?)\s*<\/details\s*>/gi, "");
     cleaned = cleaned.replace(/<details[^>]*>\s*<summary[^>]*>.*?🆕.*?<b[^>]*>New NPC:.*?<\/b\s*><\/summary\s*>\s*([\s\S]*?)\s*<\/details\s*>/gi, ""); // <-- NEW
     cleaned = cleaned.replace(/<div style="border: 1px solid #444;[\s\S]*?<\/div\s*>/gi, "");

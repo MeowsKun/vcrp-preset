@@ -162,20 +162,20 @@ Edit Prompts. The paid drift audits on the same tab are separate and can stay of
 
 ## 8. V11 Тайна and the Author's Notebook (Megumin Suite V11)
 
-**The engines.** PRESETS & COT, under V11. All four are Megumin Suite V11's own, word for word,
-and each picks its own thinking:
+**The engines.** PRESETS & COT, under V11. Both are Megumin Suite V11's own, word for word, and
+each picks its own thinking:
 - **V11 Тайна · Megumin Original**: one storyteller writes the whole turn. The base for every model.
-  It has a **Thinking Cap** of its own now, for models that over-think.
+  On **GLM, Kimi, DeepSeek or Qwen**, pick its **Thinking Cap**: shorter thinking that those models
+  actually stick to. A Thinking Cap sets its own length, so your Thinking length isn't sent with it
+  (as in Megumin V11).
 - **V11 Тайна · Writers' Room**: the same, with a room of five talking each turn over in the thinking.
   With a Thinking Cap of its own too.
-- **V11 Тайна DeepSeek**: V11 Тайна with one more line for DeepSeek, which tends to treat the
-  character as the player.
-- **V11 Тайна Preview**: the first V11 release, kept as it was. On **GLM, Kimi, DeepSeek or Qwen**,
-  pick its **Thinking Cap**: shorter thinking that those models actually stick to. A Thinking Cap
-  sets its own length, so your Thinking length isn't sent with it (as in Megumin V11).
 
-**Adapted versions.** **V11 Тайна · Adapted**, **V11 Тайна · Writers' Room · Adapted** and **V11
-Тайна DeepSeek · Adapted** are the same engines run as VCRP engines. V11's text, thinking and
+(The first V11 engine, "V11 Тайна Preview", and the DeepSeek version were dropped in 10.0.0-vcrp.9;
+a profile on one moves to V11 Тайна.)
+
+**Adapted versions.** **V11 Тайна · Adapted** and **V11 Тайна · Writers' Room · Adapted** are the
+same engines run as VCRP engines. V11's text, thinking and
 Notebook stay; VCRP's writing rules come on top: VCRP's ban list with its dash rule, the dash cleaner,
 and VCRP's own wording of your writing style, add-ons and Story Config. Any writing style fits (one
 other than V11's own takes over the narration). Pick an Adapted one for VCRP's rules, an Original

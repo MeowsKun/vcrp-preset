@@ -18,11 +18,10 @@
 
 import { modes_megumin } from "../megumin.js";
 
-/** [original id, adapted id, label]: the V11 Тайна engines (the Preview stays original only). */
+/** [original id, adapted id, label]: the V11 Тайна engines. */
 export const V11_ADAPTED = [
     ["v11-voice-megumin", "v11-voice-adapted", "V11 Тайна · Adapted"],
     ["v11-writers-room-megumin", "v11-writers-room-adapted", "V11 Тайна · Writers' Room · Adapted"],
-    ["v11-deepseek-megumin", "v11-deepseek-adapted", "V11 Тайна DeepSeek · Adapted"],
 ];
 
 /**

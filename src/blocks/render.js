@@ -509,7 +509,6 @@ function isSteppable(node) {
     // text, so consuming them costs the length accounting nothing.
     if (node.tagName === "IMG" || node.tagName === "BR") return true;
     if (node.querySelector && node.querySelector("img")) return true;
-    if (node.classList && node.classList.contains("kazuma-img-placeholder")) return true;
     return false;
 }
 

@@ -180,7 +180,7 @@ await imp("src/vcrp/memory/index.js");         // registers globalThis.vcrp_memo
 const { meguminCleanChatHistoryText } = await imp("src/engine/chatText.js");
 initProfile();
 Object.assign(state.localProfile, ENGINE === "v11"
-    ? { mode: "v11-room-megumin", model: "cot-v11-english", activeStyleId: "dir_v11", aiRule: "an overt narrator teller with a voice and opinions, present in every paragraph. Do not write as an effaced narrator or a camera." }
+    ? { mode: "v11-writers-room-megumin", model: "cot-v11-wr-english", activeStyleId: "dir_v11", aiRule: "an overt narrator teller with a voice and opinions, present in every paragraph. Do not write as an effaced narrator or a camera." }
     : ENGINE === "shura"
     ? (ORIGINAL ? { mode: "v10-shura-megumin", model: "cot-meg-shura-english" } : { mode: "v10-shura", model: "cot-v10-shura-english" })
     : /^pura-/.test(ENGINE) ? { mode: ENGINE, model: "cot-v10-ukiyo-english" }

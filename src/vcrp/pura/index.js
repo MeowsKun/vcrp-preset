@@ -232,8 +232,8 @@ export function puraLateBlock(variant, gen = "reply", s = puraSettings(), { lang
  */
 export function thinkingCapNudge(gen = "reply") {
     if (gen !== "reply" || !localProfile || localProfile.cotEnabled === false) return "";
-    // Every V11 Thinking Cap: the Preview's, V11 Тайна's and the Writers' Room's (Megumin Suite V11).
-    return /^cot-v11-(?:voice-|wr-)?cap-/.test(String(localProfile.model || "")) ? MEGUMIN_V11.capNudge : "";
+    // V11 Тайна's Thinking Cap and the Writers' Room's (Megumin Suite V11).
+    return /^cot-v11-(?:voice|wr)-cap-/.test(String(localProfile.model || "")) ? MEGUMIN_V11.capNudge : "";
 }
 
 /**
@@ -290,13 +290,10 @@ export function applyPuraEngine(dict, engine, gen = "reply", { record = false } 
         const chat = ((getContext() || {}).chat) || [];
         setPendingRolls(session.rolls, vcrpGenerationRaw() === "swipe" ? chat.length - 1 : chat.length);
     }
-    // Pura thinks Pura's way: no CoT script, no CoT prefill. Its voices replace the
-    // writing style, and it carries no model acknowledgements.
+    // Pura thinks Pura's way: no CoT script, no CoT prefill. Its voices replace the writing style.
     dict["[[COT]]"] = "";
     dict["[[prefill]]"] = "";
     dict["[[aiprompt]]"] = "";
-    dict["[[AI1]]"] = "";
-    dict["[[AI2]]"] = "";
     if (variant === "original") {
         // Pura's Formatting, genre and modes own what Story Config and the rule would say.
         dict["[[config]]"] = "";

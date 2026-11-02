@@ -250,7 +250,7 @@ section("V11 Тайна on its own preset: notebook and returning characters aft
 preset = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
 chat.length = 0;
 for (const k of Object.keys(meta)) delete meta[k];
-Object.assign(q, { mode: "v11-room-megumin", model: "cot-v11-english", activeStyleId: "dir_v11",
+Object.assign(q, { mode: "v11-writers-room-megumin", model: "cot-v11-wr-english", activeStyleId: "dir_v11",
     aiRule: "an overt narrator teller with a voice and opinions, present in every paragraph. Do not write as an effaced narrator or a camera." });
 q.pura = {};
 q.blockStack.order = ["world", "bonds"];
@@ -283,7 +283,7 @@ for (let t = 1; t <= 5; t++) {
 }
 const v11Last = v11Prompts.at(-1), v11Mk = marked(v11Last);
 const v11Cached = prefix(v11Last, v11Mk.at(-1)).join("\n"), v11All = v11Last.map(textOf).join("\n");
-ok(v11Cached.includes("You are a writers' room of five") && v11Cached.includes("NORA, the Director") && v11Cached.includes("# Content (NORA)"), "V11's engine text and its Content section are in the cached part (V11's layout since 01/11)");
+ok(v11Cached.includes("You are a writers' room of five") && v11Cached.includes("NORA, the Director") && v11Cached.includes("NORA's part. This story is rated M"), "V11's engine text and its Content section are in the cached part (V11's layout since 01/11)");
 for (const [what, s] of [["the live truths", "<Author_Notebook>"], ["the notebook's update rules", "write the Notebook_Update block only if"],
     ["the clue planted on turn 3", "Mara flinches when Bob mentions the fire"], ["Ann, back as she left", "Characters on file"], ["Ann's last outfit", "green raincoat, red scarf"],
     ["the {{user}} rule, item 5", "5. The response does not speak, think, feel, or act for Bob"], ["Tone Rules", tone.TONE_HEADER], ["Existing cast only", castLock.CAST_LOCK_HEADER]]) {

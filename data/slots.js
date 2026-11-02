@@ -111,10 +111,6 @@ export const MEGUMIN_SLOT_REGISTRY = [
       hint: "How characters act and what the model may decide on its own." },
     { key: "p6", trigger: "[[prompt6]]", structural: true, label: "Prompt 6", scope: "engine", group: "engine",
       hint: "The last of the engine's own instructions." },
-    { key: "A1", trigger: "[[AI1]]", structural: true, hidden: true, label: "Model Acknowledgement 1", scope: "engine", group: "engine",
-      advanced: true, hint: "A fake reply from the model, agreeing that it read the rules." },
-    { key: "A2", trigger: "[[AI2]]", structural: true, hidden: true, label: "Model Acknowledgement 2", scope: "engine", group: "engine",
-      advanced: true, hint: "The second fake acknowledgement." },
 
     // ── Reasoning ────────────────────────────────────────────────────────────
     { key: "cot", trigger: "[[COT]]", label: "Chain of Thought", scope: "engine", group: "reasoning",
@@ -127,7 +123,7 @@ export const MEGUMIN_SLOT_REGISTRY = [
     { key: "think", trigger: "[[THINK]]", label: "Thinking Tags", scope: "shared", group: "reasoning",
       gate: GATE.think,
       hint: "The tags the reasoning is wrapped in. {Thinking} marks where the engine's Chain of Thought is dropped in — keep it, or the script has nowhere to go.",
-      fallback: () => "<think>\n<think>\n<think>\n{Thinking}\n</think>" },
+      fallback: () => "<think>\n{Thinking}\n</think>" },
 
     // ── Shared fragments: one value, every engine ────────────────────────────
     { key: "html", trigger: "[[html]]", label: "Immersive HTML", scope: "shared", group: "systems",
@@ -183,19 +179,14 @@ export const MEGUMIN_SLOT_REGISTRY = [
     { key: "pronouns", trigger: "[[pronouns]]", label: "Your Pronouns", scope: "auto", group: "global",
       overridable: true, where: "Global",
       hint: "Built from the pronouns you picked in the Global tab." },
-    { key: "count", trigger: "[[count]]", label: "Word Count", scope: "auto", group: "global",
-      overridable: true, deprecated: true, where: "Presets & CoT",
-      hint: "Superseded by Length in Story Config. Always sent empty unless you override it here." },
 
     // ── Filled live by a feature. Nothing to edit ────────────────────────────
     { key: null, trigger: "[[config]]", label: "Story Config", scope: "auto", group: "live", where: "Presets & CoT",
       hint: "The <config> block built from your Story Config choices." },
     { key: null, trigger: "[[blocks]]", label: "Output Blocks", scope: "auto", group: "live", where: "Blocks",
       hint: "The whole <Blocks> envelope, assembled from the blocks you switched on." },
-    { key: null, trigger: "[[long-Memory]]", label: "Long-term Memory", scope: "auto", group: "live", where: "Memory",
-      hint: "Archived summaries pulled from the vault for this turn." },
-    { key: null, trigger: "[[Short-memory]]", label: "Short-term Memory", scope: "auto", group: "live", where: "Memory",
-      hint: "Recent chat kept verbatim." },
+    { key: null, trigger: "[[long-Memory]]", label: "Story Memory", scope: "auto", group: "live", where: "Memory",
+      hint: "VCRP: Story Memory's text (the chapters and facts the cut messages left behind), before the chat." },
     { key: null, trigger: "[[npc list]]", label: "NPC List", scope: "auto", group: "live", where: "NPC",
       hint: "The NPCs judged relevant to the current scene." },
     { key: null, trigger: "[[npc_dossier]]", label: "NPC Dossier Rules", scope: "auto", group: "live", where: "NPC",
@@ -255,6 +246,8 @@ export function meguminAllSlotTriggers() {
     ["[[infoblock2]]", "[[cyoa2]]", "[[storytracker2]]", "[[npc_inner_chatter2]]",
         "[[npc_dossier2]]", "[[npc_updates]]", "[[order]]"]
         .forEach(t => out.add(t));
+    // VCRP: slots that are gone (a preset imported before still carries some): stripped, never filled.
+    ["[[Short-memory]]", "[[count]]", "[[AI1]]", "[[AI2]]", "[[main]]"].forEach(t => out.add(t));
     // The bare-bracket spellings an older preset generation used.
     for (let i = 1; i <= 6; i++) out.add(`[prompt${i}]`);
     return [...out];

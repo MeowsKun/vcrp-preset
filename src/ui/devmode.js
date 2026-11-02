@@ -1049,7 +1049,6 @@ export function renderDevMode(view = "landing", arg = null, passedModeData = nul
                 id: "custom_" + Date.now(),
                 label: "New Custom Engine",
                 isCoreClone: false,
-                isV7: false,
                 p1: "", p3: "", p4: "", p5: "", p6: "",
                 cot: "", prefill: "",
                 customToggles: [],
@@ -1062,7 +1061,6 @@ export function renderDevMode(view = "landing", arg = null, passedModeData = nul
                 modeData.id = "custom_" + Date.now();
                 modeData.label = core.label + " (Copy)";
                 modeData.isCoreClone = true;
-                modeData.isV7 = core.id.startsWith("v7");
                 // Remember the parent. Clones used to forget it the moment they
                 // were made, so "what did I actually change?" had no answer.
                 modeData.parentId = core.id;

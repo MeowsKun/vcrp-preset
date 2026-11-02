@@ -305,13 +305,8 @@ export async function handlePromptInjection(data, type) {
                 }
             });
 
-            // Cleanup Inline Image Artifacts so the AI doesn't see raw HTML
-            msg.content = msg.content.replace(/<img[^>]*?alt=["']KazumaInline["'][^>]*?>/gi, "");
-            msg.content = msg.content.replace(/<div[^>]*?title=["']KazumaFail\|[^>]*?>.*?<\/div>/gi, "");
-            
-            // Comprehensive Image Block Cleanup
-            msg.content = msg.content.replace(/<img\s+[^>]*\/>|<div class="kazuma-img-placeholder"[^>]*>[\s\S]*?<\/div>|<!-- kazuma-inline-start:[^>]*-->[\s\S]*?<!-- kazuma-inline-end:[^>]*-->/gi, "");
-
+            // An inline image tag is markup the model should not read.
+            msg.content = msg.content.replace(/<img\s+[^>]*\/>/gi, "");
             // Final Sweep: Collapse 3 or more blank lines into a standard double line break
             msg.content = msg.content.replace(/(?:\r?\n[ \t]*){3,}/g, '\n\n');
         }

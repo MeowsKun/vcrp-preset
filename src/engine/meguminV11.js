@@ -5,8 +5,8 @@
 // [[content]] and [[addon_rules]] each bring their own heading or tag, so a section that is
 // off takes its heading with it (upstream src/engine/presetSections.js, src/prompts/v11Rules.js).
 // The words are V11's, generated into data/megumin.js. The V11 Тайна engines (turnFrame "v11")
-// take its tagged wording: <formatting>, <final_check>, its own ban list. V11 Тайна Preview and
-// the V10 Megumin Originals take the older headings ("## your thinking steps:").
+// take its tagged wording: <formatting>, <final_check>, its own ban list. The V10 Megumin
+// Originals, on this preset, take the older headings ("## your thinking steps:").
 //
 // VCRP's own engines and Pura's ("vcrp") run on this preset too, with VCRP's rules: the ban
 // list, formatting rules and final reminder as the "VCRP V10 Universal" preset words them,

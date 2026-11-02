@@ -34,8 +34,8 @@ function enhancedDialogueOn(m) {
     return Boolean(m && localProfile.enhancedDialogue && localProfile.enhancedDialogue[m.id]);
 }
 
-function enhancedDialogueMarkup(m, isLocked) {
-    if (!isV10Engine(m) || isLocked) return "";
+function enhancedDialogueMarkup(m) {
+    if (!isV10Engine(m)) return "";
     const on = enhancedDialogueOn(m);
     return `
         <div class="ecard-opt ${on ? "on" : ""}" title="Swap this engine's dialogue rules for the stricter, prescriptive set: named categories, orthographic cues for emotion, and an explicit ban list. For models that read the shipped section as a suggestion.">
@@ -69,7 +69,6 @@ function wireEnhancedDialogue(card, m, rerender) {
 export function renderCoreAndCot(c) {
     // Preserve active sub-tab and filter before wiping the container
     let activeSubTab = c.find('.ws-nav-btn.active').attr('data-target') || 'sec-official';
-    let activeFilter = c.find('.wstyle-filter-pill.active').attr('data-filter') || 'all';
 
     c.empty();
     const root = $(`<div style="display: flex; flex-direction: column; height: 100%;"></div>`);
@@ -82,11 +81,8 @@ export function renderCoreAndCot(c) {
         "pura-adapted": "Pura's Director core, reworded only where VCRP's modules take over: Story Config sets genre, tone, POV, tense, pace, length, friction and explicitness, and VCRP's rule keeps {{user}} yours. Pura's voices, randomisers, extras and modes stay in the Pura Director panel. Thinks in its own &lt;think&gt; block, without a CoT script. Works with Story Memory, Focus, the NPC Bank and every block, Pura's trackers among them.",
         "v11-voice-megumin": "Megumin Suite V11 Тайна, word for word: one storyteller writes the whole turn, plainly and with a voice of its own. Characters play their sheets at full strength, the world goes on without you, and a notebook keeps the story's hidden truths until they come out (always on with this engine; see the Focus tab). The base for every model. Picks CoT V11 Тайна and keeps V11 Default or V11 Inside. The dash cleaner pauses. Pair it with the \"VCRP V11 Megumin Original\" preset. Story Memory, Focus and every module work as on every VCRP engine.",
         "v11-writers-room-megumin": "Megumin Suite V11 Тайна written by a room of five, word for word: a director, a psychologist, a story architect, a storyteller and a dialogue writer talk the turn over in the thinking before it is written. Keeps the Author's Notebook like V11 Тайна. Picks CoT V11 Тайна · Writers' Room. Pair it with the \"VCRP V11 Megumin Original\" preset.",
-        "v11-deepseek-megumin": "Megumin Suite V11 Тайна with one more line for DeepSeek, word for word: DeepSeek tends to treat the character as the player and leave them doing nothing, so the character and everyone else in the story are the AI's to write and to move. DeepSeek also tends to leave the blocks out; VCRP carries each one forward from where it was last written whole. Picks CoT V11 Тайна. Pair it with the \"VCRP V11 Megumin Original\" preset.",
-        "v11-room-megumin": "The first V11 release, kept as it was, word for word: a writers' room of five (a director who keeps continuity and checks every draft, a psychologist for what each character wants, a story architect who keeps the author's notebook of hidden truths, a storyteller, a dialogue writer), and one overt narrator in the reply. Keeps the Author's Notebook (always on with this engine; see the Focus tab). Picks CoT V11 Тайна Preview; for models that over-think (GLM, Kimi, DeepSeek, Qwen), pick its Thinking Cap. The dash cleaner pauses. Pair it with the \"VCRP V11 Megumin Original\" preset. Story Memory, Focus and every module work as on every VCRP engine.",
         "v11-voice-adapted": "V11 Тайна as a VCRP engine: Megumin's engine text, thinking and Author's Notebook, with VCRP's writing rules on top. VCRP's ban list (its dash rule included) and the dash cleaner, and VCRP's own wording of your writing style, add-ons, Story Config and Story Director. Any writing style fits: one other than V11's own takes over the narration. Runs on the \"VCRP V11 Megumin Original\" preset. The Megumin Original stays word for word beside it.",
         "v11-writers-room-adapted": "V11 Тайна · Writers' Room as a VCRP engine: the room of five in the thinking, with VCRP's ban list (dash rule included), the dash cleaner, and VCRP's own wording of your writing style, add-ons and Story Config. Any writing style fits. Runs on the \"VCRP V11 Megumin Original\" preset.",
-        "v11-deepseek-adapted": "V11 Тайна DeepSeek as a VCRP engine: its extra line for DeepSeek, with VCRP's ban list (dash rule included), the dash cleaner, and VCRP's own wording of your writing style, add-ons and Story Config. Any writing style fits. Runs on the \"VCRP V11 Megumin Original\" preset.",
         "v10-shura-megumin": "Megumin Suite's own V10 Shura, word for word, for RP that reads exactly the way it did on Megumin. Its engine text, thinking steps and Enhanced Dialogue are the originals, and so is the wording of your writing style, add-ons and Story Config while it is selected. The dash cleaner pauses. Pair it with the \"VCRP V10 Megumin Original\" preset. Story Memory works the same as on every VCRP engine.",
     };
 
@@ -165,27 +161,13 @@ export function renderCoreAndCot(c) {
     const coreGrid = $(`<div class="mtab-card-grid" style="margin-bottom: 20px;"></div>`);
 
     hardcodedLogic.modes.forEach(m => {
-        let version = "all";
-        if (m.label.includes("V4")) version = "V4";
-        else if (m.label.includes("V5")) version = "V5";
-        else if (m.id.includes("v6")) version = "V6";
-        else if (m.id.includes("v7")) version = "V7";
-        else if (m.id.includes("v8")) version = "V8";
-        // Before the v9 test purely so the two lists stay in the same order.
-        else if (m.id.includes("v11")) version = "V11";
-        else if (m.id.includes("v10")) version = "V10";
-        else if (m.id.includes("v9")) version = "V9";
-
-        const isLocked = m.locked === true;
         const isSel = localProfile.mode === m.id;
 
         let badges = '';
         if (m.recommended) badges += `<span class="ecard-badge rec"><i class="fa-solid fa-star"></i> Recommended</span>`;
-        if (m.isNew && !isLocked) badges += `<span class="ecard-badge new">New</span>`;
-        if (isLocked) badges += `<span class="ecard-badge locked"><i class="fa-solid fa-lock"></i> Coming Soon</span>`;
 
         const card = $(`
-            <div class="mtab-eng-card ${isSel ? 'active' : ''} ${isLocked ? 'locked-card' : ''}" data-version="${version}" style="${(activeFilter !== 'all' && activeFilter !== version) ? 'display:none;' : ''}">
+            <div class="mtab-eng-card ${isSel ? 'active' : ''}">
                 <div class="ecard-accent"></div>
                 <div class="ecard-body">
                     <div class="ecard-title">
@@ -194,35 +176,33 @@ export function renderCoreAndCot(c) {
                     </div>
                     <p class="ecard-desc">${descriptions[m.id] || ""}</p>
                     ${badges ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">${badges}</div>` : ''}
-                    ${enhancedDialogueMarkup(m, isLocked)}
+                    ${enhancedDialogueMarkup(m)}
                 </div>
             </div>
         `);
 
         wireEnhancedDialogue(card, m, () => renderCoreAndCot(c));
 
-        if (!isLocked) {
-            card.on("click", () => {
-                localProfile.mode = m.id;
+        card.on("click", () => {
+            localProfile.mode = m.id;
 
-                // Same mapping the Writing Style tab uses when it finds a locked
-                // engine with no style set. One list, so the two cannot disagree.
-                // Moving between the V11 engines keeps V11 Inside (styleFamily).
-                const lockedStyle = lockedStyleIdFor(m);
-                if (lockedStyle && !styleFamily(lockedStyle).includes(localProfile.activeStyleId)) {
-                    localProfile.activeStyleId = lockedStyle;
-                    const ds = hardcodedLogic.directStyles.find(x => x.id === lockedStyle);
-                    if (ds) localProfile.aiRule = ds.rule;
-                }
+            // Same mapping the Writing Style tab uses when it finds a locked
+            // engine with no style set. One list, so the two cannot disagree.
+            // Moving between the V11 engines keeps V11 Inside (styleFamily).
+            const lockedStyle = lockedStyleIdFor(m);
+            if (lockedStyle && !styleFamily(lockedStyle).includes(localProfile.activeStyleId)) {
+                localProfile.activeStyleId = lockedStyle;
+                const ds = hardcodedLogic.directStyles.find(x => x.id === lockedStyle);
+                if (ds) localProfile.aiRule = ds.rule;
+            }
 
-                // The engine→CoT mapping lives in data/cot/index.js now, so Dev
-                // Mode can fill a clone's reasoning script from the same source.
-                const targetCot = meguminCotForMode(m.id);
-                if (targetCot) localProfile.model = targetCot;
-                saveProfileToMemory();
-                renderCoreAndCot(c);
-            });
-        }
+            // The engine→CoT mapping lives in data/cot/index.js now, so Dev
+            // Mode can fill a clone's reasoning script from the same source.
+            const targetCot = meguminCotForMode(m.id);
+            if (targetCot) localProfile.model = targetCot;
+            saveProfileToMemory();
+            renderCoreAndCot(c);
+        });
         coreGrid.append(card);
     });
 
@@ -252,7 +232,7 @@ export function renderCoreAndCot(c) {
                             </button>
                         </div>
                         <p class="ecard-desc">Custom Engine Flow</p>
-                        ${enhancedDialogueMarkup(m, false)}
+                        ${enhancedDialogueMarkup(m)}
                     </div>
                 </div>
             `);
@@ -321,12 +301,10 @@ export function renderCoreAndCot(c) {
         // The Megumin Original set first: none of its ids share a prefix with VCRP's,
         // but its capped ids do share one with its own uncapped ids.
         const model = localProfile.model || "";
-        if (model.startsWith("cot-v11-cap-")) currentType = "v11-cap";
-        else if (model.startsWith("cot-v11-voice-cap-")) currentType = "v11-voice-cap";
+        if (model.startsWith("cot-v11-voice-cap-")) currentType = "v11-voice-cap";
         else if (model.startsWith("cot-v11-wr-cap-")) currentType = "v11-wr-cap";
         else if (model.startsWith("cot-v11-voice-")) currentType = "v11-voice";
         else if (model.startsWith("cot-v11-wr-")) currentType = "v11-wr";
-        else if (model.startsWith("cot-v11-")) currentType = "v11";
         else if (model.startsWith("cot-meg-ukiyo-cap-")) currentType = "meg-ukiyo-cap";
         else if (model.startsWith("cot-meg-shura-cap-")) currentType = "meg-shura-cap";
         else if (model.startsWith("cot-meg-ukiyo-")) currentType = "meg-ukiyo";
@@ -343,11 +321,9 @@ export function renderCoreAndCot(c) {
         else if (localProfile.model && localProfile.model.startsWith("cot-v10-shura-")) { currentType = "v10-shura"; }
 
         let allowedCotTypes = null;
-        // V11's pairings: V11 Тайна (and its DeepSeek version) and its Writers' Room each have
-        // their own thinking and their own Thinking Cap; the Preview has its own pair.
-        if (/^v11-(voice|deepseek)/.test(localProfile.mode)) allowedCotTypes = ["v11-voice", "v11-voice-cap"];
-        else if (localProfile.mode.startsWith("v11-writers-room")) allowedCotTypes = ["v11-wr", "v11-wr-cap"];
-        else if (localProfile.mode.startsWith("v11")) allowedCotTypes = ["v11", "v11-cap"];
+        // V11's pairings: V11 Тайна and its Writers' Room each have their own thinking and Thinking Cap.
+        if (localProfile.mode.startsWith("v11-writers-room")) allowedCotTypes = ["v11-wr", "v11-wr-cap"];
+        else if (localProfile.mode.startsWith("v11")) allowedCotTypes = ["v11-voice", "v11-voice-cap"];
         else if (localProfile.mode.includes("megumin")) allowedCotTypes = ["meg-ukiyo", "meg-ukiyo-cap", "meg-shura", "meg-shura-cap"];
         else if (localProfile.mode.includes("v10")) allowedCotTypes = ["v10-ukiyo", "v10-ukiyo-cap", "v10-shura", "v10-shura-cap"];
 
@@ -355,20 +331,18 @@ export function renderCoreAndCot(c) {
         secCot.append(`<div class="wstyle-section-head purple"><i class="fa-solid fa-diagram-project"></i> Select Framework</div>`);
         const typeGrid = $(`<div class="mtab-card-grid" style="margin-bottom: 24px;"></div>`);
         const types = [
-            { id: "v10-ukiyo", label: "CoT V10 Ukiyo", desc: "The long-form reasoning built for Ukiyo. Thinks like a novelist muttering before a draft \u2014 present tense, a little messy, never a plan. No phases, no checklists, no audits.", isNew: true },
-            { id: "v10-ukiyo-cap", label: "CoT V10 Ukiyo \u2014 Thinking Cap", desc: "The same writer's mind with a hard ceiling on the thinking phase. For models that over-think.", isNew: true },
-            { id: "v10-shura", label: "CoT V10 Shura", desc: "Seven rules carried into the writing rather than a plan made before it. Built for V10 Shura, and the lightest of the four.", isNew: true },
-            { id: "v10-shura-cap", label: "CoT V10 Shura \u2014 Thinking Cap", desc: "The same seven rules with a hard ceiling on the thinking phase. For models that over-think.", isNew: true },
-            { id: "meg-ukiyo", label: "CoT V10 Ukiyo \u00b7 Megumin Original", desc: "Megumin Suite's own Writer's Mind, word for word. Built for the Megumin Original Ukiyo.", isNew: true },
-            { id: "meg-ukiyo-cap", label: "CoT V10 Ukiyo \u00b7 Megumin Original \u2014 Thinking Cap", desc: "Megumin Suite's own capped Writer's Mind, word for word.", isNew: true },
-            { id: "meg-shura", label: "CoT V10 Shura \u00b7 Megumin Original", desc: "Megumin Suite's own seven rules, word for word. Built for the Megumin Original Shura.", isNew: true },
-            { id: "meg-shura-cap", label: "CoT V10 Shura \u00b7 Megumin Original \u2014 Thinking Cap", desc: "Megumin Suite's own capped seven rules, word for word.", isNew: true },
-            { id: "v11-voice", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Megumin Original", desc: "Five steps in order: read your turn and the history, decide what each other character does, decide what the turn adds and whether a hidden truth gets a clue, write, then check the draft. Made for V11 \u0422\u0430\u0439\u043d\u0430 and its DeepSeek version.", isNew: true },
-            { id: "v11-voice-cap", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Megumin Original \u2014 Thinking Cap", desc: "V11 \u0422\u0430\u0439\u043d\u0430's five steps as one short line of notes each, no draft, written once in the reply; its rules are said again as the last thing the model reads. For models that over-think (GLM, Kimi, DeepSeek, Qwen). No word count: it sets its own length.", isNew: true },
-            { id: "v11-wr", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Writers' Room \u00b7 Megumin Original", desc: "The same five steps, worked by the room: the director reads, the psychologist decides what each other character does, the story architect picks what the turn adds, the storyteller and dialogue writer write, and the director checks.", isNew: true },
-            { id: "v11-wr-cap", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Writers' Room \u00b7 Megumin Original \u2014 Thinking Cap", desc: "The room's five steps as one short line of notes each, no draft, written once in the reply; its rules are said again as the last thing the model reads. For models that over-think. No word count: it sets its own length.", isNew: true },
-            { id: "v11", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 Preview \u00b7 Megumin Original", desc: "The writers' room works the turn in order: the director reads it, the psychologist decides what each character wants, the story architect decides what is new and what the notebook does, the storyteller and the dialogue writer draft, and the director checks the draft. Built for V11 \u0422\u0430\u0439\u043d\u0430 Preview.", isNew: true },
-            { id: "v11-cap", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 Preview \u00b7 Megumin Original \u2014 Thinking Cap", desc: "The same five steps as one short line of notes each, no draft, written once in the reply; its rules are said again as the last thing the model reads. For models that over-think (GLM, Kimi, DeepSeek, Qwen). No word count: it sets its own length.", isNew: true },
+            { id: "v10-ukiyo", label: "CoT V10 Ukiyo", desc: "The long-form reasoning built for Ukiyo. Thinks like a novelist muttering before a draft \u2014 present tense, a little messy, never a plan. No phases, no checklists, no audits." },
+            { id: "v10-ukiyo-cap", label: "CoT V10 Ukiyo \u2014 Thinking Cap", desc: "The same writer's mind with a hard ceiling on the thinking phase. For models that over-think." },
+            { id: "v10-shura", label: "CoT V10 Shura", desc: "Seven rules carried into the writing rather than a plan made before it. Built for V10 Shura, and the lightest of the four." },
+            { id: "v10-shura-cap", label: "CoT V10 Shura \u2014 Thinking Cap", desc: "The same seven rules with a hard ceiling on the thinking phase. For models that over-think." },
+            { id: "meg-ukiyo", label: "CoT V10 Ukiyo \u00b7 Megumin Original", desc: "Megumin Suite's own Writer's Mind, word for word. Built for the Megumin Original Ukiyo." },
+            { id: "meg-ukiyo-cap", label: "CoT V10 Ukiyo \u00b7 Megumin Original \u2014 Thinking Cap", desc: "Megumin Suite's own capped Writer's Mind, word for word." },
+            { id: "meg-shura", label: "CoT V10 Shura \u00b7 Megumin Original", desc: "Megumin Suite's own seven rules, word for word. Built for the Megumin Original Shura." },
+            { id: "meg-shura-cap", label: "CoT V10 Shura \u00b7 Megumin Original \u2014 Thinking Cap", desc: "Megumin Suite's own capped seven rules, word for word." },
+            { id: "v11-voice", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Megumin Original", desc: "Five steps in order: read your turn and the history, decide what each other character does, decide what the turn adds and whether a hidden truth gets a clue, write, then check the draft. Made for V11 \u0422\u0430\u0439\u043d\u0430 and its DeepSeek version." },
+            { id: "v11-voice-cap", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Megumin Original \u2014 Thinking Cap", desc: "V11 \u0422\u0430\u0439\u043d\u0430's five steps as one short line of notes each, no draft, written once in the reply; its rules are said again as the last thing the model reads. For models that over-think (GLM, Kimi, DeepSeek, Qwen). No word count: it sets its own length." },
+            { id: "v11-wr", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Writers' Room \u00b7 Megumin Original", desc: "The same five steps, worked by the room: the director reads, the psychologist decides what each other character does, the story architect picks what the turn adds, the storyteller and dialogue writer write, and the director checks." },
+            { id: "v11-wr-cap", label: "CoT V11 \u0422\u0430\u0439\u043d\u0430 \u00b7 Writers' Room \u00b7 Megumin Original \u2014 Thinking Cap", desc: "The room's five steps as one short line of notes each, no draft, written once in the reply; its rules are said again as the last thing the model reads. For models that over-think. No word count: it sets its own length." },
         ];
         types.forEach(t => {
             const isSel = currentType === t.id;
@@ -376,7 +350,6 @@ export function renderCoreAndCot(c) {
             
             let badges = '';
             if (isWarned) badges = `<span class="ecard-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;"><i class="fa-solid fa-triangle-exclamation"></i> May be Incompatible</span>`;
-            else if (t.isNew) badges = `<span class="ecard-badge new">New</span>`;
 
             const card = $(`
                 <div class="mtab-eng-card ${isSel ? 'active' : ''}">
@@ -446,20 +419,6 @@ export function renderCoreAndCot(c) {
             });
             secCot.append(customBlock);
         }
-
-        // Gemini Toggle
-        if (localProfile.thinkingV2 === undefined) localProfile.thinkingV2 = false;
-        const v2Card = $(`
-            <div class="mtab-toggle-row ${localProfile.thinkingV2 ? 'active' : ''}" style="margin-bottom: 24px; cursor: pointer;">
-                <div class="toggle-info">
-                    <div class="toggle-label"><i class="fa-solid fa-sparkles" style="color:#a855f7;"></i> Gemini Thinking Override</div>
-                    <div class="toggle-desc">Enable ONLY for Gemini models to inject specific XML tags.</div>
-                </div>
-                <div class="ps-switch"></div>
-            </div>
-        `);
-        v2Card.on("click", function () { localProfile.thinkingV2 = !localProfile.thinkingV2; saveProfileToMemory(); renderCoreAndCot(c); });
-        secCot.append(v2Card);
 
     }
 

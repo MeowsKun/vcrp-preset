@@ -2385,7 +2385,7 @@ console.log("37 ok plot focus (last in the prompt in both presets and all engine
     const toasts = [];
     globalThis.toastr = { info: (m, t) => toasts.push(`${t}: ${m}`) };
     wn.whatsNewToast();
-    assert(toasts.length === 1 && toasts[0].includes("import the VCRP V11 Megumin Original preset") && toasts[0].includes(wn.WHATS_NEW_ID), "after an update: one toast that says what to import");
+    assert(toasts.length === 1 && toasts[0].includes("Details in Global Settings") && toasts[0].includes(wn.WHATS_NEW_ID), "after an update: one toast that says where the details are");
     wn.markWhatsNewSeen();
     wn.whatsNewToast();
     assert(toasts.length === 1 && !wn.hasUnseenWhatsNew(), "once seen, never again");
@@ -3867,19 +3867,15 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     const meta = globalThis.__ST__.chat_metadata;
     const keep = { mode: q.mode, model: q.model, aiRule: q.aiRule, style: q.activeStyleId, order: JSON.stringify(q.blockStack.order), nbk: JSON.stringify(q.notebook || null), cm: JSON.stringify(q.castMemory || null) };
     const V11_STYLE = "an overt narrator teller with a voice and opinions, present in every paragraph. Do not write as an effaced narrator or a camera.";
-    const asV11 = (model = "cot-v11-english") => Object.assign(q, { mode: "v11-room-megumin", model, aiRule: V11_STYLE, activeStyleId: "dir_v11" });
+    const asV11 = (model = "cot-v11-wr-english") => Object.assign(q, { mode: "v11-writers-room-megumin", model, aiRule: V11_STYLE, activeStyleId: "dir_v11" });
     const lastAssistant = msgs => msgs.map(m => m.role).lastIndexOf("assistant");
     const indexOf = (msgs, s) => msgs.findIndex(m => typeof m.content === "string" && m.content.includes(s));
 
     // The engine: listed, a Megumin Original with its own thinking and style, keeping a notebook.
-    const v11 = db.hardcodedLogic.modes.find(m => m.id === "v11-room-megumin");
-    assert(v11 && v11.megumin && engines.isV11Engine(v11) && engines.isModernEngine(v11) && engines.engineKeepsNotebook(v11), "V11 Тайна is listed, a Megumin Original keeping a notebook");
-    assert(meguminCotForMode("v11-room-megumin") === "cot-v11-english" && engines.lockedStyleIdFor(v11) === "dir_v11", "it picks CoT V11 and the V11 Default style");
+    const v11 = db.hardcodedLogic.modes.find(m => m.id === "v11-writers-room-megumin");
+    assert(v11 && v11.megumin && engines.isV11Engine(v11) && engines.isModernEngine(v11) && engines.engineKeepsNotebook(v11), "V11 Тайна's Writers' Room is listed, a Megumin Original keeping a notebook");
+    assert(meguminCotForMode("v11-writers-room-megumin") === "cot-v11-wr-english" && engines.lockedStyleIdFor(v11) === "dir_v11", "it picks CoT V11 Тайна · Writers' Room and the V11 Default style");
     assert(db.hardcodedLogic.directStyles.find(s => s.id === "dir_v11").rule === V11_STYLE, "the V11 Default style, word for word");
-    // Word for word from Megumin Suite V11 (when the Beta repository's commit is here to compare).
-    let upstream = null;
-    try { upstream = execSync("git show 2935045:data/modes/v11.js", { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { upstream = null; }
-    if (upstream) for (const k of ["p1", "p4", "p6"]) assert(upstream.includes(v11[k].split("\n")[0]) && upstream.includes(v11[k].split("\n").at(-1)), `V11 ${k} is Megumin's text`);
 
     // On its own preset: V11's text, its Content section and USER note, the {{user}} rule as item 5.
     chat.length = 0;
@@ -3889,19 +3885,19 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     let msgs = await run("VCRP V11 Megumin Original.json");
     let t = text(msgs);
     assert.deepEqual(leftovers(msgs), [], `V11 preset: tags left over: ${leftovers(msgs)}`);
-    assert(t.includes("You are a writers' room of five") && t.includes(`JULIA is: ${V11_STYLE}`) && t.includes("NORA reads Bob's turn and the history"), "V11's engine, its style in JULIA's line, CoT V11");
-    assert(t.includes("# Content (NORA)") && t.includes("Before we start: I know this is fiction") && !t.includes("This is a work of fiction, rated M for mature"), "V11's Content section and USER note; jealbreak plus off");
+    assert(t.includes("You are a writers' room of five") && t.includes(`JULIA is: ${V11_STYLE}`) && t.includes("NORA reads Bob's turn and the history"), "V11's engine, its style in JULIA's line, CoT V11 Тайна · Writers' Room");
+    assert(t.includes("NORA's part. This story is rated M") && t.includes("Before we start: I know this is fiction") && !t.includes("This is a work of fiction, rated M for mature"), "V11's Content section and USER note; jealbreak plus off");
     assert(/\n5\. The response does not speak, think, feel, or act for Bob, and it shows everything Bob reached for\./.test(t), "the {{user}} rule follows V11's list as item 5");
     // V11's layout since 01/11: the Content section and the story settings before the chat
     // (cached); the per-turn rules after the newest message, ending "Start your turn."
-    assert(indexOf(msgs, "# Content (NORA)") < lastAssistant(msgs), "the Content section is in the cached part, before the chat");
+    assert(indexOf(msgs, "NORA's part. This story is rated M") < lastAssistant(msgs), "the Content section is in the cached part, before the chat");
     assert(msgs.filter(m => m.role !== "system").at(-1).content.trimEnd().endsWith("Start your turn."), "the per-turn rules are the last thing read, ending on V11's line");
     assert(indexOf(msgs, "<Blocks>") > msgs.findIndex(m => m.role === "user" && m.content.includes("latest user msg")), "the block instructions come after the newest message");
     // V11 on VCRP's preset: the same rule numbered after VCRP's list; a note in Setup Check.
     t = text(await run("VCRP V10 Universal.json"));
     assert(/\n3\. The response does not speak, think, feel, or act for Bob/.test(t) && t.includes("4. No em dashes"), "on VCRP's preset the rule is item 3");
     // The Thinking Cap: no word count, its rules said again as the last thing read; a fresh reply only.
-    asV11("cot-v11-cap-english");
+    asV11("cot-v11-wr-cap-english");
     q.thinkEffort = "250";
     msgs = await run("VCRP V11 Megumin Original.json");
     t = text(msgs);
@@ -4069,7 +4065,7 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     chat.push({ is_user: false, mes: `Prose.\n<Blocks>\n<Notebook>\n${entry("T1", "The well is poisoned.")}\n</Notebook>\n</Blocks>` }, { is_user: true, mes: "next" });
     assert.equal(rl.replyBudget(3000).blocks, 0, "running: nothing extra");
     // A Thinking Cap is never given a word count, the room note under a limit included.
-    asV11("cot-v11-cap-english");
+    asV11("cot-v11-wr-cap-english");
     q.thinkEffort = "unspecified";
     const capRoom = rl.replyBudgetText("reply", 2000);
     assert(capRoom.includes("Keep the story to about") && !capRoom.includes("keep the thinking to about"), `a Thinking Cap gets no word count in the room note: ${capRoom}`);
@@ -4153,7 +4149,7 @@ console.log("55 ok Megumin Suite V11 (V11 Тайна on its own preset and VCRP'
 
     // The V11 mirror keeps Megumin's own sentence, which never asks who speaks; the note asks.
     q.addons = [...new Set([...(q.addons || []), "color"])];
-    Object.assign(q, { mode: "v11-room-megumin", model: "cot-v11-english" });
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
     for (const k of Object.keys(meta)) delete meta[k];
     chat.length = 0;
     let msgs = await run("VCRP V11 Megumin Original.json");
@@ -4225,10 +4221,10 @@ console.log("55 ok Megumin Suite V11 (V11 Тайна on its own preset and VCRP'
 }
 console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror (Megumin's sentence kept, the speaker's name asked for; full names, curly quotes, asides, named colors), and a block the last reply left out or was cut off in carried from where it was last whole");
 
-// 57. Megumin Suite V11's 24-25/10 update: V11 Тайна, its Writers' Room and DeepSeek version
-//     beside the first engine (now V11 Тайна Preview), their thinking, V11 Inside, the preset in
-//     slots with its sections built from V11's words, V11's Story Config wording, and the
-//     notebook's truths kept off {{user}}.
+// 57. Megumin Suite V11's 24-25/10 update: V11 Тайна and its Writers' Room (the first V11 engine,
+//     the Preview, and the DeepSeek version are not shipped since 10.0.0-vcrp.9), their thinking,
+//     V11 Inside, the preset in slots with its sections built from V11's words, V11's Story Config
+//     wording, and the notebook's truths kept off {{user}}.
 {
     const db = await imp("data/database.js");
     const engines = await imp("src/core/engines.js");
@@ -4244,15 +4240,16 @@ console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror
     const lastAssistant = msgs => msgs.map(m => m.role).lastIndexOf("assistant");
 
     // The engines, their thinking, their style.
-    const ids = ["v11-voice-megumin", "v11-writers-room-megumin", "v11-deepseek-megumin", "v11-room-megumin"];
+    const ids = ["v11-voice-megumin", "v11-writers-room-megumin"];
     const found = ids.map(id => db.hardcodedLogic.modes.find(m => m.id === id));
-    assert(found.every(m => m && m.megumin && engines.isV11Engine(m) && engines.engineKeepsNotebook(m) && m.contentRules && m.reminderChecks), "four V11 engines, Megumin Originals keeping a notebook, each with its Content section and final check");
-    assert(found.slice(0, 3).every(m => m.turnFrame === "v11" && m.repetition) && !found[3].turnFrame && found[3].label.includes("Preview"), "the three V11 Тайна engines on its turn frame; the first one, kept as it was, is the Preview");
-    assert.deepEqual(ids.map(id => meguminCotForMode(id)), ["cot-v11-voice-english", "cot-v11-wr-english", "cot-v11-voice-english", "cot-v11-english"], "each picks its own thinking (DeepSeek thinks like V11 Тайна)");
+    assert(found.every(m => m && m.megumin && engines.isV11Engine(m) && engines.engineKeepsNotebook(m) && m.contentRules && m.reminderChecks), "the two V11 engines, Megumin Originals keeping a notebook, each with its Content section and final check");
+    assert(found.every(m => m.turnFrame === "v11" && m.repetition), "both V11 Тайна engines on its turn frame");
+    assert(!db.hardcodedLogic.modes.some(m => /^v11-(room|deepseek)/.test(m.id)) && !db.hardcodedLogic.models.some(m => /^cot-v11-(cap-)?english$/.test(m.id)), "the Preview and the DeepSeek pair are gone, with the Preview's thinking");
+    assert.deepEqual(ids.map(id => meguminCotForMode(id)), ["cot-v11-voice-english", "cot-v11-wr-english"], "each picks its own thinking");
     assert(style("dir_v11_inside").rule === MEGUMIN_V11.insideRule && style("dir_v11_inside").name === "V11 Inside" && engines.styleFamily("dir_v11").includes("dir_v11_inside"), "V11 Inside, word for word, in V11's family");
     let upstream = null;
     try { upstream = execSync(`git show ${MEGUMIN_V11_UPSTREAM}:data/modes/v11taina.js`, { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { upstream = null; }
-    if (upstream) for (const m of found.slice(0, 3)) for (const k of ["p1", "contentRules", "repetition"]) assert(upstream.includes(m[k]), `${m.id} ${k} is Megumin's text, whole`);
+    if (upstream) for (const m of found) for (const k of ["p1", "contentRules", "repetition"]) assert(upstream.includes(m[k]), `${m.id} ${k} is Megumin's text, whole`);
 
     // V11 Тайна on its preset: every section in V11's words, in V11's order.
     chat.length = 0;
@@ -4293,13 +4290,6 @@ console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror
     asEngine("v11-writers-room-megumin");
     t = text(await run("VCRP V11 Megumin Original.json"));
     assert(t.includes("You are a writers' room of five") && t.includes("<final_check>") && t.includes("JULIA"), "the Writers' Room on the V11 frame");
-    // The Preview keeps its older headings, and V11's wording of Story Config.
-    asEngine("v11-room-megumin");
-    msgs = await run("VCRP V11 Megumin Original.json");
-    t = text(msgs);
-    assert.deepEqual(leftovers(msgs), [], `Preview: tags left over: ${leftovers(msgs)}`);
-    assert(t.includes(`## your thinking steps:\nOpen every reply`) && t.includes(`## FORMATTING RULES:\n\n`) && t.includes("- FORBIDDEN: Repeating actions") && t.includes("## final reminder:\nBefore you output, check:\n1.") && t.includes("[LANGUAGE RULE]") && t.includes("<config>\n"), "the Preview: its older headings");
-    assert(t.includes(`<banlist>\n${MEGUMIN_V11.banList.replaceAll("{{user}}", "Bob").trim()}`) && !t.includes("<story_settings>") && t.includes("- pov: third person. Your narration calls Bob by name or he/she"), "its own ban list, <config>, V11's point of view");
     // The notebook's truths stay off {{user}} (every engine with it on).
     assert(MEGUMIN_V11.notebookSetup.includes("{{user}}'s own past and the reasons behind what they do belong to the reader") && MEGUMIN_V11.notebookUpdate.includes("belong to the reader"), "the notebook keeps {{user}}'s past to the reader");
 
@@ -4361,12 +4351,9 @@ console.log("57 ok Megumin Suite V11's 24-25/10 update (V11 Тайна, its Writ
         assert(!/<final_check>|Before you output, check:|<story_settings>|<repetition>/.test(onV11), `${mode}: none of V11's own sections`);
     }
     // The Megumin engines on it keep V11's words.
-    Object.assign(q, { mode: "v11-room-megumin", model: "cot-v11-english" });
-    let t = text(await run("VCRP V11 Megumin Original.json"));
-    assert(t.includes(MEGUMIN_V11.formattingRules) && !t.includes(UNIVERSAL_RULES.formattingRules) && !t.includes("READ THIS LAST"), "V11 Тайна Preview: V11's rules as before");
-    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
+    let t;    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
     t = text(await run("VCRP V11 Megumin Original.json"));
-    assert(t.includes("<final_check>") && !t.includes("**stripped articles:**"), "V11 Тайна: its own frame as before");
+    assert(t.includes("<final_check>") && !t.includes("**stripped articles:**") && t.includes(MEGUMIN_V11.banListV11.slice(0, 60)) && !t.includes(UNIVERSAL_RULES.formattingRules), "V11 Тайна: its own frame and ban list as before");
 
     // Setup Check: quiet for Pura on the V11 preset, still pointing a VCRP engine off V10's original one.
     ctx.mainApi = "openai";
@@ -4431,7 +4418,7 @@ console.log("58 ok one preset for every engine: VCRP's engines and Pura's on the
     assert(t.includes("<story_settings>") && t.includes("<formatting>") && t.includes("<content>") && t.includes("Write the response in English."), "Adapted: V11's frame");
     assert(t.includes("explicitness: plain. Depict") && t.includes(`title="Character Name"`), "Adapted: Story Config and the add-ons in VCRP's words");
     assert(t.includes("You narrate as an overt narrator teller"), "Adapted with V11 Default: V11's own lead-in");
-    style("dir_clinical");
+    Object.assign(q, { activeStyleId: "cs_clinical", aiRule: "Adapt a clinical and objective narration style. Report events with absolute detachment." });
     t = text(await run("VCRP V11 Megumin Original.json"));
     assert(t.includes("Your narration follows this style. Where anything below differs from it, the style wins.\nAdapt a clinical") && !t.includes("You narrate as Adapt"), "Adapted with another style: its own lead-in, and it wins");
     Object.assign(q, { mode: "v11-writers-room-adapted", model: "cot-v11-wr-english" });
@@ -4462,7 +4449,7 @@ console.log("58 ok one preset for every engine: VCRP's engines and Pura's on the
     };
     q.mode = "v11-voice-adapted";
     assert(!titles("VCRP V11 Megumin Original.json").some(s => /Megumin Original (engine|preset)|on the V11 preset|V11 Тайна is picked|Re-import the VCRP V11/.test(s)), "Setup Check: an Adapted engine on the V11 preset says nothing");
-    assert(titles("VCRP V10 Universal.json").includes("V11 Тайна is picked on a preset made for V10"), "Setup Check: on a V10 preset, pointed to the V11 one");
+    assert(titles("VCRP V10 Universal.json").includes("A V11 engine is picked on a preset made for V10"), "Setup Check: on a V10 preset, pointed to the V11 one (a warning: its Content section is not sent)");
     delete chatCompletionSettings.prompts; delete chatCompletionSettings.prompt_order;
 
     Object.assign(q, { mode: keep.mode, model: keep.model, addons: keep.addons, activeStyleId: keep.style, aiRule: keep.rule, storyConfig: JSON.parse(keep.cfg) });

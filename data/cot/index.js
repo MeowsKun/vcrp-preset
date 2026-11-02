@@ -32,10 +32,9 @@ export function meguminCotForMode(modeId, lang = "english") {
 
     let prefix = null;
     // V11 first: its engines are Megumin Originals too, with thinking of their own. V11 Тайна
-    // and its DeepSeek version share one, its Writers' Room has one, and the Preview its own.
-    if (/^v11-(voice|deepseek)/.test(modeId)) prefix = "cot-v11-voice";
-    else if (modeId.startsWith("v11-writers-room")) prefix = "cot-v11-wr";
-    else if (modeId.startsWith("v11")) prefix = "cot-v11";
+    // has one, and its Writers' Room one.
+    if (modeId.startsWith("v11-writers-room")) prefix = "cot-v11-wr";
+    else if (modeId.startsWith("v11")) prefix = "cot-v11-voice";
     // Megumin Original next: "v10-shura-megumin" is also a "v10-shura".
     else if (modeId.includes("megumin")) prefix = modeId.includes("shura") ? "cot-meg-shura" : "cot-meg-ukiyo";
     // Shura next: "v10-shura" contains "v10", and the specific pairing wins.

@@ -212,7 +212,7 @@
             "marker": false,
             "name": "<history>",
             "role": "system",
-            "content": "<history>\n\n[[long-Memory]]\n\n[[Short-memory]]",
+            "content": "<history>\n\n[[long-Memory]]",
             "injection_position": 0,
             "injection_depth": 4,
             "injection_order": 100,

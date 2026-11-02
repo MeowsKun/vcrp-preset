@@ -347,7 +347,7 @@ export function renderStoryConfig(c) {
     const isLockedStyleEngine = engineLocksStyle(activeEngineForStyle);
 
     if (isLockedStyleEngine && !localProfile.activeStyleId) {
-        const targetStyle = lockedStyleIdFor(activeEngineForStyle) || "dir_v7";
+        const targetStyle = lockedStyleIdFor(activeEngineForStyle) || "dir_v10_ukiyo";
 
         localProfile.activeStyleId = targetStyle;
         const ds = hardcodedLogic.directStyles.find(x => x.id === targetStyle);
