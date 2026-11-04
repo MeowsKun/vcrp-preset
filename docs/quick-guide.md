@@ -247,3 +247,12 @@ Switch it off in Global Settings → Behaviour → *Lore for background calls*.
 - **Safety cap and reasoning models.** On Gemini, DeepSeek, GLM, or Claude with *Request model
   reasoning* on, the model's hidden reasoning counts against the Safety cap. Setup Check now warns
   when the cap is set on such a model; 0 (off) or 4,000 and up is safe.
+- **Gemini JB** (Global Toggles & Add-ons; from Megumin Suite V11's 04/11 update): on Gemini, turn
+  it on when gritty or heavy NSFW scenes come back cut off or empty. It tells the model the request
+  complies with the adult fiction policy and asks for a `^` before every word; VCRP removes them as
+  each reply arrives, so you never see them (and the preset's new "clean up" regex hides them while
+  the reply streams). Re-import your preset if Setup Check asks: the add-on needs a spot in it and
+  that regex. Each `^` is an output token, so leave it off on other models. Not for NSFL.
+- **The final check asks for the blocks** on turns that have them (Megumin V11's 04/11), so fewer
+  replies end without them.
+- **Group chats save properly.** A repaired or cleaned reply in a group chat used to fail to save.

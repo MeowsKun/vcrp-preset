@@ -39,7 +39,8 @@ export function renderGlobalAndBlocks(c) {
         "color": "Each character's dialogue is color-coded for easy visual parsing, one color per character for the whole chat (listed below while it is on).",
         "dn": "Forces dialogue and narration to be wrapped in their respective XML tags. Useful for specific Models for better narration style adherence. <b>Not recommended on V10</b> — the tags fight that engine's own prose rules.",
         "html": "When a character reads something — a phone screen, a letter, a sign — the AI draws the thing itself as HTML instead of describing it. Rare by design: one per reply at most, and most replies have none.",
-        "bold_npcs": "NPCs chase their own goals, never hover or act halfway, and never bend just to please you. Can clash with the V10 engines' subtler rules and with Enhanced Dialogue, so try it before keeping it on."
+        "bold_npcs": "NPCs chase their own goals, never hover or act halfway, and never bend just to please you. Can clash with the V10 engines' subtler rules and with Enhanced Dialogue, so try it before keeping it on.",
+        "gemini_jb": "For Gemini (Megumin Suite V11): helps it get through gritty and heavy NSFW scenes without cutting the reply off. It tells the model the request complies with the adult fiction policy, and asks for a ^ before every word of the reply; VCRP takes the ^ out as each reply arrives, and the preset's \"clean up\" regex hides them while it streams (re-import the preset if Setup Check says so). Other models don't need it. Not for NSFL."
     };
 
     // Only MVU is left in this tab's Output Formats section, so only MVU needs a line

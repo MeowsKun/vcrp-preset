@@ -26,6 +26,7 @@ import {
 } from "../core/activeRequests.js";
 import { meguminActiveBlocks } from "../features/blocks/registry.js";
 import { blankReplyKind } from "./blankReply.js";
+import { usesCaretWords, stripCarets } from "../engine/caretWords.js";
 import { memorySummaryRunning } from "./memory/summarize.js";
 import { vcrpMemoryCountTaskOutput } from "./memory/index.js";
 import { notebookOn, notebookCurrentPhase } from "./notebook/index.js";
@@ -167,6 +168,9 @@ export async function repairBlocksNow(id) {
         setActiveBlockRepair(null);
     }
     if (raw) vcrpMemoryCountTaskOutput(raw);
+    // The Gemini JB add-on's ^ (this call is not asked for them, but a model keeps the habit)
+    // come out before the answer is read.
+    if (raw && usesCaretWords(localProfile)) raw = stripCarets(raw);
     if (meguminActiveDataIdentity() !== identity) return { status: "aborted", reason: "the chat changed" };
     const now = ((getContext() || {}).chat) || [];
     const target = now[Number(id)];

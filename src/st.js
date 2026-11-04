@@ -14,13 +14,15 @@
 
 export { extension_settings, getContext } from "../../../../extensions.js";
 
+// SillyTavern's saveChat() refuses a group chat (it throws). saveChatConditional saves either
+// kind (what getContext().saveChat does), so it is what "saveChat" means below (V11's 04/11 fix).
 export {
     saveSettingsDebounced,
     generateQuietPrompt,
     event_types,
     eventSource,
     substituteParams,
-    saveChat,
+    saveChatConditional as saveChat,
     reloadCurrentChat,
     addOneMessage,
     getRequestHeaders,

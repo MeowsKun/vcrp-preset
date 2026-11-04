@@ -173,6 +173,9 @@ export const MEGUMIN_SLOT_REGISTRY = [
       fallback: () => "# at the very end of the response put this block:\n<Story_Tracker>\narc: The Arc that is now active.\nchapter: The chapter that is now active.\nEpisode: The episode that is now active.\nSecrets: Any secret that the user/{{user}} doesn't know.\n</Story_Tracker>" },
 
     // ── Computed from your settings. Overridable, but rarely worth it ────────
+    // VCRP: the Gemini JB add-on's line (Megumin Suite V11, 04/11), filled by buildBaseDict and
+    // empty while the add-on is off. Hidden; listed so the leak guard strips an unfilled tag.
+    { key: null, trigger: "[[GeminiJB]]", hidden: true, label: "Gemini JB", scope: "auto", group: "live", where: "Add-ons" },
     { key: "language", trigger: "[[Language]]", label: "Language Rule", scope: "auto", group: "global",
       overridable: true, where: "Global",
       hint: "Built from the language you picked in the Global tab." },

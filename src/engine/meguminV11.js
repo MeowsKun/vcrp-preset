@@ -17,6 +17,10 @@
 // Only the "VCRP V11 Megumin Original" preset carries these tags. VCRP's own sections stay
 // VCRP's: the thinking is VCRP's [[THINK]], the colors carry VCRP's lock note, and Dice, Death,
 // Combat, images and MVU are not in VCRP, so nothing of theirs is sent.
+//
+// V11's 04/11 update: the Gemini JB add-on's "^ before every word" line closes the formatting
+// section (buildBaseDict passes it), and the final check asks for the <Blocks> section on a
+// turn that has one (applyMeguminV11Reminder, once the envelope is built).
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { MEGUMIN_V11 } from "../../data/megumin.js";
@@ -70,14 +74,18 @@ export function thinkingSection(think, frame) {
     return frame === "v11" ? body : `${MEGUMIN_V11.thinkingHeader}\n${body}`;
 }
 
-/** [[formatting]]: the ratio, the colors and the dialogue tags (and, before V11 Тайна, its two rules; VCRP's on its frame). */
-export function formattingSection({ dnratio, color, dn }, frame) {
+/**
+ * [[formatting]]: the ratio, the colors and the dialogue tags (and, before V11 Тайна, its two
+ * rules; VCRP's on its frame). `extra` (V11's 04/11 update): the Gemini JB add-on's "^ before
+ * every word" line, last, on every frame.
+ */
+export function formattingSection({ dnratio, color, dn, extra }, frame) {
     if (frame === "v11") {
-        const parts = filled([dnratio, color, dn]);
+        const parts = filled([dnratio, color, dn, extra]);
         return parts.length ? `<formatting>\n${parts.join("\n")}\n</formatting>` : "";
     }
     const rules = frame === "vcrp" && UNIVERSAL_RULES.formattingRules ? UNIVERSAL_RULES.formattingRules : MEGUMIN_V11.formattingRules;
-    const parts = filled([dnratio, color, rules, dn]);
+    const parts = filled([dnratio, color, rules, dn, extra]);
     return `${MEGUMIN_V11.formattingHeader}\n\n${parts.join("\n")}`;
 }
 
@@ -94,18 +102,25 @@ export function bannedSection(additions, frame, { adapted = false } = {}) {
 
 /**
  * [[reminder]]: the final checks, numbered as they are built: the shared ones, the ban list's,
- * the engine's own, then the {{user}} rule (left out when `userLine` is empty). On VCRP's
- * frame, VCRP's final reminder, the {{user}} rule in its place. The Adapted engines add VCRP's
- * dash line after the ban list's.
+ * the blocks line on a turn that asks for blocks (V11's 04/11 update), the engine's own, then
+ * the {{user}} rule (left out when `userLine` is empty). On VCRP's frame, VCRP's final
+ * reminder, the {{user}} rule in its place and the blocks line before it. The Adapted engines
+ * add VCRP's dash line after the ban list's.
  */
-export function reminderSection({ presetChecks, userLine, adapted = false }, frame) {
+export function reminderSection({ presetChecks, userLine, adapted = false, blocks = false }, frame) {
     if (frame === "vcrp" && UNIVERSAL_RULES.reminderHeader) {
-        const lines = UNIVERSAL_RULES.reminderChecks.flatMap(l => checkLines(l.trim() === "[[user]]" ? userLine : l));
+        const own = UNIVERSAL_RULES.reminderChecks.map(l => (l.trim() === "[[user]]" ? String(userLine || "") : l));
+        if (blocks) {
+            const at = UNIVERSAL_RULES.reminderChecks.findIndex(l => l.trim() === "[[user]]");
+            own.splice(at < 0 ? own.length : at, 0, MEGUMIN_V11.blocksCheck);
+        }
+        const lines = own.flatMap(checkLines);
         return `${UNIVERSAL_RULES.reminderHeader}\n${lines.map((l, i) => `${i + 1}. ${l}`).join("\n")}`;
     }
     const lines = [
         ...checkLines(MEGUMIN_V11.finalChecks),
         MEGUMIN_V11.banlistCheck,
+        ...(blocks ? [MEGUMIN_V11.blocksCheck] : []),
         ...(adapted ? checkLines(UNIVERSAL_DASH_CHECK) : []),
         ...checkLines(presetChecks),
         ...checkLines(userLine),
@@ -143,23 +158,40 @@ export function addonRulesSection({ onomato, onomatoShipped, styled, html, adapt
     return filled([sound, wrapAddon("render", html)]).join("\n\n");
 }
 
+/** This turn's final check: the {{user}} rule left out on Impersonate (it writes as {{user}}:
+ *  the rule against it would argue with the request), the blocks line on a turn that asks for blocks. */
+function reminderFor(dict, engine, frame, { gen = "reply", blocks = false } = {}) {
+    const adapted = Boolean(engine && engine.adapted);
+    return reminderSection({ presetChecks: engine && engine.reminderChecks, userLine: gen === "impersonate" ? "" : dict["[[user]]"], adapted, blocks }, frame);
+}
+
 /**
  * Fills the V11 preset's section tags in `dict`, from the parts already built there.
  * @param {object} dict      the tag table, its [[THINK]], [[DNRATIO]], [[COLOR]], [[DN]],
  *                           [[banlist]], [[user]], [[onomato]] and [[html]] done
  * @param {object} engine    the active engine
- * @param {{ gen: string, onomatoShipped: string, styled: boolean }} opts
+ * @param {{ gen: string, onomatoShipped: string, styled: boolean, caret?: string, blocks?: boolean }} opts
+ *   caret: the Gemini JB add-on's "^ before every word" line, or "" (closes the formatting section)
+ *   blocks: this turn asks for a <Blocks> section (the final check then asks for it; see applyMeguminV11Reminder)
  */
-export function applyMeguminV11Sections(dict, engine, { gen = "reply", onomatoShipped = "", styled = false } = {}) {
+export function applyMeguminV11Sections(dict, engine, { gen = "reply", onomatoShipped = "", styled = false, caret = "", blocks = false } = {}) {
     const frame = sectionFrame(engine);
     const adapted = Boolean(engine && engine.adapted);
     // Thinking is for a fresh reply only (Continue and Impersonate drop it, generation.js).
     dict["[[thinking]]"] = gen === "reply" ? thinkingSection(dict["[[THINK]]"], frame) : "";
-    dict["[[formatting]]"] = formattingSection({ dnratio: dict["[[DNRATIO]]"], color: dict["[[COLOR]]"], dn: dict["[[DN]]"] }, frame);
+    dict["[[formatting]]"] = formattingSection({ dnratio: dict["[[DNRATIO]]"], color: dict["[[COLOR]]"], dn: dict["[[DN]]"], extra: caret }, frame);
     dict["[[banned]]"] = bannedSection(dict["[[banlist]]"], frame, { adapted });
-    // Impersonate writes as {{user}}: the rule against it would argue with the request.
-    dict["[[reminder]]"] = reminderSection({ presetChecks: engine && engine.reminderChecks, userLine: gen === "impersonate" ? "" : dict["[[user]]"], adapted }, frame);
+    dict["[[reminder]]"] = reminderFor(dict, engine, frame, { gen, blocks });
     dict["[[content]]"] = String((engine && engine.contentRules) || "");
     dict["[[addon_rules]]"] = addonRulesSection({ onomato: dict["[[onomato]]"], onomatoShipped, styled, html: dict["[[html]]"], adapted }, frame);
+    return dict;
+}
+
+/**
+ * [[reminder]] again once the blocks envelope is built (V11's 04/11 update): the final check
+ * asks for the <Blocks> section only on a turn that has one.
+ */
+export function applyMeguminV11Reminder(dict, engine, { gen = "reply", blocks = false } = {}) {
+    dict["[[reminder]]"] = reminderFor(dict, engine, sectionFrame(engine), { gen, blocks });
     return dict;
 }

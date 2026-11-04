@@ -46,5 +46,10 @@ BUILD
       recommended: true,
       content: `- Dialogue Colors: Assign a distinct, readable hex color to every character using: <font color="#HEXCODE" title="Character Name">"Dialogue here"</font>, with the speaker's name in title. Once assigned, a character's color is LOCKED for the entire story.`
     },
-    { id: "dn", label: "Dialogue & Narration Format", trigger: "[[DN]]", content: "- Wrap all narration in <narration>...</narration> and every spoken line in <dialogue >...</dialogue >; interleave them freely." }
+    { id: "dn", label: "Dialogue & Narration Format", trigger: "[[DN]]", content: "- Wrap all narration in <narration>...</narration> and every spoken line in <dialogue >...</dialogue >; interleave them freely." },
+    // Megumin Suite V11 (04/11): for Gemini. Its two lines are V11's words in data/megumin.js
+    // (the policy line where the preset has [[GeminiJB]], the "^ before every word" line
+    // closing the formatting section), filled in by buildBaseDict; the ^ come out of each reply
+    // as it arrives (src/engine/caretWords.js, src/vcrp/geminiJb.js).
+    { id: "gemini_jb", label: "Gemini JB", trigger: "[[GeminiJB]]", content: "" }
 ];

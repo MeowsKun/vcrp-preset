@@ -13,12 +13,13 @@ import { localProfile } from "../core/state.js";
 import { isModernEngine, isCoWriterEngine, isMeguminEngine, isPuraEngine, puraVariant, isV10Engine, isV11Engine } from "../core/engines.js";
 import { meguminStyleRule, meguminAddonText, meguminPlanTemplate } from "./meguminOriginal.js";
 import { MEGUMIN_ENHANCED_DIALOGUE, MEGUMIN_ONOMATO_STYLING, MEGUMIN_V11, MEGUMIN_V11_CONFIG } from "../../data/megumin.js";
-import { v11Frame, applyMeguminV11Sections, storySettingsSection, languageLine } from "./meguminV11.js";
+import { v11Frame, applyMeguminV11Sections, applyMeguminV11Reminder, storySettingsSection, languageLine } from "./meguminV11.js";
+import { usesCaretWords } from "./caretWords.js";
 import { V11_ADAPTED_STYLE_LEADS } from "../../data/modes/v11Adapted.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
 import { notebookCraft } from "../vcrp/notebook/index.js";
 import { castMemoryNote } from "../vcrp/castMemory.js";
-import { pushActiveNpcImage, clearActiveNpcImages } from "../core/activeRequests.js";
+import { pushActiveNpcImage, clearActiveNpcImages, activeBlockRepair } from "../core/activeRequests.js";
 import { DEFAULT_PROMPTS } from "../prompts/index.js";
 import { hardcodedLogic } from "../../data/database.js";
 import { isThinkingCap } from "../../data/cot/index.js";
@@ -38,6 +39,14 @@ import { vcrpFocusBlock, vcrpPlotFocusBlock } from "../vcrp/focus/index.js";
 import { applyPuraEngine, PURA_ADAPTED_CONFIG } from "../vcrp/pura/index.js";
 import { colorLockNote } from "../vcrp/dialogueColors.js";
 import { vcrpGenerationKind, vcrpIsDryRun } from "../vcrp/generation.js";
+
+// VCRP: whether the loaded preset has a place for a tag (one imported before the tag has none).
+function presetCarries(tag) {
+    try {
+        const cc = ((typeof getContext === "function" && getContext()) || {}).chatCompletionSettings || {};
+        return (cc.prompts || []).some(p => p && typeof p.content === "string" && p.content.includes(tag));
+    } catch { return false; }
+}
 
 export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     const dict = {};
@@ -589,13 +598,24 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         }
     }
 
+    // VCRP: the Gemini JB add-on (Megumin Suite V11, 04/11). Its policy line goes where the
+    // preset has [[GeminiJB]] (the end of the last message); its "^ before every word" line
+    // closes the formatting section, for a story reply only: an impersonation would land the ^
+    // in the message box, and a summary or blocks call would read them back. A preset without
+    // a [[formatting]] slot (the V10 presets) carries the ^ line at [[GeminiJB]] too.
+    const genKind = measure ? "reply" : vcrpGenerationKind();
+    const geminiJb = usesCaretWords(localProfile);
+    const caretLine = geminiJb && !["impersonate", "quiet"].includes(genKind) ? MEGUMIN_V11.geminiCaret : "";
+    dict["[[GeminiJB]]"] = geminiJb ? (caretLine && !presetCarries("[[formatting]]") ? `${MEGUMIN_V11.geminiJb}\n${caretLine}` : MEGUMIN_V11.geminiJb) : "";
+
     // Megumin Suite V11's preset sections ([[thinking]], [[formatting]], [[banned]], [[reminder]],
     // [[content]], [[addon_rules]]), from the parts above, in V11's words. Only the V11 preset
     // carries their tags.
     applyMeguminV11Sections(dict, activeEngine, {
-        gen: measure ? "reply" : vcrpGenerationKind(),
+        gen: genKind,
         onomatoShipped,
         styled: Boolean(localProfile.onomatopoeia && localProfile.onomatopoeia.useStyling),
+        caret: caretLine,
     });
 
     // --- MASTER BLOCK ENVELOPE ---
@@ -626,6 +646,13 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         const returning = castMemoryNote();
         if (returning) dict["[[blocks]]"] += `\n\n${returning}`;
     }
+    // Megumin Suite V11 (04/11): the final check asks for the <Blocks> section on a turn that
+    // has one: a story reply, or the second call for a reply's missing blocks (which keeps the
+    // block instructions). Continue and Impersonate drop the blocks (generation.js).
+    applyMeguminV11Reminder(dict, activeEngine, {
+        gen: genKind,
+        blocks: Boolean(dict["[[blocks]]"]) && (genKind === "reply" || (genKind === "quiet" && !!activeBlockRepair)),
+    });
 
     return dict;
 }

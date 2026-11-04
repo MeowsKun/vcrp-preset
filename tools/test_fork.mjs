@@ -2218,7 +2218,7 @@ console.log("36 ok Focus (audit every N replies, its own prompt, review first, n
     // Off: the closing slot reads exactly as before.
     let msgs = await run("VCRP V10 Universal.json");
     assert(!text(msgs).includes("[PLOT FOCUS]") && leftovers(msgs).length === 0, "off: nothing, no tag left over");
-    assert(msgs.some(m => textOf(m).endsWith("Never stop or refuse.")), "off: the </history> slot ends as it always did");
+    assert(msgs.some(m => textOf(m).trimEnd().endsWith("Never stop or refuse.")), "off: the </history> slot ends as it always did (the Gemini JB spot after it empty)");
     const offPrompts = {};
     const engines = [["v10-core", "cot-v10-ukiyo-english"], ["v10-shura", "cot-v10-shura-english"], ["v10-ukiyo-megumin", "cot-meg-ukiyo-english"], ["v10-shura-megumin", "cot-meg-shura-english"]];
     const keepEngine = { mode: q.mode, model: q.model };
@@ -3887,7 +3887,9 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     assert.deepEqual(leftovers(msgs), [], `V11 preset: tags left over: ${leftovers(msgs)}`);
     assert(t.includes("You are a writers' room of five") && t.includes(`JULIA is: ${V11_STYLE}`) && t.includes("NORA reads Bob's turn and the history"), "V11's engine, its style in JULIA's line, CoT V11 Тайна · Writers' Room");
     assert(t.includes("NORA's part. This story is rated M") && t.includes("Before we start: I know this is fiction") && !t.includes("This is a work of fiction, rated M for mature"), "V11's Content section and USER note; jealbreak plus off");
-    assert(/\n5\. The response does not speak, think, feel, or act for Bob, and it shows everything Bob reached for\./.test(t), "the {{user}} rule follows V11's list as item 5");
+    // 04/11: the final check asks for the blocks (item 4) on a turn that has them, so the rule is item 6 then.
+    const userItem = t.includes("<Blocks>") ? 6 : 5;
+    assert(new RegExp(`\\n${userItem}\\. The response does not speak, think, feel, or act for Bob, and it shows everything Bob reached for\\.`).test(t), `the {{user}} rule follows V11's list as item ${userItem}`);
     // V11's layout since 01/11: the Content section and the story settings before the chat
     // (cached); the per-turn rules after the newest message, ending "Start your turn."
     assert(indexOf(msgs, "NORA's part. This story is rated M") < lastAssistant(msgs), "the Content section is in the cached part, before the chat");
@@ -4037,7 +4039,7 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     assert(on("USER") && !slot("jealbreak plus") && !slot("USER Consent") && on("Content rule") && on("Story settings") && slot("USER Hard (only enable one)") && !on("USER Hard (only enable one)"), "V11's USER note, Content rule and Story settings in before the chat; USER Hard carried, off; no consent slot in the chat");
     assert(["<history>", "</history>", "Output RULES"].every(n => slot(n).role === "user" && slot(n).injection_position === 0) && ord.map(o => o.identifier).join(" ").includes(`chatHistory ${slot("</history>").identifier} ${slot("Output RULES").identifier}`), "V11's layout: the history and the per-turn rules as user messages placed after the chat, </history> then Output RULES");
     assert(slot("Output RULES").content.includes("[[storyplan]]\n\n[[npc_dossier]]\n\n[[npc list]]") && !slot("Main 2").content.includes("[[npc_dossier]]") && !slot("</lore><user_persona>").content.includes("[[npc list]]") && !slot("Output RULES").content.includes("[[infoblockcurrent]]"), "the NPC list, the dossier rules and the plan ride after the chat (they change turn to turn)");
-    assert(slot("Main 2").content.includes("[[notebook]]") && slot("</history>").content === "</history>" && slot("Output RULES").content.endsWith("comment.[[pura_late]][[plotfocus]]\n\nStart your turn."), "the notebook's slot, and VCRP's late slots before V11's last line");
+    assert(slot("Main 2").content.includes("[[notebook]]") && slot("</history>").content === "</history>" && slot("Output RULES").content.endsWith("comment.[[pura_late]][[plotfocus]]\n\nStart your turn.\n\n[[GeminiJB]]"), "the notebook's slot, VCRP's late slots before V11's last line, the Gemini JB spot after it (04/11)");
 
     // From the bug sweep. A reader's change follows its truth, not only its id: a swiped reply's
     // new T1 and T2 are not edited or deleted by what was done to the old ones.
@@ -4275,7 +4277,7 @@ console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror
     assert(between(t, "<story_settings>", "</story_settings>").includes("- pov: third person. Your narration calls Bob by name or he/she") && t.includes("- length: usually 250–350 words, longer only while a fight or sex scene is under way"), "V11's point of view and its new length, from VCRP's options");
     assert(!t.includes("## your thinking steps:") && !t.includes("## FORMATTING RULES:") && !t.includes("## final reminder:") && !t.includes("[LANGUAGE RULE]"), "none of the older headings");
     const check = between(t, "<final_check>", "</final_check>");
-    assert(/1\. Characters know only[\s\S]*2\. The story ends[\s\S]*3\. Nothing in the response is on the banlist\.[\s\S]*4\. If the center of this turn[\s\S]*5\. The response does not speak, think, feel, or act for Bob/.test(check), `the final check numbered as built:\n${check}`);
+    assert(/1\. Characters know only[\s\S]*2\. The story ends[\s\S]*3\. Nothing in the response is on the banlist\.[\s\S]*4\. The response ends with the <Blocks> section\.[\s\S]*5\. If the center of this turn[\s\S]*6\. The response does not speak, think, feel, or act for Bob/.test(check), `the final check numbered as built (04/11's blocks line as item 4):\n${check}`);
     assert(between(t, "<formatting>", "</formatting>").includes(`title="Name">`) && !t.includes("- FORBIDDEN: Repeating actions"), "the colors (lock note too) in <formatting>; its repetition rule in place of the older two lines");
     // Thinking and the {{user}} rule are for a fresh reply.
     t = text(await run("VCRP V11 Megumin Original.json", "continue"));
@@ -4307,7 +4309,7 @@ console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror
     // The preset as generated: V11's slots, its words left to the extension, VCRP's tags in.
     const slot = n => presetJson.prompts.find(x => x.name === n);
     assert(slot("Main 2").content.includes("[[aiprompt]]\n\n[[notebook]]\n\n[[addon_rules]]\n\n[[knowledgebase_always]]\n\n[[banned]][[pura_system]][[block_rules]]"), "up top: the add-on rules, the ban list, VCRP's cached slots");
-    assert(slot("Output RULES").content.includes("[[focus]]\n\n[[thinking]]\n\n[[blocks]]\n\n[[formatting]]\n\n[[reminder]]\n[[Language]]") && slot("Content rule").content === "[[content]]" && slot("Story settings").content === "[[config]]", "after the chat, V11's order; its Content rule and Story settings before it");
+    assert(slot("Output RULES").content.includes("[[focus]]\n\n[[thinking]]\n\n[[blocks]]\n\n[[formatting]]\n\n[[reminder]]\n\n[[Language]]") && slot("Content rule").content === "[[content]]" && slot("Story settings").content === "[[config]]", "after the chat, V11's order (a blank line before the language line since 04/11); its Content rule and Story settings before it");
     assert(!presetJson.prompts.some(p => /\[\[(dice_rules|img_rules|npc_rules|this_turn|MVU|infoblockcurrent|storyplan_now|storyplan_rules)\]\]/.test(String(p.content || ""))), "none of V11's tags for what VCRP leaves out or does its own way");
 
     chat.length = 0;
@@ -4346,7 +4348,9 @@ console.log("57 ok Megumin Suite V11's 24-25/10 update (V11 Тайна, its Writ
         assert(banOf(onV11) && banOf(onV11) === banOf(onUni), `${mode}: the same ban list as on Universal`);
         assert(onV11.includes(UNIVERSAL_RULES.formattingRules) && !onV11.includes(MEGUMIN_V11.formattingRules), `${mode}: VCRP's formatting rules, not V11's`);
         const rem = reminderOf(onV11);
-        assert(rem && JSON.stringify(unnumbered(rem)) === JSON.stringify(unnumbered(reminderOf(onUni))), `${mode}: VCRP's final reminder, line for line:\n${rem}`);
+        // 04/11: on a turn that asks for blocks the reminder also has V11's blocks line (the V10 preset's reminder is fixed text).
+        assert(unnumbered(rem).includes(MEGUMIN_V11.blocksCheck) === onV11.includes("<Blocks>"), `${mode}: the blocks line only on a turn with blocks:\n${rem}`);
+        assert(rem && JSON.stringify(unnumbered(rem).filter(l => l !== MEGUMIN_V11.blocksCheck)) === JSON.stringify(unnumbered(reminderOf(onUni))), `${mode}: VCRP's final reminder, line for line:\n${rem}`);
         assert(rem.split("\n").slice(2).every((l, i) => l.startsWith(`${i + 1}. `)), `${mode}: numbered in order:\n${rem}`);
         assert(!/<final_check>|Before you output, check:|<story_settings>|<repetition>/.test(onV11), `${mode}: none of V11's own sections`);
     }
@@ -4414,7 +4418,9 @@ console.log("58 ok one preset for every engine: VCRP's engines and Pura's on the
     const ban = (t.match(/<banlist>\n([\s\S]*?)\n<\/banlist>/) || [])[1] || "";
     assert(ban.startsWith(UNIVERSAL_RULES.banList.trim().replaceAll("{{user}}", "Bob")) && ban.includes("**dashes:**") && !t.includes(MEGUMIN_V11.banListV11.slice(0, 60)), "Adapted: VCRP's ban list, dash rule included, in V11's <banlist>");
     const check = (t.match(/<final_check>[\s\S]*?<\/final_check>/) || [""])[0];
-    assert(/\n4\. No em dashes/.test(check) && /\n3\. Nothing in the response is on the banlist\./.test(check), `Adapted: VCRP's dash line in V11's final check, after the ban list's:\n${check}`);
+    // 04/11: V11's blocks line (item 4) sits between the ban list's check and the dash line on a turn with blocks.
+    const dashItem = t.includes("<Blocks>") ? 5 : 4;
+    assert(new RegExp(`\\n${dashItem}\\. No em dashes`).test(check) && /\n3\. Nothing in the response is on the banlist\./.test(check), `Adapted: VCRP's dash line in V11's final check, after the ban list's (item ${dashItem}):\n${check}`);
     assert(t.includes("<story_settings>") && t.includes("<formatting>") && t.includes("<content>") && t.includes("Write the response in English."), "Adapted: V11's frame");
     assert(t.includes("explicitness: plain. Depict") && t.includes(`title="Character Name"`), "Adapted: Story Config and the add-ons in VCRP's words");
     assert(t.includes("You narrate as an overt narrator teller"), "Adapted with V11 Default: V11's own lead-in");
@@ -4906,34 +4912,176 @@ console.log("63 ok blank replies and missing blocks (a blank reply told apart an
     let up10 = null, up11 = null;
     try {
         up10 = JSON.parse(execSync("git show 0376573:\"Presets/Megumin Suite V10 Universal Cache Friendly.json\"", { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1e8 })).extensions.regex_scripts;
-        up11 = JSON.parse(execSync("git show 174575f:\"Presets/Megumin Suite V11 Universal.json\"", { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1e8 })).extensions.regex_scripts;
+        up11 = JSON.parse(execSync("git show 6ce507f:\"Presets/Megumin Suite V11 Universal.json\"", { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1e8 })).extensions.regex_scripts;
     } catch (e) { up10 = up11 = null; }
     if (up10 && up11) {
         const byName = list => new Map(list.map(s => [s.scriptName, s]));
         const u10 = byName(up10), u11 = byName(up11), ours = byName(uniS);
         assert.deepEqual([...u10.keys()].filter(n => !ours.has(n)), ["image gen regex", "image clean up"], "Megumin V10's scripts VCRP leaves out: the image ones only");
-        for (const [n, s] of ours) assert.equal(shape(s), shape(u10.get(n)), `"${n}" is Megumin V10's, as it is`);
+        assert.deepEqual([...ours.keys()].filter(n => !u10.has(n)), ["clean up"], "the one script of VCRP's that V10 never had: V11's clean up (04/11, the Gemini JB add-on's ^)");
+        for (const [n, s] of ours) if (u10.has(n)) assert.equal(shape(s), shape(u10.get(n)), `"${n}" is Megumin V10's, as it is`);
         for (const [n, s] of ours) {
             if (!u11.has(n)) { assert.equal(n, "narration|dialogue tags cleanup", `only the DN add-on's script is VCRP's alone next to V11 (${n})`); continue; }
             const u = u11.get(n);
             assert(s.findRegex === u.findRegex && s.replaceString === u.replaceString && JSON.stringify(s.placement) === JSON.stringify(u.placement) && !!s.markdownOnly === !!u.markdownOnly && !!s.promptOnly === !!u.promptOnly, `"${n}": V11's pattern and placement`);
         }
-        assert.deepEqual([...u11.values()].filter(s => s.disabled && ours.has(s.scriptName) && !ours.get(s.scriptName).disabled).map(s => s.scriptName).sort(), ["Blocks cleanup", "Blocks display marker", "Thinking cleanup B"], "V11 switched these three off; VCRP keeps them on (known)");
+        assert.deepEqual([...u11.values()].filter(s => s.disabled && ours.has(s.scriptName) && !ours.get(s.scriptName).disabled).map(s => s.scriptName).sort(), ["Blocks cleanup"], "V11 keeps Blocks cleanup off (04/11 turned Blocks display marker and Thinking cleanup B back on); VCRP keeps it on (known)");
+        assert(ours.has("clean up") && !ours.get("clean up").disabled && uniS.findIndex(s => s.scriptName === "clean up") < uniS.findIndex(s => s.scriptName === "Thinking Box"), "V11's clean up (the ^ out of the display and the prompt) is on, before Thinking Box, as V11 has it");
     }
     // The display chain gives the same text in VCRP's order and in V11's (the color fix still bites after the box).
     const S = Object.fromEntries(uniS.map(s => [s.scriptName, s]));
     const apply = (t, s) => { const m = s.findRegex.match(/^\/([\s\S]*)\/([a-z]*)$/); return t.replace(new RegExp(m[1], m[2]), s.replaceString); };
-    const sample = `<think>\nPlan: <font color="#ff0000">red</font> here.\n</think>\n<font color="#ff69b4" title="Mara">"Hi."</font> Prose.\n\n<Blocks>\n<World_State>x</World_State>\n</Blocks>`;
+    const sample = `<think>\nPlan: <font color="#ff0000">red</font> here.\n</think>\n<font color="#ff69b4" title="Mara">"Hi."</font> ^Prose ^here.\n\n<Blocks>\n<World_State>x</World_State>\n</Blocks>`;
     const chain = names => names.reduce((t, n) => (!S[n] || S[n].disabled || !S[n].markdownOnly ? t : apply(t, S[n])), sample);
     const shown = chain(uniS.map(s => s.scriptName));
-    assert.equal(shown, chain(["Thinking Hide A", "Thinking Hide B", "Blocks cleanup", "Blocks display marker", "Thinking cleanup B", "thinking color fix", "Thinking Box", "Thinking cleanup A"]), "the display regexes give the same text in VCRP's order and in V11's");
-    assert(shown.includes("Thinking Process") && !/<font[^>]*>red/.test(shown) && shown.includes("meg-blocks-src") && shown.includes(`title="Mara"`), "the thinking boxed and uncolored, the blocks marked, the story's colors kept");
+    assert.equal(shown, chain(["Thinking Hide A", "Thinking Hide B", "Blocks cleanup", "clean up", "Thinking cleanup B", "Blocks display marker", "thinking color fix", "Thinking Box", "Thinking cleanup A"]), "the display regexes give the same text in VCRP's order and in V11's (04/11)");
+    assert(shown.includes("Thinking Process") && !/<font[^>]*>red/.test(shown) && shown.includes("meg-blocks-src") && shown.includes(`title="Mara"`) && !shown.includes("^"), "the thinking boxed and uncolored, the blocks marked, the story's colors kept, the ^ hidden");
     const prompt = uniS.reduce((t, s) => (s.disabled || !s.promptOnly ? t : apply(t, s)), sample);
-    assert.equal(prompt, `<font color="#ff69b4" title="Mara">"Hi."</font> Prose.\n\n`, "the prompt regexes take the thinking and the blocks out of an older reply");
+    assert.equal(prompt, `<font color="#ff69b4" title="Mara">"Hi."</font> Prose here.\n\n`, "the prompt regexes take the thinking, the blocks and the ^ out of an older reply");
 
     for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
     Object.assign(chatCompletionSettings, keepCc);
 }
 console.log("64 ok after the trim: profiles on the removed engines, thinking, styles and toggle move over on load; the gone slots are still stripped from an old preset; the regex scripts are Megumin's (V10's minus the image ones, V11's patterns), the same in all three presets");
+
+// 65. Megumin Suite V11's 04/11 update: the Gemini JB add-on (V11's policy line where the preset
+//     has [[GeminiJB]], its ^ line last in the formatting section, both at the spot on a preset
+//     without one, for a story reply only; the ^ out of each reply, of an edit and of the second
+//     call's answer), the final check's blocks line on turns that ask for blocks, V11's clean-up
+//     regex, Setup Check, and the chat saved the way a group chat takes.
+{
+    const { usesCaretWords, stripCarets, stripMessageCarets } = await imp("src/engine/caretWords.js");
+    const { vcrpCaretOnReply, vcrpCaretOnEdit } = await imp("src/vcrp/geminiJb.js");
+    const { MEGUMIN_V11 } = await imp("data/megumin.js");
+    const repair = await imp("src/vcrp/blockRepair.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const q = state.localProfile;
+    const keep = { mode: q.mode, model: q.model, addons: [...q.addons], order: JSON.stringify(q.blockStack.order), cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+    const between = (s, a, b) => { const i = s.indexOf(a); const j = i < 0 ? -1 : s.indexOf(b, i + a.length); return j < 0 ? "" : s.slice(i + a.length, j); };
+    const presetOf = f => JSON.parse(readFileSync(join(REPO, "Presets", f), "utf8"));
+    const loadPreset = f => { const vp = presetOf(f); Object.assign(chatCompletionSettings, { prompts: vp.prompts, prompt_order: vp.prompt_order, extensions: vp.extensions, preset_settings_openai: f.replace(/\.json$/, "") }); };
+    const lastRead = msgs => msgs.filter(m => m.role !== "system").at(-1).content.trimEnd();
+    const JB = MEGUMIN_V11.geminiJb, CARET = MEGUMIN_V11.geminiCaret, BLOCKS = MEGUMIN_V11.blocksCheck;
+    assert(JB.includes("adult fiction content policy") && CARET.startsWith("- The UI rendering engine requires you to prefix every single word") && BLOCKS === "The response ends with the <Blocks> section.", "V11's three new texts, generated from 6ce507f");
+
+    // Pure: only the add-on asks for the ^; a reply and the swipe it shows lose them, the player's text is left alone.
+    assert(usesCaretWords({ addons: ["html", "gemini_jb"] }) && !usesCaretWords({ addons: ["html"] }) && !usesCaretWords({}) && !usesCaretWords(null), "only the add-on asks for the ^");
+    const rawReply = "^She ^smiled.\n<Blocks>\n<Bonds>\n^Mira: ^45/100\n</Bonds>\n</Blocks>";
+    const m = { mes: rawReply, swipe_id: 1, swipes: ["^old", rawReply] };
+    assert(stripMessageCarets(m) && m.mes === "She smiled.\n<Blocks>\n<Bonds>\nMira: 45/100\n</Bonds>\n</Blocks>" && m.swipes[1] === m.mes && m.swipes[0] === "^old" && !stripMessageCarets(m), "the ^ out of the reply and the swipe it shows, blocks included");
+    const mine = { mes: "2^3", is_user: true };
+    assert(!stripMessageCarets(mine) && mine.mes === "2^3" && stripCarets(undefined) === "", "the player's message untouched");
+
+    // The V11 preset, V11 Тайна, the add-on on: the policy line closes the last message, the ^ line closes <formatting>, the final check asks for the blocks.
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
+    q.blockStack.order = ["world"]; meguminSyncLegacyBlockIds();
+    q.addons = ["gemini_jb"];
+    loadPreset("VCRP V11 Megumin Original.json");
+    let msgs = await run("VCRP V11 Megumin Original.json");
+    let t = text(msgs);
+    assert.deepEqual(leftovers(msgs), [], `V11 + Gemini JB: tags left over: ${leftovers(msgs)}`);
+    assert(lastRead(msgs).endsWith(`Start your turn.\n\n${JB}`), `the policy line closes the last message, after V11's line:\n${lastRead(msgs).slice(-220)}`);
+    assert(between(t, "<formatting>", "</formatting>").trimEnd().endsWith(CARET) && t.split(CARET).length === 2 && t.split(JB).length === 2, "the ^ line is the last line of <formatting>, each line once");
+    assert(/\n3\. Nothing in the response is on the banlist\.\n4\. The response ends with the <Blocks> section\.\n5\. /.test(between(t, "<final_check>", "</final_check>")), `the final check asks for the blocks after the ban list's check:\n${between(t, "<final_check>", "</final_check>")}`);
+    // Off: neither line, nothing of the tag, the last message ends as before.
+    q.addons = [];
+    msgs = await run("VCRP V11 Megumin Original.json"); t = text(msgs);
+    assert(!t.includes(JB) && !t.includes(CARET) && !t.includes("[[GeminiJB]]") && lastRead(msgs).endsWith("Start your turn."), "off: neither line, the last message ends on V11's line");
+    // VCRP's engines on the V11 preset: VCRP's final reminder gets the line before its {{user}} rule; a turn without blocks has none.
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english" });
+    msgs = await run("VCRP V11 Megumin Original.json"); t = text(msgs);
+    const rem = t.slice(t.indexOf("## final reminder:"));
+    assert(/\n2\. Follow every output rule[^\n]*\n3\. The response ends with the <Blocks> section\.\n4\. The response does not speak/.test(rem), `VCRP's reminder with the blocks line before the {{user}} rule:\n${rem.slice(0, 600)}`);
+    q.blockStack.order = []; meguminSyncLegacyBlockIds();
+    msgs = await run("VCRP V11 Megumin Original.json"); t = text(msgs);
+    assert(!t.includes("<Blocks>") && !t.includes(BLOCKS), `no blocks asked for: no blocks line (${t.includes("<Blocks>") ? "an envelope is still sent" : "the line is still there"})`);
+    // Continue drops the blocks, and the line with them.
+    q.blockStack.order = ["world"]; meguminSyncLegacyBlockIds();
+    msgs = await run("VCRP V11 Megumin Original.json", "continue"); t = text(msgs);
+    assert(!t.includes("output exactly one <Blocks> section") && !t.includes(BLOCKS), "Continue: no block instructions (its note alone speaks of <Blocks>), no blocks line");
+    vcrpSetGenerationType("normal", {}, false);
+
+    // The V10 presets have no [[formatting]] slot: both lines ride at [[GeminiJB]], the end of the last message; a story reply only.
+    q.addons = ["gemini_jb"];
+    loadPreset("VCRP V10 Universal.json");
+    msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
+    assert.deepEqual(leftovers(msgs), [], `Universal + Gemini JB: tags left over: ${leftovers(msgs)}`);
+    assert(lastRead(msgs).endsWith(`${JB}\n${CARET}`) && t.split(CARET).length === 2 && t.split(JB).length === 2, `both lines close the last message, once each:\n${lastRead(msgs).slice(-300)}`);
+    for (const kind of ["impersonate", "quiet"]) {
+        msgs = await run("VCRP V10 Universal.json", kind); t = text(msgs);
+        assert(t.includes(JB) && !t.includes(CARET), `${kind}: the policy line, never the ^ line`);
+    }
+    loadPreset("VCRP V11 Megumin Original.json");
+    msgs = await run("VCRP V11 Megumin Original.json", "impersonate"); t = text(msgs);
+    assert(t.includes(JB) && !t.includes(CARET), "V11 preset, impersonate: the policy line, never the ^ line");
+    vcrpSetGenerationType("normal", {}, false);
+
+    // The reply as it lands: the ^ out (the swipe it shows too); an edit too; the greeting and the player's text never; nothing with the add-on off.
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "^Greeting." });
+    vcrpCaretOnReply(0, "first_message");
+    assert.equal(chat[0].mes, "^Greeting.", "the greeting is the card's text");
+    chat.push({ is_user: true, mes: "go ^" }, { is_user: false, mes: "^Rain ^again.", swipes: ["^Rain ^again."], swipe_id: 0 });
+    vcrpCaretOnReply(chat.length - 1, "normal");
+    assert(chat.at(-1).mes === "Rain again." && chat.at(-1).swipes[0] === "Rain again." && chat[1].mes === "go ^", "the reply as it lands");
+    chat.at(-1).mes = "^Edited.";
+    await vcrpCaretOnEdit(chat.length - 1);
+    assert.equal(chat.at(-1).mes, "Edited.", "an edited reply");
+    q.addons = [];
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "2^3", swipes: ["2^3"], swipe_id: 0 });
+    vcrpCaretOnReply(chat.length - 1, "normal");
+    assert.equal(chat.at(-1).mes, "2^3", "add-on off: a ^ is left alone");
+
+    // The second call for missing blocks: its answer loses the ^ before it is read.
+    q.addons = ["gemini_jb"];
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "Greeting." }, { is_user: true, mes: "go" }, { is_user: false, mes: "Prose without blocks.", swipes: ["Prose without blocks."], swipe_id: 0 });
+    quietImpl = async () => "<Blocks>\n<World_State>\n^Time: ^noon\n</World_State>\n</Blocks>";
+    let r;
+    try { r = await repair.repairBlocksNow(chat.length - 1); } finally { quietImpl = null; }
+    assert.equal(r.status, "done", `the blocks asked for and added: ${JSON.stringify(r)}`);
+    assert(chat.at(-1).mes.endsWith("<Blocks>\n<World_State>\nTime: noon\n</World_State>\n</Blocks>"), `the answer's ^ out: ${JSON.stringify(chat.at(-1).mes.slice(-90))}`);
+
+    // Setup Check: a preset from before the spot or the regex; the add-on on a model that is not Gemini; Gemini without it.
+    loadPreset("VCRP V11 Megumin Original.json");
+    let items = vcrpHealthCheck().items;
+    assert(!items.some(i => /Gemini JB/.test(i.title)), `the current preset, Gemini, the add-on on: nothing to say (${items.filter(i => /Gemini/.test(i.title)).map(i => i.title).join(" | ")})`);
+    const older = presetOf("VCRP V11 Megumin Original.json");
+    const rules = older.prompts.find(p => p.name === "Output RULES");
+    rules.content = rules.content.replace("\n\n[[GeminiJB]]", "");
+    assert(!rules.content.includes("[[GeminiJB]]"), "the older preset has no spot");
+    Object.assign(chatCompletionSettings, { prompts: older.prompts });
+    items = vcrpHealthCheck().items;
+    assert(items.some(i => i.level === "warn" && /Re-import the preset for the Gemini JB add-on/.test(i.title) && /no place/.test(i.detail)), "a preset without the spot: warned");
+    loadPreset("VCRP V11 Megumin Original.json");
+    chatCompletionSettings.extensions = { regex_scripts: presetOf("VCRP V11 Megumin Original.json").extensions.regex_scripts.filter(s => s.scriptName !== "clean up") };
+    items = vcrpHealthCheck().items;
+    assert(items.some(i => i.level === "warn" && /Re-import the preset for the Gemini JB add-on/.test(i.title) && /clean up/.test(i.detail)), "a preset without the regex: warned");
+    loadPreset("VCRP V11 Megumin Original.json");
+    Object.assign(chatCompletionSettings, { openrouter_model: "anthropic/claude-opus-4.6" });
+    assert(vcrpHealthCheck().items.some(i => i.level === "info" && /not Gemini/.test(i.title)), "on for Claude: a note");
+    q.addons = [];
+    Object.assign(chatCompletionSettings, { openrouter_model: "google/gemini-4-argon" });
+    assert(vcrpHealthCheck().items.some(i => i.level === "info" && /Gemini without the Gemini JB add-on/.test(i.title)), "Gemini without it: a note");
+    assert(!vcrpHealthCheck().items.some(i => /Re-import the preset for the Gemini JB/.test(i.title)), "off: no re-import note");
+
+    // Every preset carries the add-on's spot; the chat is saved the way a group chat takes (SillyTavern's saveChat throws on one).
+    for (const f of ["VCRP V10 Universal.json", "VCRP V10 Megumin Original.json", "VCRP V11 Megumin Original.json"]) {
+        const vp = presetOf(f);
+        const lastSlot = vp.prompts.find(p => p.name === (f.startsWith("VCRP V11") ? "Output RULES" : "</history>"));
+        assert(lastSlot && lastSlot.content.endsWith("[[GeminiJB]]"), `${f}: the last message ends on the add-on's spot`);
+    }
+    for (const f of ["src/st.js", "index.js"]) assert(/saveChatConditional as saveChat/.test(readFileSync(join(REPO, f), "utf8")), `${f}: the chat is saved the way that works in a group chat too`);
+
+    Object.assign(q, { mode: keep.mode, model: keep.model }); q.addons = keep.addons; q.blockStack.order = JSON.parse(keep.order); meguminSyncLegacyBlockIds();
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+    chat.length = 0;
+}
+console.log("65 ok Megumin Suite V11's 04/11 update: the Gemini JB add-on (V11's policy line at [[GeminiJB]], its ^ line last in the formatting section, both at the spot on the V10 presets, a story reply only; the ^ out of each reply, of an edit and of the second call's answer), the final check's blocks line on turns that ask for blocks, V11's clean-up regex, Setup Check, group chats save");
 
 console.log("\nALL FORK CHECKS PASSED");

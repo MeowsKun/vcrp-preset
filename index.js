@@ -1,12 +1,14 @@
 /* eslint-disable no-undef */
 import { extension_settings, getContext } from "../../../extensions.js";
+// saveChat is SillyTavern's saveChatConditional: its plain saveChat() throws on a group chat
+// (Megumin Suite V11's 04/11 fix).
 import {
     saveSettingsDebounced,
     generateQuietPrompt,
     event_types,
     eventSource,
     substituteParams,
-    saveChat,
+    saveChatConditional as saveChat,
     reloadCurrentChat,
     addOneMessage,
     getRequestHeaders,
@@ -111,6 +113,7 @@ import { vcrpBlankOnReply } from "./src/vcrp/blankReply.js";
 import { vcrpNotebookStampOnReply } from "./src/vcrp/notebook/index.js";
 import { vcrpBlockRepairOnReply, onBlocksRepaired } from "./src/vcrp/blockRepair.js";
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
+import { vcrpCaretOnReply, vcrpCaretOnEdit } from "./src/vcrp/geminiJb.js";
 import { vcrpApplyReplyCap, forgetReplyRoom } from "./src/vcrp/replyLength.js";
 import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
 import { vcrpOn, setVcrpOn, whenOn, drawPowerState } from "./src/vcrp/power.js";
@@ -442,6 +445,12 @@ jQuery(async () => {
             // Story Memory's spend estimate: the reply's output, added to its request. Measured
             // here, before the rolls' notes are added to the reply: its size plans the budget.
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpMemoryCountReply));
+            // VCRP: the Gemini JB add-on (Megumin Suite V11) asks for a ^ before every word of the
+            // reply. They come out here, after the reply's size is measured as the model wrote it
+            // and before every handler that reads its text (the cut, the blocks, the dash cleaner,
+            // the captures, Story Memory). An edited reply loses them too.
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpCaretOnReply));
+            eventSource.on(event_types.MESSAGE_EDITED, whenOn(vcrpCaretOnEdit));
             // VCRP: a reply the length limit cut off mid-sentence ends on its last full sentence.
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpCutOnReply));
             // VCRP: a reply that came back blank (Gemini's filter, a cut, all reasoning) is said, with why.

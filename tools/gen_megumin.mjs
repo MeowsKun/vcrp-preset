@@ -109,7 +109,7 @@ if (upOno.includes("${")) fail("the upstream onomatopoeia line has a placeholder
 // "Preview", and the DeepSeek version), their thinking steps, its two writing styles, the Author's Notebook's
 // texts, the words its preset's sections are built from, its Story Config wording, and its
 // own preset (below).
-const V11_UPSTREAM = "174575f";   // "01/11 update": a Thinking Cap for each V11 Тайна engine, the per-turn rules after the newest message, USER Hard, the notebook's numbering
+const V11_UPSTREAM = "6ce507f";   // "04/11 update": the Gemini JB add-on (its line at [[GeminiJB]], a ^ before every word) and the final check's blocks line; 01/11 brought a Thinking Cap for each V11 Тайна engine, the per-turn rules after the newest message, USER Hard, the notebook's numbering
 const v11Text = f => execSync(`git show "${V11_UPSTREAM}:${f}"`, { encoding: "utf8", maxBuffer: 1e8 });
 const v11 = f => load(v11Text(f), "v11_" + f.replace(/\W/g, "_"));
 const v11Taina = await v11("data/modes/v11taina.js");
@@ -124,12 +124,17 @@ const v11Styles = (await v11("data/directStyles.js")).directStyles;
 const v11Style = v11Styles.find(s => s.id === "dir_v11") || fail("upstream V11 style missing");
 const v11Inside = v11Styles.find(s => s.id === "dir_v11_inside") || fail("upstream V11 Inside style missing");
 // The notebook's renderer reads its model (the cap, the next id): loaded with it.
-const v11Render = await load(v11Text("src/state/modules/notebook/render.js"), "v11_notebook_render", { "./model.js": v11Text("src/state/modules/notebook/model.js") });
+// Since 04/11 the renderer also reads Dev Mode's edits (src/prompts/edits.js): none here, so the built-in text.
+const v11Render = await load(v11Text("src/state/modules/notebook/render.js"), "v11_notebook_render", {
+    "./model.js": v11Text("src/state/modules/notebook/model.js"),
+    "../../../prompts/edits.js": "export const editable = (key, builtin) => builtin;",
+});
 const v11UserRule = (v11Text("data/slots.js").match(/fallback: \(\) => "(\d+\. The response does not speak[^"]*)"/) || fail("upstream V11 {{user}} rule not found"))[1];
 // The words V11's preset sections are built from (src/prompts/presetFrame.js and v11Rules.js):
 // the older headings (the V10 Megumin Originals on the V11 preset), the tags for the V11 Тайна turn frame.
 const v11Frame = await v11("src/prompts/presetFrame.js");
 const v11Rules = await v11("src/prompts/v11Rules.js");
+const v11Scene = await v11("src/prompts/scene.js");   // 04/11: the scene list's texts, and the final check's blocks line
 const language = v11Rules.languageLine("zzz");
 if (!language.includes("Zzz")) fail("upstream V11 language line changed shape");
 const V11 = {
@@ -154,6 +159,11 @@ const V11 = {
     languageLine: language.replace("Zzz", "{{language}}"),
     sound: v11Rules.ADDON_RULES_SPLIT.onomato,
     soundStyled: v11Rules.ADDON_RULES_SPLIT.onomatoStyled,
+    // 04/11: the Gemini JB add-on's two lines (its policy line at [[GeminiJB]], the ^ line that
+    // closes the formatting section), and the final check's line on turns that ask for blocks.
+    geminiJb: v11Rules.GEMINI_JB,
+    geminiCaret: v11Rules.GEMINI_CARET_LINE,
+    blocksCheck: v11Scene.BLOCKS_CHECK,
 };
 for (const [k, v] of Object.entries(V11)) if (typeof v !== "string" || !v.trim()) fail("upstream V11 text missing: " + k);
 
@@ -283,8 +293,9 @@ const original = {
         ["[[Language]]\n[[MVU]]\n", "[[Language]]\n"],
     ], "Output RULES"),
     // The Pura engines' per-turn text, then the plot focus (VCRP Focus), close the slot:
-    // the last things the model reads.
-    "</history>": upText("</history>") + "[[pura_late]][[plotfocus]]",
+    // the last things the model reads. After them the Gemini JB add-on's spot (V11's, 04/11),
+    // as VCRP's preset has it: V10's preset has no [[formatting]] slot, so its ^ line rides there too.
+    "</history>": upText("</history>") + "[[pura_late]][[plotfocus]]\n\n[[GeminiJB]]",
     // Off by default. The original, minus the one slur VCRP took out.
     "USER Consent": edit(upText("USER Consent"), [["gooner, nigga.....etc", "gooner.....etc"]], "USER Consent"),
 };
@@ -320,7 +331,8 @@ console.log("Presets/VCRP V10 Megumin Original.json: " + Object.keys(original).l
 // are among the last things the model reads, which is V11's answer to models that skip them.
 const upV11P = JSON.parse(v11Text("Presets/Megumin Suite V11 Universal.json"));
 const v11Prompt = name => upV11P.prompts.find(p => p.name === name) || fail("upstream V11 slot missing: " + name);
-const v11Is = (name, text) => { if (v11Prompt(name).content !== text) fail(`upstream V11 slot changed: ${name}; decide how to carry it`); };
+// (A trailing line break, which 04/11 added to two slots, changes nothing the model reads.)
+const v11Is = (name, text) => { if (v11Prompt(name).content.trimEnd() !== text) fail(`upstream V11 slot changed: ${name}; decide how to carry it`); };
 v11Is("Add-on rules", "[[addon_rules]]\n\n[[storyplan_rules]]");
 v11Is("Ban list", "[[banned]]");
 v11Is("Block rules", "[[block_rules]]\n\n[[npc_rules]]\n\n[[dice_rules]]\n\n[[img_rules]]");
@@ -355,6 +367,9 @@ const originalV11 = {
     ].join("\n\n"),
     "</history>": v11Prompt("</history>").content,
 };
+// 04/11: the Gemini JB add-on's line closes V11's last message (its [[GeminiJB]] spot after
+// "Start your turn."); VCRP's presets carry the spot too, where the add-on's line goes.
+if (!originalV11["Output RULES"].endsWith("Start your turn.\n\n[[GeminiJB]]")) fail("upstream V11's This turn no longer ends on \"Start your turn.\" and [[GeminiJB]]; decide how to carry it");
 const presetV11 = JSON.parse(JSON.stringify(vcrp));
 for (const [name, text] of Object.entries(originalV11)) {
     const slot = presetV11.prompts.find(p => p.name === name) || fail("VCRP slot missing: " + name);

@@ -12,13 +12,13 @@
 import { extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "../core/constants.js";
 
-export const WHATS_NEW_ID = "10.0.0-vcrp.9";
+export const WHATS_NEW_ID = "10.0.0-vcrp.10";
 
 const ITEMS = [
-    "<b>A sweep of every feature on every engine.</b> Each module (Story Memory, Focus, the Notebook, the NPC Bank, the knowledgebase, Anime mode, the blocks and Pura's trackers, Tone Rules, Existing cast only, the one-shot direction, the length line, Dev Mode overrides and custom modules, every add-on and every Pura setting) was checked on all the engines on their presets, on Gemini 4 Argon and on Claude: all of it reaches the model, in the right place for the cache.",
-    "<b>Trimmed, after the sweep.</b> Gone: <b>V11 Тайна Preview</b> (the first V11 engine, with its thinking) and the <b>V11 Тайна DeepSeek</b> pair (a profile on one moves to V11 Тайна); the writing styles written for the V7–V9 engines and the five generic ones (the four of VCRP's engines remain; a profile on a removed one takes its engine's own); the <b>Gemini Thinking Override</b> (three &lt;think&gt; lines, from the Gemini 2 era); Dev Mode's dead Word Count, Short-term Memory and model acknowledgement slots; and the \"New\" badge every engine wore.",
-    "<b>Fixes.</b> Enhanced Dialogue is V10's alone (the flag could have swapped out a V11 engine's dialogue section). Setup Check now warns, not notes, when a V11 engine runs on a V10 preset: its Content section, which the engine's own text points to, is not sent there.",
-    "<b>The presets</b> no longer carry V10's empty Short-term Memory slot (Story Memory's text has its own). Re-importing is optional: a preset imported before still works, the old slot stripped as it always was.",
+    "<b>Megumin Suite V11's 04/11 update.</b> Its engines, thinking and writing texts are unchanged; what came is around them.",
+    "<b>Gemini JB</b>, a new add-on (Global Toggles & Add-ons), for Gemini: it helps the model through gritty and heavy NSFW scenes without cutting the reply off. V11's two lines, word for word: one that says the request complies with the adult fiction policy, at the end of the last message, and one that asks for a <b>^</b> before every word of the reply. VCRP takes the ^ out as each reply arrives, so you never see them; the presets' new \"clean up\" regex hides them while a reply streams. Each ^ costs an output token, so it is for Gemini alone: Setup Check says when it is on for another model, when Gemini runs without it, and when your preset is from before it. Not for NSFL.",
+    "<b>The final check asks for the blocks</b> on a turn that has them (\"The response ends with the &lt;Blocks&gt; section.\"), on every engine on the V11 preset and in the second call for missing blocks, so fewer replies end without them.",
+    "<b>Group chats save.</b> A repaired reply, a cleaned one, a chat with its dashes cleaned: everything VCRP saves to a chat used to be refused by SillyTavern in a group chat (Megumin's fix).",
 ]
 
 const settings = () => extension_settings[extensionName] && extension_settings[extensionName].globalSettings;
@@ -38,7 +38,7 @@ export function markWhatsNewSeen() {
 /** Once, when SillyTavern is ready: the one thing that needs doing. */
 export function whatsNewToast() {
     if (!hasUnseenWhatsNew() || typeof toastr === "undefined") return;
-    toastr.info("New: a sweep of every feature on every engine, and a trim after it (V11 Тайна Preview, the DeepSeek pair, the old writing styles and the Gemini Thinking Override are gone; profiles on them move over). Details in Global Settings → What's new.", "VCRP " + WHATS_NEW_ID, { timeOut: 15000 });
+    toastr.info("New, from Megumin V11's 04/11 update: the Gemini JB add-on for Gemini (re-import your preset to use it), the final check asks for the blocks, and group chats save. Details in Global Settings → What's new.", "VCRP " + WHATS_NEW_ID, { timeOut: 15000 });
 }
 
 /** The card at the top of Global Settings, with a "Got it" button (#vcrp_whats_new_ok). */
@@ -49,7 +49,7 @@ export function whatsNewCardHtml() {
             ${ITEMS.map(i => `<div class="set-desc" style="margin:6px 0;">${i}</div>`).join("")}
             <div class="mtab-callout gold" style="margin:10px 0 0;">
                 <i class="fa-solid fa-file-import"></i>
-                <span><b>Nothing to re-import this time.</b> The presets changed only by losing an empty slot; the one you have keeps working. If you are still on a V11 preset from before Megumin's 01/11 update, Setup Check says so: re-import VCRP V11 Megumin Original from the extension's Presets folder, replacing the old one. Your VCRP V10 presets need no re-import.</span>
+                <span><b>Re-import your preset to use Gemini JB.</b> The add-on needs a spot in the preset and a new regex: re-import VCRP V10 Universal, VCRP V10 Megumin Original or VCRP V11 Megumin Original from the extension's Presets folder, replacing the old one, then allow its regex (Extensions → Regex). Everything else works on the preset you have; Setup Check says if yours is from before the add-on.</span>
             </div>
             <div style="margin-top:10px;"><button id="vcrp_whats_new_ok" class="ps-modern-btn primary" style="font-size:0.75rem;"><i class="fa-solid fa-check"></i> Got it</button></div>
         </div>`;

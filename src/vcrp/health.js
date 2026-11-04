@@ -25,6 +25,8 @@ import { meguminActiveBlocks } from "../features/blocks/registry.js";
 import { toneRulesText } from "./toneRules.js";
 import { oneShot } from "./oneShot.js";
 import { castLockOn } from "./castLock.js";
+import { localProfile } from "../core/state.js";
+import { usesCaretWords } from "../engine/caretWords.js";
 
 // A preset is VCRP's if it carries the tags only VCRP/Megumin presets use (the name can be anything).
 const VCRP_TAG_RE = /\[\[(?:blocks|THINK|prompt1)\]\]/;
@@ -181,6 +183,24 @@ export function vcrpHealthCheck() {
     if (focusOff.length) {
         add("warn", `Re-import the preset: ${focusOff.join(" and ")} cannot reach the model`,
             `The active preset was imported before this version and has no place for it. Import "VCRP V10 Universal" (or "VCRP V10 Megumin Original") again from the extension's Presets folder and select it. Re-importing replaces your own edits to that preset.`);
+    }
+
+    // The Gemini JB add-on (Megumin Suite V11): its line needs the [[GeminiJB]] spot, and the ^
+    // it asks for are hidden while a reply streams by the preset's "clean up" regex.
+    const geminiModel = /gemini/.test(String(model || ""));
+    if (usesCaretWords(localProfile)) {
+        const cleanUp = scripts.some(s => s && String(s.scriptName || "").trim() === "clean up" && !s.disabled);
+        if (!carries("[[GeminiJB]]") || !cleanUp) {
+            add("warn", "Re-import the preset for the Gemini JB add-on",
+                `The active preset is from before the add-on: ${!carries("[[GeminiJB]]") ? "it has no place for the add-on's line" : "it lacks the \"clean up\" regex that hides the ^ while a reply streams"}. Import the preset again from the extension's Presets folder, replacing the old one, and select it.`);
+        }
+        if (!geminiModel) {
+            add("info", "Gemini JB is on for a model that is not Gemini",
+                `The add-on is for Gemini's content filter: ${modelLabel} does not need its line, or the ^ before every word it asks for (each one costs an output token). Turn it off in Global Toggles & Add-ons unless you want it.`);
+        }
+    } else if (geminiModel) {
+        add("info", "Gemini without the Gemini JB add-on",
+            "Megumin Suite V11's Gemini loadouts turn it on: it helps Gemini get through gritty and heavy NSFW scenes without cutting the reply off (not for NSFL). Global Toggles & Add-ons → Gemini JB.");
     }
 
     // 6. Long chats: what decides whether a request is cheap or full price.
