@@ -174,7 +174,10 @@ included. While it is set, the model is told its room and the story's share of i
 (after the thinking and what your blocks take), so it plans to finish inside it; the panel shows
 that split. A reply that still reaches the cap mid-sentence ends on its last full sentence
 (Continue writes the rest), and the next reply carries the last complete blocks. For a reply of
-about 2,000 tokens: Story length 450–550 words, Thinking length 250 words, a cap of 2,000.
+about 2,000 tokens on Claude: Story length 450–550 words, Thinking length 250 words, a cap of
+2,000. On a model that reasons before it writes (Gemini, DeepSeek, GLM; Claude with a reasoning
+effort set) that reasoning counts against the cap and never shows in the reply, so there the cap
+is 0 (off) or 4,000 and up; Setup Check says so.
 
 **Hold each reply to the target** (on by default, with Story Memory): input and output together
 stay within the per-request target.
@@ -191,6 +194,21 @@ stay within the per-request target.
 - **The safety cap**, when lower, still wins: it is the one limit that stops a reply.
 - **A prompt that alone nears the target** gets a minimum room of 1,500 tokens, and the panel
   says so.
+- **On a model that reasons out of sight** (Gemini, DeepSeek, GLM, Kimi, Qwen; Claude with a
+  reasoning effort set), the room is worked out and shown but never put on the request. The
+  model's thinking is paid for in that same limit and VCRP cannot see its size, so a limit set
+  from the reply's measured size, even half again a reply, was used up by the thinking on a hard
+  turn (the first reply after a break in a long chat most of all, where the room is tightest) and
+  the reply came back with nothing in it. There, only the safety cap and SillyTavern's Max
+  Response Length limit a reply.
+- **How each reply ended** (`src/vcrp/generationTrace.js`): VCRP reads the answer to each of
+  SillyTavern's chat-completion requests as it passes (a copy of the response, read alongside;
+  the request and what SillyTavern reads are untouched) and stamps the reply with the provider's
+  stop reason (OpenRouter's native one, such as Gemini's `MAX_TOKENS` or `PROHIBITED_CONTENT`),
+  the output as billed, reasoning counted, and the limit the request went out with and what set
+  it. From it, the blank-reply note says what really happened, a cut is known for certain rather
+  than guessed from the reply's size, the cost badge and Story Memory count the output as billed,
+  and Setup Check lists how the last five replies ended.
 - **A block a reply leaves out, or is cut off in,** is carried to the next reply from where it was
   last written whole (World State, Bonds, Character Sheet, Story Tracker), and the model is asked
   to write it in full again, so one bad reply doesn't drop it from every reply after.
@@ -203,9 +221,10 @@ stay within the per-request target.
   short of a block keeps its own extras), the reply is saved and redrawn, and the NPC capture and
   the Story Director's tracker read it again. Once per reply, never for a blank one, after the other
   handlers; the switch is in the BLOCKS tab (*Ask again for missing blocks*, on by default).
-- **A blank reply is told apart** (`src/vcrp/blankReply.js`): nothing at all (on Gemini, its content
-  filter), stopped inside its thinking (the output limit), all reasoning with no story, or only
-  blocks. A toast says which and what to do. Such a reply is not measured as a reply (it would
+- **A blank reply is told apart** (`src/vcrp/blankReply.js`): nothing at all, stopped inside its
+  thinking, all reasoning with no story, or only blocks. A toast says which and what to do, from
+  the answer's own stop reason when it was read (the output limit, named with what set it; the
+  provider's filter, with its word; an error) and from the reply's shape otherwise. Such a reply is not measured as a reply (it would
   shrink the room every reply is given), the one-shot direction stays for the swipe, no rolls note
   is added to it and no blocks are asked for. Setup Check warns when a Safety cap is set on a model
   that reasons before it writes (Gemini, DeepSeek, GLM, Kimi, Qwen; Claude with Request model

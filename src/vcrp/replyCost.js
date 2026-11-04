@@ -35,6 +35,13 @@ export function setCostBadges(on) {
 }
 
 const outputTokens = m => estimateTokens(String((m && m.mes) || "") + String((m && m.extra && m.extra.reasoning) || ""));
+// What the API billed the reply's output at, hidden reasoning counted, when its answer was
+// read as it passed (generationTrace.js stamps it on the reply before this runs); else null.
+const billedOutput = m => {
+    const f = m && m.extra && m.extra.vcrp_finish;
+    const out = f && f.usage && f.usage.out;
+    return typeof out === "number" && out > 0 ? out : null;
+};
 
 /** After the roleplay prompt is built (injection.js): what it will cost to read, by kind. */
 export function vcrpCostAfterPrompt(messages, dryRun) {
@@ -93,7 +100,11 @@ export function vcrpCostOnReply(messageId, type) {
     const p = pending;
     pending = null;
     if (!budget) return;
-    const output = Math.max(0, outputTokens(msg) - p.from);
+    // As billed when the answer said (a Continue's answer counts its own part only); else
+    // estimated from the text, the part already there taken off on a Continue.
+    const billed = billedOutput(msg);
+    const output = billed !== null ? billed : Math.max(0, outputTokens(msg) - p.from);
+    const reasoning = billed !== null && msg.extra.vcrp_finish.usage.reasoning > 0 ? msg.extra.vcrp_finish.usage.reasoning : 0;
     const price = budget.price;
     const parts = {
         read: p.read * price.read / 1e6, write: p.write * budget.write / 1e6, plain: p.plain * price.input / 1e6, output: output * price.output / 1e6,
@@ -105,9 +116,11 @@ export function vcrpCostOnReply(messageId, type) {
         ...prev, total: add(prev.total, cost), output: add(prev.output, output), parts: (prev.parts || 1) + 1,
         tokens: { read: add(prev.tokens.read, p.read), write: add(prev.tokens.write, p.write), plain: add(prev.tokens.plain, p.plain) },
         pieces: { read: add(prev.pieces.read, parts.read), write: add(prev.pieces.write, parts.write), plain: add(prev.pieces.plain, parts.plain), output: add(prev.pieces.output, parts.output) },
+        billed: !!prev.billed && billed !== null, reasoning: add(prev.reasoning, reasoning),
     } : {
         total: cost, output, parts: 1, cold: p.cold, model: price.label,
         tokens: { read: p.read, write: p.write, plain: p.plain }, pieces: parts,
+        billed: billed !== null, reasoning,
     };
     msg.extra = msg.extra || {};
     msg.extra.vcrp_cost = record;
@@ -128,8 +141,8 @@ export function costBadgeText(c) {
         `Read from the cache: ${k(t.read || 0)} tokens, ${usd(p.read || 0)}`,
         `Written to the cache: ${k(t.write || 0)} tokens, ${usd(p.write || 0)}`,
         `Sent fresh: ${k(t.plain || 0)} tokens, ${usd(p.plain || 0)}`,
-        `Written by the model: ${k(c.output || 0)} tokens, ${usd(p.output || 0)}`,
-        "An estimate from VCRP's own token counts; hidden reasoning is not included.",
+        `Written by the model: ${k(c.output || 0)} tokens${c.billed && c.reasoning > 0 ? ` (${k(c.reasoning)} of them its reasoning)` : ""}, ${usd(p.output || 0)}`,
+        c.billed ? "The output is the API's own count, reasoning included; the prompt's share is VCRP's estimate." : "An estimate from VCRP's own token counts; hidden reasoning is not included.",
     ];
     return { short: `≈ ${usd(c.total)}`, detail: lines.join("\n") };
 }

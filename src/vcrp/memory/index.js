@@ -385,9 +385,13 @@ export function vcrpMemoryCountReply(messageId, type) {
     const context = typeof getContext === "function" ? getContext() : null;
     const msg = context && Array.isArray(context.chat) ? context.chat[Number(messageId)] : null;
     if (!msg || msg.is_user) return;
-    let out = estimateTokens(String(msg.mes || "") + String((msg.extra && msg.extra.reasoning) || ""));
+    // As the API billed it, hidden reasoning counted, when the answer was read as it passed
+    // (generationTrace.js stamps the reply first); else estimated from the text.
+    const f = msg.extra && msg.extra.vcrp_finish;
+    const billed = f && f.usage && typeof f.usage.out === "number" && f.usage.out > 0 ? f.usage.out : null;
+    let out = billed !== null ? billed : estimateTokens(String(msg.mes || "") + String((msg.extra && msg.extra.reasoning) || ""));
     const continued = continueFrom !== null;
-    if (continued) { out = Math.max(0, out - continueFrom); continueFrom = null; }
+    if (continued) { if (billed === null) out = Math.max(0, out - continueFrom); continueFrom = null; }
     const cost = out * budget.price.output / 1e6;
     st.spend.replyCost += cost;
     st.spend.last.cost += cost;

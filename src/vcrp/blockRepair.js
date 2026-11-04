@@ -32,6 +32,7 @@ import { memorySummaryRunning } from "./memory/summarize.js";
 import { vcrpMemoryCountTaskOutput } from "./memory/index.js";
 import { notebookOn, notebookCurrentPhase } from "./notebook/index.js";
 import { vcrpWithoutSwipedReply } from "./generation.js";
+import { vcrpLastGeneration } from "./generationTrace.js";
 
 export const TASK_MARKER = "[VCRP BLOCKS";
 const WAIT_MS = 1500;      // after the reply: let SillyTavern save and draw it, and the other handlers run
@@ -181,7 +182,12 @@ export async function repairBlocksNow(id) {
     if (!env) {
         msg.extra.vcrp_blocks_repair = "failed";
         console.debug("[VCRP] Blocks: the model answered without a <Blocks> section", String(raw || "").slice(0, 200));
-        return { status: "failed", reason: raw ? "the answer had no <Blocks> section" : "the request failed" };
+        // Why, when the call's answer was read as it passed (generationTrace.js).
+        const rec = vcrpLastGeneration(["quiet"]);
+        const why = raw ? "the answer had no <Blocks> section"
+            : rec && rec.done && rec.reason === "filter" ? `the provider's filter stopped the call (${rec.native})`
+                : rec && rec.done && rec.error ? `the call failed: ${rec.error}` : "the request failed";
+        return { status: "failed", reason: why };
     }
     msg.mes = withRepairedBlocks(was, env, need.how);
     if (Array.isArray(msg.swipes) && typeof msg.swipe_id === "number") msg.swipes[msg.swipe_id] = msg.mes;

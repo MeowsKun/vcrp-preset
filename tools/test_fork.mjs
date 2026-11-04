@@ -2953,8 +2953,9 @@ console.log("44 ok Tone Rules (per chat, after the newest message with every eng
     // Each handler is wrapped in whenOn(...) (the master switch, power.js).
     const order = [...src.matchAll(/eventSource\.on\(event_types\.MESSAGE_RECEIVED, (?:whenOn\()?(\w+)\)/g)].map(m => m[1]);
     const at = name => order.indexOf(name);
-    assert(at("vcrpCostOnReply") === 0 && at("vcrpPuraTidyOnReply") < at("vcrpDedashOnReply") && at("vcrpDedashOnReply") < at("vcrpDialogueColorsOnReply") && at("vcrpPuraTidyOnReply") > 0,
-        `reply handler order (the cost measured first, on the reply as written; the tidy before the dash cleaner): ${order.join(", ")}`);
+    // The stamp of how the generation ended goes first (the cost reads the output as billed from it).
+    assert(at("vcrpFinishOnReply") === 0 && at("vcrpCostOnReply") === 1 && at("vcrpPuraTidyOnReply") < at("vcrpDedashOnReply") && at("vcrpDedashOnReply") < at("vcrpDialogueColorsOnReply") && at("vcrpPuraTidyOnReply") > 0,
+        `reply handler order (the stop-reason stamp first, then the cost measured on the reply as written; the tidy before the dash cleaner): ${order.join(", ")}`);
     const tidy = await imp("src/vcrp/pura/tidy.js");
     const { vcrpDedashOnReply } = await imp("src/vcrp/dedash.js");
     const colors = await imp("src/vcrp/dialogueColors.js");
@@ -4761,13 +4762,15 @@ console.log("62 ok the Author's Notebook as V11 has it since 01/11 (a deleted tr
     assert(items.some(i => i.level === "warn" && /Safety cap \(2,000 tokens\) on a model that reasons/.test(i.title)), "Gemini with a 2,000 cap: warned");
     extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 6000 };
     assert(vcrpHealthCheck().items.some(i => i.level === "info" && /Safety cap \(6,000 tokens\)/.test(i.title)), "a roomy cap: a note");
-    Object.assign(chatCompletionSettings, { openrouter_model: "anthropic/claude-opus-4.6", show_thoughts: true });
+    // Claude reasons only when a reasoning effort is asked for (Request model reasoning alone
+    // shows what there is; it asks for none).
+    Object.assign(chatCompletionSettings, { openrouter_model: "anthropic/claude-opus-4.6", show_thoughts: true, reasoning_effort: "high" });
     extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 2000 };
-    assert(vcrpHealthCheck().items.some(i => i.level === "warn" && /on a model that reasons/.test(i.title)), "Claude with Request model reasoning on: warned too");
-    Object.assign(chatCompletionSettings, { show_thoughts: false });
+    assert(vcrpHealthCheck().items.some(i => i.level === "warn" && /on a model that reasons/.test(i.title)), "Claude with a reasoning effort set: warned too");
+    Object.assign(chatCompletionSettings, { reasoning_effort: "auto" });
     assert(!vcrpHealthCheck().items.some(i => /on a model that reasons/.test(i.title)), "Claude without it: nothing");
     delete extension_settings.VCRP.globalSettings.memoryBudget;
-    for (const k of ["prompts", "prompt_order", "show_thoughts"]) delete chatCompletionSettings[k];
+    for (const k of ["prompts", "prompt_order", "show_thoughts", "reasoning_effort"]) delete chatCompletionSettings[k];
 
     // Missing blocks: what is missing, the model's answer read, the reply mended.
     const req = [{ tag: "World_State", label: "World State" }, { tag: "Bonds", label: "Bonds" }];
@@ -5370,5 +5373,145 @@ console.log("67 ok the scene list as Megumin Suite V11 has it (<Scene> first in 
     chat.length = 0;
 }
 console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: held in the tab, not sent, not counted, no setup skipped until written, its number kept, added by you; World State without Secret and Seeds while the notebook is on, unless kept)");
+
+// 69. How a reply's generation ended, read from the API's own answer (generationTrace.js): the
+//     stop reasons and usage as OpenRouter, Anthropic and Google give them; the wrapper that
+//     reads the answer as it passes (the answer SillyTavern reads untouched) and the stamp on
+//     the reply; the request's limit left alone on a model whose reasoning is out of sight
+//     (replyLength.js), a safety cap still lowering it; the blank-reply note and the cut from
+//     the answer's stop reason; the output counted as billed (replyCost.js, memory/index.js).
+{
+    const q = state.localProfile;
+    const trace = await imp("src/vcrp/generationTrace.js");
+    const RL = await imp("src/vcrp/replyLength.js");
+    const { vcrpModelReasonsHidden } = await imp("src/vcrp/generation.js");
+    const { blankReplyWhy } = await imp("src/vcrp/blankReply.js");
+    const { vcrpCutOnReply } = await imp("src/vcrp/replyCut.js");
+    const { vcrpCostOnReply, costBadgeText, vcrpCostAfterPrompt } = await imp("src/vcrp/replyCost.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const keepCc = { ...chatCompletionSettings };
+    const gs = extension_settings.VCRP.globalSettings;
+    const keepBudget = gs.memoryBudget;
+    const keepMem = JSON.stringify(q.vcrpMemory || null);
+    const setModel = (source, key, id, extra = {}) => { for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k]; Object.assign(chatCompletionSettings, { chat_completion_source: source, [key]: id, ...extra }); };
+
+    // Which models reason out of sight.
+    setModel("openrouter", "openrouter_model", "google/gemini-4-argon");
+    assert(vcrpModelReasonsHidden(), "Gemini 4 Argon reasons out of sight");
+    setModel("openrouter", "openrouter_model", "anthropic/claude-opus-4.6");
+    assert(!vcrpModelReasonsHidden(), "Claude with no reasoning effort set does not");
+    setModel("openrouter", "openrouter_model", "anthropic/claude-opus-4.6", { reasoning_effort: "high" });
+    assert(vcrpModelReasonsHidden(), "Claude with a reasoning effort set does (its reasoning comes back summarized)");
+    setModel("openrouter", "openrouter_model", "anthropic/claude-opus-4.6", { reasoning_effort: "auto", show_thoughts: true });
+    assert(!vcrpModelReasonsHidden(), "Request model reasoning alone (shown when there is any, not asked for) does not");
+    setModel("zai", "zai_model", "glm-5.3");
+    assert(vcrpModelReasonsHidden(), "GLM does");
+
+    // The stop reasons and usage, as the answers give them.
+    const sse = [
+        'data: {"id":"x","choices":[{"index":0,"delta":{"reasoning":"hm"},"finish_reason":null,"native_finish_reason":null}]}',
+        ": OPENROUTER PROCESSING",
+        'data: {"id":"x","choices":[{"index":0,"delta":{"content":""},"finish_reason":"length","native_finish_reason":"MAX_TOKENS"}],"usage":{"prompt_tokens":96000,"completion_tokens":8233,"completion_tokens_details":{"reasoning_tokens":8233},"prompt_tokens_details":{"cached_tokens":90000}}}',
+        "data: [DONE]",
+    ].join("\n");
+    const r1 = trace.readGenerationBody(sse);
+    assert.deepEqual(r1, { reason: "length", native: "MAX_TOKENS", usage: { out: 8233, reasoning: 8233, input: 96000, cached: 90000 }, error: "" }, "OpenRouter's stream: stopped by the limit, in Gemini's own word, the usage from the last chunk");
+    const r2 = trace.readGenerationBody('{"choices":[{"message":{"content":""},"finish_reason":"content_filter","native_finish_reason":"PROHIBITED_CONTENT"}],"usage":{"prompt_tokens":10,"completion_tokens":0}}');
+    assert(r2.reason === "filter" && r2.native === "PROHIBITED_CONTENT" && r2.usage.out === 0, "a whole answer: the provider's filter");
+    const r3 = trace.readGenerationBody('data: {"choices":[{"delta":{"content":"a"},"finish_reason":null}]}\ndata: {"error":{"message":"Provider returned error","code":502}}');
+    assert(r3.reason === "error" && r3.error === "Provider returned error", "an error chunk mid-stream");
+    const r4 = trace.readGenerationBody('event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":50,"cache_read_input_tokens":40,"output_tokens":1}}}\n\nevent: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":3000}}');
+    assert(r4.reason === "length" && r4.native === "max_tokens" && r4.usage.out === 3000 && r4.usage.cached === 40 && r4.usage.input === 50, "Anthropic's stream: the delta that ends it, the counts from both ends");
+    const r5 = trace.readGenerationBody('data: {"candidates":[{"content":{"parts":[{"text":""}]},"finishReason":"SAFETY"}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":0,"thoughtsTokenCount":1200}}');
+    assert(r5.reason === "filter" && r5.native === "SAFETY" && r5.usage.out === 1200 && r5.usage.reasoning === 1200, "Google's own shape: the thoughts counted in the output");
+    assert(trace.readGenerationBody("").reason === "" && trace.readGenerationBody("not json at all").reason === "" && trace.readGenerationBody("{broken").reason === "", "nothing read: nothing claimed");
+    assert.equal(trace.normalizeStopReason("end_turn"), "stop"); assert.equal(trace.normalizeStopReason("OTHER"), "filter"); assert.equal(trace.normalizeStopReason("tool_calls"), "tool"); assert.equal(trace.normalizeStopReason("whatever"), "other");
+
+    // The wrapper reads a request's answer as it passes, the answer untouched; the reply is stamped.
+    const scope = { fetch: async () => new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }) };
+    trace.vcrpResetGenerationTrace();
+    assert(trace.vcrpInstallGenerationTrace(scope) && !trace.vcrpInstallGenerationTrace(scope), "installs once");
+    vcrpSetGenerationType("normal", {}, false);
+    await scope.fetch("/api/other", { method: "POST", body: "{}" });
+    assert.equal(trace.vcrpGenerationRecords().length, 0, "other requests are not watched");
+    // The limit the request carries is the cap's (put on the request a moment before, replyLength.js).
+    gs.memoryBudget = { targetCost: 0.30, replyCap: 8233 };
+    RL.vcrpNotePrompt(true);
+    const capped = { max_tokens: 20000 };
+    RL.vcrpApplyReplyCap(capped);
+    assert(capped.max_tokens === 8233 && RL.sentReplyLimitBy() === "cap", "the cap lowered the request, and is named");
+    const res = await scope.fetch("/api/backends/chat-completions/generate", { method: "POST", body: JSON.stringify({ model: "google/gemini-4-argon", chat_completion_source: "openrouter", stream: true, max_tokens: 8233 }) });
+    assert.equal(await res.text(), sse, "SillyTavern reads the answer whole");
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "", extra: { reasoning: "hm" } });
+    await trace.vcrpFinishOnReply(1, "normal");
+    const stamp = chat[1].extra.vcrp_finish;
+    assert(stamp && stamp.done && stamp.reason === "length" && stamp.native === "MAX_TOKENS" && stamp.limit === 8233 && stamp.limitBy === "cap" && stamp.usage.out === 8233 && stamp.model === "google/gemini-4-argon", `the reply is stamped with how it ended: ${JSON.stringify(stamp)}`);
+    assert.equal(trace.vcrpLastGeneration().stamped, true, "and the record is used up");
+    await trace.vcrpFinishOnReply(1, "normal");
+    assert.equal(chat[1].extra.vcrp_finish, stamp, "a reply with no record of its own is not stamped");
+    assert.equal(trace.vcrpLastGeneration(["quiet"]), null, "no quiet call was made");
+    const failing = { fetch: async () => new Response('{"error":true,"response":"no key"}', { status: 401 }) };
+    trace.vcrpResetGenerationTrace();
+    trace.vcrpInstallGenerationTrace(failing);
+    await failing.fetch("/api/backends/chat-completions/generate", { method: "POST", body: "{}" });
+    await new Promise(r => setTimeout(r, 20));
+    const bad = trace.vcrpLastGeneration();
+    assert(bad && bad.done && bad.status === 401 && bad.reason === "error" && bad.error === "no key", `a refused request is recorded as one: ${JSON.stringify(bad)}`);
+
+    // The blank-reply note from the stamp.
+    assert(/output limit stopped it: 8,233 tokens, set by VCRP's Safety cap/.test(blankReplyWhy("empty", stamp)) && /8,233 of them reasoning/.test(blankReplyWhy("thinking", stamp)) && /Raise the Safety cap/.test(blankReplyWhy("empty", stamp)), `the limit, what set it, what was written: ${blankReplyWhy("empty", stamp)}`);
+    assert(/Hold each reply to the target/.test(blankReplyWhy("empty", { ...stamp, limitBy: "hold" })) && /Max Response Length/.test(blankReplyWhy("empty", { ...stamp, limitBy: "" })), "the other two setters named");
+    assert(/stopped the reply \(PROHIBITED_CONTENT\)/.test(blankReplyWhy("empty", { done: true, reason: "filter", native: "PROHIBITED_CONTENT" })), "the filter, in the provider's word");
+    assert(/failed on the provider's side: Provider returned error/.test(blankReplyWhy("empty", { done: true, reason: "error", error: "Provider returned error" })), "an error");
+    assert(/Chain of Thought off/.test(blankReplyWhy("thinking", { done: true, reason: "stop" })) && /content filter/.test(blankReplyWhy("empty", { done: true, reason: "stop" })), "ended on its own: the custom thinking on Gemini 4, or the filter");
+    assert(/usually its content filter/.test(blankReplyWhy("empty", null)) && /output limit cut it/.test(blankReplyWhy("thinking-open", { done: false })), "no answer read: the reply's shape");
+
+    // The cut from the stamp: a reply the answer says ended on its own is left alone, one the
+    // limit stopped is cut whatever its size looks like.
+    chat.push({ is_user: false, mes: "She left. She turned toward the door and", extra: { vcrp_finish: { done: true, reason: "stop", limit: 10 } } });
+    vcrpCutOnReply(chat.length - 1, "normal");
+    assert.equal(chat.at(-1).mes, "She left. She turned toward the door and", "ended on its own: not cut, however near the limit its size looks");
+    chat.at(-1).extra.vcrp_finish = { done: true, reason: "length", limit: 100000 };
+    vcrpCutOnReply(chat.length - 1, "normal");
+    assert(chat.at(-1).mes === "She left." && chat.at(-1).extra.vcrp_cut === "story", "stopped by the limit: cut to the last full sentence, however small its size looks");
+
+    // On a model whose reasoning is out of sight, the room under the target is not put on the
+    // request (the Argon run in test_cache.mjs checks it on a real prompt); the output is counted
+    // as billed, on the cost badge and in Story Memory.
+    setModel("openrouter", "openrouter_model", "google/gemini-4-argon");
+    gs.memoryBudget = { targetCost: 0.30, customPrice: { "google/gemini-4-argon": { input: 2, output: 10, read: 0.1 } } };
+    q.vcrpMemory = { ...(q.vcrpMemory || {}), enabled: true };
+    vcrpSetGenerationType("normal", {}, false);
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" });
+    const prompt = [{ role: "system", content: "a".repeat(4000) }, { role: "user", content: "go" }];
+    vcrpCostAfterPrompt(prompt, false);
+    chat.push({ is_user: false, mes: "A short story line. " + "More. ".repeat(20), extra: { vcrp_finish: { done: true, reason: "stop", native: "STOP", limit: 20000, usage: { out: 6100, reasoning: 5800, input: 1000 } } } });
+    vcrpCostOnReply(1, "normal");
+    const c = chat[1].extra.vcrp_cost;
+    assert(c && c.billed && c.output === 6100 && c.reasoning === 5800 && Math.abs(c.pieces.output - 0.061) < 1e-6, `the badge counts the output as billed: ${JSON.stringify(c)}`);
+    assert(/\(5\.8k of them its reasoning\)/.test(costBadgeText(c).detail) && /API's own count/.test(costBadgeText(c).detail), "and says so");
+    const st = memory.memoryState();
+    st.spend = { since: 0, replies: 1, replyCost: 0, tasks: 0, taskCost: 0, last: { cost: 0, output: 0 }, recentOut: [] };
+    memory.vcrpMemoryCountReply(1, "normal");
+    assert(st.spend.last.output === 6100 && st.spend.recentOut.at(-1) === 6100 && Math.abs(st.spend.replyCost - 0.061) < 1e-6, "Story Memory measures the reply as billed, reasoning included");
+    chat.pop();
+    vcrpCostAfterPrompt(prompt, false);
+    chat.push({ is_user: false, mes: "A short story line. " + "More. ".repeat(20), extra: {} });
+    vcrpCostOnReply(1, "normal");
+    assert(chat[1].extra.vcrp_cost && !chat[1].extra.vcrp_cost.billed && /hidden reasoning is not included/.test(costBadgeText(chat[1].extra.vcrp_cost).detail), "without a stamp, the estimate as before");
+
+    const metaKey = Object.keys(globalThis.__ST__.chat_metadata).find(k => globalThis.__ST__.chat_metadata[k] === st);
+    if (metaKey) delete globalThis.__ST__.chat_metadata[metaKey];
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keepCc);
+    gs.memoryBudget = keepBudget;
+    q.vcrpMemory = JSON.parse(keepMem) || undefined;
+    trace.vcrpResetGenerationTrace();
+    RL.forgetReplyRoom();
+    chat.length = 0;
+}
+console.log("69 ok how each reply ended, from the API's own answer (OpenRouter, Anthropic and Google stop reasons and usage; the answer read as it passes and SillyTavern's copy untouched; the stamp on the reply; a refused request recorded), the request's limit left alone on a model that reasons out of sight (a safety cap still lowers it), the blank-reply note and the cut from the stop reason, the output counted as billed");
 
 console.log("\nALL FORK CHECKS PASSED");

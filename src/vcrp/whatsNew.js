@@ -12,10 +12,13 @@
 import { extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "../core/constants.js";
 
-export const WHATS_NEW_ID = "10.0.0-vcrp.12";
+export const WHATS_NEW_ID = "10.0.0-vcrp.13";
 
 const ITEMS = [
-    "<b>Megumin Suite V11's 04/11 update</b>, in VCRP's terms (this release and the two before it together). Its engines, thinking and writing texts are unchanged; what came is around them.",
+    "<b>Empty replies on Gemini: the cause found and fixed.</b> A model that reasons before it writes (Gemini, DeepSeek, GLM; Claude with a reasoning effort set) pays for that reasoning inside the request's output limit, and VCRP could not see its size. So the limit VCRP set from your replies' measured size (tightest on the first reply after a break in a long chat) was used up by the reasoning on a hard turn, and the reply came back with nothing in it. On such a model VCRP no longer lowers the request's limit on its own: <b>Hold each reply to the target</b> still shows the room but leaves the limit to your Safety cap and SillyTavern's Max Response Length. Megumin never set that limit, which is why it did not happen there.",
+    "<b>Every reply now says how it ended.</b> VCRP reads the answer to each request as it passes (a copy; nothing SillyTavern reads is touched) and keeps the provider's stop reason, the output as billed (reasoning counted) and the limit the request went out with. A blank reply's note now says what really happened: the output limit and what set it, the provider's filter with its own word (Gemini's <code>PROHIBITED_CONTENT</code>, <code>SAFETY</code>...), or an error. <b>Setup Check</b> lists how your last five replies ended; look there first when replies come back empty. The cost badge shows the output as the API billed it, hidden reasoning included.",
+    "<b>Gemini 4 and Chain of Thought.</b> Setup Check now notes, on Gemini 4, that Megumin Suite's Gemini loadout keeps custom thinking off there (the model reasons on its own); if replies come back as reasoning with no story, turn Chain of Thought off in Presets & CoT.",
+    "<b>From the three releases before this one</b>, Megumin Suite V11's 04/11 update in VCRP's terms (its engines, thinking and writing texts unchanged; what came is around them):",
     "<b>The Notebook tab</b>, as V11 has it: the Author's Notebook has moved out of the Focus tab into a tab of its own. Each live truth is hidden until you ask to see it, then editable (saved as you leave a box), its clues listed by message and removable; <b>Add a truth</b> gives you an empty one to write yourself, not given to the story until its Truth box is filled in; <b>Past</b> is a timeline of the truths that came out, each with Activate again. While the notebook is on, World State stops asking for each character's Secret and for Planted Seeds (the notebook keeps the hidden things, as in V11), unless you keep them with the new switch.",
     "<b>Custom blocks, as V11 has them</b> (BLOCKS tab, Create custom block, or the pen on one): a block holds <b>fields</b> (meters drawn as bars, lists as chips, each with what it means and how it changes in your words) or free text; a <b>rules box</b> for the whole block (meters are no longer held to 10 points a reply); what the story <b>remembers</b> of it (carried forward with the block instructions, as every block; starts fresh; or its copies stay in the chat); <b>when</b> it is written (every reply, only when it changes, every few replies); <b>one list for every character</b>, so a block made for one shows under Add a block for all, with Delete block for all of them; a renamed block still reads its old copies.",
     "<b>Who is in the scene</b> (BLOCKS tab, on): the story lists who is there at the end of every reply (Here, and Remote for a call or a text), first in the blocks, and is handed one name per character to write in every block. The NPC Bank sends everyone listed first, Remember every character brings back someone listed, Existing cast only counts them, Bonds follow the list, and the final check asks for the blocks with the list first. Sent while World State, Bonds or NPC Inner Chatter is in the block; switch it off there to save the forty or so output tokens a reply.",
@@ -41,7 +44,7 @@ export function markWhatsNewSeen() {
 /** Once, when SillyTavern is ready: the one thing that needs doing. */
 export function whatsNewToast() {
     if (!hasUnseenWhatsNew() || typeof toastr === "undefined") return;
-    toastr.info("New, from Megumin V11's 04/11 update: the Notebook tab; custom blocks with fields, rules and memory; the story lists who is in the scene; the Gemini JB add-on (re-import your preset to use it); group chats save. Details in Global Settings → What's new.", "VCRP " + WHATS_NEW_ID, { timeOut: 15000 });
+    toastr.info("Empty replies on Gemini: the cause found and fixed (VCRP no longer lowers the request's output limit on a model that reasons out of sight). Every reply now says how it ended, and Setup Check lists the last five. Details in Global Settings → What's new.", "VCRP " + WHATS_NEW_ID, { timeOut: 15000 });
 }
 
 /** The card at the top of Global Settings, with a "Got it" button (#vcrp_whats_new_ok). */
@@ -52,7 +55,7 @@ export function whatsNewCardHtml() {
             ${ITEMS.map(i => `<div class="set-desc" style="margin:6px 0;">${i}</div>`).join("")}
             <div class="mtab-callout gold" style="margin:10px 0 0;">
                 <i class="fa-solid fa-file-import"></i>
-                <span><b>Re-import your preset to use Gemini JB.</b> The add-on needs a spot in the preset and a new regex: re-import VCRP V10 Universal, VCRP V10 Megumin Original or VCRP V11 Megumin Original from the extension's Presets folder, replacing the old one, then allow its regex (Extensions → Regex). Everything else works on the preset you have; Setup Check says if yours is from before the add-on.</span>
+                <span><b>Nothing to re-import for this release.</b> If you have not re-imported your preset since 10.0.0-vcrp.10, do so to use the Gemini JB add-on: it needs a spot in the preset and a new regex (re-import VCRP V10 Universal, VCRP V10 Megumin Original or VCRP V11 Megumin Original from the extension's Presets folder, replacing the old one, then allow its regex under Extensions → Regex). Setup Check says if yours is from before the add-on.</span>
             </div>
             <div style="margin-top:10px;"><button id="vcrp_whats_new_ok" class="ps-modern-btn primary" style="font-size:0.75rem;"><i class="fa-solid fa-check"></i> Got it</button></div>
         </div>`;

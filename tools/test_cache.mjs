@@ -461,6 +461,30 @@ for (let t = 1; t <= 4; t++) {
         ok(JSON.stringify(b.contents.slice(0, kept.length)) === JSON.stringify(kept), `Gemini, turn ${t}: the prompt opens like last turn's, up to the reply before last`, firstDiff(kept, b.contents));
     }
 }
+// The request's output limit on Gemini: its reasoning is paid for in that limit and never shows
+// in a reply's size, so the room under the target is worked out but not put on the request
+// (a limit set from the measure was used up by the reasoning, and the reply came back empty);
+// a safety cap, the reader's own, still is.
+{
+    const RL = await imp("src/vcrp/replyLength.js");
+    const gs = extension_settings.VCRP.globalSettings;
+    const keepBudget = gs.memoryBudget;
+    gs.memoryBudget = { targetCost: 0.05, customPrice: { "google/gemini-4-argon": { input: 2, output: 10, read: 0.1 } } };
+    await send("normal");
+    let data = { max_tokens: 20000 };
+    RL.vcrpApplyReplyCap(data);
+    const room = RL.lastReplyRoom();
+    ok(room && room.hidden && room.tokens < 20000 && data.max_tokens === 20000, `Gemini: the room under the target (${room && room.tokens} tokens) is not put on the request, which keeps SillyTavern's 20,000`);
+    ok(RL.sentReplyLimit() === 20000 && RL.sentReplyLimitBy() === "", "the limit that went out is SillyTavern's own");
+    gs.memoryBudget.replyCap = 3000;
+    await send("swipe");
+    data = { max_tokens: 20000 };
+    RL.vcrpApplyReplyCap(data);
+    ok(data.max_tokens === 3000 && RL.sentReplyLimitBy() === "cap", "a safety cap still lowers it, and is named as what did");
+    gs.memoryBudget = keepBudget;
+    RL.forgetReplyRoom();
+    chat.pop();   // the swipe's turn: no reply came
+}
 Object.assign(chatCompletionSettings, keepRoute);
 
 // ── A custom block that stays in the chat, and the Gemini JB add-on ──────────

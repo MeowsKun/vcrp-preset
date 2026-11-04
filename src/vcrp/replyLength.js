@@ -25,6 +25,15 @@
 // for prompts built from the VCRP preset. VCRP's own background calls (a summary, an audit,
 // the Story Director, an NPC scan) get a limit of their own, well above what they write, so
 // none can run away; other background calls are left alone.
+//
+// On a model that reasons out of sight (Gemini, DeepSeek, GLM; Claude with a reasoning effort
+// set: generation.js, vcrpModelReasonsHidden), what it thinks is paid for in that same limit,
+// and the reply's measured size never holds it. A limit set from the measure, even half again
+// a reply, is then used up by the thinking on a hard turn and the reply comes back with
+// nothing in it. So on such a model the room under the target is worked out and shown, but
+// not put on the request: only the safety cap (the reader's own, warned about in Setup Check)
+// lowers it. The cost of the one thing that goes unenforced, a reply over its room after a
+// break, is a few cents; the cost of a reply with nothing in it was the whole turn.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getContext } from "../st.js";
@@ -35,7 +44,7 @@ import {
 } from "./memory/index.js";
 import { requestCost } from "./memory/budget.js";
 import { isCold } from "./memory/window.js";
-import { vcrpGenerationKind, vcrpWithoutSwipedReply } from "./generation.js";
+import { vcrpGenerationKind, vcrpWithoutSwipedReply, vcrpModelReasonsHidden } from "./generation.js";
 import { meguminActiveBlocks } from "../features/blocks/registry.js";
 import { notebookCurrentPhase, notebookLiveCap } from "./notebook/index.js";
 import { activeEngine } from "../engine/meguminOriginal.js";
@@ -111,9 +120,12 @@ function plannedRoom() {
     return Math.max(MIN_ROOM, roomFor(input, budget));
 }
 
-/** The limit the reply being built is planned to have: the safety cap, or its room under the target. */
+/**
+ * The limit the reply being built is planned to have: the safety cap, or its room under the
+ * target (not on a model whose reasoning is out of sight: there the room is never enforced).
+ */
 function plannedLimit() {
-    const limits = [replyCapTokens(), holdTargetActive() ? plannedRoom() : 0].filter(n => n > 0);
+    const limits = [replyCapTokens(), holdTargetActive() && !vcrpModelReasonsHidden() ? plannedRoom() : 0].filter(n => n > 0);
     return limits.length ? Math.min(...limits) : 0;
 }
 
@@ -214,8 +226,12 @@ export function vcrpReplyRoom(messages, dryRun) {
     const room = roomFor(input, budget);
     const cap = replyCapTokens() || Infinity;
     const limit = Math.min(Math.max(MIN_ROOM, room), cap);
+    // A model whose reasoning is out of sight is held by the safety cap alone: its room is
+    // worked out (the Memory tab shows it) but neither told nor put on the request.
+    const hidden = vcrpModelReasonsHidden();
+    const enforced = hidden ? replyCapTokens() : limit;
     // The model is told the room it really has (or, when it turned out wide, nothing).
-    const line = replyBudgetText(gen, limit);
+    const line = replyBudgetText(gen, enforced);
     for (const m of messages) {
         if (typeof m.content !== "string" || !LINE_RE.test(m.content)) continue;
         m.content = line ? m.content.replace(LINE_RE, () => line) : m.content.replace(LINE_GAP_RE, "");
@@ -223,9 +239,9 @@ export function vcrpReplyRoom(messages, dryRun) {
     }
     if (dryRun) return;
     // The request's own limit: the room, or a whole reply when the room is less.
-    const hard = Math.min(Math.max(limit, Math.round(typicalReply() * WHOLE_REPLY)), cap);
+    const hard = hidden ? replyCapTokens() : Math.min(Math.max(limit, Math.round(typicalReply() * WHOLE_REPLY)), cap);
     nextRoom = hard;
-    lastRoom = { tokens: limit, limit: hard, input, cold, held: limit <= room };
+    lastRoom = { tokens: limit, limit: hard, input, cold, held: limit <= room, hidden };
 }
 
 /** A background call of VCRP's own is being sent: a summary or its check, an audit, the Director, an NPC scan. */
@@ -261,16 +277,30 @@ export function vcrpApplyReplyCap(data) {
         return;
     }
     const limits = ours ? [replyCapTokens(), room || 0].filter(n => n > 0) : [];
-    if (limits.length) lowerLimit(data, Math.min(...limits));
+    const before = Number(data.max_tokens ?? data.max_completion_tokens) || 0;
+    sentBy = "";
+    if (limits.length) {
+        const lim = Math.min(...limits);
+        lowerLimit(data, lim);
+        // Who set the limit that went out: the safety cap, the room under the target, or
+        // neither (SillyTavern's own was lower, or the request carried none to lower).
+        if (!before || lim < before) sentBy = lim === replyCapTokens() ? "cap" : "hold";
+    }
     // The limit this reply really went out with, whichever preset built it: what a reply that
     // stops mid-sentence is measured against (replyCut.js).
     sentLimit = Number(data.max_tokens ?? data.max_completion_tokens) || 0;
 }
 
 let sentLimit = 0;
+let sentBy = "";
 /** The output limit the latest reply request went out with (0 when SillyTavern did not say). */
 export function sentReplyLimit() {
     return sentLimit;
+}
+
+/** Who set that limit: "cap" (the safety cap), "hold" (the room under the target), or "" (SillyTavern's own). */
+export function sentReplyLimitBy() {
+    return sentBy;
 }
 
 /** Another chat is open: the last one's room and limit are not this one's. */
@@ -278,6 +308,7 @@ export function forgetReplyRoom() {
     nextRoom = null;
     lastRoom = null;
     sentLimit = 0;
+    sentBy = "";
 }
 
 export { BACKGROUND_OUTPUT, MIN_ROOM };

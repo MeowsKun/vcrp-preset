@@ -115,6 +115,7 @@ import { vcrpBlockRepairOnReply, onBlocksRepaired } from "./src/vcrp/blockRepair
 import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpCaretOnReply, vcrpCaretOnEdit } from "./src/vcrp/geminiJb.js";
 import { vcrpApplyReplyCap, forgetReplyRoom } from "./src/vcrp/replyLength.js";
+import { vcrpInstallGenerationTrace, vcrpFinishOnReply } from "./src/vcrp/generationTrace.js";
 import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
 import { vcrpOn, setVcrpOn, whenOn, drawPowerState } from "./src/vcrp/power.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
@@ -438,6 +439,11 @@ jQuery(async () => {
             eventSource.on(event_types.MORE_MESSAGES_LOADED, vcrpMemoryUpdateVisuals);
             // A deleted message may be one a chapter was anchored to: repair, then redraw.
             eventSource.on(event_types.MESSAGE_DELETED, vcrpMemoryOnMessageDeleted);
+            // VCRP: how each generation ended, read from the API's own answer as it passes (the
+            // stop reason, the output as billed, the limit the request went out with), and
+            // stamped on the reply before the handlers below read it.
+            vcrpInstallGenerationTrace();
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpFinishOnReply));
             // VCRP: each reply's cost, measured on the reply as the model wrote it (before
             // anything below adds to it), and the one-shot direction used up by its reply.
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpCostOnReply));

@@ -59,21 +59,29 @@ export function cutReply(text) {
 /** MESSAGE_RECEIVED: a reply that reached the limit mid-sentence is trimmed to its last full sentence. */
 export function vcrpCutOnReply(messageId, type) {
     if (type === "first_message") return;
-    // The limit the request really went out with; without SillyTavern's settings event, the
-    // cap or SillyTavern's own Max Response Length.
-    const limit = sentReplyLimit() || replyLimitTokens();
-    if (!limit) return;
     const chat = ((getContext() || {}).chat) || [];
     const id = Number(messageId);
     const msg = chat[id];
     if (!msg || msg.is_user || msg.is_system || typeof msg.mes !== "string") return;
-    const written = estimateTokens(msg.mes + String((msg.extra && msg.extra.reasoning) || ""));
-    if (written < limit * NEAR) return;
+    // The answer itself says how the reply ended, when it was read as it passed
+    // (generationTrace.js): a reply that ended any other way is left alone, one the limit
+    // stopped is cut whatever its size looks like (hidden reasoning is in neither).
+    const stamp = msg.extra && msg.extra.vcrp_finish && msg.extra.vcrp_finish.done ? msg.extra.vcrp_finish : null;
+    if (stamp && stamp.reason && stamp.reason !== "length") return;
+    // The limit the request really went out with; without SillyTavern's settings event, the
+    // cap or SillyTavern's own Max Response Length.
+    const limit = (stamp && stamp.limit) || sentReplyLimit() || replyLimitTokens();
+    if (!(stamp && stamp.reason === "length")) {
+        if (!limit) return;
+        const written = estimateTokens(msg.mes + String((msg.extra && msg.extra.reasoning) || ""));
+        if (written < limit * NEAR) return;
+    }
     const cut = cutReply(msg.mes);
     if (!cut) return;
     // Where it was cut, for the handlers after this one (blankReply.js says nothing twice).
     msg.extra = { ...(msg.extra || {}), vcrp_cut: cut.where };
     const toast = (m) => { if (typeof toastr !== "undefined") toastr.info(m, "VCRP: length limit", { timeOut: 8000 }); };
+    const at = limit ? `the ${limit.toLocaleString("en-US")}-token limit` : "the output limit";
     // With the blocks asked for in a second call (blockRepair.js), that is what happens next.
     const blocksNext = blockRepairOn() ? "VCRP asks the model for its blocks in a small second call." : "the next reply carries the last complete ones.";
     if (cut.where === "story") {
@@ -82,10 +90,10 @@ export function vcrpCutOnReply(messageId, type) {
         try {
             if (typeof document !== "undefined" && document.querySelector(`#chat .mes[mesid="${id}"]`)) updateMessageBlock(id, msg);
         } catch (e) { console.warn("[VCRP] Length limit: could not redraw message", id, e); }
-        toast(`This reply reached the ${limit.toLocaleString("en-US")}-token limit mid-sentence, so it now ends on its last full sentence. Its blocks were not written: ${blocksNext} Continue writes the rest.`);
+        toast(`This reply reached ${at} mid-sentence, so it now ends on its last full sentence. Its blocks were not written: ${blocksNext} Continue writes the rest.`);
     } else if (cut.where === "blocks") {
-        toast(`This reply reached the ${limit.toLocaleString("en-US")}-token limit inside its blocks. The story is whole; ${blocksNext}`);
+        toast(`This reply reached ${at} inside its blocks. The story is whole; ${blocksNext}`);
     } else {
-        toast(`This reply reached the ${limit.toLocaleString("en-US")}-token limit while still thinking. Swipe for another, or raise the limit (Memory tab, Reply length).`);
+        toast(`This reply reached ${at} while still thinking. Swipe for another, or raise the limit (Memory tab, Reply length).`);
     }
 }

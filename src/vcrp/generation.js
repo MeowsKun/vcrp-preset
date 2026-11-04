@@ -151,6 +151,27 @@ export function vcrpRouteMarksCache() {
     return source === "openrouter" && /claude|anthropic|fable/.test(model);
 }
 
+// Models that think before they write and keep that thinking to themselves: it comes back
+// summarized (Gemini 3 and up, Claude 4 and up with reasoning on) or not at all, yet every
+// token of it is paid for and counted against the request's output limit.
+const REASONS_BY_ITSELF = /gemini|deepseek|glm|zai|zhipu|kimi|moonshot|qwen|minimax|grok|\bo[134]\b|gpt-5/;
+
+/**
+ * True when the model's reasoning is out of VCRP's sight: a model that reasons before it
+ * writes on its own (Gemini, DeepSeek, GLM, Kimi, Qwen, MiniMax, Grok, OpenAI's reasoning
+ * models), or any model with a reasoning effort asked for in AI Response Configuration
+ * (Claude's comes back summarized). What it thinks counts against the request's output limit
+ * and never shows in the reply's size, so VCRP's own measurements cannot set that limit
+ * (replyLength.js), and a Safety cap near the usual reply leaves nothing for the reply
+ * (health.js).
+ */
+export function vcrpModelReasonsHidden() {
+    const { source, model } = vcrpActiveModel();
+    if (REASONS_BY_ITSELF.test(`${source} ${model}`)) return true;
+    const s = getContext().chatCompletionSettings || {};
+    return String(s.reasoning_effort || "auto") !== "auto";
+}
+
 export function vcrpPrefillMode() {
     return extension_settings[extensionName]?.globalSettings?.cotPrefillMode || "auto";
 }

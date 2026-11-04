@@ -58,12 +58,15 @@ reply's cost*.
 |---|---|
 | Story length | 450–550 words |
 | Thinking length | 250 words |
-| Safety cap | 2000 |
+| Safety cap | 2000 on Claude; **0 (off)** on Gemini, DeepSeek, GLM |
 
 The safety cap is a hard limit: a reply can never go over it. While it's set, VCRP tells the model
 how much room it has (the panel shows the split, e.g. *story about 850 words, thinking about 250
 words*), so it plans to finish in time. If a reply still runs into the cap mid-sentence, it ends
-on its last full sentence and a note tells you; press **Continue** if you want the rest.
+on its last full sentence and a note tells you; press **Continue** if you want the rest. On a
+model that reasons before it writes (Gemini, DeepSeek, GLM; Claude with a reasoning effort set),
+that reasoning counts against the cap and never shows in the reply, so a cap near your usual reply
+leaves nothing for the reply itself: keep it at 0 there, or 4,000 and up.
 
 **One budget for the whole request.** With Story Memory on, each reply is held to its target
 (e.g. $0.30), input and output together. You don't need to set anything: *Hold each reply to the
@@ -245,14 +248,27 @@ Switch it off in Global Settings → Behaviour → *Lore for background calls*.
   DeepSeek skip them now and then), or stops inside them, VCRP asks the model for just the blocks
   in a small second call that reads the cache, and adds them to the reply. A toast says so. The
   switch is in the BLOCKS tab, *Ask again for missing blocks*.
-- **Blank replies are explained.** A reply that comes back empty, all reasoning, or only blocks
-  gets a toast with the likely cause and what to do: on Gemini an empty reply is usually its
-  content filter (swipe, or turn on the V11 preset's USER Hard prompt); a reply that stops while
-  thinking is the output limit. Such a reply is not counted as a normal one, and the *Next reply
-  only* steer you wrote stays for the swipe.
-- **Safety cap and reasoning models.** On Gemini, DeepSeek, GLM, or Claude with *Request model
-  reasoning* on, the model's hidden reasoning counts against the Safety cap. Setup Check now warns
-  when the cap is set on such a model; 0 (off) or 4,000 and up is safe.
+- **Blank replies are explained, from the answer itself.** VCRP now reads the answer to each
+  request as it passes and keeps the provider's stop reason, what the reply cost in output tokens
+  (its hidden reasoning counted) and the limit the request went out with. A reply that comes back
+  empty, all reasoning, or only blocks gets a toast that says what really happened: the output
+  limit (and whether the Safety cap, *Hold each reply to the target* or SillyTavern's Max Response
+  Length set it), the provider's filter (with its own word, such as Gemini's `PROHIBITED_CONTENT`),
+  or an error. Such a reply is not counted as a normal one, and the *Next reply only* steer you
+  wrote stays for the swipe. **Setup Check** lists how your last five replies ended; look there
+  first when replies come back empty.
+- **Empty replies on Gemini after a break: fixed.** The model's hidden reasoning is paid for in
+  the request's output limit, and VCRP could not see its size, so the limit it set from your
+  replies' measured size (tightest on the first reply after a break in a long chat) was used up by
+  the reasoning on a hard turn, and the reply came back with nothing in it. On a model that
+  reasons out of sight, VCRP no longer lowers the request's limit on its own: *Hold each reply to
+  the target* still shows the room but leaves the limit to your Safety cap and SillyTavern. Each
+  reply's cost badge now shows the output as the API billed it, reasoning included.
+- **Safety cap and reasoning models.** On Gemini, DeepSeek, GLM, or Claude with a reasoning effort
+  set, the model's hidden reasoning counts against the Safety cap. Setup Check warns when the cap
+  is set on such a model; 0 (off) or 4,000 and up is safe. On Gemini 4 it also notes that Megumin
+  Suite's Gemini loadout keeps custom thinking (Chain of Thought) off, since the model reasons on
+  its own.
 - **Gemini JB** (Global Toggles & Add-ons; from Megumin Suite V11's 04/11 update): on Gemini, turn
   it on when gritty or heavy NSFW scenes come back cut off or empty. It tells the model the request
   complies with the adult fiction policy and asks for a `^` before every word; VCRP removes them as

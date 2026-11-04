@@ -8,7 +8,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { extension_settings, getContext, event_types } from "../st.js";
-import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem, vcrpRouteMarksCache } from "./generation.js";
+import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem, vcrpRouteMarksCache, vcrpModelReasonsHidden } from "./generation.js";
+import { vcrpGenerationRecords } from "./generationTrace.js";
 import { escapeHtmlAttr } from "../utils/html.js";
 import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memoryState, estimateTokens, memoryCanReachPrompt } from "./memory/index.js";
 import { autoSummaryHold } from "./memory/summarize.js";
@@ -107,10 +108,18 @@ export function vcrpHealthCheck() {
     // A Safety cap on a model that reasons before it writes: the reasoning counts against the
     // cap, so a cap near the usual reply leaves nothing for the reply (blank, or cut off).
     const cap = replyCapTokens();
-    const reasons = /gemini|deepseek|glm|zai|kimi|moonshot|qwen|minimax|grok|\bo[134]\b|gpt-5/.test(`${source} ${model}`) || cc.show_thoughts === true;
+    const reasons = vcrpModelReasonsHidden();
     if (cap && reasons) {
         add(cap < 4000 ? "warn" : "info", `Safety cap (${cap.toLocaleString()} tokens) on a model that reasons before it writes`,
-            "Gemini, DeepSeek, GLM, Kimi and Qwen think before the reply (Claude too, with Request model reasoning on), and that thinking counts against the cap. A cap near your usual reply leaves nothing for the reply itself: it comes back blank, or cut off in its blocks. Set the cap to 0 (off) and let Hold each reply to the target do the limiting, or to 4,000 or more (Memory tab, Reply length).");
+            "Gemini, DeepSeek, GLM, Kimi and Qwen think before the reply (Claude too, with a reasoning effort set), and that thinking counts against the cap. A cap near your usual reply leaves nothing for the reply itself: it comes back blank, or cut off in its blocks. Set the cap to 0 (off), or to 4,000 or more (Memory tab, Reply length). On such a model VCRP never lowers the request's limit on its own: the cap is the one limit it puts there.");
+    } else if (reasons && holdTargetActive()) {
+        add("ok", "Hold each reply to the target leaves the request's limit alone on this model",
+            "The model reasons before it writes, that reasoning is paid for in the request's output limit, and VCRP cannot see its size. So the room under the target is worked out and shown in the Memory tab, but not put on the request: a limit set from the reply's measured size was used up by the reasoning on a hard turn, and the reply came back with nothing in it. Only a Safety cap you set, and SillyTavern's Max Response Length, limit a reply here.");
+    }
+    // Gemini 4 reasons on its own; Megumin Suite's Gemini Pro loadout keeps custom thinking off there.
+    if (/gemini-4/.test(String(model || "")) && localProfile && localProfile.cotEnabled !== false) {
+        add("info", "Gemini 4 with Chain of Thought on",
+            "Gemini 4 reasons before it writes on its own, and Megumin Suite V11's Gemini Pro loadout keeps custom thinking off on it (on, for Gemini 3.1 Pro and 2.5 Pro). If replies come back as reasoning with no story, or the thinking doubles up, turn Chain of Thought off in Presets & CoT.");
     }
     if (vcrpRouteHoistsSystem()) {
         const gemini = /gemini/.test(String(model || ""));
@@ -202,6 +211,9 @@ export function vcrpHealthCheck() {
         add("info", "Gemini without the Gemini JB add-on",
             "Megumin Suite V11's Gemini loadouts turn it on: it helps Gemini get through gritty and heavy NSFW scenes without cutting the reply off (not for NSFL). Global Toggles & Add-ons → Gemini JB.");
     }
+
+    // How the last replies ended, from the API's own answers (generationTrace.js).
+    lastRepliesCheck(add);
 
     // 6. Long chats: what decides whether a request is cheap or full price.
     longChatChecks(add, ctx, cc, source, model);
@@ -296,6 +308,42 @@ function longChatChecks(add, ctx, cc, source, model) {
     } else {
         add("ok", `Story Memory on: after a break the prompt is cut to about ${Math.round(budget.coldTokens / 1000)}k tokens`);
     }
+}
+
+const LIMIT_BY = { cap: "VCRP's Safety cap", hold: "VCRP's Hold each reply to the target", "": "SillyTavern's Max Response Length" };
+const kTok = n => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(Math.round(n)));
+
+/**
+ * The last few replies as the API's own answers ended them: the stop reason, what each wrote
+ * (reasoning counted) and the limit it went out with. A warning when one was stopped by the
+ * limit or the provider's filter, or failed: those come back with nothing in them.
+ */
+function lastRepliesCheck(add) {
+    let recent = [];
+    try { recent = vcrpGenerationRecords().filter(r => r.done && (r.kind === "reply" || r.kind === "continue")).slice(-5); } catch (e) { recent = []; }
+    if (!recent.length) return;
+    const line = r => {
+        const how = r.error ? `failed (${r.error})`
+            : r.reason === "stop" ? "ended on its own"
+                : r.reason === "length" ? "stopped by the output limit"
+                    : r.reason === "filter" ? "stopped by the provider's filter"
+                        : r.reason ? r.reason : "no stop reason given";
+        const native = r.native && r.native.toLowerCase() !== (r.reason || "") && !r.error ? ` (${r.native})` : "";
+        const wrote = r.usage && r.usage.out ? `, wrote ${kTok(r.usage.out)} tokens${r.usage.reasoning ? ` (${kTok(r.usage.reasoning)} of them reasoning)` : ""}` : "";
+        const limit = r.limit ? `, limit ${kTok(r.limit)} from ${LIMIT_BY[r.limitBy] || LIMIT_BY[""]}` : "";
+        return `${new Date(r.at).toLocaleTimeString()}: ${how}${native}${wrote}${limit}`;
+    };
+    const cut = recent.filter(r => r.reason === "length").length;
+    const filtered = recent.filter(r => r.reason === "filter").length;
+    const failed = recent.filter(r => r.error).length;
+    const trouble = [cut ? `${cut} stopped by the output limit` : "", filtered ? `${filtered} stopped by the provider's filter` : "", failed ? `${failed} failed` : ""].filter(Boolean);
+    const advice = [
+        cut ? "A reply stopped by the limit while still reasoning comes back with nothing in it: raise the limit named, or set the Safety cap to 0 (off)." : "",
+        filtered ? "A filtered reply comes back empty: swipe, or turn on the Gemini JB add-on (Global Toggles & Add-ons) or the V11 preset's USER Hard prompt." : "",
+    ].filter(Boolean);
+    add(trouble.length ? "warn" : "ok",
+        trouble.length ? `Of the last ${recent.length} replies, ${trouble.join(", ")}` : `The last ${recent.length} replies ended on their own`,
+        `${recent.map(line).join(" · ")}${advice.length ? ` — ${advice.join(" ")}` : ""}`);
 }
 
 function summarize(items) {
