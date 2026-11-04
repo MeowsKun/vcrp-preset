@@ -30,8 +30,9 @@ export const TAB_SYNC_KEYS = {
     "Story Director": ["storyPlan"],
     "Dynamic Ban List": ["banList", "banListBackend", "banListCustomPromptsEnabled", "banListCustomPrompts"],
     "NPCs Bank": ["npcBank"],
-    // notebook: the Author's Notebook's switch (its truths are the chat's, in chat_metadata).
-    "Focus": ["focus", "notebook"],
+    "Focus": ["focus"],
+    // notebook: the Author's Notebook's switch and numbers (its truths are the chat's, in chat_metadata).
+    "Notebook": ["notebook"],
     "Memory": ["vcrpMemory"],
     "Knowledgebase": ["knowledgebase"]
 };

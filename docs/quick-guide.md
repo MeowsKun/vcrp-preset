@@ -207,13 +207,19 @@ get all of this.
 
 **The Notebook.** The story picks two or three hidden truths, drops small clues, and reveals each
 one when the story earns it. It's always on with V11; for any other engine, switch it on in the
-**Focus** tab. **Truths kept at once** (same tab) sets how many it keeps, 1 to 10; a truth you
+**Notebook** tab. **Truths kept at once** (same tab) sets how many it keeps, 1 to 10; a truth you
 delete gives its number to the next new one.
 - **On a reply's card:** a 📓 **Notebook** tab shows what that reply changed, blurred until you
   hover or tap a line.
-- **In the Focus tab:** the live truths sit behind a spoiler warning. You can edit one, mark it
-  revealed, delete it, or bring a past one back.
-- **Swipes, edits and deletes** undo exactly what a reply did.
+- **In the Notebook tab:** each live truth is hidden until you ask to see it (it spoils the story).
+  Once shown you can edit it (saved as you leave a box), remove a clue, mark it revealed, or delete
+  it. **Add a truth** gives you an empty one to write yourself; the story reads it once the Truth
+  box is filled in. **Past** lists the truths that came out as a timeline, each with *Activate
+  again*.
+- **Secrets and Seeds.** While the notebook is on, World State stops asking for each character's
+  Secret and for Planted Seeds, as in Megumin V11; **Keep Secrets and Seeds in World State too**
+  brings them back.
+- **Swipes, edits and deletes** undo exactly what a reply did; your own changes in the tab stay.
 
 **Characters on file.** Someone who left the scene and is named again comes back as they left:
 their last outfit and mood from the World State, and their Bonds numbers. It's on by default; the

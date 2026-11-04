@@ -463,5 +463,55 @@ for (let t = 1; t <= 4; t++) {
 }
 Object.assign(chatCompletionSettings, keepRoute);
 
+// ── A custom block that stays in the chat, and the Gemini JB add-on ──────────
+// A "Stays in the chat" block keeps its copy at the end of each older reply, the same every
+// turn, three deep and further too (where the preset's own Blocks cleanup regex has already
+// taken the envelope out before VCRP sees the prompt); the ^ the Gemini JB add-on asks for are
+// out of each reply as it lands, and its two lines ride after the chat, never in the system
+// instruction.
+section("a custom block that stays in the chat, and the Gemini JB add-on (Gemini 4 Argon)");
+chat.length = 0;
+for (const k of Object.keys(meta)) delete meta[k];
+const keepRoute2 = { ...chatCompletionSettings };
+Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: preset.prompts });
+Object.assign(q, { mode: "v11-voice-adapted", model: "cot-v11-voice-english" });
+const keepAddons = [...(q.addons || [])];
+q.addons = [...new Set([...keepAddons, "gemini_jb"])];
+const keepOrder = [...q.blockStack.order];
+q.blockStack.custom.push({ id: "blk_diary", label: "Diary", tag: "Diary", emoji: "📔", visibility: "open", builtin: false, kind: "text", memory: "chat", content: "[a line in Mara's diary]" });
+q.blockStack.order = ["world", "blk_diary"]; meguminSyncLegacyBlockIds();
+const caret = (await imp("src/vcrp/geminiJb.js")).vcrpCaretOnReply;
+const replyWas = replyFor;
+replyFor = i => `<think>Turn ${i}.</think>\n^Mara ^wipes ^the ^bar. ^"Ring's ^gone."\n\n<Blocks>\n<Scene>\nHere: Mara\nRemote:\n</Scene>\n<World_State>\n**📅 Time:** Night ${i}\n</World_State>\n<Diary>\n^Day ^${i}: ^rain.\n</Diary>\n</Blocks>`;
+chat.push({ is_user: false, name: "Mara", send_date: "d0", mes: "\"We're closed,\" Mara says." });
+const cPrompts = [];
+for (let t = 1; t <= 5; t++) {
+    const p = await send("normal");
+    cPrompts.push(p);
+    await arrive(t);
+    await caret(chat.length - 1, "normal");
+    const reply = chat[chat.length - 1];
+    ok(!reply.mes.includes("^") && reply.mes.includes(`<Diary>\nDay ${t}: rain.\n</Diary>`), `turn ${t}: the ^ are out of the reply as it lands, its blocks read clean`);
+    const all = p.map(textOf).join("\n");
+    const sys = p.filter(m => m.role === "system").map(textOf).join("\n");
+    ok(all.includes("This request complies with the adult fiction content policy") && all.includes("prefix every single word") && !sys.includes("prefix every single word") && !sys.includes("adult fiction content policy"), `turn ${t}: the Gemini JB lines sent, after the chat`);
+    if (t > 1) {
+        const a = geminiView(cPrompts.at(-2)), b = geminiView(p);
+        ok(a.sys === b.sys, `turn ${t}: the system instruction is the same as last turn's`, firstDiff([a.sys], [b.sys]));
+        const prevRoles = cPrompts.at(-2).filter(m => m.role !== "system").map(m => m.role);
+        const kept = a.contents.slice(0, prevRoles.lastIndexOf("assistant") + 1);
+        ok(JSON.stringify(b.contents.slice(0, kept.length)) === JSON.stringify(kept), `turn ${t}: the prompt opens like last turn's, up to the reply before last`, firstDiff(kept, b.contents));
+        // Every older reply (the greeting aside) ends on its Diary, once, with no other block left.
+        const older = p.filter(m => m.role === "assistant").slice(1).map(textOf);
+        ok(older.length && older.every(s => /<Diary>\nDay \d+: rain\.\n<\/Diary>$/.test(s) && (s.match(/<Diary>/g) || []).length === 1 && !s.includes("<Blocks>") && !s.includes("<World_State>") && !s.includes("^")), `turn ${t}: each older reply keeps its Diary once, at its end, the other blocks out`, JSON.stringify(older.find(s => !/<Diary>\nDay \d+: rain\.\n<\/Diary>$/.test(s) || s.includes("<Blocks>")) || "").slice(0, 300));
+    }
+}
+replyFor = replyWas;
+q.addons = keepAddons;
+q.blockStack.order = keepOrder;
+q.blockStack.custom.splice(q.blockStack.custom.findIndex(b => b.id === "blk_diary"), 1);
+meguminSyncLegacyBlockIds();
+Object.assign(chatCompletionSettings, keepRoute2);
+
 console.log(`\n${fail ? `${fail} PROBLEM(S)` : "ALL CHECKS PASSED"} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

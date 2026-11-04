@@ -12,10 +12,11 @@
 import { extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "../core/constants.js";
 
-export const WHATS_NEW_ID = "10.0.0-vcrp.11";
+export const WHATS_NEW_ID = "10.0.0-vcrp.12";
 
 const ITEMS = [
-    "<b>Megumin Suite V11's 04/11 update</b>, in VCRP's terms (this release and 10.0.0-vcrp.10 together). Its engines, thinking and writing texts are unchanged; what came is around them.",
+    "<b>Megumin Suite V11's 04/11 update</b>, in VCRP's terms (this release and the two before it together). Its engines, thinking and writing texts are unchanged; what came is around them.",
+    "<b>The Notebook tab</b>, as V11 has it: the Author's Notebook has moved out of the Focus tab into a tab of its own. Each live truth is hidden until you ask to see it, then editable (saved as you leave a box), its clues listed by message and removable; <b>Add a truth</b> gives you an empty one to write yourself, not given to the story until its Truth box is filled in; <b>Past</b> is a timeline of the truths that came out, each with Activate again. While the notebook is on, World State stops asking for each character's Secret and for Planted Seeds (the notebook keeps the hidden things, as in V11), unless you keep them with the new switch.",
     "<b>Custom blocks, as V11 has them</b> (BLOCKS tab, Create custom block, or the pen on one): a block holds <b>fields</b> (meters drawn as bars, lists as chips, each with what it means and how it changes in your words) or free text; a <b>rules box</b> for the whole block (meters are no longer held to 10 points a reply); what the story <b>remembers</b> of it (carried forward with the block instructions, as every block; starts fresh; or its copies stay in the chat); <b>when</b> it is written (every reply, only when it changes, every few replies); <b>one list for every character</b>, so a block made for one shows under Add a block for all, with Delete block for all of them; a renamed block still reads its old copies.",
     "<b>Who is in the scene</b> (BLOCKS tab, on): the story lists who is there at the end of every reply (Here, and Remote for a call or a text), first in the blocks, and is handed one name per character to write in every block. The NPC Bank sends everyone listed first, Remember every character brings back someone listed, Existing cast only counts them, Bonds follow the list, and the final check asks for the blocks with the list first. Sent while World State, Bonds or NPC Inner Chatter is in the block; switch it off there to save the forty or so output tokens a reply.",
     "<b>Gemini JB</b>, a new add-on (Global Toggles & Add-ons), for Gemini: it helps the model through gritty and heavy NSFW scenes without cutting the reply off. V11's two lines, word for word: one that says the request complies with the adult fiction policy, at the end of the last message, and one that asks for a <b>^</b> before every word of the reply. VCRP takes the ^ out as each reply arrives, so you never see them; the presets' new \"clean up\" regex hides them while a reply streams. Each ^ costs an output token, so it is for Gemini alone: Setup Check says when it is on for another model, when Gemini runs without it, and when your preset is from before it. Not for NSFL.",
@@ -40,7 +41,7 @@ export function markWhatsNewSeen() {
 /** Once, when SillyTavern is ready: the one thing that needs doing. */
 export function whatsNewToast() {
     if (!hasUnseenWhatsNew() || typeof toastr === "undefined") return;
-    toastr.info("New, from Megumin V11's 04/11 update: custom blocks with fields, rules and memory; the story lists who is in the scene; the Gemini JB add-on (re-import your preset to use it); group chats save. Details in Global Settings → What's new.", "VCRP " + WHATS_NEW_ID, { timeOut: 15000 });
+    toastr.info("New, from Megumin V11's 04/11 update: the Notebook tab; custom blocks with fields, rules and memory; the story lists who is in the scene; the Gemini JB add-on (re-import your preset to use it); group chats save. Details in Global Settings → What's new.", "VCRP " + WHATS_NEW_ID, { timeOut: 15000 });
 }
 
 /** The card at the top of Global Settings, with a "Got it" button (#vcrp_whats_new_ok). */

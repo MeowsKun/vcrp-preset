@@ -4080,7 +4080,7 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     assert.equal(offMsgs[0].content, "Alice keeps a [[Journal]].\nEnd.", "off: VCRP's tags blanked, a card's own [[...]] left as written");
     // The new switches follow their tab's Global switch.
     const { TAB_SYNC_KEYS } = await imp("src/core/sync.js");
-    assert(TAB_SYNC_KEYS.Focus.includes("notebook") && TAB_SYNC_KEYS.BLOCKS.includes("castMemory"), "the Notebook and Remember every character switches follow their tab's Global switch");
+    assert(TAB_SYNC_KEYS.Notebook.includes("notebook") && !TAB_SYNC_KEYS.Focus.includes("notebook") && TAB_SYNC_KEYS.BLOCKS.includes("castMemory"), "the Notebook (its own tab now) and Remember every character switches follow their tab's Global switch");
     // Lore for a background call is capped, cut between entries.
     loreImpl.check = async () => ({ worldInfoBefore: Array.from({ length: 400 }, (_, i) => `Entry ${i}: ${"lore ".repeat(10)}`).join("\n"), worldInfoAfter: "", WIDepthEntries: [] });
     const bigLore = await lore.loreForChat();
@@ -5160,9 +5160,17 @@ console.log("65 ok Megumin Suite V11's 04/11 update: the Gemini JB add-on (V11's
     msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
     assert(t.includes("<Trust>\n[Trust.") && !t.includes("<Trust>\nTrust: 40/100"), "starts fresh: asked for, the last copy not carried");
     trust.memory = "chat";
-    const history = [{ role: "assistant", content: "Prose.\n<Blocks>\n<World_State>\nx\n</World_State>\n<Trust>\nTrust: 40/100\n</Trust>\n</Blocks>" }, { role: "user", content: "go" }];
+    // The prompt's reply, as the preset's Blocks cleanup regex leaves it three deep (the envelope
+    // gone): its copy comes from the chat's own reply, matched by position.
+    const history = [{ role: "assistant", content: "Prose." }, { role: "user", content: "go" }];
     hist.stripHistoryBlocks(history);
-    assert.equal(history[0].content, "Prose.\n\n<Trust>\nTrust: 40/100\n</Trust>", "stays in the chat: its copy at the end of the reply, the envelope gone");
+    assert.equal(history[0].content, "Prose.\n\n<Trust>\nTrust: 40/100 | Mood: wary\n</Trust>", "stays in the chat: its copy at the end of the reply, from the chat, the envelope gone");
+    // With no chat to read it from, the reply's own text: a copy written loose stands once, at the end.
+    const saved = chat.splice(0);
+    const loose = [{ role: "assistant", content: "Prose.\n<Trust>\nTrust: 41/100\n</Trust>\nMore prose.\n<Blocks>\n<World_State>\nx\n</World_State>\n</Blocks>" }, { role: "user", content: "go" }];
+    hist.stripHistoryBlocks(loose);
+    assert.equal(loose[0].content, "Prose.\n\nMore prose.\n\n<Trust>\nTrust: 41/100\n</Trust>", "a copy written loose stands once, at the end");
+    chat.push(...saved);
     msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
     assert(!/The blocks as they stood[\s\S]*<Trust>/.test(t), "stays in the chat: not carried as well");
     trust.memory = "info";
@@ -5295,5 +5303,72 @@ console.log("66 ok custom blocks as Megumin Suite V11 has them (fields with what
     chat.length = 0;
 }
 console.log("67 ok the scene list as Megumin Suite V11 has it (<Scene> first in <Blocks> with V11's rules while World State, Bonds or Inner Chatter is in; <Known_Names> handed first, the scene first, one unmistakable spelling each; the final check's scene line; the NPC Bank, Remember every character and Existing cast only follow it; the Bonds template; the switch; the card; V11's parser and name finder)");
+
+// 68. The Notebook tab as Megumin Suite V11 has it: "Add a truth" (an empty truth held in the tab,
+//     not sent, not counted and skipping no setup until it is written; it holds its number;
+//     "added by you"), and World State without Secret and Seeds while the notebook keeps the
+//     hidden things, unless kept, and as before when the notebook is off.
+{
+    const nb = await imp("src/vcrp/notebook/index.js");
+    const model = await imp("src/vcrp/notebook/model.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const q = state.localProfile;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { mode: q.mode, model: q.model, nbk: JSON.stringify(q.notebook || null), order: JSON.stringify(q.blockStack.order), cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
+    q.notebook = { enabled: true, liveCap: 3 };
+    q.blockStack.order = ["world"]; meguminSyncLegacyBlockIds();
+    delete meta.vcrp_notebook;
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "Greeting." }, { is_user: true, mes: "go" });
+
+    // Pure: an added truth is live in the tab, not in the story.
+    let s = model.applyNotebook(model.emptyNotebook(), { ops: [{ op: "add" }] }, { seq: 1 }).state;
+    const added = model.liveTruths(s)[0];
+    assert(added && added.id === "T1" && !model.isFilled(added) && added.createdBy === "user" && added.hiddenFrom.join() === "the reader" && model.filledLiveTruths(s).length === 0, "an added truth: T1, empty, hidden from the reader, added by you");
+    assert.equal(model.notebookPhase(s), "setup", "an unwritten truth skips no setup");
+    assert.equal(model.renderNotebookForPrompt(s), "", "and is not sent");
+    assert.equal(model.describeNotebookChange({ op: "add", id: "T1" }), "T1 added by you");
+    s = model.applyNotebook(s, { ops: [{ op: "entry", id: "T1", truth: "The well is poisoned.", hiddenFrom: ["Bob", "the reader"] }] }, { seq: 2 }).state;
+    assert(s.truths.T2 && s.truths.T2.truth === "The well is poisoned." && model.filledLiveTruths(s).length === 1, "the model's truth takes the next number; the added one keeps its own");
+    s = model.applyNotebook(s, { ops: [{ op: "edit", id: "T1", fields: { truth: "The innkeeper is her brother." } }] }, { seq: 3 }).state;
+    assert(model.isFilled(s.truths.T1) && model.filledLiveTruths(s).length === 2 && model.renderNotebookForPrompt(s).includes("T1\nTruth: The innkeeper is her brother."), "written: counted and sent");
+    let s2 = model.applyNotebook(model.emptyNotebook(), { ops: [{ op: "add" }, { op: "add" }, { op: "add" }] }, { seq: 1 }).state;
+    s2 = model.applyNotebook(s2, { ops: [{ op: "entry", truth: "A truth.", hiddenFrom: ["the reader"] }] }, { seq: 2 }).state;
+    assert(Object.keys(s2.truths).length === 4 && model.filledLiveTruths(s2).length === 1, "unwritten truths leave the model room under the cap");
+
+    // In the chat: the reader's op, kept with the chat; the setup still asked for; written, it runs.
+    assert(nb.addTruth(), "added");
+    let fc = nb.notebookFromChat(chat);
+    assert(fc.state.truths.T1 && fc.state.truths.T1.createdBy === "user" && nb.notebookCurrentPhase(chat) === "setup", "kept with the chat, the setup still asked for");
+    const req = nb.notebookBlockRequest(chat);
+    assert(req && req.template.startsWith("<Notebook>") && /two or three truths/.test(req.rules), "the setup is asked for while the added truth is unwritten");
+    nb.editTruth("T1", { truth: "The innkeeper is her brother.", hiddenFrom: ["Bob", "the reader"] });
+    assert(nb.notebookCurrentPhase(chat) === "running" && nb.notebookBlockRequest(chat).rules.includes("<Author_Notebook>\nT1\nTruth: The innkeeper is her brother."), "written in the tab: the story reads it as its own");
+
+    // Secrets and Seeds: out of World State while the notebook is on, back when kept, there when off.
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+    let msgs = await run("VCRP V10 Universal.json");
+    let t = text(msgs);
+    assert(t.includes("<World_State>") && !/\*Secret:\*/.test(t) && !/Planted Seeds/.test(t), "World State without Secret and Seeds while the notebook keeps the hidden things");
+    q.notebook.keepWorldSecrets = true;
+    msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
+    assert(/\*Secret:\*/.test(t) && /Planted Seeds/.test(t), "kept on request");
+    q.notebook = { enabled: false };
+    msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
+    assert(/\*Secret:\*/.test(t) && /Planted Seeds/.test(t), "and there when the notebook is off");
+    assert.equal(nb.stripWorldSecrets("a\n* *Secret:* x\n**🌱 Planted Seeds:** y\nb"), "a\nb", "the two lines, nothing else");
+
+    delete meta.vcrp_notebook;
+    q.notebook = JSON.parse(keep.nbk) || undefined;
+    Object.assign(q, { mode: keep.mode, model: keep.model });
+    q.blockStack.order = JSON.parse(keep.order); meguminSyncLegacyBlockIds();
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+    chat.length = 0;
+}
+console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: held in the tab, not sent, not counted, no setup skipped until written, its number kept, added by you; World State without Secret and Seeds while the notebook is on, unless kept)");
 
 console.log("\nALL FORK CHECKS PASSED");

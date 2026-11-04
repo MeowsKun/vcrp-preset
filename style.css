@@ -3026,6 +3026,23 @@
 .vcrp-nb-line:focus-visible > span { filter: none; opacity: 1; }
 .vcrp-nb-line:focus-visible { box-shadow: 0 0 0 2px rgba(14,165,233,.5); border-radius: 3px; }
 
+/* VCRP: the Notebook tab (Megumin Suite V11's): a truth's body hidden until shown, the past as a timeline. */
+.vcrp-nbt-truth { margin: 8px 0; padding: 10px; border: 1px solid var(--border-color); border-radius: 10px; background: rgba(0,0,0,.12); }
+.vcrp-nbt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .8rem; }
+.vcrp-nbt-head b { color: #0ea5e9; }
+.vcrp-nbt-when { font-size: .68rem; color: var(--text-muted); }
+.vcrp-nbt-draft { font-size: .66rem; color: #f59e0b; border: 1px solid rgba(245,158,11,.4); border-radius: 6px; padding: 0 6px; }
+.vcrp-nbt-actions { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.vcrp-nbt-body.is-hidden .vcrp-nbt-fields { filter: blur(5px); opacity: .45; pointer-events: none; user-select: none; max-height: 70px; overflow: hidden; }
+.vcrp-nbt-show { margin-top: 6px; }
+.vcrp-nbt-clues { margin: 2px 0 0; padding: 0 0 0 8px; font-size: .74rem; }
+.vcrp-nbt-clues li { display: flex; gap: 6px; align-items: baseline; list-style: none; margin: 2px 0; }
+.vcrp-nbt-turn { font-size: .66rem; color: var(--text-muted); white-space: nowrap; }
+.vcrp-nbt-timeline { border-left: 2px solid rgba(14,165,233,.35); margin: 6px 0 0 8px; padding-left: 14px; }
+.vcrp-nbt-past { position: relative; padding: 6px 0 10px; }
+.vcrp-nbt-past::before { content: ""; position: absolute; left: -21px; top: 12px; width: 10px; height: 10px; border-radius: 50%; background: #0ea5e9; }
+.vcrp-nbt-how { font-size: .7rem; color: var(--text-muted); font-style: italic; }
+
 /* An unfilled [placeholder]. Only ever drawn in the BLOCKS tab preview, which
    is fed the templates rather than a real reply - dimmed so the reader can see
    the shape of the card without mistaking the template text for their data. */

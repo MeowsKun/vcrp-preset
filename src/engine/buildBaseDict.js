@@ -17,7 +17,7 @@ import { v11Frame, applyMeguminV11Sections, applyMeguminV11Reminder, storySettin
 import { usesCaretWords } from "./caretWords.js";
 import { V11_ADAPTED_STYLE_LEADS } from "../../data/modes/v11Adapted.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
-import { notebookCraft } from "../vcrp/notebook/index.js";
+import { notebookCraft, worldHidesSecrets, stripWorldSecrets } from "../vcrp/notebook/index.js";
 import { castMemoryNote } from "../vcrp/castMemory.js";
 import { knownNamesBlock, npcsInScene } from "../vcrp/scene.js";
 import { pushActiveNpcImage, clearActiveNpcImages, activeBlockRepair } from "../core/activeRequests.js";
@@ -647,6 +647,9 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     // with the block rules in a preset without one (injection.js). Empty while it is off, and
     // with V11, whose own text carries it.
     dict["[[notebook]]"] = notebookCraft();
+    // VCRP: while the Author's Notebook keeps the hidden things, World State is not asked for each
+    // character's Secret or for planted Seeds, unless the reader keeps them (Notebook tab; Megumin V11).
+    if (dict["[[infoblock]]"] && worldHidesSecrets()) dict["[[infoblock]]"] = stripWorldSecrets(dict["[[infoblock]]"]);
     dict["[[blocks]]"] = buildBlocksEnvelope(dict);
     // VCRP: the scene list opens the section (Megumin V11): the final check asks for it so.
     const sceneFirst = /<Blocks>\s*<Scene\b/i.test(dict["[[blocks]]"]);

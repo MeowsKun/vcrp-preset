@@ -67,6 +67,10 @@ function takeNextId(state) {
 }
 export const isLive = t => Boolean(t) && t.revealedSeq == null && !t.revealedHow;
 export const liveTruths = state => Object.values((state && state.truths) || {}).filter(isLive);
+// VCRP: a truth the reader added and hasn't written yet ("Add a truth" in the Notebook tab, as
+// Megumin V11 has it) is live in the tab but not in the story: not sent, not counted, no setup skipped.
+export const isFilled = t => Boolean(t) && String(t.truth || "").trim() !== "";
+export const filledLiveTruths = state => liveTruths(state).filter(isFilled);
 export const pastTruths = state => Object.values((state && state.truths) || {}).filter(t => !isLive(t));
 
 export function statKey(s) {
@@ -327,7 +331,7 @@ export function applyNotebook(prev, parsed, { seq = 0, liveCap } = {}) {
         if (op.op === "entry") {
             const same = Object.values(state.truths).find(t => statKey(t.truth) === statKey(op.truth));
             if (same) { if (op.id) idMap[op.id] = same.id; continue; }
-            if (liveTruths(state).length >= cap) { notes.push(`New truth left out: ${cap} are already live.`); continue; }
+            if (filledLiveTruths(state).length >= cap) { notes.push(`New truth left out: ${cap} are already live.`); continue; }
             const hiddenFrom = (op.hiddenFrom || []).filter(Boolean);
             if (!hiddenFrom.length) { notes.push("New truth left out: it is hidden from no one."); continue; }
             const id = takeNextId(state);
@@ -338,6 +342,18 @@ export function applyNotebook(prev, parsed, { seq = 0, liveCap } = {}) {
                 clues: [], createdSeq: seq, revealedSeq: null, revealedHow: null,
             };
             applied.push({ op: "entry", id, text: op.truth, hiddenFrom, when: op.when || "", changes: op.changes || "", clueIdeas: op.clueIdeas || "" });
+            continue;
+        }
+
+        // VCRP: the reader's "Add a truth" (Megumin V11's tab): an empty one to fill in the tab,
+        // hidden from the reader until they say otherwise; it holds its number from now on.
+        if (op.op === "add") {
+            const id = takeNextId(state);
+            state.truths[id] = {
+                id, truth: "", hiddenFrom: ["the reader"], when: "", changes: "", clueIdeas: "",
+                clues: [], createdSeq: seq, createdBy: "user", revealedSeq: null, revealedHow: null,
+            };
+            applied.push({ op: "add", id, text: "" });
             continue;
         }
 
@@ -378,7 +394,7 @@ export function applyNotebook(prev, parsed, { seq = 0, liveCap } = {}) {
         }
         if (op.op === "restore") {
             if (!isLive(t)) {
-                if (liveTruths(state).length >= cap) { notes.push(`${id} stays in the past: ${cap} are already live.`); continue; }
+                if (filledLiveTruths(state).length >= cap) { notes.push(`${id} stays in the past: ${cap} are already live.`); continue; }
                 t.revealedSeq = null; t.revealedHow = null;
                 applied.push({ op: "restore", id, text: t.truth });
             }
@@ -422,7 +438,7 @@ export function applyNotebook(prev, parsed, { seq = 0, liveCap } = {}) {
 /** "setup" (no live truth: write the notebook), "running", or "off". */
 export function notebookPhase(state, { on = true } = {}) {
     if (!on) return "off";
-    return liveTruths(state).length ? "running" : "setup";
+    return filledLiveTruths(state).length ? "running" : "setup";
 }
 
 function truthLines(t) {
@@ -439,7 +455,7 @@ function truthLines(t) {
 
 /** <Author_Notebook>: the live truths only. "" when none. `cap`: how many may be live. */
 export function renderNotebookForPrompt(state, { cap = LIVE_CAP } = {}) {
-    const live = liveTruths(state);
+    const live = filledLiveTruths(state);   // a truth added in the tab and not written yet is not sent
     if (!live.length) return "";
     const out = ["<Author_Notebook>"];
     live.forEach((t, i) => { if (i) out.push(""); out.push(...truthLines(t)); });
@@ -457,6 +473,7 @@ export function describeNotebookChange(ch) {
         case "edit": return `${ch.id} edited`;
         case "forget": return `${ch.id} deleted`;
         case "restore": return `${ch.id} activated again`;
+        case "add": return `${ch.id} added by you`;
         default: return "";
     }
 }

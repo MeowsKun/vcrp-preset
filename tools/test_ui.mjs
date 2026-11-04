@@ -731,36 +731,53 @@ for (const view of ["landing", "editor"]) {
 
     // The Notebook's panel: forced on with V11; for another engine, a switch; the live truths
     // behind a spoiler, edited and saved with the chat.
-    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
-    check(box.find("#focus_notebook_panel").length === 1 && box.find("#focus_nb_on").is(":checked") && box.find("#focus_nb_on").is(":disabled") && /Always on with V11/.test(box.text()), "the Notebook is not shown as always on with V11");
+    // The Notebook tab (Megumin Suite V11's): always on with V11; the switch; the number of truths; the live
+    // truths hidden until shown, edited as you leave a box and kept with the chat; Add a truth; Mark
+    // revealed; the past as a timeline; Secrets and Seeds kept in World State on request.
+    const openNotebookTab = () => switchTab(tabsUI.findIndex(t => t.title === "Notebook"));
+    delete meta.vcrp_notebook;      // the click-everything pass above may have added, opened or deleted truths
+    ctx.chatId = "notebook tab";    // a fresh set of shown truths (they are kept by chat)
+    openNotebookTab();
+    check(box.find("#nb_on").is(":checked") && box.find("#nb_on").is(":disabled") && /Always on with V11/.test(box.text()), "the Notebook is not shown as always on with V11");
     p.mode = "v10-core"; p.model = "cot-v10-ukiyo-english";
     p.notebook = { enabled: false };
-    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
-    box.find("#focus_nb_on").prop("checked", true).trigger("change"); await tick();
-    check(p.notebook && p.notebook.enabled === true && /Empty: the next reply writes it/.test(box.find("#focus_nb_status").text()), "the Notebook switch does not save, or the status is wrong");
+    openNotebookTab();
+    box.find("#nb_on").prop("checked", true).trigger("change"); await tick();
+    check(p.notebook && p.notebook.enabled === true && /The next reply writes the notebook/.test(box.find("#nb_status").text()), "the Notebook switch does not save, or the status is wrong");
     chat.push({ is_user: false, name: "Mara", mes: "Story.\n<Blocks>\n<Notebook>\nT1\nTruth: The well is poisoned.\nHidden from: Bob, the reader\nComes out when: Bob drinks\nWhat it changes: everything\nClue ideas: a dead crow\n</Notebook>\n</Blocks>" });
-    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
-    check(/1<\/b> of 3 truths live|1 of 3 truths live/.test(box.find("#focus_nb_status").html() || ""), `the live count is not shown: ${box.find("#focus_nb_status").text()}`);
+    openNotebookTab();
+    check(/1 of 3 truths is live/.test(box.find("#nb_status").text()), `the live count is not shown: ${box.find("#nb_status").text()}`);
     // How many truths stay live: the reader's number, saved, and the status follows it.
-    check(box.find("#focus_nb_cap").length === 1 && box.find("#focus_nb_cap").val() === "3", "the truths-kept setting is missing or not three by default");
-    box.find("#focus_nb_cap").val("5").trigger("change"); await tick();
-    check(p.notebook && p.notebook.liveCap === 5 && /of 5 truths live/.test($("#ps_stage_content").find("#focus_nb_status").text()), `the truths-kept setting does not save or show: ${JSON.stringify(p.notebook)}`);
-    $("#ps_stage_content").find("#focus_nb_cap").val("3").trigger("change"); await tick();
-    check(box.find("#focus_notebook_panel details").first().find(".nb_field[data-key='truth']").val() === "The well is poisoned.", "the live truth is not behind the spoiler");
-    box.find(".nb_spoiler[data-which='live']").prop("open", true).trigger("toggle");
-    box.find(".nb_field[data-id='T1'][data-key='truth']").val("The innkeeper poisoned the well.");
-    box.find(".nb_save[data-id='T1']").trigger("click"); await tick();
-    check(box.find(".nb_spoiler[data-which='live']").prop("open") === true, "the live truths fold up again after a save");
+    check(box.find("#nb_cap").length === 1 && box.find("#nb_cap").val() === "3", "the truths-kept setting is missing or not three by default");
+    box.find("#nb_cap").val("5").trigger("change"); await tick();
+    check(p.notebook && p.notebook.liveCap === 5 && /of 5 truths/.test($("#ps_stage_content").find("#nb_status").text()), `the truths-kept setting does not save or show: ${JSON.stringify(p.notebook)}`);
+    $("#ps_stage_content").find("#nb_cap").val("3").trigger("change"); await tick();
+    // Hidden until shown (the popup says yes here); an edit saves as the box is left, and the truth stays open.
+    check(box.find(".vcrp-nbt-body[data-id='T1']").hasClass("is-hidden") && box.find(".nb_show[data-id='T1']").length === 1, "the live truth is not hidden");
+    box.find(".nb_show[data-id='T1']").trigger("click"); await tick();
+    check(!box.find(".vcrp-nbt-body[data-id='T1']").hasClass("is-hidden") && box.find(".nb_field[data-id='T1'][data-key='truth']").val() === "The well is poisoned.", "Show this truth does not open it");
+    box.find(".nb_field[data-id='T1'][data-key='truth']").val("The innkeeper poisoned the well.").trigger("change"); await tick();
+    check(!box.find(".vcrp-nbt-body[data-id='T1']").hasClass("is-hidden") && box.find(".nb_field[data-id='T1'][data-key='truth']").val() === "The innkeeper poisoned the well.", "the truth folds up again, or the edit is lost, after a save");
     ctx.chatId = "another chat";
-    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
-    check(box.find(".nb_spoiler[data-which='live']").prop("open") === false, "another chat's live truths show unfolded");
-    delete ctx.chatId;
-    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    openNotebookTab();
+    check(box.find(".vcrp-nbt-body[data-id='T1']").hasClass("is-hidden"), "another chat's truth shows open");
+    ctx.chatId = "notebook tab";
+    openNotebookTab();
     check(meta.vcrp_notebook && meta.vcrp_notebook.ops.some(o => o.op === "edit" && o.fields.truth === "The innkeeper poisoned the well."), "the edit is not kept with the chat");
+    // Add a truth: an empty one, open at once, not counted until it is written; deleted with the popup's yes.
+    box.find("#nb_add").trigger("click"); await tick();
+    check(box.find(".vcrp-nbt-body[data-id='T2']").length === 1 && !box.find(".vcrp-nbt-body[data-id='T2']").hasClass("is-hidden") && /new, write it below/.test(box.text()) && /1 of 3 truths is live/.test(box.find("#nb_status").text()), "Add a truth does not add an open, unwritten truth that stays uncounted");
+    box.find(".nb_forget[data-id='T2']").trigger("click"); await tick();
+    check(box.find(".vcrp-nbt-body[data-id='T2']").length === 0, "Delete does not remove the added truth");
     box.find(".nb_reveal[data-id='T1']").trigger("click"); await tick();
-    check(/Past: 1 truth/.test(box.text()) && box.find(".nb_restore[data-id='T1']").length === 1, "Mark revealed does not move it to the past");
+    check(/1 truth that came out/.test(box.text()) && box.find(".nb_restore[data-id='T1']").length === 1 && box.find(".vcrp-nbt-timeline").length === 1, "Mark revealed does not move it to the past timeline");
+    // Secrets and Seeds in World State: off by default, saved.
+    check(box.find("#nb_keep_secrets").length === 1 && !box.find("#nb_keep_secrets").is(":checked"), "the Secrets and Seeds switch is missing or on by default");
+    box.find("#nb_keep_secrets").prop("checked", true).trigger("change"); await tick();
+    check(p.notebook.keepWorldSecrets === true, "the Secrets and Seeds switch does not save");
     chat.pop();
     delete meta.vcrp_notebook;
+    delete ctx.chatId;
     p.notebook = { enabled: false };
 
     // A reply's Notebook tab: what it did as applied (VCRP's ids), blurred; a block cut off
@@ -841,7 +858,7 @@ for (const view of ["landing", "editor"]) {
     p.blockStack.order = JSON.parse(keep.order);
     p.npcBank.npcs = JSON.parse(keep.npcs);
     clicks += 9;
-    if (failures === before) console.log("  ✓ V11: NPC Bank escapes records; V11 engine and thinking cards (the Adapted ones too); the Notebook panel (forced, switch, spoiler, edit, reveal); Remember every character; the lore switch");
+    if (failures === before) console.log("  ✓ V11: NPC Bank escapes records; V11 engine and thinking cards (the Adapted ones too); the Notebook tab (forced, switch, number, hidden until shown, edit, add, delete, reveal, timeline, Secrets and Seeds); Remember every character; the lore switch");
 }
 
 console.error = origError;

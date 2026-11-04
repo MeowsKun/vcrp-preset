@@ -14,7 +14,7 @@
 
 import { getContext } from "../st.js";
 import { localProfile } from "../core/state.js";
-import { vcrpWithoutSwipedReply } from "./generation.js";
+import { vcrpWithoutSwipedReply, vcrpGenerationKind } from "./generation.js";
 import { meguminActiveBlocks, MEGUMIN_BLOCK_REGISTRY } from "../features/blocks/registry.js";
 import { puraEntries } from "../features/blocks/puraBlocks.js";
 import { puraTidyBlocks, puraTidyText } from "./pura/tidy.js";
@@ -45,27 +45,62 @@ export function stripHistoryBlocks(messages) {
     const last = messages.length - 1;
     const pura = puraTidyBlocks();
     // VCRP: a custom block on "Stays in the chat" keeps its copies (Megumin V11): taken out of
-    // the envelope first and put back at the end of the reply, the same every turn.
+    // the envelope first and put back at the end of the reply, the same every turn. The copies
+    // come from the chat itself, not from the prompt: the preset's "Blocks cleanup" regex has
+    // already taken the whole envelope out of every reply three deep when the prompt gets
+    // here, the kept block with it.
     const keepRe = customTagsToKeep(customList()).map(t => new RegExp(`<${t}\\b[^>]*>[\\s\\S]*?<\\/${t}\\s*>`, "gi"));
+    const keptFromChat = keepRe.length ? keptCopiesByMessage(messages, keepRe) : null;
     // Whoever takes a reply's blocks out, it must end the same every turn. The preset's own
     // "Blocks cleanup" regex reaches replies three deep and leaves the blank lines before the
     // blocks; this strip took them too. So a reply ended "…prose" for two turns and
     // "…prose\n\n" from the third: its text changed, and the cache missed from it on. Every
     // older reply ends at its last character now, either way.
-    const clean = s => {
+    const clean = (s, i) => {
         const t = pura.length ? puraTidyText(s, { blocks: pura }).text : s;
-        const kept = keepRe.flatMap(re => String(t).match(re) || []);
-        const out = strip(t).replace(/\s+$/, "");
+        const own = keepRe.flatMap(re => String(t).match(re) || []);
+        const kept = keptFromChat && keptFromChat.has(i) ? keptFromChat.get(i) : own;
+        // A kept block written loose (outside the envelope) is taken out of its place too, so it
+        // stands once, at the end.
+        let out = strip(t);
+        for (const re of keepRe) out = out.replace(re, "");
+        out = out.replace(/\s+$/, "");
         return kept.length ? `${out}\n\n${kept.join("\n")}` : out;
     };
     messages.forEach((m, i) => {
         if (!m || m.role !== "assistant" || i === last) return;
         if (typeof m.content === "string") {
-            m.content = clean(m.content);
+            m.content = clean(m.content, i);
         } else if (Array.isArray(m.content)) {
-            m.content = m.content.map(p => (p && p.type === "text" && typeof p.text === "string") ? { ...p, text: clean(p.text) } : p);
+            m.content = m.content.map(p => (p && p.type === "text" && typeof p.text === "string") ? { ...p, text: clean(p.text, i) } : p);
         }
     });
+}
+
+// The kept copies ("Stays in the chat") of each reply in the prompt, read from the chat: the
+// prompt's replies are the newest of the chat's, in order (SillyTavern drops the oldest, Story
+// Memory hides the summarized ones, a swiped-away reply is in neither), so they are matched
+// from the end. A trailing assistant message is a prefill, or the reply being continued (then
+// it is the chat's newest). Returns a Map of prompt index → copies; a reply the chat cannot be
+// matched to keeps what its own text holds.
+function keptCopiesByMessage(messages, keepRe) {
+    const out = new Map();
+    let chat = [];
+    try { chat = ((getContext() || {}).chat || []).filter(m => m && !m.is_system); } catch (e) { return out; }
+    let replies = vcrpWithoutSwipedReply(chat).filter(m => !m.is_user && typeof m.mes === "string");
+    const last = messages.length - 1;
+    const trailing = messages[last] && messages[last].role === "assistant";
+    let kind = "reply";
+    try { kind = vcrpGenerationKind(); } catch (e) { kind = "reply"; }
+    if (trailing && kind === "continue") replies = replies.slice(0, -1);
+    const prompt = messages.map((m, i) => ({ m, i })).filter(x => x.m && x.m.role === "assistant" && !(trailing && x.i === last));
+    const offset = replies.length - prompt.length;
+    if (offset < 0) return out;
+    prompt.forEach((x, j) => {
+        const src = replies[offset + j];
+        if (src) out.set(x.i, keepRe.flatMap(re => src.mes.match(re) || []));
+    });
+    return out;
 }
 
 const LOOKBACK_REPLIES = 6;   // how far back a reply without blocks is looked past

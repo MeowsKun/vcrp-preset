@@ -417,7 +417,9 @@ engine (now "V11 Тайна Preview" upstream) and the DeepSeek version were dro
     instructions after the chat, as every block's does, from up to sixty replies back), *Starts
     fresh* (the story never sees the last one), or *Stays in the chat* (its copies stay in the
     earlier replies the story reads, at the end of each, while the other blocks come out; the
-    same every turn, so the cache holds).
+    same every turn, so the cache holds. The copies come from the chat itself, so they survive
+    the preset's own Blocks cleanup regex, which takes the whole envelope out of every reply
+    three deep before VCRP sees the prompt).
   - **When it is written:** every reply, only when something in it changes (V11's line, needs a
     block the story can see), or every few replies (not asked for until due, not asked for again
     by the missing-blocks call either, its last copy carried meanwhile).
@@ -459,11 +461,11 @@ engine (now "V11 Тайна Preview" upstream) and the DeepSeek version were dro
 From Megumin Suite V11: the story keeps two or three hidden truths, plants small clues, and
 reveals each one when the story earns it, instead of forgetting a secret or blurting it out.
 
-- **On** by itself with V11 Тайна (its own text speaks of it); a switch in the Focus tab for any
-  other engine. The model writes the truths in a `<Notebook>` block, then only what changes in a
-  `<Notebook_Update>` block (a clue planted, who found out, what came out).
+- **On** by itself with V11 Тайна (its own text speaks of it); a switch in the **Notebook** tab for
+  any other engine. The model writes the truths in a `<Notebook>` block, then only what changes in
+  a `<Notebook_Update>` block (a clue planted, who found out, what came out).
 - **VCRP keeps the rules** (V11's): as many live truths as you choose (**Truths kept at once** in
-  the Focus tab, 1 to 10, V11's three by default: the setup asks for that many, and each reply is
+  the Notebook tab, 1 to 10, V11's three by default: the setup asks for that many, and each reply is
   read under the count in force when it was written, so lowering it later drops nothing), ids that
   are VCRP's (a truth you delete gives its number to the next new one, V11's 01/11 fix), a truth the
   model can never quietly rewrite, one clue per truth per reply, and a clue the reply never
@@ -471,14 +473,24 @@ reveals each one when the story earns it, instead of forgetting a secret or blur
   ("the reader, because it hasn't been shown") is left out of the names.
 - **Kept in the replies.** Each turn the notebook is read back from the chat's own notebook
   blocks, so a swipe, an edit or a deleted message changes it exactly as it changed the story.
-  Your own changes in the Focus tab (edit a truth, mark it revealed, delete it, activate a past one
-  again) are kept with the chat.
+  Your own changes in the Notebook tab (edit a truth, mark it revealed, delete it, activate a past
+  one again, add one) are kept with the chat.
+- **The Notebook tab** (V11's, as its 04/11 beta has it): the live truths under *Active*, each
+  hidden until you ask to see it (a popup warns that it spoils the story), then editable, every
+  box saved as you leave it, with its clues listed by message number and removable one by one;
+  *Mark revealed* moves a truth to *Past*, *Delete* frees its number. **Add a truth** adds an empty
+  one to write yourself: it holds its number and is not given to the story, counted or allowed to
+  skip the setup until its Truth box is filled in. *Past* is a timeline: when each truth was
+  written, how and in which message it came out, what it was still hidden from, its clues;
+  *Activate again* puts one back in the story. While the notebook is on, VCRP's World State is not
+  asked for each character's *Secret* or for *Planted Seeds* (the notebook keeps the hidden
+  things, as in V11), unless **Keep Secrets and Seeds in World State too** is on.
 - **The cache:** its fixed rules sit in the cached part (V11's own `[[notebook]]` slot, or with
   the block rules); the live truths and the setup or update rules ride with the blocks, after the
   chat. The notebook blocks are taken out of the history, the summaries and the audits like every
   block, and are never carried as "the blocks as they stood".
 - **No spoilers:** each reply's notebook changes are a tab on its card, blurred until you hover or
-  tap a line; the Focus tab keeps the live truths behind a warning.
+  tap a line; the Notebook tab keeps each live truth hidden until you ask for it.
 
 ### Characters on file
 

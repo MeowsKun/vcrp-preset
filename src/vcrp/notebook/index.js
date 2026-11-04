@@ -9,8 +9,8 @@
 // Where the state lives: in the replies. Each turn the notebook is read back from the
 // chat's own <Notebook> and <Notebook_Update> blocks, in order, so a swipe, an edit or a
 // deleted message changes it exactly as it changed the story. The reader's own changes in
-// the Focus tab (edit, delete, mark revealed, activate again) are kept with the chat
-// (chat_metadata) and applied after the message that was newest when they were made.
+// the Notebook tab (edit, delete, mark revealed, activate again, add a truth) are kept with
+// the chat (chat_metadata) and applied after the message that was newest when they were made.
 //
 // The cache: the craft of keeping a notebook is fixed text, in the cached part of the prompt
 // ([[notebook]] in the V11 preset, [[block_rules]] in the others), and only while the
@@ -27,11 +27,11 @@ import { activeEngine } from "../../engine/meguminOriginal.js";
 import { MEGUMIN_V11 } from "../../../data/megumin.js";
 import { vcrpWithoutSwipedReply } from "../generation.js";
 import {
-    emptyNotebook, parseNotebook, applyNotebook, liveTruths, pastTruths, notebookPhase, renderNotebookForPrompt,
+    emptyNotebook, parseNotebook, applyNotebook, liveTruths, pastTruths, isFilled, filledLiveTruths, notebookPhase, renderNotebookForPrompt,
     describeNotebookChange, statKey, NOTEBOOK_TAGS, LIVE_CAP, MAX_LIVE_CAP, clampLiveCap, truthCountWords,
 } from "./model.js";
 
-export { NOTEBOOK_TAGS, LIVE_CAP, MAX_LIVE_CAP, liveTruths, pastTruths, describeNotebookChange, truthCountWords };
+export { NOTEBOOK_TAGS, LIVE_CAP, MAX_LIVE_CAP, liveTruths, pastTruths, isFilled, filledLiveTruths, describeNotebookChange, truthCountWords };
 
 const META = "vcrp_notebook";   // { ops: [{ op, id, fields?, at }] }: the reader's own changes
 
@@ -64,6 +64,29 @@ export function setNotebookLiveCap(n) {
     if (!localProfile) return;
     if (!localProfile.notebook || typeof localProfile.notebook !== "object") localProfile.notebook = {};
     localProfile.notebook.liveCap = clampLiveCap(n);
+}
+
+/** World State keeps each character's Secret and the planted Seeds while the notebook is on (off by default). */
+export const keepWorldSecrets = () => Boolean(localProfile && localProfile.notebook && localProfile.notebook.keepWorldSecrets);
+
+/** The reader's choice (the caller saves the profile). */
+export function setKeepWorldSecrets(on) {
+    if (!localProfile) return;
+    if (!localProfile.notebook || typeof localProfile.notebook !== "object") localProfile.notebook = {};
+    localProfile.notebook.keepWorldSecrets = Boolean(on);
+}
+
+/**
+ * World State is not asked for each character's Secret or for planted Seeds: the notebook keeps
+ * the hidden things (Megumin Suite V11's Notebook tab), unless the reader keeps them too.
+ */
+export const worldHidesSecrets = () => notebookOn() && !keepWorldSecrets();
+
+/** VCRP's World State template without its Secret line and its Planted Seeds line. */
+export function stripWorldSecrets(text) {
+    return String(text || "")
+        .replace(/^[ \t]*\*[ \t]*\*Secret:\*[^\n]*\r?\n?/gm, "")
+        .replace(/^[ \t]*\*\*🌱 Planted Seeds:\*\*[^\n]*\r?\n?/gm, "");
 }
 
 // V11's setup and update rules are generated at its default of three truths (data/megumin.js);
@@ -177,7 +200,7 @@ export function notebookBlockRequest(chat = vcrpWithoutSwipedReply(ctxChat())) {
     };
 }
 
-// ── The reader's changes (Focus tab) ─────────────────────────────────────────
+// ── The reader's changes (Notebook tab) ──────────────────────────────────────
 
 /** Edits one truth: `fields` among truth, hiddenFrom (a list), when, changes, clueIdeas, clues. */
 export const editTruth = (id, fields) => readerChange({ op: "edit", id, fields });
@@ -185,6 +208,8 @@ export const editTruth = (id, fields) => readerChange({ op: "edit", id, fields }
 export const forgetTruth = id => readerChange({ op: "forget", id, reuse: true });
 export const revealTruth = id => readerChange({ op: "reveal", id });
 export const restoreTruth = id => readerChange({ op: "restore", id });
+/** Adds an empty truth to write in the tab (Megumin V11): not sent until it is written. */
+export const addTruth = () => readerChange({ op: "add" });
 
 function readerChange(op) {
     if (!chat_metadata) return false;
@@ -211,7 +236,7 @@ export const turnLabel = (seq, chat = ctxChat()) => (seq >= 0 && seq < chat.leng
 export const NOTEBOOK_BLOCKS = [
     {
         id: "notebook", tag: "Notebook", label: "Notebook", emoji: "📓", icon: "fa-book", color: "#0ea5e9",
-        desc: "The Author's Notebook: the truths the story keeps hidden (Focus tab).",
+        desc: "The Author's Notebook: the truths the story keeps hidden (Notebook tab).",
         visibility: "open", builtin: true, system: true, transient: true, group: "notebook",
         requires: () => false,
     },
