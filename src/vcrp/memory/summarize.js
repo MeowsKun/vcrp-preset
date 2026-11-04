@@ -18,6 +18,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getContext, generateQuietPrompt, isGenerating, saveMetadata } from "../../st.js";
+import { runHelperJob } from "../helper/index.js";
+import { helperJobOn } from "../helper/settings.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
 import {
     activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder, activeFocusAudit, activeBlockRepair,
@@ -119,11 +121,17 @@ export const memorySummaryRunning = () => running;
 /** Another VCRP background task swaps in its own prompt while it runs: never overlap one. */
 const otherTaskRunning = () => !!(activeStoryPlanRequest || activeBanListChat || activeNpcScanRequest || activeNpcUpdateRequest || activeGenerationOrder || activeFocusAudit || activeBlockRepair);
 
+// On the helper model when its Story Memory job is on (vcrp/helper): a standalone call, sent
+// to its connection. The task is marked inside the job, when it runs, never while it waits.
 async function quiet(prompt, standalone) {
-    setMemoryTaskActive(true, standalone || null);
-    let out;
-    try { out = await generateQuietPrompt({ quietPrompt: prompt }); } finally { setMemoryTaskActive(false); }
-    vcrpMemoryCountTaskOutput(out);
+    const r = await runHelperJob("memory", async () => {
+        setMemoryTaskActive(true, standalone || null);
+        try { return await generateQuietPrompt({ quietPrompt: prompt }); } finally { setMemoryTaskActive(false); }
+    });
+    if (r.stopped || r.failed) return "";
+    const out = typeof r.value === "string" ? r.value : "";
+    // What the helper writes is on its own bill, not the story model's.
+    if (r.route !== "profile") vcrpMemoryCountTaskOutput(out);
     return out;
 }
 
@@ -148,8 +156,9 @@ export async function summarizeNext({ catchUp = false } = {}) {
     running = true;
     const identity = meguminActiveDataIdentity();
     const lost = () => meguminActiveDataIdentity() !== identity || memoryState() !== st;
-    // Reuse the warm cache when there is one; otherwise a small standalone call.
-    const standalone = catchUp || isCold(st, memoryNow(), budget);
+    // Reuse the warm cache when there is one; otherwise a small standalone call. The helper
+    // model has no cache of the story's prompt: it always gets the standalone call.
+    const standalone = catchUp || isCold(st, memoryNow(), budget) || helperJobOn("memory");
     try {
         const startQuote = opening(chat[span.start]);
         const endQuote = opening(chat[span.end - 1]);

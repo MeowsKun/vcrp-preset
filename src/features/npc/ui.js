@@ -3,6 +3,8 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import { getContext, generateQuietPrompt, Popup, POPUP_TYPE } from "../../st.js";
+import { runHelperJob } from "../../vcrp/helper/index.js";
+import { npcFileDossier } from "./data.js";
 import { localProfile } from "../../core/state.js";
 import { saveProfileToMemory, saveProfileDebounced } from "../../core/profile.js";
 import { syncPromptsGlobally } from "../../core/sync.js";
@@ -14,7 +16,7 @@ import { downloadJsonFile } from "../../utils/download.js";
 import { getChatForNpcScan } from "../../engine/chatText.js";
 import { vcrpChatForNpcScan, vcrpNpcScanMark, vcrpNoteNpcScan, npcEstimate } from "../../vcrp/backgroundCosts.js";
 import { vcrpCountBackgroundOutput } from "../../vcrp/memory/index.js";
-import { npcBuildTextFromData, npcParseBlock, meguminFindNpcDossiers, npcCreateRecord } from "./data.js";
+import { npcBuildTextFromData, meguminFindNpcDossiers, npcCreateRecord } from "./data.js";
 import { npcBodyFields, npcVitalsFields, NPC_FIELD_TYPES, NPC_DEFAULT_FIELDS, npcBuildUpdatePrompt } from "./fields.js";
 import { npcParseUpdateBlocks, npcApplyUpdates } from "./updates.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
@@ -335,10 +337,15 @@ export function renderNpcBank(c) {
             const chat = context?.chat;
             const msgIndex = (chat && chat.length > 0) ? chat.length - 1 : 0;
             const existingNames = (localProfile.npcBank.npcs || []).map(n => n.name).join(", ");
-            setActiveNpcScanRequest({ chatText, existingNames });
-            
-            let rawOutput = await generateQuietPrompt({ prompt: "___PS_NPC_SCAN___" });
-            vcrpCountBackgroundOutput(rawOutput);
+            // VCRP: on the helper model when its NPC job is on (vcrp/helper); the payload is
+            // parked inside the job, when it runs. What the helper writes is on its own bill.
+            const hr = await runHelperJob("npc", async () => {
+                setActiveNpcScanRequest({ chatText, existingNames });
+                try { return await generateQuietPrompt({ prompt: "___PS_NPC_SCAN___" }); } finally { setActiveNpcScanRequest(null); }
+            });
+            if (hr.stopped || hr.failed) { toastr.info("The helper could not scan the story.", "NPC Bank"); return; }
+            let rawOutput = typeof hr.value === "string" ? hr.value : "";
+            if (hr.route !== "profile") vcrpCountBackgroundOutput(rawOutput);
             // VCRP: a scan of one chat must not fill another chat's bank.
             if (meguminActiveDataIdentity() !== scanIdentity) {
                 console.debug(`[VCRP] NPC scan discarded: it started on "${scanIdentity}" but "${meguminActiveDataIdentity()}" is active now.`);
@@ -346,19 +353,18 @@ export function renderNpcBank(c) {
                 return;
             }
             
-            let addedCount = 0;
+            let addedCount = 0, filledCount = 0;
             for (const dossier of meguminFindNpcDossiers(rawOutput)) {
-                const npcName = dossier.name;
-                const npcContent = dossier.raw;
-                if (!localProfile.npcBank.npcs) localProfile.npcBank.npcs = [];
-                if (!localProfile.npcBank.npcs.find(n => (n.name || "").trim().toLowerCase() === npcName.toLowerCase())) {
-                    const parsed = dossier.parsed || npcParseBlock(npcContent);
-                    localProfile.npcBank.npcs.push(npcCreateRecord({ parsed, name: npcName, messageIndex: msgIndex }));
-                    addedCount++;
-                }
+                // VCRP: a dossier for someone already on file under a longer name, a nickname or
+                // a name in brackets fills that record's empty fields (V11's name finder, data.js).
+                const filed = npcFileDossier(localProfile.npcBank, dossier, { messageIndex: msgIndex });
+                if (filed.added) addedCount++;
+                else if (filed.filled.length) filledCount++;
             }
-            if (addedCount > 0) { saveProfileToMemory(); renderNpcList(); toastr.success(`Found and added ${addedCount} new NPC(s)!`); } 
-            else { toastr.info("No new significant NPCs found in the story."); }
+            if (addedCount > 0 || filledCount > 0) {
+                saveProfileToMemory(); renderNpcList();
+                toastr.success(`${addedCount ? `Found and added ${addedCount} new NPC(s)` : ""}${addedCount && filledCount ? "; " : ""}${filledCount ? `filled in ${filledCount} record(s) already on file` : ""}!`);
+            } else { toastr.info("No new significant NPCs found in the story."); }
             // The next scan starts after what this one read. Not after a stopped or empty one.
             if (String(rawOutput || "").trim()) await vcrpNoteNpcScan(scanMark);
         } catch (e) { toastr.error("Failed to scan story for NPCs."); } 
@@ -605,7 +611,7 @@ export function renderNpcList() {
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <i class="fa-solid fa-chevron-right npc-chevron" style="font-size: 0.6rem; color: ${accentColor}; transition: transform 0.2s;"></i>
                         ${miniPfp}
-                        <span style="font-size: 0.85rem; font-weight: 700; color: ${accentColor};">${name}</span>
+                        <span style="font-size: 0.85rem; font-weight: 700; color: ${accentColor};">${name}</span>${Array.isArray(n.aliases) && n.aliases.length ? `<span style="font-size: 0.62rem; color: var(--text-muted); margin-left: 2px;" title="Other names the story used for this character">also ${escv(n.aliases.join(", "))}</span>` : ""}
                         <button class="npc_edit_name_btn" data-idx="${idx}" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.7rem; padding: 2px 4px; margin-left: -4px;" title="Edit Name"><i class="fa-solid fa-pen"></i></button>
                         <span class="npc_edit_vitals_btn" data-idx="${idx}" style="font-size: 0.6rem; color: var(--text-muted); background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; cursor: pointer;" title="Edit age, sex and orientation">${escv(n.age) || "?"} · ${escv(n.sex) || "?"} <i class="fa-solid fa-pen" style="font-size: 0.5rem; opacity: 0.6;"></i></span>
                     </div>
@@ -731,15 +737,22 @@ export function renderNpcList() {
             // built from another chat's story would be worse than not applying it.
             const identity = meguminActiveDataIdentity();
 
-            setActiveNpcUpdateRequest({
+            const updateRequest = {
                 npcName: target.name,
                 npcText: npcBuildTextFromData(target),
                 chatText: getChatForNpcScan(),
                 rules
-            });
+            };
             try {
-                const raw = await generateQuietPrompt({ prompt: "___PS_NPC_UPDATE___" });
-                vcrpCountBackgroundOutput(raw);
+                // VCRP: on the helper model when its NPC job is on (vcrp/helper); the payload is
+                // parked inside the job, when it runs.
+                const hr = await runHelperJob("npc", async () => {
+                    setActiveNpcUpdateRequest(updateRequest);
+                    try { return await generateQuietPrompt({ prompt: "___PS_NPC_UPDATE___" }); } finally { setActiveNpcUpdateRequest(null); }
+                });
+                if (hr.stopped || hr.failed) { toastr.info(`The helper could not update ${target.name}.`, "VCRP"); return; }
+                const raw = typeof hr.value === "string" ? hr.value : "";
+                if (hr.route !== "profile") vcrpCountBackgroundOutput(raw);
                 const cleaned = String(raw || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
                 if (meguminActiveDataIdentity() !== identity) {

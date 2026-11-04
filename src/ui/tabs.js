@@ -24,8 +24,11 @@ import { renderBlocksTab } from "../features/blocks/ui.js";
 import { renderKnowledgebase } from "../vcrp/knowledgebase.js";
 import { renderFocusTab } from "../vcrp/focus/ui.js";
 import { renderNotebookTab } from "../vcrp/notebook/ui.js";
+import { renderHelperTab } from "../vcrp/helper/ui.js";
+import { renderModelSetup } from "../vcrp/modelSetup/ui.js";
 
 export const tabsUI = [
+    { title: "Model Setup", sub: "Pick the model you play with, and use the settings tested for it.", icon: "fa-compass", render: renderModelSetup },
     { title: "PRESETS & COT", sub: "Choose the core preset and COT, and set the standing rules of the story.", icon: "fa-server", render: renderCoreAndCot },
     { title: "Writing Style", sub: "Pick the prose voice the story is told in.", icon: "fa-pen-nib", render: renderStoryConfig },
     { title: "Global Toggles & Add Ons", sub: "Language, pronouns, and the gameplay systems bolted onto the story.", icon: "fa-earth-americas", render: renderGlobalAndBlocks },
@@ -37,6 +40,7 @@ export const tabsUI = [
     { title: "NPCs Bank", sub: "Automatically extract and track significant NPCs in the story.", icon: "fa-address-book", render: renderNpcBank },
     { title: "Memory", sub: "Story Memory keeps long chats under your budget.", icon: "fa-memory", render: renderMemoryTab },
     { title: "Knowledgebase", sub: "Core world rules, lore, and trope guidance the AI always remembers.", icon: "fa-book-open", render: renderKnowledgebase },
+    { title: "Helper", sub: "A second model for the blocks and the background jobs, on its own connection.", icon: "fa-robot", render: renderHelperTab },
     { title: "Global Settings", sub: "Extension preferences and about info.", icon: "fa-gear", render: renderGlobalSettings }
 ];
 

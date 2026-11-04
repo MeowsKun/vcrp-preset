@@ -5514,4 +5514,306 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
 }
 console.log("69 ok how each reply ended, from the API's own answer (OpenRouter, Anthropic and Google stop reasons and usage; the answer read as it passes and SillyTavern's copy untouched; the stamp on the reply; a refused request recorded), the request's limit left alone on a model that reasons out of sight (a safety cap still lowers it), the blank-reply note and the cut from the stop reason, the output counted as billed");
 
+// 70. The helper model (Megumin Suite V11's Chomusuke, in VCRP's terms): the routes (off, the
+//     profile, the story's own connection, a SillyTavern that cannot send), the blocks the
+//     story model is no longer asked for and the note it reads instead, the helper's own
+//     prompt and its answer merged into the reply (once per reply, the swipe with it, the
+//     carry after), a job's payload left alone by a story prompt built meanwhile, a refused
+//     request said in plain words, an empty answer said once, Stop, a standalone Story Memory
+//     call sent as it is, Setup Check, the notices and the status line.
+{
+    const q = state.localProfile;
+    const H = await imp("src/vcrp/helper/index.js");
+    const HS = await imp("src/vcrp/helper/settings.js");
+    const HB = await imp("src/vcrp/helper/blocks.js");
+    const HN = await imp("src/vcrp/helper/notice.js");
+    const HSt = await imp("src/vcrp/helper/status.js");
+    const { requiredBlocks } = await imp("src/vcrp/blockRepair.js");
+    const { meguminSyncLegacyBlockIds, buildBlocksEnvelope } = await imp("src/features/blocks/registry.js");
+    const { buildBaseDict } = await imp("src/engine/buildBaseDict.js");
+    const { setActiveStoryPlanRequest, setActiveNpcScanRequest } = await imp("src/core/activeRequests.js");
+    const { generateQuietPrompt } = await imp("src/st.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const gs = extension_settings.VCRP.globalSettings;
+    const keepHelper = JSON.stringify(gs.helper || null);
+    const keepCm = extension_settings.connectionManager;
+    const keep = { mode: q.mode, model: q.model, order: JSON.stringify(q.blockStack.order), cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english", cotEnabled: true });
+    q.blockStack.order = ["world", "bonds"]; meguminSyncLegacyBlockIds();
+    ctx.mainApi = "openai";
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+    const V11 = "VCRP V11 Megumin Original.json";
+    const HEADER = "## At the end of your response, output exactly one <Blocks> section";
+    // Lines of the World State rules and the Bonds template: in the prompt of whoever writes them.
+    const WORLD_RULE = "NPCs Present are the characters on <Scene>'s Here line";
+    const BONDS_TPL = "One line per named NPC in <Scene>";
+    const ANSWER = "<Blocks>\n<Scene>\nHere: Alice\nRemote:\n</Scene>\n<World_State>\nTime: dusk\n</World_State>\n<Bonds>\nAlice: Mood: wary\n</Bonds>\n</Blocks>";
+
+    // Off: every job on the story model, the blocks asked of it as always.
+    delete gs.helper;
+    chat.length = 0;
+    assert(!HS.helperRoutesBlocks() && H.helperRoute("blocks") === "story" && HB.helperRoutedIdSet().size === 0, "off by default: every job on the story model");
+    let msgs = await run(V11);
+    let t = text(msgs);
+    assert(t.includes(HEADER) && t.includes(WORLD_RULE) && t.includes(BONDS_TPL) && t.includes("<Scene>"), "the story model writes the blocks");
+
+    // On, on a profile this SillyTavern can send to.
+    extension_settings.connectionManager = { profiles: [{ id: "p1", name: "Helper", mode: "cc" }, { id: "tc1", name: "Text one", mode: "tc" }] };
+    const sent = [];
+    let sendAnswer = async () => ({ content: ANSWER });
+    const svc = { sendRequest: async (profileId, messages, maxTokens, opts) => { sent.push({ profileId, messages, maxTokens, opts }); return sendAnswer(messages, opts); } };
+    ctx.ConnectionManagerRequestService = svc;
+    HS.helperSettings();
+    gs.helper.enabled = true;
+    gs.helper.profileId = "p1";
+    assert(H.helperRoute("blocks") === "profile" && H.helperRoute("npc") === "profile" && H.helperRoute("memory") === "story" && H.helperRoute("focus") === "story", "the jobs' defaults: the blocks and the occasional jobs go to the profile, Story Memory and Focus stay");
+    assert.deepEqual([...HB.helperRoutedIdSet()].sort(), ["bonds", "scene", "world"], "World State and Bonds go to the helper, the scene list with them");
+    // (V11's Author's Notebook is always the story model's: it stays on the list.)
+    assert.deepEqual(requiredBlocks(chat).filter(b => b.tag !== "Notebook"), [], "the reply has no blocks of its own to write, so none is asked for again");
+    msgs = await run(V11); t = text(msgs);
+    assert(!t.includes(WORLD_RULE) && !t.includes(BONDS_TPL) && !t.includes("<World_State>"), "the story model is not asked for the blocks");
+
+    // With blocks in the chat, the story model reads where they stood.
+    chat.push({ is_user: true, name: "Bob", mes: "hi" },
+        { is_user: false, name: "Alice", mes: "Prose one.\n\n<Blocks>\n<Scene>\nHere: Alice\nRemote:\n</Scene>\n<World_State>\nTime: noon\n</World_State>\n<Bonds>\nAlice: Mood: calm\n</Bonds>\n</Blocks>" },
+        { is_user: true, name: "Bob", mes: "go" },
+        { is_user: false, name: "Alice", mes: "Prose two, no blocks.", swipes: ["Prose two, no blocks."], swipe_id: 0, extra: {} });
+    vcrpSetGenerationType("normal", {}, false);
+    msgs = await run(V11); t = text(msgs);
+    assert(t.includes("kept up after each reply by an editor") && t.includes("Time: noon") && !t.includes(WORLD_RULE) && !t.includes(BONDS_TPL), "the story model reads the blocks as they stood, and is not asked to write them");
+
+    // The helper's prompt, and its answer at the end of the reply.
+    const prompt = HB.buildHelperBlocksPrompt(3);
+    assert(prompt && /running notes/.test(prompt.system) && prompt.user.includes("<Previous_Blocks>") && prompt.user.includes("Time: noon") && prompt.user.includes("<Latest_Exchange>") && prompt.user.includes("Bob: go") && prompt.user.includes("Alice: Prose two, no blocks.") && prompt.user.includes("## Answer with exactly one <Blocks> section") && prompt.user.includes("<Scene>") && prompt.user.includes(WORLD_RULE) && prompt.user.includes(BONDS_TPL) && !prompt.user.includes("<Notebook>"), `the helper's prompt: ${prompt && prompt.user.slice(0, 400)}`);
+    assert(prompt.user.includes("<Earlier_Story>") && prompt.user.includes("Bob: hi") && prompt.user.includes("Alice: Prose one.") && !prompt.user.includes("Time: noon\n</World_State>\n</Blocks>\n</Earlier_Story>"), "the earlier story for context, its blocks out");
+    let r = await HB.helperWriteBlocks(3);
+    assert.equal(r.status, "done", `written: ${JSON.stringify(r)}`);
+    assert(sent.length === 1 && sent[0].profileId === "p1" && sent[0].messages.length === 2 && sent[0].messages[0].role === "system" && sent[0].messages[1].role === "user" && sent[0].opts.stream === false && sent[0].maxTokens >= 2048, `one request to the profile: the two messages, not streamed (${JSON.stringify(sent[0] && { n: sent[0].messages.length, max: sent[0].maxTokens, opts: sent[0].opts })})`);
+    assert(chat[3].mes.startsWith("Prose two, no blocks.") && chat[3].mes.endsWith("</Blocks>") && chat[3].mes.includes("Time: dusk") && chat[3].extra.vcrp_helper_blocks === "done" && chat[3].swipes[0] === chat[3].mes, `the answer's blocks end the reply, the swipe with it: ${JSON.stringify(chat[3].mes)}`);
+    assert.equal((await HB.helperWriteBlocks(3)).reason, "already written", "once per reply");
+    msgs = await run(V11); t = text(msgs);
+    assert(t.includes("Time: dusk") && !t.includes("Time: noon"), "the next prompt carries the helper's blocks");
+    // A swipe is a reply of its own: the stamp copied from the last one goes.
+    chat[3].mes = "Prose two, swiped."; chat[3].swipes = [chat[3].mes]; chat[3].swipe_id = 0;
+    HB.vcrpHelperBlocksOnReply(3, "swipe");
+    assert(!chat[3].extra.vcrp_helper_blocks, "a new swipe starts clean");
+
+    // A story prompt built while a job runs on the profile leaves the job's payload alone.
+    let built = null;
+    sendAnswer = async () => {
+        setActiveStoryPlanRequest("the chat, for the director");
+        try {
+            const m = buildPrompt(V11);
+            vcrpSetGenerationType("normal", {}, false);
+            await handlePromptInjection({ chat: m, dryRun: false });
+            built = m;
+        } finally { setActiveStoryPlanRequest(null); }
+        return { content: "pineapple" };
+    };
+    const test = await H.helperTest();
+    assert(test.kind === "ok" && test.route === "profile", `the Test button: ${JSON.stringify(test)}`);
+    assert(built && built.length > 3 && !text(built).includes("DIRECTOR SETTINGS") && text(built).includes("latest user msg"), "a reply sent meanwhile got the story's prompt, not the parked job's");
+
+    // A refused request: said in plain words, the scan's own prompt having been built for the profile.
+    const toasts = [];
+    const toastrWas = globalThis.toastr;
+    globalThis.toastr = { info() {}, success() {}, error: m => toasts.push(m), warning: m => toasts.push(m) };
+    sendAnswer = async () => { throw new Error("Unauthorized"); };
+    const rf = await H.runHelperJob("npc", async () => {
+        setActiveNpcScanRequest({ chatText: "Bob met Cole.", existingNames: "" });
+        try { return await generateQuietPrompt({ prompt: "___PS_NPC_SCAN___" }); } finally { setActiveNpcScanRequest(null); }
+    });
+    assert(rf.failed && rf.value === null && rf.route === "profile" && toasts.some(m => /didn't accept the API key/.test(m)), `a refused key, said in plain words: ${JSON.stringify(toasts)}`);
+    assert(sent.at(-1).messages.some(m => /Analyze the following story history/.test(m.content) && /Bob met Cole/.test(m.content)), "the scan's own prompt was built for the profile");
+    // An empty answer: the reply keeps its text, the warning comes once per chat.
+    toasts.length = 0;
+    sendAnswer = async () => ({ content: "" });
+    chat.push({ is_user: true, name: "Bob", mes: "more" }, { is_user: false, name: "Alice", mes: "Prose three.", swipes: ["Prose three."], swipe_id: 0, extra: {} });
+    r = await HB.helperWriteBlocks(5);
+    assert(r.status === "failed" && /nothing/.test(r.reason) && chat[5].mes === "Prose three." && chat[5].extra.vcrp_helper_blocks === "failed" && toasts.length === 1 && /sent back nothing/.test(toasts[0]), `an empty answer: ${JSON.stringify({ r, toasts })}`);
+    await HB.helperWriteBlocks(5, { force: true });
+    assert.equal(toasts.length, 1, "and not said again for this chat");
+    globalThis.toastr = toastrWas;
+
+    // Stop: a running job is cut off and comes back stopped, with no warning.
+    sendAnswer = (messages, opts) => new Promise((resolve, reject) => { opts.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))); });
+    const pending = HB.helperWriteBlocks(5, { force: true });
+    await new Promise(res => setTimeout(res, 20));
+    assert(H.helperBusy() && HSt.getHelperStatus().running && /the blocks/.test(HSt.helperStatusText()) && H.helperBlocksPending() !== null, `a running job shows, and a reply would wait for it (${HSt.helperStatusText()})`);
+    assert.equal(H.stopHelperJobs(), 1, "stopped");
+    const rs = await pending;
+    assert(rs.status === "stopped" && !H.helperBusy() && H.helperBlocksPending() === null && chat[5].extra.vcrp_helper_blocks === "", `a stopped job comes back stopped: ${JSON.stringify(rs)}`);
+
+    // Some blocks kept by the story model: the scene list stays with it; the helper writes the rest.
+    sendAnswer = async () => ({ content: ANSWER });
+    gs.helper.blockRoutes = { bonds: false };
+    assert.deepEqual([...HB.helperRoutedIdSet()], ["world"], "Bonds kept by the story model: the scene list stays with it, World State goes");
+    assert.deepEqual(requiredBlocks(chat).map(b => b.tag).filter(x => x !== "Notebook"), ["Bonds", "Scene"], "the reply has Bonds and the scene list to write");
+    const dict = buildBaseDict(true, { dryRun: true });
+    const storyEnv = buildBlocksEnvelope(dict, { skip: HB.helperRoutedIdSet() });
+    const helperEnv = buildBlocksEnvelope(dict, { only: HB.helperRoutedIdSet(), header: "## Answer", notebook: false });
+    assert(storyEnv.includes("<Bonds>") && storyEnv.includes("<Scene>") && !storyEnv.includes("<World_State>") && helperEnv.startsWith("## Answer") && helperEnv.includes("<World_State>") && !helperEnv.includes("<Bonds>") && !helperEnv.includes("<Scene>"), "the two envelopes split the blocks between them");
+    gs.helper.blockRoutes = {};
+
+    // A standalone Story Memory call goes to the profile as it is.
+    gs.helper.jobs.memory = true;
+    assert.equal(H.helperRoute("memory"), "profile");
+    sendAnswer = async messages => ({ content: `got ${messages.length}` });
+    const rm = await H.runHelperJob("memory", async () => {
+        memory.setMemoryTaskActive(true, [{ role: "system", content: "sys" }, { role: "user", content: "<chat>x</chat>" }, { role: "assistant", content: "I have read" }, { role: "user", content: "task" }]);
+        try { return await generateQuietPrompt({ quietPrompt: "task [VCRP MEMORY]" }); } finally { memory.setMemoryTaskActive(false); }
+    });
+    assert(rm.route === "profile" && rm.value === "got 4" && sent.at(-1).messages[1].content === "<chat>x</chat>", `a standalone summary call, sent as it is: ${JSON.stringify(rm)}`);
+    delete gs.helper.jobs.memory;
+
+    // The story's own connection: no request to the profile, the job runs through SillyTavern.
+    gs.helper.profileId = HS.CURRENT_CONNECTION;
+    assert.equal(H.helperRoute("blocks"), "current", "the story's own connection");
+    const before = sent.length;
+    quietImpl = async () => ANSWER;
+    chat.push({ is_user: true, name: "Bob", mes: "on" }, { is_user: false, name: "Alice", mes: "Prose four.", swipes: ["Prose four."], swipe_id: 0, extra: {} });
+    r = await HB.helperWriteBlocks(7);
+    quietImpl = null;
+    assert(r.status === "done" && sent.length === before && chat[7].mes.includes("Time: dusk"), "written through SillyTavern's own quiet prompt");
+
+    // Setup Check: the profile's state (the check wants the preset's prompts to know it is VCRP's).
+    const v11Preset = JSON.parse(readFileSync(join(REPO, "Presets", V11), "utf8"));
+    Object.assign(chatCompletionSettings, { prompts: v11Preset.prompts, prompt_order: v11Preset.prompt_order });
+    gs.helper.profileId = "p1";
+    delete ctx.ConnectionManagerRequestService;
+    assert(H.helperRoute("blocks") === "story" && !H.canSendToProfile(), "without the request service: the story model does the job");
+    assert(vcrpHealthCheck().items.some(i => i.level === "error" && /can't send a request to the helper's profile/.test(i.title)), "Setup Check says so");
+    ctx.ConnectionManagerRequestService = svc;
+    assert(vcrpHealthCheck().items.some(i => i.level === "info" && /The helper is ready on Helper/.test(i.title)), "ready, untested: a note");
+    gs.helper.testedProfileId = "p1";
+    assert(vcrpHealthCheck().items.some(i => i.level === "ok" && /The helper is ready on Helper/.test(i.title)), "ready and tested");
+    gs.helper.profileId = "gone";
+    assert(vcrpHealthCheck().items.some(i => i.level === "warn" && /connection profile is gone/.test(i.title)), "a profile that is gone");
+    gs.helper.profileId = "tc1";
+    assert(vcrpHealthCheck().items.some(i => i.level === "error" && /Text Completion profile/.test(i.title)), "a Text Completion profile");
+    gs.helper.profileId = "";
+    assert(vcrpHealthCheck().items.some(i => i.level === "warn" && /has no connection/.test(i.title)), "on with no connection");
+
+    // The notices and the status line.
+    assert(/Write the last reply's blocks again/.test(HN.helperProblemText("empty", ["blocks"])) && /couldn't be reached/.test(HN.failureReason(new Error("fetch failed"))) && HN.testAnswerKind("<think>x</think>Pineapple!") === "ok" && HN.testAnswerKind("<think>only</think>") === "empty" && HN.testAnswerKind("banana") === "other", "the notices");
+    assert.equal(HN.joinJobNames(["blocks", "memory", "npc"]), "the blocks, the Story Memory summary and the NPC Bank");
+    assert.equal(HSt.helperStatusText({ running: { jobs: ["blocks"] }, waiting: 2 }), "the blocks… (2 more waiting)");
+    assert.equal(H.helperReplyLength(undefined, 20000), 16000); assert.equal(H.helperReplyLength(4000, 20000), 4000); assert.equal(H.helperReplyLength(0, 0), 8000);
+
+    gs.helper = JSON.parse(keepHelper) || undefined;
+    if (gs.helper === undefined) delete gs.helper;
+    extension_settings.connectionManager = keepCm;
+    delete ctx.ConnectionManagerRequestService;
+    H.stopHelperJobs();
+    chat.length = 0;
+    Object.assign(q, { mode: keep.mode, model: keep.model });
+    q.blockStack.order = JSON.parse(keep.order); meguminSyncLegacyBlockIds();
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+}
+console.log("70 ok the helper model (a second connection for the blocks and the background jobs: the routes, the story model not asked for the routed blocks and reading where they stood, the helper's prompt and its answer at the end of the reply, once per reply and the swipe clean, the carry, a story prompt built meanwhile untouched, a refused request and an empty answer said, Stop, a standalone summary sent as it is, the story's own connection, Setup Check, the notices)");
+
+// 71. The NPC Bank's name finder (Megumin Suite V11's): a first name, a nickname or a name in
+//     brackets finds the record, never a guess between two; the short name is kept as a
+//     nickname; an update by a short name applies; a dossier for a known name fills the
+//     record's empty fields instead of making a second one; the scene list finds an NPC by
+//     their nickname.
+{
+    const q = state.localProfile;
+    const D = await imp("src/features/npc/data.js");
+    const U = await imp("src/features/npc/updates.js");
+    const F = await imp("src/features/npc/fields.js");
+    const { npcsInScene } = await imp("src/vcrp/scene.js");
+    const keepBank = JSON.stringify(q.npcBank);
+    q.npcBank.enabled = true;
+    q.npcBank.npcs = [D.npcCreateRecord({ name: "Resha Helios" }), D.npcCreateRecord({ name: "Anna Lee" }), D.npcCreateRecord({ name: "Lady Mira" }), D.npcCreateRecord({ name: "Lady Resha" }), D.npcCreateRecord({ name: "Dom (Dominic Morin)" })];
+    assert.equal(U.npcFindByName("Resha Helios").name, "Resha Helios", "the full name");
+    assert.equal(U.npcFindByName("Anna").name, "Anna Lee", "a first name finds the full one");
+    assert(q.npcBank.npcs[1].aliases.includes("Anna"), "and is kept as a nickname");
+    assert.equal(U.npcFindByName("Lady"), null, "two who fit: no guess");
+    assert.equal(U.npcFindByName("Dominic").name, "Dom (Dominic Morin)", "a name in brackets");
+    assert.equal(U.npcFindByName("Morin"), null, "a surname alone never picks anyone");
+    assert(D.npcNoteAlias(q.npcBank.npcs[4], "Dommy") && !D.npcNoteAlias(q.npcBank.npcs[4], "dommy") && U.npcFindByName("Dommy").name === "Dom (Dominic Morin)", "a nickname, once, finds him after");
+    // An update by a short name applies.
+    const f = F.npcUpdatableFields()[0];
+    const op = ["~", "+", "-"].find(o => F.npcFieldAllowsOp(f, o));
+    const { applied, refused } = U.npcApplyUpdates([{ name: "Resha", ops: [{ op, label: f.label, text: "Wants out of the city" }] }], { messageIndex: 3 });
+    assert(applied.length === 1 && applied[0].npc === "Resha Helios" && refused.length === 0 && q.npcBank.npcs[0].aliases.includes("Resha"), `an update by a short name: ${JSON.stringify({ applied, refused })}`);
+    // A dossier for a known short name fills the empty fields; a new name makes a record.
+    const other = F.npcUpdatableFields().find(x => x.id !== f.id) || f;
+    const filed = D.npcFileDossier(q.npcBank, { name: "Resha", parsed: { [other.id]: "Something new" } }, { messageIndex: 5 });
+    assert(!filed.added && filed.merged === "Resha Helios" && filed.filled.length === 1 && q.npcBank.npcs.length === 5 && q.npcBank.npcs[0][other.id] === "Something new", `the dossier filled the record on file: ${JSON.stringify(filed)}`);
+    const again = D.npcFileDossier(q.npcBank, { name: "Resha", parsed: { [other.id]: "Overwrite?" } }, {});
+    assert(again.filled.length === 0 && q.npcBank.npcs[0][other.id] === "Something new", "a field already there is not overwritten");
+    const fresh = D.npcFileDossier(q.npcBank, { name: "Gus Pell", raw: "" }, { messageIndex: 6 });
+    assert(fresh.added && q.npcBank.npcs.length === 6 && q.npcBank.npcs[5].name === "Gus Pell" && Array.isArray(q.npcBank.npcs[5].aliases), "a new name: a new record, with room for nicknames");
+    // The scene list finds an NPC by their nickname.
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "hi" }, { is_user: false, name: "Alice", mes: "Prose.\n\n<Blocks>\n<Scene>\nHere: Dommy, Anna\nRemote:\n</Scene>\n</Blocks>" });
+    assert.deepEqual(npcsInScene(q.npcBank.npcs).sort(), [1, 4], "the scene's nickname and first name find their records");
+    chat.length = 0;
+    q.npcBank = JSON.parse(keepBank);
+}
+console.log("71 ok the NPC Bank's name finder (a first name, a nickname, a name in brackets; never a guess between two; nicknames kept; updates by a short name; a known name's dossier fills the record instead of doubling it; the scene list by nickname)");
+
+// 72. Model Setup's loadouts (Megumin Suite V11's, in VCRP's terms): what a loadout would
+//     change (a preview that writes nothing), what it writes (the engine with its thinking and
+//     style, the add-ons, the length, the global rows), Gemini JB off elsewhere, a Thinking Cap
+//     kept, what differs from the loadout in use, the global rows skipped for the other
+//     profiles; every loadout names an engine and a length VCRP has.
+{
+    const L = await imp("src/vcrp/modelSetup/loadouts.js");
+    const { hardcodedLogic } = await imp("data/database.js");
+    const { storyConfigFields } = await imp("src/features/storyconfig/config.js");
+    const VALUES = { [L.LENGTH_FLEXIBLE]: "flex-value", [L.LENGTH_SHORT]: "short-value" };
+    const g = { prefill: "auto", cap: 2000, helper: false };
+    const ctxL = {
+        lengthLabel: v => Object.keys(VALUES).find(k => VALUES[k] === v) || (v ? "custom" : ""),
+        lengthValue: label => VALUES[label] || label,
+        global: {
+            prefill: () => g.prefill, setPrefill: v => { g.prefill = v; },
+            replyCap: () => g.cap, setReplyCap: v => { g.cap = v; },
+            helperBlocks: () => g.helper, setHelperBlocks: v => { g.helper = Boolean(v); },
+        },
+    };
+    const p = { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true, addons: ["color"], storyConfig: { length: "" }, activeStyleId: "dir_v10_ukiyo", aiRule: "x" };
+    const gem = L.loadoutById("gemini-pro");
+    const changes = L.loadoutChanges(p, gem, ctxL);
+    const change = key => changes.find(c => c.key === key);
+    assert(change("mode") && change("mode").to === "v11-voice-megumin" && change("thinking") && change("thinking").to === false && change("geminiJB") && change("geminiJB").to === true && change("replyCap") && change("replyCap").from === 2000 && change("replyCap").to === 0 && change("style") && change("style").to === "dir_v11" && change("length") && change("length").to === L.LENGTH_FLEXIBLE, `what Gemini Pro would change: ${JSON.stringify(changes)}`);
+    assert(g.cap === 2000 && p.mode === "v10-core", "a preview writes nothing");
+    L.applyLoadout(p, gem, ctxL);
+    assert(p.mode === "v11-voice-megumin" && p.model === "cot-v11-voice-english" && p.cotEnabled === false && p.addons.includes("gemini_jb") && p.addons.includes("color") && p.activeStyleId === "dir_v11" && p.aiRule !== "x" && p.storyConfig.length === "flex-value" && g.cap === 0 && g.prefill === "auto" && g.helper === false && p.loadout === "gemini-pro", `Gemini Pro in use: ${JSON.stringify(p)} ${JSON.stringify(g)}`);
+    assert.deepEqual(L.changedFromLoadout(p, gem, ctxL), [], "in use: nothing differs from it");
+    p.cotEnabled = true;
+    assert.deepEqual(L.changedFromLoadout(p, gem, ctxL), ["thinking"], "a change in its tab shows as changed from the loadout");
+    assert.deepEqual(L.changedFromLoadout(p, L.loadoutById("claude"), ctxL), [], "another loadout: not in use, nothing to compare");
+    // Claude: Gemini JB off elsewhere; a Thinking Cap stays when the engine has one.
+    p.model = "cot-v11-voice-cap-english";
+    L.applyLoadout(p, L.loadoutById("claude"), ctxL);
+    assert(!p.addons.includes("gemini_jb") && p.addons.includes("color") && p.model === "cot-v11-voice-cap-english" && p.cotEnabled === false && p.loadout === "claude", `Claude: ${JSON.stringify(p)}`);
+    // Fast models: thinking on with no cap, the helper on, the prefill off, the short length, HTML off.
+    p.addons.push("html");
+    const fast = L.loadoutById("fast");
+    L.applyLoadout(p, fast, ctxL);
+    assert(p.cotEnabled === true && p.model === "cot-v11-voice-english" && g.helper === true && g.prefill === "off" && p.storyConfig.length === "short-value" && !p.addons.includes("html"), `Fast models: ${JSON.stringify(p)} ${JSON.stringify(g)}`);
+    // The global rows are written once: the other profiles skip them.
+    g.helper = false;
+    L.applyLoadout({ ...p, addons: [...p.addons] }, fast, ctxL, fast.settings, { skipGlobal: true });
+    assert(g.helper === false, "skipGlobal leaves the global rows alone");
+    // Every loadout names an engine and a length label VCRP has, and every row key exists.
+    const modes = new Set(hardcodedLogic.modes.map(m => m.id));
+    const labels = new Set(storyConfigFields.find(f => f.key === "length").options.map(o => o.label));
+    for (const l of L.LOADOUTS) {
+        assert(modes.has(l.settings.mode) && labels.has(l.settings.length), `${l.id}: its engine and length exist`);
+        for (const key of Object.keys(l.settings)) assert(L.settingFor(key), `${l.id}: the ${key} row exists`);
+        assert(L.ENGINE_CHOICES.includes(l.settings.mode), `${l.id}: its engine is offered`);
+    }
+    assert(L.ENGINE_CHOICES.every(id => modes.has(id)), "every engine offered exists");
+}
+console.log("72 ok Model Setup's loadouts (a preview that writes nothing; the engine with its thinking and style, the add-ons, the length and the global rows written; Gemini JB off elsewhere; a Thinking Cap kept; changed from the loadout in use; the global rows written once; every loadout's engine and length exist)");
+
 console.log("\nALL FORK CHECKS PASSED");

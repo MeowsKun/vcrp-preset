@@ -22,6 +22,7 @@
 
 import { localProfile } from "../../core/state.js";
 import { npcUpdatableFields, npcFieldAllowsOp, npcFieldByRole } from "./fields.js";
+import { npcLookup } from "./data.js";
 
 // ── Parsing ─────────────────────────────────────────────────────────────────
 
@@ -109,16 +110,10 @@ function findMatchingLine(lines, needle) {
 export function npcFindByName(name) {
     const bank = localProfile && localProfile.npcBank;
     if (!bank || !Array.isArray(bank.npcs)) return null;
-    const want = String(name || "").trim().toLowerCase();
-    if (!want) return null;
-    return bank.npcs.find(n => String(n.name || "").trim().toLowerCase() === want)
-        // A model that writes "Maya" for "Maya Torres" is addressing the same
-        // person, and refusing the update over a surname helps nobody.
-        || bank.npcs.find(n => {
-            const have = String(n.name || "").trim().toLowerCase();
-            return have && (have.startsWith(want + " ") || want.startsWith(have + " "));
-        })
-        || null;
+    // A model that writes "Maya" for "Maya Torres" is addressing the same person, and
+    // refusing the update over a surname helps nobody. VCRP: V11's name finder (data.js):
+    // a first name, a nickname, a name in brackets; never a guess between two who fit.
+    return npcLookup(bank.npcs, name);
 }
 
 let _historySeq = 0;

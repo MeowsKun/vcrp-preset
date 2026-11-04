@@ -467,6 +467,11 @@ export function setMemoryTaskActive(on, standalone = null) {
     taskStandalone = on && Array.isArray(standalone) ? standalone : null;
 }
 export const memoryTaskActive = () => taskActive;
+/** The standalone call's own messages (copies), for a helper model that sends them itself; null otherwise. */
+export function memoryStandaloneMessages() {
+    return taskActive && taskStandalone ? taskStandalone.map(m => ({ ...m })) : null;
+}
+
 /** True while a standalone summary call (a prompt of its own) is being built. */
 export const memoryTaskStandalone = () => !!taskStandalone;
 

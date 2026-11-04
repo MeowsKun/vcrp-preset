@@ -46,6 +46,17 @@ export function setActiveGenerationOrder(v) { activeGenerationOrder = v; }
 export let activeBlockRepair = null;
 export function setActiveBlockRepair(v) { activeBlockRepair = v; }
 
+// VCRP: the blocks the helper model writes after a reply (vcrp/helper/blocks.js):
+// { system, user, index }. The handler sends those two messages and nothing else.
+export let activeHelperBlocks = null;
+export function setActiveHelperBlocks(v) { activeHelperBlocks = v; }
+
+// VCRP: true while a helper job runs on its own connection profile (vcrp/helper/index.js).
+// The payloads above are then that job's: a prompt built for the story's connection
+// meanwhile (a reply the reader sends) leaves them alone.
+export let helperOwnsPayloads = false;
+export function setHelperOwnsPayloads(v) { helperOwnsPayloads = Boolean(v); }
+
 // ── NPC reference images for the current generation ──────────────────────────
 // An array rather than a single payload: several NPCs can be attached at once.
 // Pushed into during collection, emptied at the start and end of a run.
@@ -70,6 +81,7 @@ export function isBackgroundGenerationActive() {
         activeNpcUpdateRequest ||
         activeGenerationOrder ||
         activeFocusAudit ||
-        activeBlockRepair
+        activeBlockRepair ||
+        activeHelperBlocks
     );
 }

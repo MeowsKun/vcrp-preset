@@ -3,6 +3,7 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { generateQuietPrompt, getContext } from "../../st.js";
+import { runHelperJob } from "../../vcrp/helper/index.js";
 import { extensionName } from "../../core/constants.js";
 import { localProfile } from "../../core/state.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
@@ -488,13 +489,15 @@ export async function handleDirectiveGeneration(sp, btn, isEvolve) {
     }
 }
 
+// VCRP: on the helper model when its Story Director job is on (vcrp/helper); the payload is
+// parked inside the job, when it runs. What the helper writes is on its own bill.
 export async function generateStoryPlanLogic(chatText) {
-    setActiveStoryPlanRequest(chatText);
-    try {
-        let rawOutput = await generateQuietPrompt({ prompt: "___PS_STORY_PLAN___" });
-        vcrpCountBackgroundOutput(rawOutput);
-        return rawOutput;
-    } finally {
-        setActiveStoryPlanRequest(null);
-    }
+    const r = await runHelperJob("director", async () => {
+        setActiveStoryPlanRequest(chatText);
+        try { return await generateQuietPrompt({ prompt: "___PS_STORY_PLAN___" }); } finally { setActiveStoryPlanRequest(null); }
+    });
+    if (r.stopped || r.failed) return "";
+    const rawOutput = typeof r.value === "string" ? r.value : "";
+    if (r.route !== "profile") vcrpCountBackgroundOutput(rawOutput);
+    return rawOutput;
 }

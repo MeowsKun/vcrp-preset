@@ -126,7 +126,7 @@ export function npcsInScene(npcs) {
     const names = sceneNames();
     if (!names.length || !Array.isArray(npcs) || !npcs.length) return [];
     const people = {};
-    npcs.forEach((n, i) => { if (n && n.name) people[`n${i}`] = { name: n.name }; });
+    npcs.forEach((n, i) => { if (n && n.name) people[`n${i}`] = { name: n.name, aliases: Array.isArray(n.aliases) ? n.aliases : [] }; });
     const out = new Set();
     for (const name of names) {
         const k = whoIs(people, name, { nickname: true });

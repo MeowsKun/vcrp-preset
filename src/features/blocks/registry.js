@@ -203,12 +203,18 @@ export function meguminActiveBlocks() {
 // The instruction is a literal skeleton rather than a description of one. Models
 // follow a structure they can see far more reliably than a structure they have to
 // infer from prose, and the templates were already fill-in-the-blank.
-export function buildBlocksEnvelope(dict) {
-    const active = meguminActiveBlocks();
+// VCRP: `skip` leaves blocks out (the ones the helper model writes after the reply,
+// vcrp/helper/blocks.js); `only` keeps just those (the helper's own prompt), `header` is its
+// opening line in place of the story model's, and `notebook: false` leaves the Author's
+// Notebook out (the story model always writes it).
+export function buildBlocksEnvelope(dict, { skip = null, only = null, header: headerText = null, notebook: withNotebook = true } = {}) {
+    const active = meguminActiveBlocks().filter(b => b && (!skip || !skip.has(b.id)) && (!only || only.has(b.id)));
     // VCRP: the Author's Notebook is not a block in the stack; it rides in the envelope
     // whenever it is on, even with no other block (Megumin Suite V11).
     let notebook = null;
-    try { notebook = notebookBlockRequest(); } catch (e) { console.warn("[VCRP] Notebook: could not build its request.", e); }
+    if (withNotebook) {
+        try { notebook = notebookBlockRequest(); } catch (e) { console.warn("[VCRP] Notebook: could not build its request.", e); }
+    }
     // VCRP: the scene list first (Megumin Suite V11): every block after it is written with
     // the names already set.
     let scene = null;
@@ -267,7 +273,7 @@ export function buildBlocksEnvelope(dict) {
     const rulesText = rules.length
         ? `These rules say how to fill the blocks below. Follow them; never write them out.\n\n${rules.join("\n\n")}\n\n`
         : "";
-    const header = [
+    const header = headerText || [
         "## At the end of your response, output exactly one <Blocks> section.",
         "Put every block inside it, in this order, each in its own tag. Do not add tags that are not listed. Do not nest blocks inside each other. Close every tag you open. Never wrap a block in <details> or <summary>; the interface draws the header and the fold itself.",
         "The blocks are a sidebar for the reader, outside the story: nothing in them counts as revealed in the prose, and no character knows it."

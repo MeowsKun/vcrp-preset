@@ -10,6 +10,8 @@
 import { extension_settings, getContext, event_types } from "../st.js";
 import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem, vcrpRouteMarksCache, vcrpModelReasonsHidden } from "./generation.js";
 import { vcrpGenerationRecords } from "./generationTrace.js";
+import { helperSettings, helperJobWanted, HELPER_JOBS, CURRENT_CONNECTION } from "./helper/settings.js";
+import { connectionProfiles, isChatProfile, canSendToProfile } from "./helper/index.js";
 import { escapeHtmlAttr } from "../utils/html.js";
 import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memoryState, estimateTokens, memoryCanReachPrompt } from "./memory/index.js";
 import { autoSummaryHold } from "./memory/summarize.js";
@@ -212,6 +214,9 @@ export function vcrpHealthCheck() {
             "Megumin Suite V11's Gemini loadouts turn it on: it helps Gemini get through gritty and heavy NSFW scenes without cutting the reply off (not for NSFL). Global Toggles & Add-ons → Gemini JB.");
     }
 
+    // The helper model: its connection, and whether this SillyTavern can send to it.
+    helperChecks(add);
+
     // How the last replies ended, from the API's own answers (generationTrace.js).
     lastRepliesCheck(add);
 
@@ -308,6 +313,40 @@ function longChatChecks(add, ctx, cc, source, model) {
     } else {
         add("ok", `Story Memory on: after a break the prompt is cut to about ${Math.round(budget.coldTokens / 1000)}k tokens`);
     }
+}
+
+/** The helper model (vcrp/helper): on with no connection, a connection that is gone or of the wrong kind, a SillyTavern that cannot send to it, untested. */
+function helperChecks(add) {
+    let h;
+    try { h = helperSettings(); } catch (e) { return; }
+    if (!h.enabled) return;
+    const jobs = HELPER_JOBS.filter(j => helperJobWanted(j.key)).map(j => j.title).join(", ") || "nothing yet";
+    if (!h.profileId) {
+        add("warn", "The helper is on, but has no connection",
+            "Pick one in the Helper tab (a connection profile, or Use my current connection). Until then its jobs run on your story model.");
+        return;
+    }
+    if (h.profileId === CURRENT_CONNECTION) {
+        add("ok", "The helper runs on your current connection", `Its jobs (${jobs}) run on the story's model, one at a time, never while a reply is being written.`);
+        return;
+    }
+    const p = connectionProfiles().find(x => x.id === h.profileId);
+    if (!p) {
+        add("warn", "The helper's connection profile is gone", "The profile picked in the Helper tab no longer exists. Pick another there; until then its jobs run on your story model.");
+        return;
+    }
+    if (!isChatProfile(p)) {
+        add("error", `The helper's profile (${p.name}) is a Text Completion profile`, "The helper works with Chat Completion only. Pick another profile in the Helper tab.");
+        return;
+    }
+    if (!canSendToProfile()) {
+        add("error", "This SillyTavern can't send a request to the helper's profile",
+            "It lacks the connection manager's request service (newer SillyTavern versions have it). Pick Use my current connection in the Helper tab, or update SillyTavern; until then the helper's jobs run on your story model.");
+        return;
+    }
+    const tested = h.testedProfileId === h.profileId;
+    add(tested ? "ok" : "info", `The helper is ready on ${p.name}`,
+        `${tested ? "Tested." : "Press Test in the Helper tab once, to check it answers."} It does: ${jobs}. Its calls go straight to that profile and are not counted in Story Memory's spend.`);
 }
 
 const LIMIT_BY = { cap: "VCRP's Safety cap", hold: "VCRP's Hold each reply to the target", "": "SillyTavern's Max Response Length" };

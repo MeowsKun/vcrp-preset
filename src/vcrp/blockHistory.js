@@ -215,6 +215,11 @@ function onlyActive(state) {
     return /<\w/.test(inner) ? `${m[1]}${inner}${m[3]}` : "";
 }
 
+/** The latest complete blocks, only those still in the stack ("" when none is left). */
+export function activeBlocksState() {
+    return onlyActive(lastBlocksState());
+}
+
 /** What the per-turn block instructions add: last turn's blocks, as the starting point. */
 export function previousBlocksNote() {
     const carried = carriedTrackerNote();

@@ -33,6 +33,7 @@ import { vcrpMemoryCountTaskOutput } from "./memory/index.js";
 import { notebookOn, notebookCurrentPhase } from "./notebook/index.js";
 import { vcrpWithoutSwipedReply } from "./generation.js";
 import { vcrpLastGeneration } from "./generationTrace.js";
+import { helperRoutedIdSet } from "./helper/routes.js";
 
 export const TASK_MARKER = "[VCRP BLOCKS";
 const WAIT_MS = 1500;      // after the reply: let SillyTavern save and draw it, and the other handlers run
@@ -63,8 +64,11 @@ export function requiredBlocks(chat) {
     let active = [];
     try { active = meguminActiveBlocks(); } catch (e) { active = []; }
     // A custom block on "Every few replies" only on the turns it is due (vcrp/customDue.js).
+    // A block the helper model writes after the reply (vcrp/helper) is not the reply's to write.
+    let routed = new Set();
+    try { routed = helperRoutedIdSet(); } catch (e) { routed = new Set(); }
     const out = active
-        .filter(b => b && b.tag && !b.transient && !b.slot && !b.lead && !b.carry && b.group !== "notebook" && (b.builtin || customBlockDueNow(b)))
+        .filter(b => b && b.tag && !b.transient && !b.slot && !b.lead && !b.carry && b.group !== "notebook" && (b.builtin || customBlockDueNow(b)) && !routed.has(b.id))
         .map(b => ({ tag: b.tag, label: b.label || b.tag }));
     // The Notebook, on the turn that writes it (the setup); its updates are optional.
     try {
@@ -133,6 +137,10 @@ const busy = () => !!activeBlockRepair || otherTaskRunning() || memorySummaryRun
 // What runs on a repaired reply (the NPC capture, the Story Director's tracker: index.js).
 const followUps = new Set();
 export function onBlocksRepaired(fn) { followUps.add(fn); }
+/** Runs them on a reply whose blocks were written after it (here, or by the helper model). */
+export function runBlockFollowUps(id) {
+    for (const fn of followUps) { try { fn(Number(id)); } catch (e) { console.warn("[VCRP] Blocks: a follow-up failed", e); } }
+}
 
 function task(need) {
     const names = need.tags.map(b => b.label).join(", ");
@@ -214,6 +222,8 @@ export function vcrpBlockRepairOnReply(messageId, type) {
     const id = Number(messageId);
     const msg = chat[id];
     if (!msg || msg.is_user || msg.is_system || typeof msg.mes !== "string" || id === 0) return;
+    // SillyTavern starts a new swipe with a copy of the last one's extras: a swipe is a reply of its own.
+    if (type === "swipe" && msg.extra) delete msg.extra.vcrp_blocks_repair;
     if (msg.extra && msg.extra.vcrp_blocks_repair) return;   // once per reply
     if (blankReplyKind(msg.mes)) return;
     if (!missingBlocks(msg.mes, requiredBlocks(vcrpWithoutSwipedReply(chat)))) return;

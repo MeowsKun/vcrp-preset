@@ -66,6 +66,10 @@ import {
 } from "./src/features/blocks/registry.js";
 import { meguminCleanChatHistoryText, getChatForNpcScan, escapeRegex } from "./src/engine/chatText.js";
 import { useMeguminEngine } from "./src/engine/tasks.js";
+import { npcFileDossier } from "./src/features/npc/data.js";
+import { vcrpHelperBlocksOnReply } from "./src/vcrp/helper/blocks.js";
+import { stopHelperJobsForOtherChats } from "./src/vcrp/helper/index.js";
+import { initHelperIndicator, vcrpHelperSendGuard } from "./src/vcrp/helper/indicator.js";
 import { vcrpChatForStoryDirector } from "./src/vcrp/backgroundCosts.js";
 import { escapeHtmlAttr } from "./src/utils/html.js";
 import { downloadJsonFile } from "./src/utils/download.js";
@@ -86,7 +90,7 @@ import { SD_GENRES, renderStoryPlanner, generateStoryPlanLogic } from "./src/fea
 import { renderBanList } from "./src/features/banlist/ui.js";
 import { memGetCachedKeywords } from "./src/core/keywords.js";
 import { vcrpMemoryUpdateVisuals, vcrpMemoryOnMessageDeleted, vcrpMemoryCountReply } from "./src/vcrp/memory/index.js";
-import { npcBuildTextFromData, npcParseBlock, meguminFindNpcDossiers, npcCreateRecord } from "./src/features/npc/data.js";
+import { npcBuildTextFromData, meguminFindNpcDossiers } from "./src/features/npc/data.js";
 import { npcParseUpdateBlocks, npcApplyUpdates, npcUndoHistoryEntry } from "./src/features/npc/updates.js";
 import { renderNpcBank, renderNpcList } from "./src/features/npc/ui.js";
 import {
@@ -393,6 +397,10 @@ jQuery(async () => {
             });
             // VCRP: remember whether this is a reply, Continue, Impersonate or a quiet call.
             eventSource.on(event_types.GENERATION_STARTED, vcrpSetGenerationType);
+            // VCRP: the helper model (a second connection for the blocks and the background jobs):
+            // its working pill, and a reply that waits for the last reply's blocks to be written.
+            initHelperIndicator();
+            eventSource.on(event_types.GENERATION_STARTED, vcrpHelperSendGuard);
             // VCRP: a sideways scroll inside wide content in a message is not a swipe.
             vcrpInstallSwipeGuard();
             [event_types.APP_READY, event_types.CHAT_CHANGED].forEach(evt => { if (evt) eventSource.on(evt, () => vcrpInstallSwipeGuard()); });
@@ -417,6 +425,7 @@ jQuery(async () => {
                 // belong to a request made there.
                 vcrpCacheCheckReset();
                 forgetReplyRoom();
+                stopHelperJobsForOtherChats();   // the helper's jobs for the chat you left: stopped, not run for nothing
                 forgetOneShotPending();
                 setPendingRolls(null);
                 forgetCostPending();
@@ -478,6 +487,9 @@ jQuery(async () => {
             // VCRP: a reply without its blocks gets them asked for in a second call, once the
             // handlers above have had it (it waits for the reply to be saved and drawn).
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpBlockRepairOnReply));
+            // VCRP: the helper model writes the reply's blocks (vcrp/helper/blocks.js), after the
+            // handlers above have had the reply.
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpHelperBlocksOnReply));
             // Reply length: the safety cap on the request itself (where SillyTavern has the event).
             if (event_types.CHAT_COMPLETION_SETTINGS_READY) eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, whenOn(vcrpApplyReplyCap));
             // VCRP budgeted memory: summarize the next stretch after a reply, when due.
@@ -608,19 +620,17 @@ jQuery(async () => {
                             let added = false;
                             let matched = dossiers.length > 0;
                             for (const dossier of dossiers) {
-                                const npcName = dossier.name;
-                                const npcContent = dossier.raw;
-                                if (!npcBank.npcs) npcBank.npcs = [];
-                                if (!npcBank.npcs.find(n => (n.name || "").trim().toLowerCase() === npcName.toLowerCase())) {
-                                    // Parse structured fields from the raw block
-                                    const parsed = dossier.parsed || npcParseBlock(npcContent);
-                                    npcBank.npcs.push(npcCreateRecord({
-                                        parsed,
-                                        name: npcName,
-                                        messageIndex: lastIndex
-                                    }));
+                                // VCRP: a dossier for someone already on file under a longer name, a
+                                // nickname or a name in brackets fills that record's empty fields
+                                // instead of making a second one (V11's name finder, npc/data.js).
+                                const filed = npcFileDossier(npcBank, dossier, { messageIndex: lastIndex });
+                                if (filed.added) {
                                     added = true;
-                                    toastr.success(`NPC added to Bank: ${npcName}`, "VCRP");
+                                    toastr.success(`NPC added to Bank: ${dossier.name}`, "VCRP");
+                                    if ($("#npc_bank_list").length) renderNpcList();
+                                } else if (filed.merged && filed.filled.length) {
+                                    added = true;
+                                    toastr.info(`${dossier.name} is ${filed.merged} on file: ${filed.filled.join(", ")} filled in.`, "VCRP — NPC Bank");
                                     if ($("#npc_bank_list").length) renderNpcList();
                                 }
                             }

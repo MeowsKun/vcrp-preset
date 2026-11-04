@@ -39,7 +39,7 @@ export const TAB_SYNC_KEYS = {
 
 // These two are stored globally already, so there is nothing per-character to keep
 // in step and the toggle has no meaning on them.
-export const TABS_ALREADY_GLOBAL = ["Global Settings"];
+export const TABS_ALREADY_GLOBAL = ["Global Settings", "Helper", "Model Setup"];
 
 // ── Story Config's own opt-out ───────────────────────────────────────────────
 //

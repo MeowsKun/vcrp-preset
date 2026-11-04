@@ -521,6 +521,66 @@ Someone who walks out and comes back ninety messages later comes back as they le
 (BLOCKS tab, under World State, or under Bonds without it). Pura's trackers already carry each
 character's newest entry.
 
+### The Helper: a second model for the blocks and the background jobs
+
+Megumin Suite V11's Chomusuke, in VCRP's terms (`src/vcrp/helper/`): a second connection that
+does the background work, so the story model writes only the story. One setup for every
+character, in the **Helper** tab.
+
+- **Its connection:** a SillyTavern connection profile (API Connections: connect the helper's
+  model, save a profile, connect your story model again; the profile needs only the API and the
+  model), or *Use my current connection*. **Test** sends one short question. Each job is sent
+  straight to the profile through SillyTavern's connection manager
+  (`ConnectionManagerRequestService.sendRequest`): your story connection never changes, nothing
+  switches, the chat never reloads. A SillyTavern without that service runs the jobs on the story
+  model, and Setup Check says so.
+- **Blocks, after every reply** (on when the helper is on): the helper writes the scene list,
+  World State, Bonds, the sheets and your custom blocks (one tick each), and VCRP puts its
+  `<Blocks>` at the end of the reply, as if the story model had written it. The story model is not
+  asked for those blocks: its block instructions keep only what is left to it (the Author's
+  Notebook and Pura's state-carrying trackers always stay with it) and it reads where the blocks
+  stood instead. Everything after works as before: the card, the carry to the next turn, the
+  NPC capture, the strip from the history. Once per reply, a swipe being a reply of its own;
+  never for the greeting or a blank reply; *Write the last reply's blocks again* does it over.
+  The helper gets the same templates and rules the story model would have, the blocks as they
+  stood, the last few messages and the latest exchange.
+- **When the job runs:** NPC scans and updates, the Story Director, the ban list scan and the
+  writing-style generator go to the helper by default; Story Memory summaries and Focus audits
+  only if you switch them (a summary on the story model reads the stretch from its cache for a
+  few cents; the helper reads it fresh, in a standalone call).
+- **One job at a time.** A pill at the bottom of the screen shows a running job, with Stop; a
+  reply you send while the helper still writes the last reply's blocks waits for it (at most 30
+  seconds, with a line under the input), so the next prompt carries them. Leaving a chat stops
+  its queued jobs. While a job runs on the profile, the payload it parked for VCRP's prompt
+  handler is its own: a prompt built for the story's connection meanwhile leaves it alone.
+- **When something goes wrong** it is said in plain words: a refused key, a rate limit, a
+  provider outage, a model that is not there; an empty answer (a censored model refusing an
+  NSFW story) once per chat; an answer in the wrong shape. The helper gets no jailbreak, so use
+  an uncensored or less censored model (GLM 5.3 Flash, DeepSeek 4.1 Flash). Its calls are not
+  counted in Story Memory's spend estimate.
+
+### Model Setup
+
+Megumin Suite V11's loadouts, in VCRP's terms (`src/vcrp/modelSetup/`), the first tab. Pick the
+model you play with (Gemini Pro, Gemini Flash, Claude, Big open models, Fast models) and see the
+settings tested for it: the engine (with its thinking and writing style), Chain of Thought and
+its cap, the story length, Immersive HTML, Gemini JB, the CoT prefill, the Safety cap and the
+helper. A loadout not in use shows its own settings as a preview (change any before using it);
+the one in use shows the real settings, so a change there is a change in its tab. **Use this
+loadout** lists what it would change before anything is written, for every character or this one
+only; the prefill, the Safety cap and the helper are the same for every character either way.
+Optional: skipping it, or playing a model that is not listed, breaks nothing.
+
+### The NPC Bank knows a short name
+
+V11's name finder (`src/state/names.js`, `whoIs`) in the bank (`src/features/npc/data.js`,
+`npcLookup`): "Resha" for Resha Helios, a nickname, a name in brackets ("Dominic" for "Dom
+(Dominic Morin)"), never a guess between two who fit ("Lady" for Lady Mira and Lady Resha picks
+nobody) and never a surname alone. An `<NPC_Update>` by a short name applies; a dossier the story
+writes for someone already on file fills that record's empty fields instead of making a second
+one; the short name is kept as the character's nickname (shown on the card) and finds them ever
+after, in the scene list too.
+
 ### The On/Off switch, lore for background calls
 
 - **On / Off** on the top bar of the VCRP window: off, VCRP steps aside. The prompt goes out as

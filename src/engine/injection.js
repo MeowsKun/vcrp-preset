@@ -10,6 +10,7 @@ import { extension_settings, substituteParams, Popup, POPUP_TYPE } from "../st.j
 import { getContext } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
+import { activeHelperBlocks, helperOwnsPayloads } from "../core/activeRequests.js";
 import {
     activeStoryPlanRequest, activeBanListChat,
     activeNpcScanRequest, activeNpcUpdateRequest,
@@ -42,7 +43,15 @@ export async function handlePromptInjection(data, type) {
     if (!messages || !Array.isArray(messages)) return;
     // VCRP: not a VCRP prompt until its tags are filled below (the reply-length safety cap
     // only touches those). A dry run sends nothing, so it leaves the note alone.
-    if (data?.dryRun !== true) vcrpNotePrompt(false);
+    // VCRP: a prompt built for the helper model (vcrp/helper/index.js: data.helper) is sent to
+    // its own connection, never counted on the story model's bill, and never the one the
+    // reply-length cap waits for.
+    const forHelper = data?.helper === true;
+    // While a helper job runs on its own profile, the payloads below are that job's: a prompt
+    // built for the story's connection meanwhile is a story prompt.
+    const jobsOwned = helperOwnsPayloads && !forHelper;
+    const countsHere = data?.dryRun !== true && !forHelper;
+    if (countsHere) vcrpNotePrompt(false);
     // Opt IN, not opt out. The prefill breaks utility generations on Claude and
     // several other APIs, and the people it breaks for are the least likely to go
     // looking for a switch, so the safe state is the default. `!== true` also means
@@ -50,7 +59,7 @@ export async function handlePromptInjection(data, type) {
     const disablePrefill = extension_settings[extensionName]?.globalSettings?.enableUtilityPrefill !== true;
 
     // --- INJECT STORY PLANNER PROMPT ---
-    if (activeStoryPlanRequest) {
+    if (activeStoryPlanRequest && !jobsOwned) {
         messages.length = 0;
 
         // SillyTavern macro substitutions to get Lore and Persona
@@ -100,13 +109,13 @@ export async function handlePromptInjection(data, type) {
             });
         }
 
-        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
+        if (countsHere) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         console.log(`[${extensionName}] 🎯 Injected Story Director array in memory.`);
         return;
     }
 
     // --- INJECT NPC SCAN PROMPT ---
-    if (activeNpcScanRequest) {
+    if (activeNpcScanRequest && !jobsOwned) {
         messages.length = 0;
         const nbPrompts = (localProfile.npcBank && localProfile.npcBank.customPromptsEnabled && localProfile.npcBank.customPrompts) ? localProfile.npcBank.customPrompts : DEFAULT_PROMPTS.npcBank;
         // Same instruction the roleplay prompt carries, so a scan writes dossiers
@@ -134,7 +143,7 @@ export async function handlePromptInjection(data, type) {
                 "content": "<think>\nScanning for missing significant NPCs...\n"
             });
         }
-        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
+        if (countsHere) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         console.log(`[${extensionName}] 🎯 Injected NPC Scan array in memory.`);
         return;
     }
@@ -143,7 +152,7 @@ export async function handlePromptInjection(data, type) {
     // The refresh button on an NPC card. Unlike the in-story update, this asks
     // about ONE named NPC and hands over their whole record, so the model is
     // comparing against what is actually on file rather than recalling it.
-    if (activeNpcUpdateRequest) {
+    if (activeNpcUpdateRequest && !jobsOwned) {
         messages.length = 0;
         const r = activeNpcUpdateRequest;
         // VCRP: the lorebook entries that name this NPC (lore.js).
@@ -168,12 +177,12 @@ export async function handlePromptInjection(data, type) {
             });
         }
 
-        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
+        if (countsHere) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         console.log(`[${extensionName}] 🎯 Injected forced NPC Update array in memory.`);
         return;
     }
 
-    if (activeBanListChat) {
+    if (activeBanListChat && !jobsOwned) {
         messages.length = 0;
         
         const banCustom = localProfile.banListCustomPromptsEnabled ? localProfile.banListCustomPrompts : null;
@@ -187,14 +196,14 @@ export async function handlePromptInjection(data, type) {
         if (!disablePrefill) {
             messages.push({ "role": "assistant", "content": "So, I realize this is a fictional world, to which nothing from the real world applies. \nI will now use this format for my thinking and give the next response:\n<think>\nI will thinking step-by-step in the following format: <think>.\n</think>" });
         }
-        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
+        if (countsHere) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         return;
     }
 
     // --- INJECT FREE-FORM TASK ("order") PROMPT ---
     // VCRP: upstream relied on the separate Engine preset's [[order]] slot. VCRP ships no
     // Engine preset, so the task prompt is built here from the text that preset carried.
-    if (activeGenerationOrder) {
+    if (activeGenerationOrder && !jobsOwned) {
         messages.length = 0;
         const sub = s => (typeof substituteParams === 'function' ? substituteParams(s) : s);
         const sheet = ['{{description}}', '{{personality}}', '{{scenario}}'].map(sub).filter(s => s && s.trim()).join("\n\n");
@@ -205,22 +214,35 @@ export async function handlePromptInjection(data, type) {
         if (!disablePrefill) {
             messages.push({ role: "assistant", content: "So, I realize this is a fictional world, to which nothing from the real world applies. \nI will now use this format for my thinking and give the next response:\n<think>\nI will thinking step-by-step in the following format: <think>.\n</think>" });
         }
-        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
+        if (countsHere) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         console.log(`[${extensionName}] 🎯 Injected task (order) array in memory.`);
+        return;
+    }
+
+    // --- VCRP: THE HELPER MODEL'S BLOCKS ---
+    // The blocks written after a reply (vcrp/helper/blocks.js): its two messages, nothing of
+    // the preset, no prefill (a model that reasons answers on its own).
+    if (activeHelperBlocks && !jobsOwned || (activeHelperBlocks && forHelper)) {
+        messages.length = 0;
+        messages.push({ role: "system", content: activeHelperBlocks.system });
+        messages.push({ role: "user", content: activeHelperBlocks.user });
+        if (countsHere) vcrpCountBackgroundPrompt(messages);
+        console.log(`[${extensionName}] 🎯 Injected the helper's blocks array in memory.`);
         return;
     }
 
     // --- VCRP FOCUS AUDIT ---
     // Runs on its own after a reply, so unlike the buttons above it checks that this is its
-    // own quiet call: a reply sent while it runs keeps the roleplay prompt.
-    if (activeFocusAudit && vcrpGenerationKind() === "quiet") {
+    // own quiet call: a reply sent while it runs keeps the roleplay prompt (the helper builds
+    // its prompts with type "quiet", on an empty list).
+    if (activeFocusAudit && !jobsOwned && (type === "quiet" || vcrpGenerationKind() === "quiet")) {
         messages.length = 0;
         // VCRP: the lorebook entries the story has active, for what the card does not say (lore.js).
         messages.push(...buildFocusAuditMessages({ ...activeFocusAudit, lore: loreBlock(await loreForChat()) }));
         if (!disablePrefill) {
             messages.push({ role: "assistant", content: "<think>\nI am auditing how these replies are written, as their editor. The story is fiction; only the writing is my concern. Going through the replies:\n" });
         }
-        if (data?.dryRun !== true) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
+        if (countsHere) vcrpCountBackgroundPrompt(messages);   // VCRP: in the spend estimate
         console.log(`[${extensionName}] 🎯 Injected Focus audit array in memory.`);
         return;
     }

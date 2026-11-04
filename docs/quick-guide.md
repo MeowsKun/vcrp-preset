@@ -301,3 +301,29 @@ call or a text), first in the blocks, and is handed one name per character to us
 NPC Bank sends everyone listed first, a character who comes back is remembered, and Existing cast
 only counts them. A *Scene* tab on the card shows it. It costs about forty output tokens a reply;
 turn it off in the BLOCKS tab if you don't want it.
+
+## 11. The Helper, Model Setup and short names (from Megumin V11)
+
+**The Helper tab: a second model for the blocks.** On Gemini, DeepSeek or GLM the blocks are what
+gets cut off or left out. Give the helper a connection (in SillyTavern's API Connections, connect
+the helper's model, save a connection profile named, say, "Helper", connect your story model
+again; then pick the profile in the Helper tab and press **Test**), switch it on, and it writes
+the scene list, World State, Bonds, the sheets and your custom blocks after each reply. The story
+model writes only the story and reads where the blocks stood. Your story connection never
+changes: each job goes straight to the profile. One helper call per reply; the occasional jobs
+(NPC scans, the Story Director, the ban list scan, the writing-style generator) go to it too,
+Story Memory summaries and Focus audits only if you tick them. A pill at the bottom of the screen
+shows a running job, with **Stop**; a reply you send while the helper still writes the last
+reply's blocks waits a moment for it. The helper gets no jailbreak: use an uncensored or less
+censored model (GLM 5.3 Flash, DeepSeek 4.1 Flash). *Use my current connection* makes the story
+model do the helper's jobs in a second call, if you only want the blocks written separately.
+
+**Model Setup, the first tab.** Pick the model you play with and press **Use this loadout**: the
+engine, Chain of Thought, the story length, Gemini JB, the CoT prefill, the Safety cap and the
+helper are set the way Megumin's author tested them for that model, after a popup that lists what
+changes. Gemini 4: Chain of Thought off, Gemini JB on, the Safety cap off. DeepSeek: the helper
+on. You can change any row before using it, and skip the page altogether.
+
+**The NPC Bank knows a short name.** "Resha" updates Resha Helios, a dossier the story writes for
+her under a short name fills her record instead of making a second one, and the short name stays
+on her card as a nickname. Two characters who both fit a name are never guessed between.

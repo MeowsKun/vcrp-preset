@@ -16,9 +16,11 @@ export { extension_settings, getContext } from "../../../../extensions.js";
 
 // SillyTavern's saveChat() refuses a group chat (it throws). saveChatConditional saves either
 // kind (what getContext().saveChat does), so it is what "saveChat" means below (V11's 04/11 fix).
-export {
+// The quiet prompt is wrapped below: while a helper job runs on its own connection
+// (vcrp/helper/index.js), every quiet prompt goes there instead.
+import {
     saveSettingsDebounced,
-    generateQuietPrompt,
+    generateQuietPrompt as stGenerateQuietPrompt,
     event_types,
     eventSource,
     substituteParams,
@@ -33,6 +35,22 @@ export {
     isGenerating,
 } from "../../../../../script.js";
 
+export {
+    saveSettingsDebounced,
+    event_types,
+    eventSource,
+    substituteParams,
+    saveChat,
+    reloadCurrentChat,
+    addOneMessage,
+    getRequestHeaders,
+    appendMediaToMessage,
+    updateMessageBlock,
+    chat_metadata,
+    saveMetadata,
+    isGenerating,
+};
+
 export { saveBase64AsFile, debounce, cancelDebounce } from "../../../../utils.js";
 export { humanizedDateTime } from "../../../../RossAscends-mods.js";
 export { Popup, POPUP_TYPE } from "../../../../popup.js";
@@ -42,3 +60,24 @@ export { Popup, POPUP_TYPE } from "../../../../popup.js";
 import * as worldInfo from "../../../../world-info.js";
 export const checkWorldInfo = typeof worldInfo.checkWorldInfo === "function" ? worldInfo.checkWorldInfo : null;
 export const getSortedEntries = typeof worldInfo.getSortedEntries === "function" ? worldInfo.getSortedEntries : null;
+
+// While a helper job runs on its own connection profile, vcrp/helper/index.js points every
+// quiet prompt here at it. Null the rest of the time.
+let quietRoute = null;
+export function setQuietRoute(fn) { quietRoute = typeof fn === "function" ? fn : null; }
+
+/**
+ * SillyTavern's generateQuietPrompt, with { prompt } and { quietPrompt } both accepted (the
+ * call sites use either), and the helper's route when one is set.
+ * @param {object|string} params
+ * @returns {Promise<string>}
+ */
+export async function generateQuietPrompt(params = {}) {
+    if (typeof params === "string") params = { quietPrompt: params, prompt: params };
+    else if (params && typeof params === "object") {
+        const text = params.quietPrompt ?? params.prompt ?? "";
+        params = { ...params, quietPrompt: text, prompt: text };
+    }
+    if (quietRoute) return await quietRoute(params.quietPrompt);
+    return await stGenerateQuietPrompt(params);
+}

@@ -8,6 +8,7 @@
 import { getContext } from "../../st.js";
 import { localProfile } from "../../core/state.js";
 import { memGetCachedKeywords } from "../../core/keywords.js";
+import { whoIs, nameWords } from "../../state/names.js";
 import { escapeRegex } from "../../utils/regex.js";
 import { npcFields, npcFieldByRole, npcBodyFields, npcVitalsFields } from "./fields.js";
 import { puraFindNpcSheets } from "../../vcrp/pura/npc.js";
@@ -65,7 +66,75 @@ export function npcCreateRecord({ parsed = {}, name = "", messageIndex = 0 } = {
     // single change be undone from the chat card and what lets a rewind put back
     // the value that was true at the message it rewound to.
     record.history = [];
+    // VCRP: the short names the story used for this character ("Resha" for Resha Helios), by
+    // V11's name finder (npcLookup). Read by it ever after, and shown on the card.
+    record.aliases = [];
     return record;
+}
+
+// ── VCRP: one name finder for the bank (Megumin Suite V11's, state/names.js) ─────────────────
+
+/** The bank as the name finder reads it: { "0": { name, aliases }, … } (the keys are indexes). */
+export function npcPeople(npcs) {
+    const people = {};
+    (npcs || []).forEach((n, i) => { if (n && n.name) people[String(i)] = { name: n.name, aliases: Array.isArray(n.aliases) ? n.aliases : [] }; });
+    return people;
+}
+
+/** Remembers a short name the story used for an NPC (at most six). Returns true when it is new. */
+export function npcNoteAlias(npc, name) {
+    const w = nameWords(name);
+    if (!npc || !w || w === nameWords(npc.name)) return false;
+    if (!Array.isArray(npc.aliases)) npc.aliases = [];
+    if (npc.aliases.some(a => nameWords(a) === w) || npc.aliases.length >= 6) return false;
+    npc.aliases.push(String(name).trim());
+    return true;
+}
+
+/**
+ * The NPC a name refers to: an exact match, else V11's name finder (a first name for a full
+ * one, a nickname, a name in brackets; never a guess between two who fit). A short name the
+ * finder resolved is kept as that NPC's nickname.
+ */
+export function npcLookup(npcs, name) {
+    if (!Array.isArray(npcs)) return null;
+    const want = String(name || "").trim().toLowerCase();
+    if (!want) return null;
+    const exact = npcs.find(n => String(n.name || "").trim().toLowerCase() === want);
+    if (exact) return exact;
+    const key = whoIs(npcPeople(npcs), name, { nickname: true });
+    if (key === null || key === undefined) return null;
+    const npc = npcs[Number(key)];
+    if (npc) npcNoteAlias(npc, name);
+    return npc || null;
+}
+
+/** Fills the fields a record has empty from a dossier written for the same character. Returns the labels filled. */
+export function npcMergeDossier(npc, parsed) {
+    const filled = [];
+    npcFields().forEach(f => {
+        if (f.role === "name") return;
+        const have = String(npc[f.id] || "").trim();
+        const give = String((parsed && parsed[f.id]) || "").trim();
+        if (!have && give) { npc[f.id] = give; filled.push(f.label || f.id); }
+    });
+    return filled;
+}
+
+/**
+ * Files a dossier the story wrote: a new record, or, for a name the finder knows (a shorter
+ * name, a nickname, a name in brackets), the empty fields of the record on file.
+ * @returns {{ added: boolean, merged: string|null, filled: string[] }}
+ */
+export function npcFileDossier(bank, dossier, { messageIndex = 0 } = {}) {
+    if (!bank.npcs) bank.npcs = [];
+    const name = String((dossier && dossier.name) || "").trim();
+    if (!name) return { added: false, merged: null, filled: [] };
+    const parsed = (dossier && dossier.parsed) || npcParseBlock((dossier && dossier.raw) || "");
+    const known = npcLookup(bank.npcs, name);
+    if (known) return { added: false, merged: known.name, filled: npcMergeDossier(known, parsed) };
+    bank.npcs.push(npcCreateRecord({ parsed, name, messageIndex }));
+    return { added: true, merged: null, filled: [] };
 }
 
 // Parse raw NPC dossier HTML block into structured fields

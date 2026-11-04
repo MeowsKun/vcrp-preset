@@ -537,5 +537,49 @@ q.blockStack.custom.splice(q.blockStack.custom.findIndex(b => b.id === "blk_diar
 meguminSyncLegacyBlockIds();
 Object.assign(chatCompletionSettings, keepRoute2);
 
+// ── The helper model writes the blocks ───────────────────────────────────────
+// With the helper writing the blocks, the story model is not asked for them: its per-turn
+// block instructions become the blocks as they stood (an editor's notes); the prompt's start
+// is the same as before, so the cache holds across the switch, and the history strip is
+// unchanged (the helper's blocks end the reply like the story model's did).
+section("the helper model writes the blocks: the story model reads where they stood, the prompt start holds");
+{
+    chat.length = 0;
+    for (const k of Object.keys(meta)) delete meta[k];
+    const keepRoute3 = { ...chatCompletionSettings };
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
+    const gs = extension_settings.VCRP.globalSettings;
+    const keepHelper = gs.helper;
+    const keepOrder3 = q.blockStack.order;
+    q.blockStack.order = ["world", "bonds"]; meguminSyncLegacyBlockIds();
+    const replyWas3 = replyFor;
+    replyFor = i => `<think>Turn ${i}.</think>\nProse ${i}.\n\n<Blocks>\n<Scene>\nHere: Mara\nRemote:\n</Scene>\n<World_State>\nNight ${i}\n</World_State>\n<Bonds>\nMara: Mood: wary\n</Bonds>\n</Blocks>`;
+    chat.push({ is_user: false, name: "Mara", send_date: "h0", mes: "\"We're closed,\" Mara says." });
+    // A line of the World State rules: in the prompt of whoever writes the block.
+    const WORLD_RULE = "NPCs Present are the characters on <Scene>'s Here line";
+    const p1 = await send("normal");
+    await arrive(1);
+    ok(p1.map(textOf).join("\n").includes(WORLD_RULE), "helper off: the story model is asked for the blocks");
+    gs.helper = { enabled: true, profileId: "p1", testedProfileId: "", jobs: {}, blockRoutes: {} };
+    const p2 = await send("normal");
+    const t2 = p2.map(textOf).join("\n");
+    ok(!t2.includes(WORLD_RULE) && t2.includes("kept up after each reply by an editor") && t2.includes("Night 1"), "helper on: not asked, told where the blocks stood");
+    const sysBefore = p1.filter(m => m.role === "system").map(textOf).join("\n"), sysAfter = p2.filter(m => m.role === "system").map(textOf).join("\n");
+    ok(sysBefore === sysAfter, "the system instruction is the same as with the helper off", firstDiff([sysBefore], [sysAfter]));
+    const firstUser = p => p.findIndex(m => m.role !== "system");
+    ok(JSON.stringify(p1.slice(firstUser(p1), firstUser(p1) + 2).map(textOf)) === JSON.stringify(p2.slice(firstUser(p2), firstUser(p2) + 2).map(textOf)), "and the chat opens as before");
+    await arrive(2);
+    const p3 = await send("normal");
+    const t3 = p3.map(textOf).join("\n");
+    ok(!t3.includes(WORLD_RULE) && t3.includes("Night 2") && !t3.includes("Night 1\n"), "the next turn: the newest state carried, none asked for");
+    gs.helper = keepHelper;
+    if (gs.helper === undefined) delete gs.helper;
+    replyFor = replyWas3;
+    q.blockStack.order = keepOrder3; meguminSyncLegacyBlockIds();
+    Object.assign(chatCompletionSettings, keepRoute3);
+    chat.length = 0;
+}
+
 console.log(`\n${fail ? `${fail} PROBLEM(S)` : "ALL CHECKS PASSED"} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

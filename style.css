@@ -4211,3 +4211,102 @@
 @media (prefers-reduced-motion: reduce) {
     .dock-icon.has-notice i::after { animation: none; }
 }
+
+/* ── VCRP: the helper model ─────────────────────────────────────────────────── */
+.vcrp-helper-pill {
+    position: fixed;
+    left: 50%;
+    bottom: 76px;
+    transform: translateX(-50%);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(20, 20, 28, 0.92);
+    border: 1px solid rgba(244, 63, 94, 0.45);
+    color: #e5e7eb;
+    font-size: 0.74rem;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    max-width: calc(100vw - 32px);
+}
+.vcrp-helper-pill i { color: #f43f5e; animation: meg-notice-pulse 1.6s ease-in-out infinite; }
+.vcrp-helper-pill-stop, .vcrp-helper-waiting .vcrp-helper-pill-stop {
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: transparent;
+    color: inherit;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    cursor: pointer;
+}
+.vcrp-helper-waiting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 8px;
+    font-size: 0.74rem;
+    color: #e5e7eb;
+    opacity: 0.9;
+}
+.vcrp-helper-waiting i { color: #f43f5e; }
+.vcrp-helper-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 0.72rem;
+    cursor: pointer;
+}
+.vcrp-helper-chip.on { border-color: rgba(244, 63, 94, 0.55); background: rgba(244, 63, 94, 0.12); }
+.vcrp-helper-chip input { margin: 0; }
+
+/* ── VCRP: Model Setup ──────────────────────────────────────────────────────── */
+.vcrp-msx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.vcrp-msx-model {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+}
+.vcrp-msx-model.active { border-color: rgba(14, 165, 233, 0.7); background: rgba(14, 165, 233, 0.12); }
+.vcrp-msx-model-title { font-weight: 700; font-size: 0.82rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.vcrp-msx-model-models { font-size: 0.68rem; opacity: 0.75; }
+.vcrp-msx-inuse { font-size: 0.62rem; color: #10b981; background: rgba(16, 185, 129, 0.15); border-radius: 999px; padding: 1px 7px; }
+.vcrp-msx-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.vcrp-msx-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 8px 12px;
+    align-items: center;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.vcrp-msx-row-label { font-size: 0.78rem; font-weight: 600; }
+.vcrp-msx-row-label .set-desc { font-weight: 400; margin-top: 2px; }
+.vcrp-msx-tag { font-size: 0.6rem; font-weight: 600; border-radius: 999px; padding: 1px 7px; margin-left: 4px; background: rgba(255, 255, 255, 0.1); }
+.vcrp-msx-tag.changed { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.vcrp-msx-open { font-size: 0.68rem !important; white-space: nowrap; }
+.vcrp-msx-seg { display: inline-flex; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px; overflow: hidden; }
+.vcrp-msx-seg button { background: transparent; border: none; color: inherit; padding: 4px 10px; font-size: 0.72rem; cursor: pointer; }
+.vcrp-msx-seg button.on { background: rgba(14, 165, 233, 0.25); }
+.vcrp-msx-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.vcrp-msx-scope { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 0.74rem; }
+.vcrp-msx-habits { margin: 0; padding-left: 18px; font-size: 0.74rem; line-height: 1.5; }
+@media (max-width: 640px) {
+    .vcrp-msx-row { grid-template-columns: 1fr; }
+    .vcrp-helper-pill { bottom: 96px; }
+}

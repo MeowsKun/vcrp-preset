@@ -17,6 +17,8 @@ import { v11Frame, applyMeguminV11Sections, applyMeguminV11Reminder, storySettin
 import { usesCaretWords } from "./caretWords.js";
 import { V11_ADAPTED_STYLE_LEADS } from "../../data/modes/v11Adapted.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
+import { helperRoutedIdSet } from "../vcrp/helper/routes.js";
+import { helperStateNote } from "../vcrp/helper/blocks.js";
 import { notebookCraft, worldHidesSecrets, stripWorldSecrets } from "../vcrp/notebook/index.js";
 import { castMemoryNote } from "../vcrp/castMemory.js";
 import { knownNamesBlock, npcsInScene } from "../vcrp/scene.js";
@@ -650,26 +652,33 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     // VCRP: while the Author's Notebook keeps the hidden things, World State is not asked for each
     // character's Secret or for planted Seeds, unless the reader keeps them (Notebook tab; Megumin V11).
     if (dict["[[infoblock]]"] && worldHidesSecrets()) dict["[[infoblock]]"] = stripWorldSecrets(dict["[[infoblock]]"]);
-    dict["[[blocks]]"] = buildBlocksEnvelope(dict);
+    // VCRP: the blocks the helper model writes after the reply (vcrp/helper/blocks.js) are not
+    // asked of the story model; it reads where they stood instead.
+    const routed = helperRoutedIdSet();
+    const envelope = buildBlocksEnvelope(dict, routed.size ? { skip: routed } : {});
+    dict["[[blocks]]"] = envelope;
     // VCRP: the scene list opens the section (Megumin V11): the final check asks for it so.
-    const sceneFirst = /<Blocks>\s*<Scene\b/i.test(dict["[[blocks]]"]);
+    const sceneFirst = /<Blocks>\s*<Scene\b/i.test(envelope);
     // VCRP: earlier replies go out without their blocks (cache), so last turn's travel here.
-    if (dict["[[blocks]]"]) {
+    if (envelope || routed.size) {
+        const parts = [];
         // VCRP: the names to write in <Scene> and every block (vcrp/scene.js), before the
         // rules that point at them.
         const known = knownNamesBlock();
-        if (known) dict["[[blocks]]"] = `${known}\n\n${dict["[[blocks]]"]}`;
-        const previous = previousBlocksNote();
-        if (previous) dict["[[blocks]]"] += `\n\n${previous}`;
+        if (known) parts.push(known);
+        if (envelope) parts.push(envelope);
+        const previous = routed.size ? helperStateNote() : previousBlocksNote();
+        if (previous) parts.push(previous);
         // VCRP: characters named again but gone from those blocks, as they were last recorded.
         const returning = castMemoryNote();
-        if (returning) dict["[[blocks]]"] += `\n\n${returning}`;
+        if (returning) parts.push(returning);
+        dict["[[blocks]]"] = parts.join("\n\n");
     }
     // Megumin Suite V11 (04/11): the final check asks for the <Blocks> section on a turn that
     // has one (<Scene> first, when the scene list opens it): a story reply, or the second call
     // for a reply's missing blocks (which keeps the block instructions). Continue and
     // Impersonate drop the blocks (generation.js).
-    const blocksSent = Boolean(dict["[[blocks]]"]) && (genKind === "reply" || (genKind === "quiet" && !!activeBlockRepair));
+    const blocksSent = Boolean(envelope) && (genKind === "reply" || (genKind === "quiet" && !!activeBlockRepair));
     applyMeguminV11Reminder(dict, activeEngine, { gen: genKind, blocks: blocksSent ? (sceneFirst ? "scene" : true) : false });
 
     return dict;

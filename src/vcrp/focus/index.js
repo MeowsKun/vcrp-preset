@@ -29,6 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getContext, chat_metadata, saveMetadata, generateQuietPrompt, substituteParams, isGenerating } from "../../st.js";
+import { runHelperJob } from "../helper/index.js";
 import { localProfile } from "../../core/state.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
 import {
@@ -247,18 +248,22 @@ export async function runFocusAudit() {
     const msgs = storyMessages();
     const mark = anchorOf(msgs, msgs.length - 1);
     auditing = true;
-    setActiveFocusAudit(input);
     let raw = "";
     try {
-        raw = await generateQuietPrompt({ prompt: "___PS_FOCUS___" });
+        // On the helper model when its Focus job is on (vcrp/helper); the payload is parked
+        // inside the job, when it runs.
+        const r = await runHelperJob("focus", async () => {
+            setActiveFocusAudit(input);
+            try { return await generateQuietPrompt({ prompt: "___PS_FOCUS___" }); } finally { setActiveFocusAudit(null); }
+        });
+        raw = r.stopped || r.failed ? null : (typeof r.value === "string" ? r.value : "");
+        if (raw && r.route !== "profile") vcrpCountBackgroundOutput(raw);
     } catch (e) {
         console.error("[VCRP] Focus audit failed:", e);
         raw = null;
     } finally {
-        setActiveFocusAudit(null);
         auditing = false;
     }
-    if (raw) vcrpCountBackgroundOutput(raw);
     if (meguminActiveDataIdentity() !== identity) {
         console.debug(`[VCRP] Focus audit discarded: it started on "${identity}" but "${meguminActiveDataIdentity()}" is active now.`);
         return { status: "aborted", reason: "the chat changed" };

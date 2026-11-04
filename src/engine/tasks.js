@@ -12,21 +12,26 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { generateQuietPrompt } from "../st.js";
+import { runHelperJob } from "../vcrp/helper/index.js";
 import { extensionName } from "../core/constants.js";
 import { setActiveBanListChat, setActiveGenerationOrder } from "../core/activeRequests.js";
 import { vcrpCountBackgroundOutput } from "../vcrp/memory/index.js";
 
+// VCRP: on the helper model when its ban list job is on (vcrp/helper); the payload is parked
+// inside the job, when it runs. What the helper writes is on its own bill.
 export async function analyzeSlopDirectly(chatText) {
-    setActiveBanListChat(chatText);
     try {
-        let rawOutput = await generateQuietPrompt({ prompt: "___PS_BANLIST___" });
-        vcrpCountBackgroundOutput(rawOutput);
+        const r = await runHelperJob("banList", async () => {
+            setActiveBanListChat(chatText);
+            try { return await generateQuietPrompt({ prompt: "___PS_BANLIST___" }); } finally { setActiveBanListChat(null); }
+        });
+        if (r.stopped || r.failed) return null;
+        const rawOutput = String(r.value || "");
+        if (r.route !== "profile") vcrpCountBackgroundOutput(rawOutput);
         return rawOutput.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
     } catch (e) {
         console.error(`[${extensionName}] Ban List Analysis Failed:`, e);
         return null;
-    } finally {
-        setActiveBanListChat(null);
     }
 }
 
@@ -50,13 +55,14 @@ export async function useMeguminEngine(task, _targetPreset) {
 
 // A free-form "order" for the AI (style generators etc.). The injection handler
 // replaces the whole prompt with the task prompt built in buildOrderTaskMessages().
+// VCRP: on the helper model when its writing-style job is on (vcrp/helper).
 export async function runMeguminTask(orderText) {
-    setActiveGenerationOrder(orderText);
-    try {
-        const out = await generateQuietPrompt({ prompt: "___PS_DUMMY___" });
-        vcrpCountBackgroundOutput(out);
-        return out;
-    } finally {
-        setActiveGenerationOrder(null);
-    }
+    const r = await runHelperJob("styleGen", async () => {
+        setActiveGenerationOrder(orderText);
+        try { return await generateQuietPrompt({ prompt: "___PS_DUMMY___" }); } finally { setActiveGenerationOrder(null); }
+    });
+    if (r.stopped || r.failed) return "";
+    const out = typeof r.value === "string" ? r.value : "";
+    if (r.route !== "profile") vcrpCountBackgroundOutput(out);
+    return out;
 }
