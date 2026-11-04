@@ -12,10 +12,12 @@
 import { extension_settings, saveSettingsDebounced } from "../st.js";
 import { extensionName } from "../core/constants.js";
 
-export const WHATS_NEW_ID = "10.0.0-vcrp.10";
+export const WHATS_NEW_ID = "10.0.0-vcrp.11";
 
 const ITEMS = [
-    "<b>Megumin Suite V11's 04/11 update.</b> Its engines, thinking and writing texts are unchanged; what came is around them.",
+    "<b>Megumin Suite V11's 04/11 update</b>, in VCRP's terms (this release and 10.0.0-vcrp.10 together). Its engines, thinking and writing texts are unchanged; what came is around them.",
+    "<b>Custom blocks, as V11 has them</b> (BLOCKS tab, Create custom block, or the pen on one): a block holds <b>fields</b> (meters drawn as bars, lists as chips, each with what it means and how it changes in your words) or free text; a <b>rules box</b> for the whole block (meters are no longer held to 10 points a reply); what the story <b>remembers</b> of it (carried forward with the block instructions, as every block; starts fresh; or its copies stay in the chat); <b>when</b> it is written (every reply, only when it changes, every few replies); <b>one list for every character</b>, so a block made for one shows under Add a block for all, with Delete block for all of them; a renamed block still reads its old copies.",
+    "<b>Who is in the scene</b> (BLOCKS tab, on): the story lists who is there at the end of every reply (Here, and Remote for a call or a text), first in the blocks, and is handed one name per character to write in every block. The NPC Bank sends everyone listed first, Remember every character brings back someone listed, Existing cast only counts them, Bonds follow the list, and the final check asks for the blocks with the list first. Sent while World State, Bonds or NPC Inner Chatter is in the block; switch it off there to save the forty or so output tokens a reply.",
     "<b>Gemini JB</b>, a new add-on (Global Toggles & Add-ons), for Gemini: it helps the model through gritty and heavy NSFW scenes without cutting the reply off. V11's two lines, word for word: one that says the request complies with the adult fiction policy, at the end of the last message, and one that asks for a <b>^</b> before every word of the reply. VCRP takes the ^ out as each reply arrives, so you never see them; the presets' new \"clean up\" regex hides them while a reply streams. Each ^ costs an output token, so it is for Gemini alone: Setup Check says when it is on for another model, when Gemini runs without it, and when your preset is from before it. Not for NSFL.",
     "<b>The final check asks for the blocks</b> on a turn that has them (\"The response ends with the &lt;Blocks&gt; section.\"), on every engine on the V11 preset and in the second call for missing blocks, so fewer replies end without them.",
     "<b>Group chats save.</b> A repaired reply, a cleaned one, a chat with its dashes cleaned: everything VCRP saves to a chat used to be refused by SillyTavern in a group chat (Megumin's fix).",
@@ -38,7 +40,7 @@ export function markWhatsNewSeen() {
 /** Once, when SillyTavern is ready: the one thing that needs doing. */
 export function whatsNewToast() {
     if (!hasUnseenWhatsNew() || typeof toastr === "undefined") return;
-    toastr.info("New, from Megumin V11's 04/11 update: the Gemini JB add-on for Gemini (re-import your preset to use it), the final check asks for the blocks, and group chats save. Details in Global Settings → What's new.", "VCRP " + WHATS_NEW_ID, { timeOut: 15000 });
+    toastr.info("New, from Megumin V11's 04/11 update: custom blocks with fields, rules and memory; the story lists who is in the scene; the Gemini JB add-on (re-import your preset to use it); group chats save. Details in Global Settings → What's new.", "VCRP " + WHATS_NEW_ID, { timeOut: 15000 });
 }
 
 /** The card at the top of Global Settings, with a "Got it" button (#vcrp_whats_new_ok). */

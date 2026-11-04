@@ -256,3 +256,26 @@ Switch it off in Global Settings → Behaviour → *Lore for background calls*.
 - **The final check asks for the blocks** on turns that have them (Megumin V11's 04/11), so fewer
   replies end without them.
 - **Group chats save properly.** A repaired or cleaned reply in a group chat used to fail to save.
+
+## 10. Custom blocks and the scene list (from Megumin V11's 04/11 update)
+
+**Custom blocks** (BLOCKS tab → *Create custom block*, or the pen on one you have):
+
+- Pick what it holds: **Fields** (Trust 0–100, Gold, a Mood line, a list) or **Free text** (your own
+  template). For each field, say in your own words what it means and how it moves; the story reads
+  it. The **Rules for this block** box is for the block as a whole. Meters are not capped at 10
+  points a reply here, so write your own limit if you want one.
+- **What the story remembers of it:** *Carried forward* (the default, like every block), *Starts
+  fresh*, or *Stays in the chat* (its old copies stay in the replies the model reads; costs tokens
+  on every old reply, so use it for a log or a diary, not a meter).
+- **When the story writes it:** every reply, only when something changed, or every few replies
+  (a slow-moving block costs nothing on the replies in between).
+- Your custom blocks are **shared by every character**: make one once, add it to another
+  character from *Add a block*. *Delete block* removes it for everyone.
+
+**Who is in the scene** (BLOCKS tab, on by default): with World State, Bonds or NPC Inner Chatter
+in the block, the story ends every reply with a short list of who is there (Here, and Remote for a
+call or a text), first in the blocks, and is handed one name per character to use everywhere. The
+NPC Bank sends everyone listed first, a character who comes back is remembered, and Existing cast
+only counts them. A *Scene* tab on the card shows it. It costs about forty output tokens a reply;
+turn it off in the BLOCKS tab if you don't want it.

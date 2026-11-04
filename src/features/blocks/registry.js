@@ -13,6 +13,18 @@
 import { localProfile } from "../../core/state.js";
 import { PURA_BLOCKS, PURA_NOTES_BLOCK } from "./puraBlocks.js";
 import { NOTEBOOK_BLOCKS, notebookBlockRequest } from "../../vcrp/notebook/index.js";
+// VCRP: custom blocks as Megumin Suite V11 has them (fields, rules, memory, cadence), and
+// the scene list the story writes first in <Blocks> (both from V11's 04/11 update).
+import {
+    normalizeCustomBlock, customBlockTags, customFieldNotes, customBlockRules,
+    CUSTOM_CHANGES_LINE, CUSTOM_FRESH_FIELDS_LINE,
+} from "../../vcrp/customBlocks.js";
+import { customBlockDueNow } from "../../vcrp/customDue.js";
+import { sceneWanted, sceneBlockRequest } from "../../vcrp/scene.js";
+
+// VCRP: with the scene list, World State's cast follows it (VCRP's World State is a text
+// template; V11's store takes who is present from the list).
+export const WORLD_FOLLOWS_SCENE = "## World State\nNPCs Present are the characters on <Scene>'s Here line, and nobody else. A character on its Remote line is on a call: list them under Off-Screen, as on a call.";
 
 // -------------------------------------------------------------
 // BLOCK REGISTRY — one definition per block the <Blocks> envelope can carry
@@ -123,6 +135,17 @@ export const MEGUMIN_BLOCK_REGISTRY = [
         source: "[[storytracker]]",
         requires: p => Boolean(p.storyPlan && p.storyPlan.enabled)
     },
+    // VCRP: the scene list (Megumin Suite V11, 04/11): who is in the scene at the end of the
+    // reply, first in <Blocks> (vcrp/scene.js). A system block: never in the stack, asked for
+    // while its switch is on and a block that needs names (World State, Bonds, Inner Chatter)
+    // is in the stack. The envelope puts it first, not last like the other system blocks.
+    {
+        id: "scene", tag: "Scene", label: "Scene",
+        desc: "Who is in the scene at the end of the reply: Here, and Remote for a call or a text.",
+        emoji: "👥", icon: "fa-users", color: "#22c55e",
+        visibility: "open", builtin: true, system: true, scene: true,
+        requires: p => sceneWanted(p)
+    },
     // VCRP: Pura's trackers (puraBlocks.js), drawn with Pura's own cards, and the
     // Notes tab for what a Pura engine says out of character.
     ...PURA_BLOCKS,
@@ -186,16 +209,21 @@ export function buildBlocksEnvelope(dict) {
     // whenever it is on, even with no other block (Megumin Suite V11).
     let notebook = null;
     try { notebook = notebookBlockRequest(); } catch (e) { console.warn("[VCRP] Notebook: could not build its request.", e); }
+    // VCRP: the scene list first (Megumin Suite V11): every block after it is written with
+    // the names already set.
+    let scene = null;
+    try { scene = active.some(b => b && b.scene) ? sceneBlockRequest() : null; } catch (e) { console.warn("[VCRP] Scene: could not build its request.", e); }
     if (!active.length && !notebook) return "";
 
-    const parts = [];
-    const rules = [];   // per-block rules, written above <Blocks>
+    const parts = scene ? [scene.template] : [];
+    const rules = scene ? [scene.rules] : [];   // per-block rules, written above <Blocks>
+    if (scene && active.some(b => b && b.id === "world")) rules.push(WORLD_FOLLOWS_SCENE);
     active.forEach(b => {
         // A lead block is written before the prose, so it is deliberately not in
         // the envelope at all — the envelope is the last thing in the reply, and
         // asking for the roll there would put it after the scene it decides.
         // Its instructions ride in its own add-on instead.
-        if (b.lead) return;
+        if (b.lead || b.scene) return;
 
         // A conditional block contributes its instruction line, not a template,
         // and only on the turns its own subsystem actually asked for it.
@@ -205,13 +233,17 @@ export function buildBlocksEnvelope(dict) {
             return;
         }
 
+        // VCRP: a custom block on "Every few replies" is asked for only on the turns it is due.
+        if (!b.builtin && !customBlockDueNow(b)) return;
+
         // Any per-block header line comes off first: the envelope carries one of
         // its own, above everything.
         // Three ways a body arrives: a dict tag the rest of the pipeline already
         // produced (so engine overrides and custom prompts still apply), a
         // template generated from a field list, or a custom block's own text.
         let raw;
-        if (typeof b.build === "function") raw = b.build();
+        if (!b.builtin) raw = meguminBuildCustomTemplate(b);
+        else if (typeof b.build === "function") raw = b.build();
         else if (b.source) raw = dict[b.source] || "";
         else raw = b.content || "";
         const body = normalizeBlockBody(
@@ -254,7 +286,9 @@ export function meguminRenderRegistry() {
     const overrides = stack.overrides || {};
     return [...MEGUMIN_BLOCK_REGISTRY, ...(stack.custom || [])].map(def => {
         const o = overrides[def.id];
-        return o && o.visibility ? { ...def, visibility: o.visibility } : def;
+        // VCRP: a custom field block is drawn like the Sheet (bars, chips), as in Megumin V11.
+        const drawn = !def.builtin && def.kind === "fields" ? { ...def, treatment: "sheet" } : def;
+        return o && o.visibility ? { ...drawn, visibility: o.visibility } : drawn;
     });
 }
 
@@ -287,6 +321,10 @@ export function meguminStatFieldMap() {
     const out = {};
     Object.keys((localProfile && localProfile.statBlocks) || {}).forEach(id => {
         out[id] = meguminStatFields(id);
+    });
+    // VCRP: custom field blocks, under their own id (Megumin V11).
+    ((localProfile && localProfile.blockStack && localProfile.blockStack.custom) || []).forEach(b => {
+        if (b && b.kind === "fields" && Array.isArray(b.fields)) out[b.id] = b.fields.filter(f => f && f.label);
     });
     return out;
 }
@@ -321,11 +359,34 @@ export function meguminStatRules(fields, subject, opts = {}) {
     // The cap is for meters only. A counted field like Gold legitimately jumps by
     // hundreds, and a rule that forbids it would either be broken every time it
     // mattered or quietly stop the story from paying anyone.
-    if (meters.length) {
+    // VCRP: a custom block leaves it out (`cap: false`): the user says how a field moves in
+    // its own rules box (Megumin V11).
+    if (meters.length && opts.cap !== false) {
         lines.push(`- ${meters.map(f => f.label).join(", ")} move at most 10 in one reply unless the scene plainly earns more.`);
     }
     lines.push(`- Starting values when there is no previous one${opts.perSubject ? " for that person" : ""}: ${seeds}.`);
     return lines.join("\n");
+}
+
+/**
+ * VCRP: a custom block's template (Megumin V11's custom blocks on VCRP's carry). Free text is
+ * the user's own, as written. A field block is built like the Sheet: the user's rules for the
+ * whole block, what each field means in their words, then where its old values are (carried
+ * with the block instructions or in its last copy in the chat) or, starting fresh, V11's line.
+ */
+export function meguminBuildCustomTemplate(raw) {
+    const b = normalizeCustomBlock(raw);
+    const head = b.when === "changes" ? [CUSTOM_CHANGES_LINE] : [];
+    if (b.kind !== "fields") return [...head, b.content || ""].join("\n").trim();
+    const fields = b.fields.filter(f => f && String(f.label || "").trim());
+    if (!fields.length) return "";
+    const rules = b.memory === "fresh" ? CUSTOM_FRESH_FIELDS_LINE : meguminStatRules(fields, b.label, { cap: false });
+    const paragraph = [...customBlockRules(b), ...customFieldNotes(fields), rules].filter(Boolean).join("\n");
+    const inline = fields.filter(f => !f.ownLine).map(meguminStatFieldSpec).join(" | ");
+    const own = fields.filter(f => f.ownLine).map(meguminStatFieldSpec);
+    const top = [...head, paragraph ? `[${b.label}.\n${paragraph}]` : ""].filter(Boolean);
+    const lines = [inline, ...own].filter(Boolean);
+    return [...top, ...(top.length ? [""] : []), ...lines].join("\n");
 }
 
 // The Bonds template: one line per NPC, generated from the field list.
@@ -333,8 +394,11 @@ export function meguminBuildBondsTemplate() {
     const fields = meguminStatFields("bonds");
     if (!fields.length) return "";
     const line = fields.map(meguminStatFieldSpec).join(" | ");
+    // VCRP: with the scene list, the lines follow <Scene> (Megumin V11's wording).
     return [
-        "[One line per named NPC present in the scene, plus any NPC whose numbers changed this scene. Nobody else.",
+        sceneWanted(localProfile)
+            ? "[One line per named NPC in <Scene>, Here or Remote, plus any NPC whose numbers changed this scene. Nobody else."
+            : "[One line per named NPC present in the scene, plus any NPC whose numbers changed this scene. Nobody else.",
         meguminStatRules(fields, "Bonds", { perSubject: true }),
         "- These are feelings, not bodies. Do not describe clothing, posture or location here.]",
         "",
@@ -373,7 +437,8 @@ export function meguminBlockById(id) {
 // block that silently leaks, which is why it is derived rather than typed out.
 export function meguminAllBlockTags() {
     const custom = (localProfile && localProfile.blockStack && localProfile.blockStack.custom) || [];
-    const tags = [...MEGUMIN_BLOCK_REGISTRY.map(b => b.tag), ...custom.map(b => b.tag)];
+    // VCRP: a renamed custom block's old tags too (Megumin V11).
+    const tags = [...MEGUMIN_BLOCK_REGISTRY.map(b => b.tag), ...custom.flatMap(b => customBlockTags(normalizeCustomBlock(b)))];
     // Story_Tracker is stripped explicitly by the cleaner before this list is
     // used, and stripping it twice is harmless, but a duplicate here would build
     // the same RegExp twice on every cleaned message.
@@ -392,7 +457,8 @@ export const BLOCK_VISIBILITY_CHOICES = [
 // silently instead of failing loudly.
 export const RESERVED_BLOCK_TAGS = [
     "blocks", "details", "summary", "think", "thinking", "gametxt", "updatevariable",
-    "combat_log", "location", "options", "disclaimer", "div", "span", "img", "p", "br"
+    "combat_log", "location", "options", "disclaimer", "div", "span", "img", "p", "br",
+    "scene", "known_names", "notebook", "notebook_update"
 ];
 
 export function blockTagFromName(name) {

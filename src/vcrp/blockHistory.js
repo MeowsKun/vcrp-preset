@@ -13,10 +13,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getContext } from "../st.js";
+import { localProfile } from "../core/state.js";
 import { vcrpWithoutSwipedReply } from "./generation.js";
 import { meguminActiveBlocks, MEGUMIN_BLOCK_REGISTRY } from "../features/blocks/registry.js";
 import { puraEntries } from "../features/blocks/puraBlocks.js";
 import { puraTidyBlocks, puraTidyText } from "./pura/tidy.js";
+import { normalizeCustomBlock, customTagsToKeep, customBlockTags } from "./customBlocks.js";
+
+// VCRP: the custom blocks (one list for every character, core/profile.js).
+const customList = () => (localProfile && localProfile.blockStack && localProfile.blockStack.custom) || [];
+// A custom block whose last copy is carried with the block instructions ("Carried forward").
+const carriedCustom = b => b.builtin || normalizeCustomBlock(b).memory === "info";
 
 const BLOCKS_PAIRED = /\s*<Blocks\b[^>]*>[\s\S]*?<\/Blocks\s*>/gi;
 const BLOCKS_OPEN = /\s*<Blocks\b[^>]*>[\s\S]*$/i;   // a reply cut off inside its blocks
@@ -37,6 +44,9 @@ export function stripHistoryBlocks(messages) {
     if (!Array.isArray(messages)) return;
     const last = messages.length - 1;
     const pura = puraTidyBlocks();
+    // VCRP: a custom block on "Stays in the chat" keeps its copies (Megumin V11): taken out of
+    // the envelope first and put back at the end of the reply, the same every turn.
+    const keepRe = customTagsToKeep(customList()).map(t => new RegExp(`<${t}\\b[^>]*>[\\s\\S]*?<\\/${t}\\s*>`, "gi"));
     // Whoever takes a reply's blocks out, it must end the same every turn. The preset's own
     // "Blocks cleanup" regex reaches replies three deep and leaves the blank lines before the
     // blocks; this strip took them too. So a reply ended "…prose" for two turns and
@@ -44,7 +54,9 @@ export function stripHistoryBlocks(messages) {
     // older reply ends at its last character now, either way.
     const clean = s => {
         const t = pura.length ? puraTidyText(s, { blocks: pura }).text : s;
-        return strip(t).replace(/\s+$/, "");
+        const kept = keepRe.flatMap(re => String(t).match(re) || []);
+        const out = strip(t).replace(/\s+$/, "");
+        return kept.length ? `${out}\n\n${kept.join("\n")}` : out;
     };
     messages.forEach((m, i) => {
         if (!m || m.role !== "assistant" || i === last) return;
@@ -89,24 +101,32 @@ function storyPart(mes) {
  * The state blocks `state` lacks, or holds an older copy of than a newer reply cut off later
  * on, put in from the newest reply that has them whole. Returns { state, filled: [{ label, back }] }.
  */
-function fillStateBlocks(state, back, replies) {
+// VCRP: a custom block on "Carried forward" is filled the same way, from further back: one
+// written "Every few replies" has its last copy up to that many replies behind.
+const LOOKBACK_CUSTOM = 60;
+
+function fillStateBlocks(state, back, replies, repliesLong = replies) {
     let active = [];
     try { active = meguminActiveBlocks().filter(b => b && b.tag && !b.transient); } catch (e) { active = []; }
     const filled = [];
     for (const b of active) {
-        if (!STATE_BLOCKS.includes(b.id)) continue;
-        const whole = new RegExp(`<${b.tag}\\b[^>]*>[\\s\\S]*?<\\/${b.tag}\\s*>`, "gi");
+        const customInfo = !b.builtin && carriedCustom(b);
+        if (!STATE_BLOCKS.includes(b.id) && !customInfo) continue;
+        const pool = customInfo ? repliesLong : replies;
+        // A renamed custom block's old tags count as it too.
+        const alt = (b.builtin ? [b.tag] : customBlockTags(normalizeCustomBlock(b))).join("|");
+        const whole = new RegExp(`<(${alt})\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>`, "gi");
         let found = null;
-        for (let i = 0; i < replies.length && !found; i++) {
-            const all = storyPart(replies[i].mes).match(whole);
+        for (let i = 0; i < pool.length && !found; i++) {
+            const all = storyPart(pool[i].mes).match(whole);
             if (all) found = { text: all[all.length - 1].trim(), back: i };
         }
         if (!found) continue;
-        const has = new RegExp(`<${b.tag}\\b`, "i").test(state);
+        const has = new RegExp(`<(?:${alt})\\b`, "i").test(state);
         if (has && found.back >= back) continue;   // the blocks' own copy is the newest
         if (!state) state = "<Blocks>\n</Blocks>";
         if (has) {
-            state = state.replace(new RegExp(`<${b.tag}\\b[^>]*>[\\s\\S]*?<\\/${b.tag}\\s*>`, "i"), () => found.text);
+            state = state.replace(new RegExp(`<(${alt})\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>`, "i"), () => found.text);
         } else {
             // In its place in the stack: before the first later block that is there.
             const later = active.slice(active.indexOf(b) + 1).map(x => state.search(new RegExp(`<${x.tag}\\b`, "i"))).filter(i => i >= 0);
@@ -128,7 +148,8 @@ function fillStateBlocks(state, back, replies) {
 export function lastBlocksInfo() {
     let chat = [];
     try { chat = ((getContext() || {}).chat || []).filter(m => !m.is_system); } catch (e) { return { state: "", back: 0, filled: [] }; }
-    const replies = [...vcrpWithoutSwipedReply(chat)].reverse().filter(m => !m.is_user && typeof m.mes === "string").slice(0, LOOKBACK_REPLIES);
+    const all = [...vcrpWithoutSwipedReply(chat)].reverse().filter(m => !m.is_user && typeof m.mes === "string");
+    const replies = all.slice(0, LOOKBACK_REPLIES);
     let state = "", back = 0;
     for (let i = 0; i < replies.length; i++) {
         state = blocksOf(replies[i].mes);
@@ -136,7 +157,7 @@ export function lastBlocksInfo() {
     }
     const whole = Boolean(state);
     if (!whole) back = 0;
-    return { back, whole, ...fillStateBlocks(state, whole ? back : replies.length, replies) };
+    return { back, whole, ...fillStateBlocks(state, whole ? back : replies.length, replies, all.slice(0, LOOKBACK_CUSTOM)) };
 }
 
 /** The latest complete blocks, or "" when none of the last few replies has any. */
@@ -148,7 +169,11 @@ export function lastBlocksState() {
 // Author's Notebook riding alone) is not handed back as the state to carry forward. "" when
 // none is left.
 function onlyActive(state) {
-    const tags = new Set(meguminActiveBlocks().map(b => b && b.tag && String(b.tag).toLowerCase()).filter(Boolean));
+    // VCRP: a custom block that starts fresh or stays in the chat is not carried (Megumin V11);
+    // a renamed one's old tags still count as it.
+    const tags = new Set(meguminActiveBlocks().filter(b => b && carriedCustom(b))
+        .flatMap(b => (b.builtin ? [b.tag] : customBlockTags(normalizeCustomBlock(b))))
+        .map(t => String(t || "").toLowerCase()).filter(Boolean));
     const m = String(state || "").match(/^(<Blocks\b[^>]*>)([\s\S]*?)(\s*<\/Blocks\s*>)$/i);
     if (!m) return state;
     const inner = m[2].replace(/\s*<([A-Za-z]\w*)\b[^>]*>[\s\S]*?<\/\1\s*>/g, (x, tag) => (tags.has(tag.toLowerCase()) ? x : ""));

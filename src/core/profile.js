@@ -31,6 +31,7 @@ import { ensureKnowledgebase } from "../vcrp/knowledgebase.js";
 import { ensureAnimeMode } from "../vcrp/anime.js";
 import { vcrpMemoryCheckChat, vcrpMemoryMigrateLegacy } from "../vcrp/memory/index.js";
 import { WHATS_NEW_ID } from "../vcrp/whatsNew.js";
+import { mergeCustomLibrary } from "../vcrp/customBlocks.js";
 
 // Last chat_metadata stamp written, so an unchanged profile doesn't re-save.
 export let _lastSavedMetaStamp = "";
@@ -489,6 +490,8 @@ export function initProfile() {
     });
     if (!Array.isArray(localProfile.blockStack.custom)) localProfile.blockStack.custom = [];
     if (!localProfile.blockStack.overrides) localProfile.blockStack.overrides = {};
+    // VCRP: custom blocks are one list for every character (Megumin V11).
+    linkGlobalCustomBlocks();
     // A profile written before system blocks were pinned can still be carrying
     // them in the stack, where they would now show up twice.
     const systemIds = MEGUMIN_BLOCK_REGISTRY.filter(b => b.system).map(b => b.id);
@@ -732,6 +735,63 @@ export function pruneFutureData() {
     }
 }
 
+// VCRP: custom blocks are one list for every character (Megumin Suite V11's 04/11 update),
+// so a block made in one character can be added in any other. Each character keeps only
+// which blocks are in its stack, their order and Shown / Hidden. The first time, every
+// character's blocks are gathered (same id = the same block; a tag already taken gets "(2)"),
+// and the per-character copies are dropped. Runs on every load, so a copy written by "Every
+// character" (core/sync.js) is folded in again.
+function linkGlobalCustomBlocks() {
+    const store = extension_settings[extensionName];
+    if (!store) return;
+    let changed = !Array.isArray(store.customBlocks);
+    const library = Array.isArray(store.customBlocks) ? store.customBlocks : [];
+    if (localProfile.blockStack.custom !== library && mergeCustomLibrary(library, localProfile.blockStack.custom)) changed = true;
+    Object.values(store.profiles || {}).forEach(p => {
+        if (!p || !p.blockStack || !Array.isArray(p.blockStack.custom) || p.blockStack.custom === library) return;
+        if (mergeCustomLibrary(library, p.blockStack.custom)) changed = true;
+        delete p.blockStack.custom;
+        changed = true;
+    });
+    store.customBlocks = library;
+    localProfile.blockStack.custom = library;
+    if (changed) saveSettingsDebounced();
+}
+
+// The shared list is written to its own store, never into a profile. Only the linked list is
+// written back, so a profile whose blockStack was replaced (with an empty list) can't wipe
+// everyone's blocks.
+function saveGlobalCustomBlocks(profileToSave) {
+    const store = extension_settings[extensionName];
+    if (store && localProfile.blockStack && localProfile.blockStack.custom === store.customBlocks) {
+        store.customBlocks = localProfile.blockStack.custom;
+    }
+    if (profileToSave.blockStack) delete profileToSave.blockStack.custom;
+}
+
+/**
+ * Deletes a custom block for every character: out of the shared list and out of every
+ * character's stack. What chats kept of it stays in them, unused.
+ */
+export function deleteCustomBlockEverywhere(id) {
+    const store = extension_settings[extensionName] || {};
+    const lib = Array.isArray(store.customBlocks) ? store.customBlocks : [];
+    const at = lib.findIndex(b => b.id === id);
+    if (at > -1) lib.splice(at, 1);
+    const drop = stack => {
+        if (!stack) return;
+        if (Array.isArray(stack.order)) stack.order = stack.order.filter(x => x !== id);
+        if (stack.overrides) delete stack.overrides[id];
+        // A copy "Every character" left in a profile would bring it back on load.
+        if (Array.isArray(stack.custom) && stack.custom !== lib) stack.custom = stack.custom.filter(b => b && b.id !== id);
+    };
+    drop(localProfile.blockStack);
+    Object.values(store.profiles || {}).forEach(p => drop(p && p.blockStack));
+    meguminSyncLegacyBlockIds();
+    saveProfileToMemory();
+    saveSettingsDebounced();
+}
+
 export function saveProfileToMemory() {
     const key = getCharacterKey() || "default";
 
@@ -814,6 +874,7 @@ export function saveProfileToMemory() {
     // Drop prompt text that matches DEFAULT_PROMPTS. Safe on profileToSave because it is
     // already a clone; localProfile keeps the full text the editor is bound to.
     meguminSparsifyProfilePrompts(profileToSave);
+    saveGlobalCustomBlocks(profileToSave);   // VCRP: the shared custom blocks stay in their own store
 
     extension_settings[extensionName].profiles[key] = profileToSave;
     saveSettingsDebounced();
@@ -864,6 +925,7 @@ export function flushProfileSettingsToLoadedKey() {
     }
 
     meguminSparsifyProfilePrompts(profileToSave);
+    saveGlobalCustomBlocks(profileToSave);   // VCRP: the shared custom blocks stay in their own store
 
     extension_settings[extensionName].profiles[_loadedProfileKey] = profileToSave;
     saveSettingsDebounced();

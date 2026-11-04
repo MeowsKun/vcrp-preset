@@ -286,7 +286,7 @@ const v11Cached = prefix(v11Last, v11Mk.at(-1)).join("\n"), v11All = v11Last.map
 ok(v11Cached.includes("You are a writers' room of five") && v11Cached.includes("NORA, the Director") && v11Cached.includes("NORA's part. This story is rated M"), "V11's engine text and its Content section are in the cached part (V11's layout since 01/11)");
 for (const [what, s] of [["the live truths", "<Author_Notebook>"], ["the notebook's update rules", "write the Notebook_Update block only if"],
     ["the clue planted on turn 3", "Mara flinches when Bob mentions the fire"], ["Ann, back as she left", "Characters on file"], ["Ann's last outfit", "green raincoat, red scarf"],
-    ["the final check's blocks line (04/11), item 4", "4. The response ends with the <Blocks> section."], ["the {{user}} rule, item 6", "6. The response does not speak, think, feel, or act for Bob"], ["Tone Rules", tone.TONE_HEADER], ["Existing cast only", castLock.CAST_LOCK_HEADER]]) {
+    ["the final check's blocks line (04/11), item 4, the scene list first", "4. The response ends with the <Blocks> section, <Scene> first."], ["the {{user}} rule, item 6", "6. The response does not speak, think, feel, or act for Bob"], ["the scene list, first in the skeleton (04/11)", "<Blocks>\n<Scene>\nHere: [names, or: nobody]"], ["Tone Rules", tone.TONE_HEADER], ["Existing cast only", castLock.CAST_LOCK_HEADER]]) {
     ok(v11All.includes(s) && !v11Cached.includes(s), `${what}: sent, and after the cached part`);
 }
 ok(!v11All.includes("<The_Notebook>"), "V11 carries its own notebook craft: the shared one is not added");

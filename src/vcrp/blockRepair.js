@@ -27,6 +27,7 @@ import {
 import { meguminActiveBlocks } from "../features/blocks/registry.js";
 import { blankReplyKind } from "./blankReply.js";
 import { usesCaretWords, stripCarets } from "../engine/caretWords.js";
+import { customBlockDueNow } from "./customDue.js";
 import { memorySummaryRunning } from "./memory/summarize.js";
 import { vcrpMemoryCountTaskOutput } from "./memory/index.js";
 import { notebookOn, notebookCurrentPhase } from "./notebook/index.js";
@@ -60,8 +61,9 @@ function afterThinking(text) {
 export function requiredBlocks(chat) {
     let active = [];
     try { active = meguminActiveBlocks(); } catch (e) { active = []; }
+    // A custom block on "Every few replies" only on the turns it is due (vcrp/customDue.js).
     const out = active
-        .filter(b => b && b.tag && !b.transient && !b.slot && !b.lead && !b.carry && b.group !== "notebook")
+        .filter(b => b && b.tag && !b.transient && !b.slot && !b.lead && !b.carry && b.group !== "notebook" && (b.builtin || customBlockDueNow(b)))
         .map(b => ({ tag: b.tag, label: b.label || b.tag }));
     // The Notebook, on the turn that writes it (the setup); its updates are optional.
     try {

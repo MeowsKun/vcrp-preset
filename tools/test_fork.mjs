@@ -4277,7 +4277,7 @@ console.log("56 ok fixes from testing V11: Dialogue Colors on the Megumin mirror
     assert(between(t, "<story_settings>", "</story_settings>").includes("- pov: third person. Your narration calls Bob by name or he/she") && t.includes("- length: usually 250–350 words, longer only while a fight or sex scene is under way"), "V11's point of view and its new length, from VCRP's options");
     assert(!t.includes("## your thinking steps:") && !t.includes("## FORMATTING RULES:") && !t.includes("## final reminder:") && !t.includes("[LANGUAGE RULE]"), "none of the older headings");
     const check = between(t, "<final_check>", "</final_check>");
-    assert(/1\. Characters know only[\s\S]*2\. The story ends[\s\S]*3\. Nothing in the response is on the banlist\.[\s\S]*4\. The response ends with the <Blocks> section\.[\s\S]*5\. If the center of this turn[\s\S]*6\. The response does not speak, think, feel, or act for Bob/.test(check), `the final check numbered as built (04/11's blocks line as item 4):\n${check}`);
+    assert(/1\. Characters know only[\s\S]*2\. The story ends[\s\S]*3\. Nothing in the response is on the banlist\.[\s\S]*4\. The response ends with the <Blocks> section(?:, <Scene> first)?\.[\s\S]*5\. If the center of this turn[\s\S]*6\. The response does not speak, think, feel, or act for Bob/.test(check), `the final check numbered as built (04/11's blocks line as item 4):\n${check}`);
     assert(between(t, "<formatting>", "</formatting>").includes(`title="Name">`) && !t.includes("- FORBIDDEN: Repeating actions"), "the colors (lock note too) in <formatting>; its repetition rule in place of the older two lines");
     // Thinking and the {{user}} rule are for a fresh reply.
     t = text(await run("VCRP V11 Megumin Original.json", "continue"));
@@ -4985,7 +4985,7 @@ console.log("64 ok after the trim: profiles on the removed engines, thinking, st
     assert.deepEqual(leftovers(msgs), [], `V11 + Gemini JB: tags left over: ${leftovers(msgs)}`);
     assert(lastRead(msgs).endsWith(`Start your turn.\n\n${JB}`), `the policy line closes the last message, after V11's line:\n${lastRead(msgs).slice(-220)}`);
     assert(between(t, "<formatting>", "</formatting>").trimEnd().endsWith(CARET) && t.split(CARET).length === 2 && t.split(JB).length === 2, "the ^ line is the last line of <formatting>, each line once");
-    assert(/\n3\. Nothing in the response is on the banlist\.\n4\. The response ends with the <Blocks> section\.\n5\. /.test(between(t, "<final_check>", "</final_check>")), `the final check asks for the blocks after the ban list's check:\n${between(t, "<final_check>", "</final_check>")}`);
+    assert(/\n3\. Nothing in the response is on the banlist\.\n4\. The response ends with the <Blocks> section(?:, <Scene> first)?\.\n5\. /.test(between(t, "<final_check>", "</final_check>")), `the final check asks for the blocks after the ban list's check:\n${between(t, "<final_check>", "</final_check>")}`);
     // Off: neither line, nothing of the tag, the last message ends as before.
     q.addons = [];
     msgs = await run("VCRP V11 Megumin Original.json"); t = text(msgs);
@@ -4994,7 +4994,7 @@ console.log("64 ok after the trim: profiles on the removed engines, thinking, st
     Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english" });
     msgs = await run("VCRP V11 Megumin Original.json"); t = text(msgs);
     const rem = t.slice(t.indexOf("## final reminder:"));
-    assert(/\n2\. Follow every output rule[^\n]*\n3\. The response ends with the <Blocks> section\.\n4\. The response does not speak/.test(rem), `VCRP's reminder with the blocks line before the {{user}} rule:\n${rem.slice(0, 600)}`);
+    assert(/\n2\. Follow every output rule[^\n]*\n3\. The response ends with the <Blocks> section(?:, <Scene> first)?\.\n4\. The response does not speak/.test(rem), `VCRP's reminder with the blocks line before the {{user}} rule:\n${rem.slice(0, 600)}`);
     q.blockStack.order = []; meguminSyncLegacyBlockIds();
     msgs = await run("VCRP V11 Megumin Original.json"); t = text(msgs);
     assert(!t.includes("<Blocks>") && !t.includes(BLOCKS), `no blocks asked for: no blocks line (${t.includes("<Blocks>") ? "an envelope is still sent" : "the line is still there"})`);
@@ -5083,5 +5083,217 @@ console.log("64 ok after the trim: profiles on the removed engines, thinking, st
     chat.length = 0;
 }
 console.log("65 ok Megumin Suite V11's 04/11 update: the Gemini JB add-on (V11's policy line at [[GeminiJB]], its ^ line last in the formatting section, both at the spot on the V10 presets, a story reply only; the ^ out of each reply, of an edit and of the second call's answer), the final check's blocks line on turns that ask for blocks, V11's clean-up regex, Setup Check, group chats save");
+
+// 66. Custom blocks as Megumin Suite V11 has them (04/11), on VCRP's carry: fields with what each
+//     means, rules for the whole block (no 10-point cap), drawn like the Sheet; what the story
+//     remembers of it (carried forward, starts fresh, stays in the chat) and when it is written
+//     (every reply, only when it changes, every few replies: due, asked for again, carried from
+//     further back); one list for every character; a renamed block's old tag still read.
+{
+    const cb = await imp("src/vcrp/customBlocks.js");
+    const { customBlockDueNow, customRepliesSince } = await imp("src/vcrp/customDue.js");
+    const reg = await imp("src/features/blocks/registry.js");
+    const hist = await imp("src/vcrp/blockHistory.js");
+    const repair = await imp("src/vcrp/blockRepair.js");
+    const profile = await imp("src/core/profile.js");
+    const store = extension_settings.VCRP;
+    const keepScene = JSON.stringify(state.localProfile.sceneList || null);
+
+    // Settings: a block saved before keeps working as it did; "only when it changes" needs a block the story sees; N stays in 2–20.
+    const old = cb.normalizeCustomBlock({ id: "blk_0", label: "Old", tag: "Old", content: "x" });
+    assert(old.kind === "text" && old.memory === "info" && old.when === "every" && old.tags.length === 0, "an older block: free text, carried forward (as VCRP always did), every reply");
+    assert.equal(cb.normalizeCustomBlock({ memory: "fresh", when: "changes" }).when, "every");
+    assert.equal(cb.normalizeCustomBlock({ memory: "info", when: "changes" }).when, "changes");
+    assert.deepEqual([1, 99, "x"].map(n => cb.normalizeCustomBlock({ when: "everyN", everyN: n }).everyN), [2, 20, 3]);
+    assert.deepEqual(cb.customFieldNotes([{ label: "Trust", desc: "How much she trusts {{user}}.\nUp when he keeps his word [mostly]." }, { label: "Mood", desc: " " }, { label: "", desc: "x" }, { label: "Gold" }]), ["- Trust: How much she trusts {{user}}. Up when he keeps his word (mostly)."]);
+    assert.deepEqual(cb.customBlockRules({ rules: "Only the party.\r\n\n  Slow [rarely 5+]  " }), ["Only the party.", "Slow (rarely 5+)"]);
+    assert.deepEqual(cb.customBlockTags({ tag: "Quests", tags: ["Quest_Log"] }), ["Quests", "Quest_Log"]);
+    const n3 = cb.normalizeCustomBlock({ when: "everyN", everyN: 3 });
+    assert(cb.customBlockDue(cb.normalizeCustomBlock({}), 0) && cb.customBlockDue(n3, null) && !cb.customBlockDue(n3, 0) && !cb.customBlockDue(n3, 1) && cb.customBlockDue(n3, 2), "due every N replies: written in reply 1, replies 2 and 3 are coming, 4 is due");
+
+    // The shared list: every character's blocks gathered once; the same id is the same block; a taken tag gets (2).
+    const lib = [];
+    assert.equal(cb.mergeCustomLibrary(lib, [{ id: "a", label: "Trust", tag: "Trust" }]), 1);
+    assert.equal(cb.mergeCustomLibrary(lib, [{ id: "a", label: "Trust", tag: "Trust" }, { id: "b", label: "Trust", tag: "Trust", tags: ["Old"] }]), 1);
+    assert.deepEqual(lib.map(b => [b.id, b.label, b.tag, b.tags]), [["a", "Trust", "Trust", undefined], ["b", "Trust (2)", "Trust_2", ["Old", "Trust"]]]);
+    // On load: one list for every character, another character's block in it, its own copy dropped.
+    store.profiles.other = { blockStack: { order: ["blk_t"], custom: [{ id: "blk_t", label: "Tension", tag: "Tension", content: "t" }], overrides: {} } };
+    profile.initProfile();
+    const q = state.localProfile;
+    q.sceneList = { enabled: false };   // the scene list has its own group
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
+    assert(Array.isArray(store.customBlocks) && store.customBlocks === q.blockStack.custom && store.customBlocks.some(b => b.id === "blk_t") && !("custom" in store.profiles.other.blockStack), "on load: the shared list, linked, with the other character's block; its own copy dropped");
+    const trust = cb.normalizeCustomBlock({ id: "blk_trust", label: "Trust", tag: "Trust", emoji: "💗", visibility: "open", builtin: false, kind: "fields", memory: "info", rules: "Numbers change slowly.", fields: [{ id: "f1", label: "Trust", type: "meter", max: 100, start: 30, desc: "How much she trusts {{user}}" }, { id: "f2", label: "Mood", type: "text", hint: "a few words" }] });
+    q.blockStack.custom.push(trust);
+    q.blockStack.order = ["world", "blk_trust"]; reg.meguminSyncLegacyBlockIds();
+    // The save reads the style box through jQuery: a stub whose boxes are empty.
+    const $was = globalThis.$;
+    const $zero = new Proxy(function () { return $zero; }, { get: (t, k) => (k === "then" ? undefined : k === "length" ? 0 : k === "val" ? () => "" : k === "is" ? () => false : $zero) });
+    globalThis.$ = $zero;
+    const withZero = fn => { globalThis.$ = $zero; try { return fn(); } finally { globalThis.$ = $was; } };
+    withZero(() => profile.saveProfileToMemory());
+    assert(store.customBlocks.includes(trust) && Object.values(store.profiles).every(p => !p || !p.blockStack || !("custom" in p.blockStack)), "saved: the list in its own store, never in a profile");
+    assert(reg.meguminBlockById("blk_t") && reg.meguminBlockById("blk_trust"), "both findable (Add a block lists the other character's)");
+
+    // The template: the user's rules, what each field means, the carry rules without the 10-point cap, the fields.
+    const tpl = reg.meguminBuildCustomTemplate(trust);
+    assert(tpl.startsWith("[Trust.\nNumbers change slowly.\n- Trust: How much she trusts {{user}}\n- Carry every number forward from the previous Trust block.") && !/move at most 10/.test(tpl) && tpl.includes("- Starting values when there is no previous one: Trust 30.") && tpl.endsWith("\n\nTrust: [0-100]/100 [(±N reason) or (=)] | Mood: [a few words]"), `the field block's template:\n${tpl}`);
+    const fresh = reg.meguminBuildCustomTemplate({ ...trust, memory: "fresh" });
+    assert(fresh.includes(cb.CUSTOM_FRESH_FIELDS_LINE) && !fresh.includes("Carry every number"), "starts fresh: V11's line instead of the carry rules");
+    assert(reg.meguminBuildCustomTemplate({ ...trust, when: "changes" }).startsWith(cb.CUSTOM_CHANGES_LINE), "only when it changes: V11's line first");
+    assert.equal(reg.meguminBuildCustomTemplate({ id: "x", label: "Quest Log", tag: "Quest_Log", content: "1. [goal]" }), "1. [goal]", "free text as written");
+    assert(reg.meguminRenderRegistry().some(d => d.id === "blk_trust" && d.treatment === "sheet") && reg.meguminStatFieldMap().blk_trust.length === 2, "a field block is drawn like the Sheet, with its fields declared");
+
+    // In the prompt: asked for, its last copy carried with the block instructions.
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "Greeting." }, { is_user: true, mes: "go" },
+        { is_user: false, mes: "Prose.\n<Blocks>\n<World_State>\nTime: noon\n</World_State>\n<Trust>\nTrust: 40/100 | Mood: wary\n</Trust>\n</Blocks>", swipes: [""], swipe_id: 0 },
+        { is_user: true, mes: "go on" });
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+    let msgs = await run("VCRP V10 Universal.json");
+    let t = text(msgs);
+    assert.deepEqual(leftovers(msgs), [], "custom block: tags left over");
+    assert(t.includes("<Trust>\n[Trust.") && t.includes("<Trust>\nTrust: 40/100 | Mood: wary\n</Trust>"), "the field block asked for, its last copy carried with the block instructions");
+    // Starts fresh: not carried. Stays in the chat: its copies stay in the history (the envelope goes), not carried.
+    trust.memory = "fresh";
+    msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
+    assert(t.includes("<Trust>\n[Trust.") && !t.includes("<Trust>\nTrust: 40/100"), "starts fresh: asked for, the last copy not carried");
+    trust.memory = "chat";
+    const history = [{ role: "assistant", content: "Prose.\n<Blocks>\n<World_State>\nx\n</World_State>\n<Trust>\nTrust: 40/100\n</Trust>\n</Blocks>" }, { role: "user", content: "go" }];
+    hist.stripHistoryBlocks(history);
+    assert.equal(history[0].content, "Prose.\n\n<Trust>\nTrust: 40/100\n</Trust>", "stays in the chat: its copy at the end of the reply, the envelope gone");
+    msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
+    assert(!/The blocks as they stood[\s\S]*<Trust>/.test(t), "stays in the chat: not carried as well");
+    trust.memory = "info";
+    const history2 = [{ role: "assistant", content: "Prose.\n<Blocks>\n<Trust>\nT\n</Trust>\n</Blocks>" }, { role: "user", content: "go" }];
+    hist.stripHistoryBlocks(history2);
+    assert.equal(history2[0].content, "Prose.", "carried forward: out of the history as every block");
+
+    // Every few replies: not due until enough replies followed its last copy; when due, asked for (and asked for again), its copy carried from further back.
+    trust.when = "everyN"; trust.everyN = 3;
+    assert.equal(customRepliesSince(trust, chat.filter(m => !m.is_user)), 0, "written in the last reply");
+    assert(!customBlockDueNow(trust), "written last reply: not due (every 3rd)");
+    msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
+    assert(!t.includes("<Trust>\n[Trust.") && t.includes("<Trust>\nTrust: 40/100 | Mood: wary\n</Trust>"), "not due: not asked for, its last copy still carried");
+    assert(!repair.requiredBlocks(chat).some(b => b.tag === "Trust") && repair.requiredBlocks(chat).some(b => b.tag === "World_State"), "not due: not asked for again either");
+    chat.push({ is_user: false, mes: "Prose 2.\n<Blocks>\n<World_State>\nTime: 1pm\n</World_State>\n</Blocks>", swipes: [""], swipe_id: 0 }, { is_user: true, mes: "go" },
+        { is_user: false, mes: "Prose 3.\n<Blocks>\n<World_State>\nTime: 2pm\n</World_State>\n</Blocks>", swipes: [""], swipe_id: 0 }, { is_user: true, mes: "go" });
+    assert(customBlockDueNow(trust), "two replies later: due");
+    msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
+    assert(t.includes("<Trust>\n[Trust.") && t.includes("<Trust>\nTrust: 40/100 | Mood: wary\n</Trust>") && /Trust \(2 replies back\)/.test(t), `due: asked for, its last copy carried from two replies back:\n${t.slice(t.indexOf("The blocks as"), t.indexOf("The blocks as") + 500)}`);
+    assert(repair.requiredBlocks(chat).some(b => b.tag === "Trust"), "due: asked for again when left out");
+    trust.when = "every";
+    // A renamed block still reads (and carries) its old tag.
+    trust.tag = "Trust_Meter"; trust.tags = ["Trust"];
+    assert(reg.meguminAllBlockTags().includes("Trust") && reg.meguminAllBlockTags().includes("Trust_Meter"), "both tags cleaned");
+    msgs = await run("VCRP V10 Universal.json"); t = text(msgs);
+    assert(t.includes("<Trust_Meter>\n[Trust.") && t.includes("<Trust>\nTrust: 40/100 | Mood: wary\n</Trust>"), "renamed: asked for under the new tag, its old copy still carried");
+    trust.tag = "Trust"; trust.tags = [];
+
+    // Deleted for every character.
+    store.profiles.other.blockStack.order.push("blk_trust");
+    withZero(() => profile.deleteCustomBlockEverywhere("blk_trust"));
+    assert(!store.customBlocks.some(b => b.id === "blk_trust") && !q.blockStack.order.includes("blk_trust") && !store.profiles.other.blockStack.order.includes("blk_trust") && !reg.meguminBlockById("blk_trust"), "deleted for every character");
+
+    delete store.profiles.other;
+    store.customBlocks.splice(store.customBlocks.findIndex(b => b.id === "blk_t"), 1);
+    q.blockStack.order = ["world"]; reg.meguminSyncLegacyBlockIds();
+    q.sceneList = JSON.parse(keepScene) || undefined;
+    chat.length = 0;
+}
+console.log("66 ok custom blocks as Megumin Suite V11 has them (fields with what each means, rules for the whole block without the 10-point cap, drawn like the Sheet; carried forward, starts fresh or stays in the chat; every reply, only when it changes or every few replies, with the repair call following; one list for every character, deleted everywhere; a renamed block's old tag)");
+
+// 67. The scene list as Megumin Suite V11 has it (04/11), on VCRP: <Scene> first in <Blocks> with
+//     V11's rules while World State, Bonds or Inner Chatter is in the block; <Known_Names> before
+//     the block instructions (the NPC Bank, the last blocks and the recent lists; the scene first,
+//     the shortest unmistakable spelling); the final check's scene line; the NPC Bank sends everyone
+//     in the scene first; Remember every character and Existing cast only count them; the Bonds
+//     template follows <Scene>; the switch; the card; V11's parser and name finder.
+{
+    const sc = await imp("src/vcrp/scene.js");
+    const { parseScene, sceneBlockOf } = await imp("src/state/scene.js");
+    const { whoIs, namedIn, knownNameList } = await imp("src/state/names.js");
+    const reg = await imp("src/features/blocks/registry.js");
+    const repair = await imp("src/vcrp/blockRepair.js");
+    const { castRoster } = await imp("src/vcrp/castLock.js");
+    const { npcCreateRecord } = await imp("src/features/npc/data.js");
+    const treat = await imp("src/blocks/treatments.js");
+    const { MEGUMIN_V11 } = await imp("data/megumin.js");
+    const q = state.localProfile;
+    const keep = { mode: q.mode, model: q.model, order: JSON.stringify(q.blockStack.order), bank: q.npcBank.enabled, npcs: q.npcBank.npcs, cc: { ...chatCompletionSettings }, api: ctx.mainApi, scene: JSON.stringify(q.sceneList || null) };
+    const between = (s, a, b) => { const i = s.indexOf(a); const j = i < 0 ? -1 : s.indexOf(b, i + a.length); return j < 0 ? "" : s.slice(i + a.length, j); };
+
+    // V11's parser and name finder, as its own tests have them.
+    const s = parseScene("prose\n<Blocks>\n<Scene>\nHere: Lona, +Mira\nRemote: Kade\n</Scene>\n</Blocks>");
+    assert.deepEqual([s.here.map(n => (n.isNew ? "+" : "") + n.name), s.remote.map(n => n.name)], [["Lona", "+Mira"], ["Kade"]]);
+    assert.deepEqual(parseScene("<Scene>\nHere: nobody\nRemote:\n</Scene>"), { here: [], remote: [] });
+    assert.deepEqual(parseScene("<Scene>\nHere: [names, or: nobody]\nRemote: [names, or leave it empty]\n</Scene>"), { here: [], remote: [] }, "an unfilled template is nobody");
+    assert.deepEqual(parseScene("<Scene>\n- **Here:** Lona and + Mira.\n</Scene>").here.map(n => n.name), ["Lona", "Mira"]);
+    assert(parseScene("just prose") === null && sceneBlockOf("<think><Scene>Here: X</Scene></think> prose") === "", "no list, or one inside the thinking");
+    const people = { lona: { name: "Lona" }, matthew: { name: "Matthew", aliases: ["Matt"] }, dom: { name: "Dom (Dominic Morin)" } };
+    assert(whoIs(people, "lona's") === "lona" && whoIs(people, "Matt") === "matthew" && whoIs(people, "Dominic Morin") === "dom" && whoIs(people, "Kade") === null, "exact, possessive, nickname, brackets");
+    const cairns = { "cathleen cairns": { name: "Cathleen Cairns" }, "duncan cairns": { name: "Duncan Cairns" } };
+    assert(whoIs(cairns, "Cat", { nickname: true }) === "cathleen cairns" && whoIs(cairns, "Cat") === null && whoIs(cairns, "Cairns") === null, "a short nickname only for names in the scene; two fit: nobody");
+    assert.deepEqual(namedIn("Bathory smiled.", { eb: { name: "Elizabeth Bathory" }, lo: { name: "Lona" } }), ["eb"]);
+    assert.deepEqual(knownNameList([{ name: "Cathleen Cairns", aliases: ["Cathleen"], seen: 3 }, { name: "Duncan Cairns", seen: 5 }, { name: "Matt Reyes", seen: 1 }, { name: "Matt Cole", seen: 2 }, { name: "Duncan", seen: 9 }, { name: "Mira", seen: 4 }], { first: ["Matt Reyes", "Cat"] }), ["Cathleen", "Matt Reyes", "Duncan", "Mira", "Matt Cole"], "one name per person, the scene first, then the latest seen");
+
+    // Asked for while World State, Bonds or Inner Chatter is in the block; a system block the envelope puts first.
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english", cotEnabled: true });
+    q.sceneList = { enabled: true };
+    q.blockStack.order = ["cyoa"]; reg.meguminSyncLegacyBlockIds();
+    assert(!sc.sceneWanted(q) && !reg.meguminActiveBlocks().some(b => b.id === "scene"), "Choices alone: no scene list");
+    q.blockStack.order = ["world", "bonds"]; reg.meguminSyncLegacyBlockIds();
+    assert(sc.sceneWanted(q) && reg.meguminActiveBlocks().some(b => b.id === "scene"), "World State in: the scene list is asked for");
+    q.npcBank.enabled = true;
+    q.npcBank.npcs = [npcCreateRecord({ name: "Matt Reyes", messageIndex: 1 }), npcCreateRecord({ name: "Matt Cole", messageIndex: 2 }), npcCreateRecord({ name: "Lona", messageIndex: 3 })];
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "Greeting." }, { is_user: true, mes: "go" },
+        { is_user: false, mes: "Kade stood by the door.\n<Blocks>\n<Scene>\nHere: Lona, Kade\nRemote:\n</Scene>\n<World_State>\n**👥 NPCs Present:**\n**Kade:**\n* *Outfit:* armor\n* *Mood:* grim\n</World_State>\n<Bonds>\nKade: Mood: grim | Affection: 10/100 | Trust: 20/100 | Desire: 0/100\n</Bonds>\n</Blocks>", swipes: [""], swipe_id: 0 },
+        { is_user: true, mes: "go" },
+        { is_user: false, mes: "Prose.\n<Blocks>\n<Scene>\nHere: Lona, +Kade\nRemote: Matt Reyes\n</Scene>\n<World_State>\n**👥 NPCs Present:**\n**Lona:**\n* *Outfit:* red coat\n</World_State>\n<Bonds>\nLona: Mood: warm | Affection: 40/100 | Trust: 50/100 | Desire: 0/100\n</Bonds>\n</Blocks>", swipes: [""], swipe_id: 0 },
+        { is_user: true, mes: "What now?" });
+    ctx.mainApi = "openai";
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+    let msgs = await run("VCRP V11 Megumin Original.json");
+    let t = text(msgs);
+    assert.deepEqual(leftovers(msgs), [], `scene list: tags left over: ${leftovers(msgs)}`);
+    // The skeleton: the <Blocks> that opens a line (the NPC dossier rules mention one mid-sentence).
+    const skel = t.search(/^<Blocks>\s*$/m);
+    const env = t.slice(skel, t.indexOf("</Blocks>", skel));
+    assert(/^<Blocks>\s*<Scene>\nHere: \[names, or: nobody\]\nRemote: \[names, or leave it empty\]\n<\/Scene>/.test(env), `<Scene> first in the skeleton:\n${env.slice(0, 220)}`);
+    assert(t.includes(MEGUMIN_V11.sceneRules.replaceAll("{{user}}", "Bob")) && t.indexOf("## Scene") < skel, "V11's scene rules above the skeleton");
+    assert(t.includes(reg.WORLD_FOLLOWS_SCENE), "World State follows the list");
+    assert.deepEqual(sc.sceneNames(), ["Lona", "Kade", "Matt Reyes"], "the newest list's names");
+    const known = between(t, "<Known_Names>", "</Known_Names>").trim();
+    const names = known.split("\n").pop().split(", ");
+    assert(known.startsWith(MEGUMIN_V11.knownNamesLead) && t.indexOf("<Known_Names>") < t.indexOf("## Scene") && names.slice(0, 3).sort().join() === "Kade,Lona,Matt Reyes" && names[3] === "Matt Cole" && names.length === 4 && !names.includes("Matt"), `<Known_Names> before the rules, the scene first, each the shortest unmistakable spelling:\n${known}`);
+    assert(/\n4\. The response ends with the <Blocks> section, <Scene> first\./.test(between(t, "<final_check>", "</final_check>")), "the final check's scene line");
+    assert(t.includes('<npc name="Lona">') && t.includes('<npc name="Matt Reyes">') && !t.includes('<npc name="Matt Cole">'), "the NPC Bank sends the dossiers of everyone in the scene, keyword or not; nobody else's");
+    assert(t.includes("[One line per named NPC in <Scene>, Here or Remote"), "the Bonds template follows <Scene>");
+    assert(castRoster().includes("Kade") && castRoster().includes("Lona"), "Existing cast only counts the scene's names");
+    assert(/Characters on file[\s\S]*- Kade \(#2\): Outfit: armor \| Mood: grim/.test(t) && /Bonds \(#2\): Mood: grim/.test(t), `Remember every character: Kade, listed in the scene but gone from the last blocks, comes back as last recorded:\n${t.slice(t.indexOf("Characters on file"), t.indexOf("Characters on file") + 300)}`);
+    assert(repair.requiredBlocks(chat).some(b => b.tag === "Scene"), "a reply without its scene list is asked for it again");
+    // The card: here and on a call as chips, someone new starred, nobody said; prose otherwise.
+    const rows = treat.parseSceneCard("Here: Lona, +Kade\nRemote: Matt Reyes");
+    const html = treat.renderSceneCard(rows);
+    assert(html.includes("Lona") && html.includes("Kade ✦") && html.includes("Matt Reyes") && html.includes("meg-sk-chip"), "the scene card");
+    assert(treat.renderSceneCard(treat.parseSceneCard("Here: nobody\nRemote:")).includes("nobody") && treat.parseSceneCard("") === null && treat.parseSceneCard("Lona, Kade").length === 2, "nobody said; an empty body declined; names without labels read as Here (V11's parser)");
+    // Off with the switch: nothing of it, the plain blocks line.
+    q.sceneList = { enabled: false };
+    msgs = await run("VCRP V11 Megumin Original.json"); t = text(msgs);
+    assert(!t.includes("<Scene>") && !t.includes("<Known_Names>") && !t.includes("## Scene") && /\n4\. The response ends with the <Blocks> section\./.test(between(t, "<final_check>", "</final_check>")) && t.includes("[One line per named NPC present in the scene"), "off: no list, no names, the plain line, the Bonds template as before");
+    assert(!reg.meguminActiveBlocks().some(b => b.id === "scene") && !repair.requiredBlocks(chat).some(b => b.tag === "Scene"), "off: not asked for, not asked for again");
+
+    Object.assign(q, { mode: keep.mode, model: keep.model });
+    q.blockStack.order = JSON.parse(keep.order); reg.meguminSyncLegacyBlockIds();
+    q.npcBank.enabled = keep.bank; q.npcBank.npcs = keep.npcs;
+    q.sceneList = JSON.parse(keep.scene) || undefined;
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+    chat.length = 0;
+}
+console.log("67 ok the scene list as Megumin Suite V11 has it (<Scene> first in <Blocks> with V11's rules while World State, Bonds or Inner Chatter is in; <Known_Names> handed first, the scene first, one unmistakable spelling each; the final check's scene line; the NPC Bank, Remember every character and Existing cast only follow it; the Bonds template; the switch; the card; V11's parser and name finder)");
 
 console.log("\nALL FORK CHECKS PASSED");

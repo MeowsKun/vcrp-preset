@@ -26,7 +26,7 @@ export const TAB_SYNC_KEYS = {
     "Writing Style": ["activeStyleId", "aiRule", "customStyles", "dnRatio", "animeMode"],
     "Global Toggles & Add Ons": ["addons", "blocks", "userLanguage", "userPronouns", "onomatopoeia"],
     // castMemory: "Remember every character", drawn under World State.
-    "BLOCKS": ["blockStack", "statBlocks", "blocks", "castMemory"],
+    "BLOCKS": ["blockStack", "statBlocks", "blocks", "castMemory", "sceneList"],
     "Story Director": ["storyPlan"],
     "Dynamic Ban List": ["banList", "banListBackend", "banListCustomPromptsEnabled", "banListCustomPrompts"],
     "NPCs Bank": ["npcBank"],

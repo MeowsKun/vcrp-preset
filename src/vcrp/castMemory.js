@@ -19,6 +19,7 @@ import { parseWorldState } from "../blocks/treatments.js";
 import { lastBlocksState } from "./blockHistory.js";
 import { vcrpWithoutSwipedReply } from "./generation.js";
 import { storyProse } from "./notebook/model.js";
+import { sceneNames } from "./scene.js";
 
 const WINDOW = 400;      // replies searched back, at most
 const MAX_PEOPLE = 5;    // characters sent at most
@@ -92,6 +93,8 @@ export function castMemoryNote() {
         else if (!m.is_user && !lastReply) lastReply = prose(m.mes);
     }
     const named = new Set([...`${lastUser}\n${lastReply}`.matchAll(NAME_WORD)].map(m => m[0].toLowerCase()));
+    // VCRP: the newest scene list (vcrp/scene.js) names everyone there: someone it lists is named now.
+    for (const n of sceneNames()) { named.add(String(n).toLowerCase()); named.add(first(n)); }
     for (const w of user.match(/[\p{L}'’-]+/gu) || []) named.delete(w.toLowerCase());
     if (!named.size) return "";
     const back = name => (named.has(first(name)) || named.has(String(name).toLowerCase())) && !present.has(String(name).toLowerCase()) && !present.has(first(name));

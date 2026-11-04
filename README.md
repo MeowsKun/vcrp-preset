@@ -406,6 +406,49 @@ engine (now "V11 Тайна Preview" upstream) and the DeepSeek version were dro
   {{user}} rule), and in the second call for missing blocks. A turn without blocks has no line.
 - **Group chats save** (V11's 04/11 fix): a repaired reply, a cleaned one, a chat with its dashes
   cleaned, everything VCRP saves to a chat, used to be refused by SillyTavern in a group chat.
+- **Custom blocks, as V11 has them** (V11's 04/11; BLOCKS tab, *Create custom block* or the pen on
+  one), on VCRP's own carry instead of V11's state store (`src/vcrp/customBlocks.js`):
+  - **Fields or free text.** A field block is built like the Character Sheet: meters, numbers,
+    text and lists, each with a box for what it means and how it changes, in your words; the
+    story reads those lines in the block's rules. It is drawn like the Sheet (bars, chips).
+  - **Rules for the whole block**, one line each as written, before the field notes. Meters are
+    not held to 10 points a reply here; write your own limit if you want one.
+  - **What the story remembers of it:** *Carried forward* (its last copy travels with the block
+    instructions after the chat, as every block's does, from up to sixty replies back), *Starts
+    fresh* (the story never sees the last one), or *Stays in the chat* (its copies stay in the
+    earlier replies the story reads, at the end of each, while the other blocks come out; the
+    same every turn, so the cache holds).
+  - **When it is written:** every reply, only when something in it changes (V11's line, needs a
+    block the story can see), or every few replies (not asked for until due, not asked for again
+    by the missing-blocks call either, its last copy carried meanwhile).
+  - **One list for every character.** A block made in one character shows under *Add a block*
+    for all; each character keeps only which are in its block, their order and Shown / Hidden.
+    *Delete block* in the editor removes it for everyone. A renamed block still reads (and
+    carries) its copies written under the old tag. The editor shows the exact template the story
+    gets, as you type.
+  - Not carried over: V11's "edit the values by hand" and its Chomusuke-written blocks (both live
+    in its state store).
+- **Who is in the scene** (V11's 04/11 scene list; BLOCKS tab, on by default), on VCRP without
+  V11's World State store (`src/vcrp/scene.js`, V11's own `src/state/scene.js` and
+  `src/state/names.js` word for word):
+  - The story writes `<Scene>` first in `<Blocks>` (V11's rules and lines): *Here*, the characters
+    physically there, and *Remote*, those on a call or texting, `+` before someone new. Sent while
+    World State, Bonds or NPC Inner Chatter is in the block; a reply without it is asked for it
+    again like any missing block. The final check asks for the blocks "with `<Scene>` first".
+  - **`<Known_Names>`** goes before the block instructions: every character on file once (the
+    NPC Bank, the last blocks' World State and Bonds, the recent scene lists), written the
+    shortest way that finds only them ("Lona", but "Matt Reyes" when a Matt Cole is around), the
+    scene first. The story writes the same name in every block.
+  - Who uses it: the **NPC Bank** sends the dossiers of everyone in the scene first, keyword or
+    not; **Remember every character** brings back someone the list names whose records are not in
+    the last blocks; **Existing cast only** counts them; the **Bonds** template asks for one line
+    per character in `<Scene>`; VCRP's **World State** is told its cast follows the list (someone
+    on a call goes under Off-Screen). A *Scene* tab on the card shows them as chips (✦ for someone
+    new).
+  - Costs about forty output tokens a reply plus the names list; switch it off in the BLOCKS tab.
+    V11's store-side parts (people on a call shown apart in its World State, "walking out no
+    longer fills Off-screen", "Same person as" joining bonds) are its World State's and are not
+    in VCRP, whose World State is the text template.
 - Story Memory, Focus, Tone Rules, the one-shot direction, Existing cast only, the length limit,
   Dialogue Colors, the NPC Bank and every block work with them as with every VCRP engine.
   `node tools/test_cache.mjs` plays V11 turns on the Writers' Room and on V11 Тайна and checks each one

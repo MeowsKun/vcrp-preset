@@ -112,7 +112,7 @@ export function reminderSection({ presetChecks, userLine, adapted = false, block
         const own = UNIVERSAL_RULES.reminderChecks.map(l => (l.trim() === "[[user]]" ? String(userLine || "") : l));
         if (blocks) {
             const at = UNIVERSAL_RULES.reminderChecks.findIndex(l => l.trim() === "[[user]]");
-            own.splice(at < 0 ? own.length : at, 0, MEGUMIN_V11.blocksCheck);
+            own.splice(at < 0 ? own.length : at, 0, blocks === "scene" ? MEGUMIN_V11.blocksCheckScene : MEGUMIN_V11.blocksCheck);
         }
         const lines = own.flatMap(checkLines);
         return `${UNIVERSAL_RULES.reminderHeader}\n${lines.map((l, i) => `${i + 1}. ${l}`).join("\n")}`;
@@ -120,7 +120,8 @@ export function reminderSection({ presetChecks, userLine, adapted = false, block
     const lines = [
         ...checkLines(MEGUMIN_V11.finalChecks),
         MEGUMIN_V11.banlistCheck,
-        ...(blocks ? [MEGUMIN_V11.blocksCheck] : []),
+        // "scene" (V11's scene list opens the section): its own line.
+        ...(blocks ? [blocks === "scene" ? MEGUMIN_V11.blocksCheckScene : MEGUMIN_V11.blocksCheck] : []),
         ...(adapted ? checkLines(UNIVERSAL_DASH_CHECK) : []),
         ...checkLines(presetChecks),
         ...checkLines(userLine),

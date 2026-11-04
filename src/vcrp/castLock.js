@@ -14,6 +14,7 @@
 
 import { getContext, chat_metadata, saveMetadata } from "../st.js";
 import { localProfile } from "../core/state.js";
+import { sceneNames } from "./scene.js";
 
 const META = "vcrp_cast_lock";   // { enabled }
 const ROSTER_LIMIT = 40;
@@ -45,6 +46,8 @@ export function castRoster() {
     }
     const bank = localProfile && localProfile.npcBank;
     if (bank && bank.enabled) (bank.npcs || []).forEach(n => { if (n && n.name) names.push(n.name); });
+    // The newest scene list's names (vcrp/scene.js, Megumin V11's scene list).
+    try { sceneNames().forEach(n => names.push(n)); } catch (e) { /* no chat */ }
     const seen = new Set();
     return names.map(n => String(n).trim()).filter(n => n && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase())).slice(0, ROSTER_LIMIT);
 }

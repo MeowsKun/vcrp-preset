@@ -25,6 +25,7 @@ import { esc, renderBody, renderStatLine } from "./text.js";
 import { PURA_TREATMENT } from "./pura.js";
 import { PURA_BLOCK_IDS } from "../features/blocks/puraBlocks.js";
 import { parseNotebookCard, renderNotebookCard } from "../vcrp/notebook/card.js";
+import { parseScene } from "../state/scene.js";
 
 // The inline formatter renderStatLine expects. Same shape as the one inside
 // renderBody, kept here so a treatment can format a fragment without going
@@ -1009,6 +1010,32 @@ export function renderSheet(parts) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// VCRP: the scene list (Megumin Suite V11, 04/11): who is here and who is on a call, as chips.
+// A name the story marked new (+Mira) gets a star.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export function parseSceneCard(body, opts = {}) {
+    const s = parseScene(`<Scene>\n${String(body || "")}\n</Scene>`);
+    if (!s) return null;
+    const keep = Boolean(opts.keepPlaceholders);
+    if (!s.here.length && !s.remote.length && !keep && !/\b(nobody|no one|none)\b/i.test(String(body))) return null;
+    return [
+        { label: "Here", items: s.here, empty: keep ? "names, or nobody" : "nobody" },
+        { label: "Remote", items: s.remote, empty: keep ? "names, or empty" : "" }
+    ];
+}
+
+export function renderSceneCard(rows) {
+    return rows.filter(r => r.items.length || r.empty).map(r => `
+        <div class="meg-sheet-field">
+            <div class="meg-ws-sub">${esc(r.label)}</div>
+            ${r.items.length
+                ? `<div class="meg-sk-chips">${r.items.map(n => `<span class="meg-sk-chip" title="${n.isNew ? "New this reply" : ""}"><span class="meg-sk-nm">${esc(n.name)}${n.isNew ? " ✦" : ""}</span></span>`).join("")}</div>`
+                : `<div class="meg-iv-none">${esc(r.empty)}</div>`}
+        </div>`).join("");
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // The table render.js routes through
 // ═════════════════════════════════════════════════════════════════════════════
 //
@@ -1020,6 +1047,8 @@ export const BLOCK_TREATMENTS = {
     world:   { parse: parseWorldState, render: renderWorldState, cls: "meg-ws-pane" },
     chatter: { parse: parseChatter,    render: renderChatter,    cls: "meg-chat-pane" },
     sheet:   { parse: parseSheet,      render: renderSheet,      cls: "meg-sheet-pane" },
+    // VCRP: the scene list, drawn like the Sheet's chips.
+    scene:   { parse: parseSceneCard,  render: renderSceneCard,  cls: "meg-sheet-pane" },
 
     // VCRP: Pura's trackers, drawn with Pura's own cards.
     ...Object.fromEntries(PURA_BLOCK_IDS.map(id => [id, PURA_TREATMENT])),

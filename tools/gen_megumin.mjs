@@ -164,6 +164,12 @@ const V11 = {
     geminiJb: v11Rules.GEMINI_JB,
     geminiCaret: v11Rules.GEMINI_CARET_LINE,
     blocksCheck: v11Scene.BLOCKS_CHECK,
+    // 04/11: the scene list the story writes first in <Blocks>, the names it is handed
+    // (<Known_Names>), and the final check's line when <Scene> opens the section.
+    sceneRules: v11Scene.SCENE_RULES,
+    sceneTemplate: v11Scene.SCENE_TEMPLATE,
+    knownNamesLead: v11Scene.KNOWN_NAMES_LEAD,
+    blocksCheckScene: v11Scene.BLOCKS_CHECK_SCENE,
 };
 for (const [k, v] of Object.entries(V11)) if (typeof v !== "string" || !v.trim()) fail("upstream V11 text missing: " + k);
 

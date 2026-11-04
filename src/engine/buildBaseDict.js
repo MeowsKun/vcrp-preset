@@ -19,6 +19,7 @@ import { V11_ADAPTED_STYLE_LEADS } from "../../data/modes/v11Adapted.js";
 import { previousBlocksNote } from "../vcrp/blockHistory.js";
 import { notebookCraft } from "../vcrp/notebook/index.js";
 import { castMemoryNote } from "../vcrp/castMemory.js";
+import { knownNamesBlock, npcsInScene } from "../vcrp/scene.js";
 import { pushActiveNpcImage, clearActiveNpcImages, activeBlockRepair } from "../core/activeRequests.js";
 import { DEFAULT_PROMPTS } from "../prompts/index.js";
 import { hardcodedLogic } from "../../data/database.js";
@@ -521,7 +522,9 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
                 // Use cached keywords (shared with vault retrieval in same prompt build)
                 const { keywords } = memGetCachedKeywords(context.chat, 4);
                 
-                if (keywords.length > 0) {
+                // VCRP: with the scene list (vcrp/scene.js), the characters it names are sent
+                // even on a turn no keyword matches anyone.
+                if (keywords.length > 0 || npcsInScene(localProfile.npcBank.npcs).length) {
                     const npcs = localProfile.npcBank.npcs;
                     const totalNpcs = npcs.length;
 
@@ -569,6 +572,13 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
                         }
                     });
                     
+                    // VCRP: the characters in the newest scene list come first, keyword or not:
+                    // their dossiers are what the next reply needs (Megumin V11's scene list).
+                    for (const idx of npcsInScene(npcs)) {
+                        const have = scoredNpcs.find(s => s.name === npcs[idx].name);
+                        if (have) { have.score += 1000; have.matchedWords.push("in the scene"); }
+                        else scoredNpcs.push({ ...npcs[idx], score: 1000, matchedWords: ["in the scene"] });
+                    }
                     if (scoredNpcs.length > 0) {
                         // Sort by highest score
                         scoredNpcs.sort((a, b) => b.score - a.score);
@@ -638,8 +648,14 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     // with V11, whose own text carries it.
     dict["[[notebook]]"] = notebookCraft();
     dict["[[blocks]]"] = buildBlocksEnvelope(dict);
+    // VCRP: the scene list opens the section (Megumin V11): the final check asks for it so.
+    const sceneFirst = /<Blocks>\s*<Scene\b/i.test(dict["[[blocks]]"]);
     // VCRP: earlier replies go out without their blocks (cache), so last turn's travel here.
     if (dict["[[blocks]]"]) {
+        // VCRP: the names to write in <Scene> and every block (vcrp/scene.js), before the
+        // rules that point at them.
+        const known = knownNamesBlock();
+        if (known) dict["[[blocks]]"] = `${known}\n\n${dict["[[blocks]]"]}`;
         const previous = previousBlocksNote();
         if (previous) dict["[[blocks]]"] += `\n\n${previous}`;
         // VCRP: characters named again but gone from those blocks, as they were last recorded.
@@ -647,12 +663,11 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         if (returning) dict["[[blocks]]"] += `\n\n${returning}`;
     }
     // Megumin Suite V11 (04/11): the final check asks for the <Blocks> section on a turn that
-    // has one: a story reply, or the second call for a reply's missing blocks (which keeps the
-    // block instructions). Continue and Impersonate drop the blocks (generation.js).
-    applyMeguminV11Reminder(dict, activeEngine, {
-        gen: genKind,
-        blocks: Boolean(dict["[[blocks]]"]) && (genKind === "reply" || (genKind === "quiet" && !!activeBlockRepair)),
-    });
+    // has one (<Scene> first, when the scene list opens it): a story reply, or the second call
+    // for a reply's missing blocks (which keeps the block instructions). Continue and
+    // Impersonate drop the blocks (generation.js).
+    const blocksSent = Boolean(dict["[[blocks]]"]) && (genKind === "reply" || (genKind === "quiet" && !!activeBlockRepair));
+    applyMeguminV11Reminder(dict, activeEngine, { gen: genKind, blocks: blocksSent ? (sceneFirst ? "scene" : true) : false });
 
     return dict;
 }
