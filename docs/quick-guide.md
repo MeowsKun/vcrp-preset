@@ -327,3 +327,20 @@ on. You can change any row before using it, and skip the page altogether.
 **The NPC Bank knows a short name.** "Resha" updates Resha Helios, a dossier the story writes for
 her under a short name fills her record instead of making a second one, and the short name stays
 on her card as a nickname. Two characters who both fit a name are never guessed between.
+
+**An empty reply is retried once, by itself.** SillyTavern's own Auto-swipe deliberately never
+retries an empty reply, so VCRP does, once per message: a reply with no story at all is swiped
+again a moment after it lands, and that swipe carries a line saying the last attempt came back
+with no text (a prompt that changes a little often passes where the same one came back empty).
+The toast still names the cause: the provider's filter, the output limit, an error. Not for a
+reply the output limit stopped; off in Global Settings if you would rather swipe yourself.
+
+**When empty replies keep coming, send the details.** Setup Check (Global Settings) lists the
+open chat's empty replies by cause, with the provider that served each request and its id. Press
+**Copy empty-reply details** on the card and paste it when asking about them.
+
+**A filtered reply changes the prompt's start once.** Flipping Gemini JB off and on made the
+filter let the story through for a while: the setting was the same after, only the prompt's
+start had changed. VCRP now does that by itself after a filtered empty reply, with a short line
+in the Main Prompt (the cached part), kept with the chat. The next request is written to the cache again
+(one cold request), then it is warm as before.

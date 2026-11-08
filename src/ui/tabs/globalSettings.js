@@ -118,6 +118,17 @@ export function renderGlobalSettings(c) {
             <div class="ps-switch" style="${loreOn ? 'background: #f59e0b;' : ''}"></div>
         </div>
     `);
+    // VCRP: an empty reply swiped once more by itself (vcrp/blankReply.js). Missing means on.
+    const retryOn = gs.blankRetry !== false;
+    $content.append(`
+        <div class="mtab-toggle-row ${retryOn ? 'active' : ''}" id="gs_toggle_blank_retry" style="cursor: pointer;">
+            <div class="toggle-info">
+                <div class="toggle-label"><i class="fa-solid fa-rotate-right" style="color: #f43f5e;"></i> Retry an empty reply once</div>
+                <div class="toggle-desc">A reply with no story at all (nothing, or reasoning alone) is swiped again by itself a moment after it lands, once per message, and that swipe carries a line saying the last attempt came back empty: a prompt that changes a little often passes where the same one came back empty again. Not for a reply the output limit stopped. SillyTavern's own Auto-swipe never retries an empty reply. Off: the toast names the cause and you swipe yourself.</div>
+            </div>
+            <div class="ps-switch" style="${retryOn ? 'background: #f43f5e;' : ''}"></div>
+        </div>
+    `);
     // VCRP: whether story replies keep the preset's CoT Prefill slot.
     const det = vcrpDetectPrefill();
     const { source, model } = vcrpActiveModel();
@@ -247,6 +258,14 @@ export function renderGlobalSettings(c) {
     wireToggle("#gs_toggle_utility_prefill", "enableUtilityPrefill", "#10b981");
     wireToggle("#gs_toggle_clean_dashes", "cleanDashes", "#38bdf8");
     // On unless switched off, so not the helper above (which reads a missing setting as off).
+    $content.find("#gs_toggle_blank_retry").on("click", function () {
+        gs.blankRetry = gs.blankRetry === false;
+        saveSettingsDebounced();
+        const on = gs.blankRetry !== false;
+        $(this).toggleClass("active", on);
+        $(this).css("border-color", on ? "#f43f5e" : "var(--border-color)");
+        $(this).find(".ps-switch").css("background", on ? "#f43f5e" : "");
+    });
     $content.find("#gs_toggle_lore_tasks").on("click", function () {
         gs.loreInTasks = gs.loreInTasks === false;
         saveSettingsDebounced();

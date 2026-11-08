@@ -11,6 +11,7 @@ import { extension_settings, getContext, event_types } from "../st.js";
 import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem, vcrpRouteMarksCache, vcrpModelReasonsHidden } from "./generation.js";
 import { vcrpGenerationRecords } from "./generationTrace.js";
 import { helperSettings, helperJobWanted, HELPER_JOBS, CURRENT_CONNECTION } from "./helper/settings.js";
+import { blankReplyKind } from "./blankReply.js";
 import { connectionProfiles, isChatProfile, canSendToProfile } from "./helper/index.js";
 import { escapeHtmlAttr } from "../utils/html.js";
 import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memoryState, estimateTokens, memoryCanReachPrompt } from "./memory/index.js";
@@ -219,6 +220,8 @@ export function vcrpHealthCheck() {
 
     // How the last replies ended, from the API's own answers (generationTrace.js).
     lastRepliesCheck(add);
+    // The replies in this chat that came back empty, from the stamps saved with them.
+    emptyRepliesCheck(add, ctx);
 
     // 6. Long chats: what decides whether a request is cheap or full price.
     longChatChecks(add, ctx, cc, source, model);
@@ -352,6 +355,79 @@ function helperChecks(add) {
 const LIMIT_BY = { cap: "VCRP's Safety cap", hold: "VCRP's Hold each reply to the target", "": "SillyTavern's Max Response Length" };
 const kTok = n => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(Math.round(n)));
 
+// ── The empty replies of a chat ──────────────────────────────────────────────
+// Each reply carries how its generation ended (generationTrace.js stamps msg.extra.vcrp_finish,
+// saved with the chat), so a chat can be read back for what stopped its empty replies, long
+// after the toasts are gone: the thing to send along when asking about them.
+
+const whatStopped = f => {
+    if (!f || !f.done) return "no stop reason recorded";
+    if (f.error) return `failed (${f.error})`;
+    if (f.reason === "length") return "stopped by the output limit";
+    if (f.reason === "filter") return `stopped by the provider's filter (${f.native || "content filter"})`;
+    if (f.reason === "stop") return "ended on its own with no text";
+    return f.reason ? `${f.reason}${f.native ? ` (${f.native})` : ""}` : "no stop reason given";
+};
+
+/**
+ * The replies of `chat` that are blank (pure): [{ index, kind, what, line, stamp }], oldest
+ * first. The greeting is the card's and is left out.
+ */
+export function emptyRepliesReport(chat) {
+    const out = [];
+    (Array.isArray(chat) ? chat : []).forEach((m, index) => {
+        if (!index || !m || m.is_user || m.is_system || typeof m.mes !== "string") return;
+        const kind = blankReplyKind(m.mes);
+        if (!kind) return;
+        const f = (m.extra && m.extra.vcrp_finish) || null;
+        const what = whatStopped(f);
+        const bits = [what];
+        if (f && f.provider) bits.push(`via ${f.provider}`);
+        if (f && f.model) bits.push(f.model);
+        if (f && f.usage && f.usage.out) bits.push(`wrote ${kTok(f.usage.out)} tokens${f.usage.reasoning ? ` (${kTok(f.usage.reasoning)} reasoning)` : ""}`);
+        if (f && f.usage && f.usage.input) bits.push(`read ${kTok(f.usage.input)}${f.usage.cached ? ` (${kTok(f.usage.cached)} cached)` : ""}`);
+        if (f && f.limit) bits.push(`limit ${kTok(f.limit)} (${LIMIT_BY[f.limitBy] || LIMIT_BY[""]})`);
+        if (f && f.genId) bits.push(f.genId);
+        out.push({ index, kind, what, line: `${kind}: ${bits.join(", ")}`, stamp: f });
+    });
+    return out;
+}
+
+/** The report as text to paste: the setup, then one line per empty reply. "" when the chat has none. */
+export function vcrpEmptyRepliesText(ctx = null) {
+    let c = ctx;
+    try { c = c || getContext(); } catch (e) { c = {}; }
+    const chat = (c && c.chat) || [];
+    const rows = emptyRepliesReport(chat);
+    if (!rows.length) return "";
+    const cc = (c && c.chatCompletionSettings) || {};
+    const { source, model } = vcrpActiveModel();
+    const p = localProfile || {};
+    const head = [
+        `VCRP empty replies: ${rows.length} of ${chat.filter((m, i) => i > 0 && m && !m.is_user && !m.is_system).length} replies in this chat`,
+        `model: ${source} ${model}; engine: ${p.mode || "?"}; preset max tokens: ${cc.openai_max_tokens || "?"}; reasoning effort: ${cc.reasoning_effort || "?"}; stream: ${cc.stream_openai !== false}`,
+        `Gemini JB: ${usesCaretWords(p) ? "on" : "off"}; CoT: ${p.cotEnabled !== false ? "on" : "off"}; Safety cap: ${replyCapTokens() || 0}; helper blocks: ${(() => { try { return helperJobWanted("blocks") && helperSettings().enabled ? "on" : "off"; } catch (e) { return "?"; } })()}`,
+    ];
+    return `${head.join("\n")}\n${rows.map(r => `#${r.index} ${r.line}${r.stamp && r.stamp.at ? ` @ ${new Date(r.stamp.at).toISOString()}` : ""}`).join("\n")}`;
+}
+
+function emptyRepliesCheck(add, ctx) {
+    const chat = (ctx && ctx.chat) || [];
+    const rows = emptyRepliesReport(chat);
+    if (!rows.length) return;
+    const by = {};
+    for (const r of rows) by[r.what] = (by[r.what] || 0) + 1;
+    const summary = Object.entries(by).map(([k, n]) => `${n} ${k}`).join(", ");
+    const filtered = rows.filter(r => r.stamp && r.stamp.reason === "filter").length;
+    const unstamped = rows.filter(r => !r.stamp || !r.stamp.done).length;
+    const advice = [
+        filtered ? "A filtered reply is the provider's content filter: a swipe carries a line that says the request is approved fiction (VCRP adds it), the Gemini JB add-on helps, so does the V11 preset's USER Hard prompt." : "",
+        unstamped ? "A reply with no stop reason recorded came before VCRP read the answers (10.0.0-vcrp.13), or SillyTavern did not add a message for it." : "",
+    ].filter(Boolean).join(" ");
+    add("warn", `${rows.length} repl${rows.length === 1 ? "y" : "ies"} in this chat came back empty: ${summary}`,
+        `${rows.slice(-5).map(r => `#${r.index} ${r.line}`).join(" · ")}. Copy the details (the button on this card) and send them along when asking about it. ${advice}`.trim());
+}
+
 /**
  * The last few replies as the API's own answers ended them: the stop reason, what each wrote
  * (reasoning counted) and the limit it went out with. A warning when one was stopped by the
@@ -368,9 +444,10 @@ function lastRepliesCheck(add) {
                     : r.reason === "filter" ? "stopped by the provider's filter"
                         : r.reason ? r.reason : "no stop reason given";
         const native = r.native && r.native.toLowerCase() !== (r.reason || "") && !r.error ? ` (${r.native})` : "";
+        const via = r.provider ? ` via ${r.provider}` : "";
         const wrote = r.usage && r.usage.out ? `, wrote ${kTok(r.usage.out)} tokens${r.usage.reasoning ? ` (${kTok(r.usage.reasoning)} of them reasoning)` : ""}` : "";
         const limit = r.limit ? `, limit ${kTok(r.limit)} from ${LIMIT_BY[r.limitBy] || LIMIT_BY[""]}` : "";
-        return `${new Date(r.at).toLocaleTimeString()}: ${how}${native}${wrote}${limit}`;
+        return `${new Date(r.at).toLocaleTimeString()}: ${how}${native}${via}${wrote}${limit}`;
     };
     const cut = recent.filter(r => r.reason === "length").length;
     const filtered = recent.filter(r => r.reason === "filter").length;
@@ -435,14 +512,45 @@ export function buildHealthCard(rerender) {
             ${i.detail ? `<div style="font-size:0.72rem; color:var(--text-muted); line-height:1.4;">${escapeHtmlAttr(i.detail)}</div>` : ""}</div>
         </div>`;
     }).join("");
+    const report = vcrpEmptyRepliesText();
     const card = $(`
         <div class="mtab-panel" style="margin: 0; padding: 12px 16px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px; flex-wrap:wrap;">
                 <span style="font-weight:700; color:${statusColor};">${status}</span>
-                <button class="ps-modern-btn secondary vcrp-health-recheck" style="padding:4px 10px; font-size:0.72rem;"><i class="fa-solid fa-rotate"></i> Re-check</button>
+                <span style="display:flex; gap:6px;">
+                    ${report ? `<button class="ps-modern-btn secondary vcrp-health-copy-empty" style="padding:4px 10px; font-size:0.72rem;" title="The empty replies of this chat and how each ended, as text to paste"><i class="fa-solid fa-copy"></i> Copy empty-reply details</button>` : ""}
+                    <button class="ps-modern-btn secondary vcrp-health-recheck" style="padding:4px 10px; font-size:0.72rem;"><i class="fa-solid fa-rotate"></i> Re-check</button>
+                </span>
             </div>
             ${rows}
         </div>`);
     card.find(".vcrp-health-recheck").on("click", () => { vcrpRefreshHealthBadge(); rerender(); });
+    card.find(".vcrp-health-copy-empty").on("click", () => copyText(vcrpEmptyRepliesText(), "The empty replies' details"));
     return card;
+}
+
+// Copies text to the clipboard; where that is not allowed (an http page on a phone), shows it in
+// a dialog to copy by hand.
+function copyText(text, title) {
+    const done = () => { if (typeof toastr !== "undefined") toastr.success("Copied. Paste it where you ask about the empty replies.", "VCRP"); };
+    const show = () => {
+        if (typeof document === "undefined") return;
+        const dlg = document.createElement("dialog");
+        dlg.className = "vcrp-text-dialog";
+        dlg.innerHTML = `<div style="display:flex; flex-direction:column; gap:8px; max-width:min(92vw, 640px);">
+            <b>${escapeHtmlAttr(title)}</b>
+            <textarea readonly style="width:100%; min-height:40vh; font-size:0.72rem; font-family:monospace;"></textarea>
+            <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="ps-modern-btn vcrp-dlg-select">Select all</button><button type="button" class="ps-modern-btn secondary vcrp-dlg-close">Close</button></div>
+        </div>`;
+        dlg.querySelector("textarea").value = text;
+        dlg.querySelector(".vcrp-dlg-select").addEventListener("click", () => { const ta = dlg.querySelector("textarea"); ta.focus(); ta.select(); });
+        dlg.querySelector(".vcrp-dlg-close").addEventListener("click", () => { try { dlg.close(); } catch (e) { /* not open */ } dlg.remove(); });
+        document.body.appendChild(dlg);
+        if (typeof dlg.showModal === "function") { try { dlg.showModal(); } catch (e) { dlg.setAttribute("open", ""); } } else dlg.setAttribute("open", "");
+    };
+    try {
+        if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            navigator.clipboard.writeText(text).then(done, show);
+        } else show();
+    } catch (e) { show(); }
 }

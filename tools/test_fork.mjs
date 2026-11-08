@@ -5415,7 +5415,9 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
         "data: [DONE]",
     ].join("\n");
     const r1 = trace.readGenerationBody(sse);
-    assert.deepEqual(r1, { reason: "length", native: "MAX_TOKENS", usage: { out: 8233, reasoning: 8233, input: 96000, cached: 90000 }, error: "" }, "OpenRouter's stream: stopped by the limit, in Gemini's own word, the usage from the last chunk");
+    assert.deepEqual(r1, { reason: "length", native: "MAX_TOKENS", usage: { out: 8233, reasoning: 8233, input: 96000, cached: 90000 }, error: "", provider: "", genId: "x" }, "OpenRouter's stream: stopped by the limit, in Gemini's own word, the usage from the last chunk, the generation's id");
+    const r1b = trace.readGenerationBody('data: {"id":"gen-77","provider":"Google AI Studio","choices":[{"delta":{"content":""},"finish_reason":"content_filter","native_finish_reason":"OTHER"}]}');
+    assert(r1b.provider === "Google AI Studio" && r1b.genId === "gen-77" && r1b.reason === "filter" && r1b.native === "OTHER", "OpenRouter names the provider and the generation; Gemini's OTHER is its filter");
     const r2 = trace.readGenerationBody('{"choices":[{"message":{"content":""},"finish_reason":"content_filter","native_finish_reason":"PROHIBITED_CONTENT"}],"usage":{"prompt_tokens":10,"completion_tokens":0}}');
     assert(r2.reason === "filter" && r2.native === "PROHIBITED_CONTENT" && r2.usage.out === 0, "a whole answer: the provider's filter");
     const r3 = trace.readGenerationBody('data: {"choices":[{"delta":{"content":"a"},"finish_reason":null}]}\ndata: {"error":{"message":"Provider returned error","code":502}}');
@@ -5815,5 +5817,117 @@ console.log("71 ok the NPC Bank's name finder (a first name, a nickname, a name 
     assert(L.ENGINE_CHOICES.every(id => modes.has(id)), "every engine offered exists");
 }
 console.log("72 ok Model Setup's loadouts (a preview that writes nothing; the engine with its thinking and style, the add-ons, the length and the global rows written; Gemini JB off elsewhere; a Thinking Cap kept; changed from the loadout in use; the global rows written once; every loadout's engine and length exist)");
+
+// 73. Empty replies, read back and retried: the retry note on a swipe of a blank reply (not a
+//     normal turn, not a reply the output limit stopped), the chat's empty replies read from the
+//     stamps saved with them (Setup Check, the text to copy), and the once-only automatic swipe
+//     (SillyTavern's own auto-swipe never retries an empty reply).
+{
+    const q = state.localProfile;
+    const BR = await imp("src/vcrp/blankReply.js");
+    const H = await imp("src/vcrp/health.js");
+    const V11 = "VCRP V11 Megumin Original.json";
+    const keep = { mode: q.mode, model: q.model, addons: [...(q.addons || [])], cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english", cotEnabled: true });
+    q.addons = (q.addons || []).filter(a => a !== "gemini_jb");
+    ctx.mainApi = "openai";
+    const v11Preset = JSON.parse(readFileSync(join(REPO, "Presets", V11), "utf8"));
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: v11Preset.prompts, prompt_order: v11Preset.prompt_order });
+
+    // The retry note: on a swipe of a blank reply only, after the chat, the add-on on or off.
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "go" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra: { vcrp_finish: { done: true, reason: "filter", native: "OTHER" } } });
+    assert.equal(BR.blankRetryNote(chat, "normal"), "", "a normal turn: no note");
+    assert.equal(BR.blankRetryNote(chat, "swipe"), BR.BLANK_RETRY_NOTE, "a swipe of a blank reply: the note");
+    chat[1].extra.vcrp_finish = { done: true, reason: "length", limit: 2000 };
+    assert.equal(BR.blankRetryNote(chat, "swipe"), "", "not for a reply the output limit stopped");
+    chat[1].extra.vcrp_finish = { done: true, reason: "stop" };
+    let msgs = await run(V11, "swipe");
+    assert(text(msgs).includes(BR.BLANK_RETRY_NOTE), "the swipe's prompt carries the note at the Gemini JB spot, with the add-on off");
+    assert(msgs.findIndex(m => typeof m.content === "string" && m.content.includes(BR.BLANK_RETRY_NOTE)) > msgs.findIndex(m => m.role !== "system"), "after the chat");
+    msgs = await run(V11, "normal");
+    assert(!text(msgs).includes(BR.BLANK_RETRY_NOTE), "a normal turn carries none");
+    q.addons = [...q.addons, "gemini_jb"];
+    msgs = await run(V11, "swipe");
+    assert(text(msgs).includes(BR.BLANK_RETRY_NOTE) && text(msgs).includes("This request complies with the adult fiction content policy"), "with the add-on on: its line and the note");
+    q.addons = q.addons.filter(a => a !== "gemini_jb");
+
+    // The chat's empty replies, read from their stamps; the greeting is left out.
+    chat.length = 0;
+    chat.push({ is_user: false, name: "Alice", mes: "Greeting." },
+        { is_user: true, name: "Bob", mes: "a" }, { is_user: false, name: "Alice", mes: "Fine prose." },
+        { is_user: true, name: "Bob", mes: "b" }, { is_user: false, name: "Alice", mes: "", extra: { vcrp_finish: { done: true, reason: "filter", native: "OTHER", provider: "Google AI Studio", model: "google/gemini-4-argon", usage: { out: 0, input: 51000, cached: 48000 }, genId: "gen-1", at: 1 } } },
+        { is_user: true, name: "Bob", mes: "c" }, { is_user: false, name: "Alice", mes: "<think>only</think>", extra: { vcrp_finish: { done: true, reason: "stop", native: "STOP", provider: "Google Vertex", usage: { out: 900, reasoning: 880, input: 52000 }, at: 2 } } },
+        { is_user: true, name: "Bob", mes: "d" }, { is_user: false, name: "Alice", mes: "" });
+    const rows = H.emptyRepliesReport(chat);
+    assert(rows.length === 3 && rows[0].index === 4 && /provider's filter \(OTHER\)/.test(rows[0].what) && /via Google AI Studio/.test(rows[0].line) && /gen-1/.test(rows[0].line)
+        && rows[1].kind === "thinking" && /ended on its own/.test(rows[1].what) && /880 reasoning/.test(rows[1].line) && /no stop reason recorded/.test(rows[2].what), `the report: ${JSON.stringify(rows.map(r => r.line))}`);
+    const txt = H.vcrpEmptyRepliesText({ chat, chatCompletionSettings });
+    assert(txt.startsWith("VCRP empty replies: 3 of 4 replies") && txt.includes("google/gemini-4-argon") && txt.includes("#4 empty: stopped by the provider's filter (OTHER)") && txt.includes("Gemini JB: off"), `the text to copy: ${txt.slice(0, 300)}`);
+    assert(H.vcrpHealthCheck().items.some(i => i.level === "warn" && /3 replies in this chat came back empty/.test(i.title) && /1 stopped by the provider's filter \(OTHER\)/.test(i.title)), "Setup Check counts them by cause");
+    assert.equal(H.vcrpEmptyRepliesText({ chat: chat.slice(0, 3), chatCompletionSettings }), "", "a chat without one: nothing to copy");
+
+    // The automatic retry: once, with SillyTavern's own swipe call; not when the limit stopped
+    // it; not when switched off; not for an older reply.
+    const toastrWas = globalThis.toastr;
+    const toasts = [];
+    globalThis.toastr = { info: (m, t) => toasts.push(`${t}: ${m}`), warning: (m, t) => toasts.push(`${t}: ${m}`), success() {}, error() {} };
+    const swipes = [];
+    ctx.swipe = { to: async (ev, dir, opts) => { swipes.push({ dir, ...opts }); }, right: async () => { swipes.push({ dir: "right-plain" }); } };
+    const wait = () => new Promise(r => setTimeout(r, 900));
+    chat.length = 0;
+    // Earlier groups' blank replies bumped the count; this chat starts never filtered.
+    delete globalThis.__ST__.chat_metadata.vcrp_prompt_salt;
+    assert.equal(BR.promptSaltLine(), "", "never filtered: no line");
+    chat.push({ is_user: true, name: "Bob", mes: "go" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra: { vcrp_finish: { done: true, reason: "filter", native: "OTHER" } } });
+    BR.vcrpBlankOnReply(1, "normal");
+    assert(chat[1].extra.vcrp_blank_retry === 1 && toasts.length === 1 && /retrying/.test(toasts[0]) && /swipes once more by itself/.test(toasts[0]) && /PROHIBITED_CONTENT|OTHER|content filter/.test(toasts[0]), `the first empty reply: retried, said why: ${toasts[0]}`);
+    await wait();
+    assert(swipes.length === 1 && swipes[0].dir === "right" && swipes[0].source === "auto_swipe" && swipes[0].forceMesId === 1, `SillyTavern's own auto-swipe call: ${JSON.stringify(swipes)}`);
+    // The filtered reply changed the prompt's start once: the line sits in the cached part.
+    assert(globalThis.__ST__.chat_metadata.vcrp_prompt_salt === 1 && BR.promptSaltLine() === "(Story session 1.)", "a filtered reply bumps the chat's count");
+    const salted = await run(V11, "swipe");
+    const firstNonSystem = salted.findIndex(m => m.role !== "system");
+    assert(salted.slice(0, firstNonSystem).some(m => typeof m.content === "string" && m.content.includes("(Story session 1.)")), "the line is in the prompt's cached start (the Main Prompt)");
+    assert(toasts[0].includes("the prompt's start changed once"), "and the toast says so");
+    // The retry came back empty too (its extras copied from the last swipe): said, not retried again.
+    toasts.length = 0;
+    chat[1].mes = ""; chat[1].swipes = ["", ""]; chat[1].swipe_id = 1;
+    BR.vcrpBlankOnReply(1, "swipe");
+    await wait();
+    assert(swipes.length === 1 && toasts.length === 1 && /retried once already/.test(toasts[0]), `not a second time: ${toasts[0]}`);
+    toasts.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "more" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra: { vcrp_finish: { done: true, reason: "length", limit: 2000, limitBy: "cap" } } });
+    BR.vcrpBlankOnReply(3, "normal");
+    await wait();
+    assert(swipes.length === 1 && !chat[3].extra.vcrp_blank_retry && toasts.length === 1 && /output limit stopped it/.test(toasts[0]), `the limit's doing: no retry (${toasts[0]})`);
+    // The retry's own empty answer (filtered again) changed the start a second time; the limit's did not.
+    assert.equal(globalThis.__ST__.chat_metadata.vcrp_prompt_salt, 2, "no change to the prompt's start for the limit's doing: the limit, not the content, emptied it");
+    extension_settings.VCRP.globalSettings.blankRetry = false;
+    toasts.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "again" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra: {} });
+    BR.vcrpBlankOnReply(5, "normal");
+    await wait();
+    assert(swipes.length === 1 && !chat[5].extra.vcrp_blank_retry && toasts.length === 1 && !/retrying/.test(toasts[0]), "switched off: said only");
+    delete extension_settings.VCRP.globalSettings.blankRetry;
+    toasts.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "x" });
+    BR.vcrpBlankOnReply(5, "normal");
+    await wait();
+    assert(swipes.length === 1 && toasts.length === 1 && !chat[5].extra.vcrp_blank_retry, "an older empty reply is only said");
+    globalThis.toastr = toastrWas;
+    delete ctx.swipe;
+    delete globalThis.__ST__.chat_metadata.vcrp_prompt_salt;
+    assert.equal(BR.promptSaltLine(), "", "a chat never filtered carries no line");
+
+    chat.length = 0;
+    Object.assign(q, { mode: keep.mode, model: keep.model });
+    q.addons = keep.addons;
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+}
+console.log("73 ok empty replies read back and retried (the retry note on a swipe of a blank reply, after the chat, not for the limit's doing; the chat's empty replies from their stamps, by cause, with the provider and the generation id, the text to copy; one automatic swipe with SillyTavern's own call, never a second, never for the limit, never when off or for an older reply)");
 
 console.log("\nALL FORK CHECKS PASSED");

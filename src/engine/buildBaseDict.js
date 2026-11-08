@@ -41,7 +41,8 @@ import { vcrpMemoryEnabled, vcrpMemoryBlock, vcrpMemoryRecall, previewRecall } f
 import { vcrpFocusBlock, vcrpPlotFocusBlock } from "../vcrp/focus/index.js";
 import { applyPuraEngine, PURA_ADAPTED_CONFIG } from "../vcrp/pura/index.js";
 import { colorLockNote } from "../vcrp/dialogueColors.js";
-import { vcrpGenerationKind, vcrpIsDryRun } from "../vcrp/generation.js";
+import { vcrpGenerationKind, vcrpGenerationRaw, vcrpIsDryRun } from "../vcrp/generation.js";
+import { blankRetryNote, promptSaltLine } from "../vcrp/blankReply.js";
 
 // VCRP: whether the loaded preset has a place for a tag (one imported before the tag has none).
 function presetCarries(tag) {
@@ -77,6 +78,11 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
 
     if (localProfile.userPronouns === "male") dict["[[pronouns]]"] = `{{user}} is male. Always portray and address him as such.`;
     else if (localProfile.userPronouns === "female") dict["[[pronouns]]"] = `{{user}} is female. Always portray and address her as such.`;
+    // VCRP: after a reply the provider's filter emptied, a short line here (the Main Prompt, the
+    // cached part of every preset) changes the prompt's start once, as flipping a setting did
+    // (blankReply.js). [[Language]] sits after the chat, so not there.
+    const saltLine = promptSaltLine();
+    if (saltLine) dict["[[pronouns]]"] = dict["[[pronouns]]"] ? `${dict["[[pronouns]]"]}\n${saltLine}` : saltLine;
 
     // Story Config (<config> block). Empty when the config is off or every field is on Default.
     // VCRP: Pura Director · Adapted hands its tense to Story Config; left on default, Pura's own.
@@ -618,7 +624,14 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     const genKind = measure ? "reply" : vcrpGenerationKind();
     const geminiJb = usesCaretWords(localProfile);
     const caretLine = geminiJb && !["impersonate", "quiet"].includes(genKind) ? MEGUMIN_V11.geminiCaret : "";
-    dict["[[GeminiJB]]"] = geminiJb ? (caretLine && !presetCarries("[[formatting]]") ? `${MEGUMIN_V11.geminiJb}\n${caretLine}` : MEGUMIN_V11.geminiJb) : "";
+    // VCRP: a swipe of a reply that came back with no text carries a line saying so, at the same
+    // spot (after the chat; blankReply.js), whether or not the add-on is on.
+    const retryNote = measure ? "" : blankRetryNote(((typeof getContext === "function" && getContext()) || {}).chat || [], vcrpGenerationRaw());
+    dict["[[GeminiJB]]"] = [
+        geminiJb ? MEGUMIN_V11.geminiJb : "",
+        geminiJb && caretLine && !presetCarries("[[formatting]]") ? caretLine : "",
+        retryNote,
+    ].filter(Boolean).join("\n");
 
     // Megumin Suite V11's preset sections ([[thinking]], [[formatting]], [[banned]], [[reminder]],
     // [[content]], [[addon_rules]]), from the parts above, in V11's words. Only the V11 preset

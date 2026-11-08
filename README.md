@@ -224,7 +224,26 @@ stay within the per-request target.
 - **A blank reply is told apart** (`src/vcrp/blankReply.js`): nothing at all, stopped inside its
   thinking, all reasoning with no story, or only blocks. A toast says which and what to do, from
   the answer's own stop reason when it was read (the output limit, named with what set it; the
-  provider's filter, with its word; an error) and from the reply's shape otherwise. Such a reply is not measured as a reply (it would
+  provider's filter, with its word; an error) and from the reply's shape otherwise. **A reply
+  with no story at all is retried once, by itself:** SillyTavern's own Auto-swipe passes an
+  empty reply on purpose (so a broken API cannot loop it), so VCRP swipes once a moment after
+  it lands, with SillyTavern's own auto-swipe call, and that swipe carries a line after the chat
+  saying the last attempt came back with no text (at the `[[GeminiJB]]` spot, the add-on on or
+  off): a prompt that changes a little passes where the same one came back empty again. Never a
+  second time for one message (SillyTavern starts the new swipe with the last one's extras, so
+  the mark travels with it), never for a reply the output limit stopped, off in Global Settings.
+  **A reply the provider's filter emptied also changes the prompt's start once:** flipping an
+  add-on off and on made Gemini's filter let the story through again for twenty or thirty
+  messages, the setting the same after and only the prompt's start (the cached prefix every
+  request reused) changed; so such a reply bumps a count kept with the chat
+  (`chat_metadata.vcrp_prompt_salt`) and a short line carrying it sits in the Main Prompt (the
+  `[[pronouns]]` spot, the cached part of every preset; the language rule sits after the chat)
+  from then on: one cold request, then the cache is warm again. Nothing in a chat that was never
+  filtered.
+  **Setup Check reads the open chat's empty replies back** from the stamps saved with them: by
+  cause, with the provider that served each (OpenRouter names it) and the generation's id; *Copy
+  empty-reply details* on the card copies the setup and one line per empty reply as text to send
+  along when asking about them. Such a reply is not measured as a reply (it would
   shrink the room every reply is given), the one-shot direction stays for the swipe, no rolls note
   is added to it and no blocks are asked for. Setup Check warns when a Safety cap is set on a model
   that reasons before it writes (Gemini, DeepSeek, GLM, Kimi, Qwen; Claude with Request model

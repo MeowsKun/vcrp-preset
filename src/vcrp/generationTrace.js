@@ -57,6 +57,10 @@ const errorText = e => {
 // One parsed object (a whole answer, or one streamed chunk) read into the record.
 function readObject(obj, out) {
     if (!obj || typeof obj !== "object") return;
+    // OpenRouter names the provider that served the request, and the generation's id (its
+    // Activity page finds a request by it).
+    if (typeof obj.provider === "string" && obj.provider) out.provider = obj.provider;
+    if (typeof obj.id === "string" && obj.id && !out.genId) out.genId = obj.id;
     // SillyTavern's own refusals come as { error: true, response: "why" }.
     if (obj.error) out.error = errorText(obj.error === true ? (obj.response || obj.message || obj.detail || "the request was refused") : obj.error) || "an error with no message";
     // OpenAI-shaped (OpenRouter, OpenAI, DeepSeek, Z.AI, custom endpoints).
@@ -104,7 +108,7 @@ function readObject(obj, out) {
  * stream of "data:" lines (the last stop reason and the last usage count). Pure.
  */
 export function readGenerationBody(text) {
-    const out = { reason: "", native: "", usage: null, error: "" };
+    const out = { reason: "", native: "", usage: null, error: "", provider: "", genId: "" };
     const done = () => { if (!out.reason && out.error) out.reason = "error"; return out; };
     const s = String(text || "").trim();
     if (!s) return out;
@@ -133,7 +137,7 @@ function startRecord(input, init) {
         at: Date.now(), kind: vcrpGenerationKind(), raw: vcrpGenerationRaw(),
         model: String(body.model || ""), source: String(body.chat_completion_source || ""), stream: body.stream === true,
         limit, limitBy: limit && limit === sentReplyLimit() ? sentReplyLimitBy() : "",
-        status: 0, reason: "", native: "", usage: null, error: "", done: false, stamped: false, waiters: [],
+        status: 0, reason: "", native: "", usage: null, error: "", provider: "", genId: "", done: false, stamped: false, waiters: [],
     };
     records.push(rec);
     while (records.length > KEEP) records.shift();
@@ -210,6 +214,7 @@ export function finishStamp(rec) {
     return {
         done: !!rec.done, reason: rec.reason || "", native: rec.native || "", error: rec.error || "", status: rec.status || 0,
         limit: rec.limit || 0, limitBy: rec.limitBy || "", model: rec.model || "", at: rec.at,
+        provider: rec.provider || "", genId: rec.genId || "",
         usage: rec.usage ? { ...rec.usage } : null,
     };
 }
