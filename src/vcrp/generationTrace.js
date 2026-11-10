@@ -21,7 +21,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getContext } from "../st.js";
-import { vcrpGenerationKind, vcrpGenerationRaw } from "./generation.js";
+import { vcrpGenerationKind, vcrpGenerationRaw, vcrpStorySeq } from "./generation.js";
 import { sentReplyLimit, sentReplyLimitBy } from "./replyLength.js";
 
 export const GENERATE_PATH = "/api/backends/chat-completions/generate";
@@ -30,6 +30,20 @@ const STAMP_WAIT_MS = 1500; // a reply's handlers wait this long, at most, for i
 
 const records = [];
 let installed = false;
+
+// Which request is the story's own. Other requests reach the same endpoint: the helper
+// model's (sent straight to its connection profile), another extension's raw generation.
+// SillyTavern announces none of those, so by the kind of the last generation alone they
+// would pass for a reply's. A story generation's request is the first one sent after that
+// generation started (generation.js counts them), and never one the helper announced.
+let seqTaken = 0;        // the story generation whose request has been seen
+let helperUntil = 0;     // the helper said its request is the next one (until this time)
+const HELPER_HINT_MS = 4000;
+
+/** The helper model is about to send a request of its own (vcrp/helper): not a reply's. */
+export function vcrpTraceHelperRequest() {
+    helperUntil = Date.now() + HELPER_HINT_MS;
+}
 
 // ── Reading an answer ────────────────────────────────────────────────────────
 
@@ -133,8 +147,16 @@ function startRecord(input, init) {
     let body = {};
     try { body = init && typeof init.body === "string" ? JSON.parse(init.body) : {}; } catch (e) { body = {}; }
     const limit = Number(body.max_tokens ?? body.max_completion_tokens) || 0;
+    let kind = vcrpGenerationKind();
+    let story = false;
+    if (helperUntil && Date.now() <= helperUntil) { kind = "helper"; helperUntil = 0; }
+    else if (kind === "reply" || kind === "continue") {
+        const seq = vcrpStorySeq();
+        if (seq !== seqTaken) { story = true; seqTaken = seq; }
+        else kind = "other";   // a second request under the same story generation: someone else's
+    }
     const rec = {
-        at: Date.now(), kind: vcrpGenerationKind(), raw: vcrpGenerationRaw(),
+        at: Date.now(), kind, story, raw: vcrpGenerationRaw(),
         model: String(body.model || ""), source: String(body.chat_completion_source || ""), stream: body.stream === true,
         limit, limitBy: limit && limit === sentReplyLimit() ? sentReplyLimitBy() : "",
         status: 0, reason: "", native: "", usage: null, error: "", provider: "", genId: "", done: false, stamped: false, waiters: [],
@@ -190,6 +212,8 @@ export function vcrpInstallGenerationTrace(scope = globalThis) {
 export function vcrpResetGenerationTrace() {
     installed = false;
     records.length = 0;
+    seqTaken = 0;
+    helperUntil = 0;
 }
 
 /** The generations remembered, oldest first (copies). */
@@ -229,15 +253,25 @@ export async function vcrpFinishOnReply(messageId, type) {
     const chat = ((getContext() || {}).chat) || [];
     const msg = chat[Number(messageId)];
     if (!msg || msg.is_user || msg.is_system) return;
+    // SillyTavern starts a new swipe with a copy of the last one's extras: how THAT one ended
+    // (and whether it was cut) is not this reply's. A Continue adds to a reply and keeps its marks.
+    if (type !== "continue" && msg.extra) {
+        delete msg.extra.vcrp_finish;
+        delete msg.extra.vcrp_cut;
+    }
     let rec = null;
     for (let i = records.length - 1; i >= 0; i--) {
         const r = records[i];
-        if ((r.kind === "reply" || r.kind === "continue") && !r.stamped) { rec = r; break; }
+        if (r.story && !r.stamped) { rec = r; break; }
     }
     if (!rec) return;
     rec.stamped = true;
     await whenDone(rec, STAMP_WAIT_MS);
-    msg.extra = { ...(msg.extra || {}), vcrp_finish: finishStamp(rec) };
+    const stamp = finishStamp(rec);
+    msg.extra = { ...(msg.extra || {}), vcrp_finish: stamp };
+    // With the swipe too: SillyTavern puts a swipe's own extras back when it is shown again.
+    const info = Array.isArray(msg.swipe_info) && typeof msg.swipe_id === "number" ? msg.swipe_info[msg.swipe_id] : null;
+    if (info && typeof info === "object") { info.extra = info.extra || {}; info.extra.vcrp_finish = { ...stamp }; }
 }
 
 /** The output tokens a reply was billed for (its reasoning counted), when its answer said; else null. */

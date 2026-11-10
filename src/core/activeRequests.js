@@ -15,6 +15,21 @@
 // setters. See the long note in state.js for why.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// VCRP: each job's own marker, the quiet prompt it sends. SillyTavern puts that text in the
+// prompt it builds for the job, so the engine can tell the job's own prompt from any other:
+// a parked payload is used ONLY for the prompt that carries its marker (or the one the helper
+// model builds for it, which names it). A story prompt built while a job is still running, or
+// after one hung, carries none and stays a story prompt.
+export const TASK_MARKERS = {
+    storyPlan: "___PS_STORY_PLAN___",
+    npcScan: "___PS_NPC_SCAN___",
+    npcUpdate: "___PS_NPC_UPDATE___",
+    banList: "___PS_BANLIST___",
+    order: "___PS_DUMMY___",
+    focus: "___PS_FOCUS___",
+    helperBlocks: "___PS_HELPER_BLOCKS___",
+};
+
 // Story Director: the chat text being planned against.
 export let activeStoryPlanRequest = null;
 export function setActiveStoryPlanRequest(v) { activeStoryPlanRequest = v; }
@@ -50,12 +65,6 @@ export function setActiveBlockRepair(v) { activeBlockRepair = v; }
 // { system, user, index }. The handler sends those two messages and nothing else.
 export let activeHelperBlocks = null;
 export function setActiveHelperBlocks(v) { activeHelperBlocks = v; }
-
-// VCRP: true while a helper job runs on its own connection profile (vcrp/helper/index.js).
-// The payloads above are then that job's: a prompt built for the story's connection
-// meanwhile (a reply the reader sends) leaves them alone.
-export let helperOwnsPayloads = false;
-export function setHelperOwnsPayloads(v) { helperOwnsPayloads = Boolean(v); }
 
 // ── NPC reference images for the current generation ──────────────────────────
 // An array rather than a single payload: several NPCs can be attached at once.

@@ -480,7 +480,9 @@ for (let t = 1; t <= 4; t++) {
     await send("swipe");
     data = { max_tokens: 20000 };
     RL.vcrpApplyReplyCap(data);
-    ok(data.max_tokens === 3000 && RL.sentReplyLimitBy() === "cap", "a safety cap still lowers it, and is named as what did");
+    // The cap stands for the reply the reader sees: the request allows it plus room for the
+    // reasoning (a default until this chat's replies are measured by the API's own count).
+    ok(data.max_tokens === 3000 + RL.reasoningAllowance() && RL.reasoningAllowance() >= 2000 && RL.sentReplyLimitBy() === "cap", `a safety cap still lowers it, with room for the reasoning on top (${data.max_tokens}), and is named as what did`);
     gs.memoryBudget = keepBudget;
     RL.forgetReplyRoom();
     chat.pop();   // the swipe's turn: no reply came

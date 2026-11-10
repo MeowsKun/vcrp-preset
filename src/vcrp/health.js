@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { extension_settings, getContext, event_types } from "../st.js";
+import { extensionName } from "../core/constants.js";
 import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem, vcrpRouteMarksCache, vcrpModelReasonsHidden } from "./generation.js";
 import { vcrpGenerationRecords } from "./generationTrace.js";
 import { helperSettings, helperJobWanted, HELPER_JOBS, CURRENT_CONNECTION } from "./helper/settings.js";
@@ -19,7 +20,7 @@ import { autoSummaryHold } from "./memory/summarize.js";
 import { meguminOriginalActive } from "../engine/meguminOriginal.js";
 import { kbAlwaysOnStats, presetCarriesAlwaysSlot } from "./knowledgebase.js";
 import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "./cacheCheck.js";
-import { replyCapTokens, holdTargetActive } from "./replyLength.js";
+import { replyCapTokens, holdTargetActive, reasoningAllowance } from "./replyLength.js";
 import { focusSettings, peekFocusState } from "./focus/index.js";
 import { isPuraEngine, isV11Engine } from "../core/engines.js";
 import { notebookOn } from "./notebook/index.js";
@@ -108,13 +109,33 @@ export function vcrpHealthCheck() {
     }
     add("info", `Model: ${modelLabel}`,
         mode === "auto" ? `CoT prefill: Auto → ${det.prefill ? "prefilling" : "not prefilling"} (${det.reason}).` : `CoT prefill: ${mode === "on" ? "Always on" : "Always off"}.`);
-    // A Safety cap on a model that reasons before it writes: the reasoning counts against the
-    // cap, so a cap near the usual reply leaves nothing for the reply (blank, or cut off).
+    // "Always on" for a model that refuses a prefill: the request ends on the model's own turn,
+    // which such a model answers with an error or with nothing.
+    if (mode === "on" && /rejects/.test(det.reason) && (!slot || slot.enabled)) {
+        add("warn", "CoT Prefill is set to Always on, and this model refuses a prefill",
+            `${modelLabel}: ${det.reason}. With the prefill forced on, every story request ends on the model's own turn, and a model that refuses that fails the request or sends back nothing. Set CoT Prefill to Auto (below): Auto leaves it out for the models that refuse it.`);
+    }
+    // The same for the background jobs' own prefill (Global Settings → Utility Prefills).
+    const gsNow = (extension_settings[extensionName] && extension_settings[extensionName].globalSettings) || {};
+    if (gsNow.enableUtilityPrefill === true && /rejects/.test(det.reason)) {
+        add("warn", "Utility Prefills are on, and this model refuses a prefill",
+            `${modelLabel}: ${det.reason}. With Utility Prefills on, the Story Director, NPC scans and updates, the ban list scan and Focus audits end on the model's own turn, and a model that refuses that fails them or sends back nothing. Turn Utility Prefills off (below).`);
+    }
+    // SillyTavern's own Max Response Length on a model that reasons out of sight: that
+    // reasoning is paid for in it, so a low one is used up before the reply.
+    const stLimit = Math.round(Number(cc.openai_max_tokens) || 0);
+    if (stLimit > 0 && stLimit < 8000 && vcrpModelReasonsHidden()) {
+        add("warn", `Max Response Length (${stLimit.toLocaleString()} tokens) is low for a model that reasons before it writes`,
+            "The model's reasoning is paid for in the request's output limit without being part of the reply. With a limit this low, a hard turn's reasoning can use it up, and the reply comes back cut off or with nothing in it. Set Max Response Length in AI Response Configuration to 8,000 or more (the VCRP presets set 20,000).");
+    }
+    // A Safety cap on a model that reasons before it writes: the cap is on the reply the reader
+    // sees, so the request's limit is the cap plus room for the reasoning (replyLength.js).
     const cap = replyCapTokens();
     const reasons = vcrpModelReasonsHidden();
     if (cap && reasons) {
-        add(cap < 4000 ? "warn" : "info", `Safety cap (${cap.toLocaleString()} tokens) on a model that reasons before it writes`,
-            "Gemini, DeepSeek, GLM, Kimi and Qwen think before the reply (Claude too, with a reasoning effort set), and that thinking counts against the cap. A cap near your usual reply leaves nothing for the reply itself: it comes back blank, or cut off in its blocks. Set the cap to 0 (off), or to 4,000 or more (Memory tab, Reply length). On such a model VCRP never lowers the request's limit on its own: the cap is the one limit it puts there.");
+        const room = reasoningAllowance();
+        add("info", `Safety cap (${cap.toLocaleString()} tokens): the request allows ${(cap + room).toLocaleString()}, with room for the model's reasoning`,
+            `Gemini, DeepSeek, GLM, Kimi and Qwen think before the reply (Claude too, with a reasoning effort set). That thinking is paid for in the request's output limit without being part of the reply, so a request limited to the cap itself was used up by it on a hard turn, and the reply came back with nothing in it. The cap now stands for the reply you see: the request's limit is the cap plus ${room.toLocaleString()} tokens for the reasoning (half again the most this chat's recent replies used, by the API's own count, and never less than 6,000). A reply can run a little over the cap when the model reasons less than that.`);
     } else if (reasons && holdTargetActive()) {
         add("ok", "Hold each reply to the target leaves the request's limit alone on this model",
             "The model reasons before it writes, that reasoning is paid for in the request's output limit, and VCRP cannot see its size. So the room under the target is worked out and shown in the Memory tab, but not put on the request: a limit set from the reply's measured size was used up by the reasoning on a hard turn, and the reply came back with nothing in it. Only a Safety cap you set, and SillyTavern's Max Response Length, limit a reply here.");
@@ -420,9 +441,17 @@ function emptyRepliesCheck(add, ctx) {
     const summary = Object.entries(by).map(([k, n]) => `${n} ${k}`).join(", ");
     const filtered = rows.filter(r => r.stamp && r.stamp.reason === "filter").length;
     const unstamped = rows.filter(r => !r.stamp || !r.stamp.done).length;
+    const limited = rows.filter(r => r.stamp && r.stamp.done && r.stamp.reason === "length");
+    // All thinking, the model having ended on its own: on a model that reasons by itself, VCRP's
+    // own Chain of Thought asked for a second round of thinking, and the reply went into it.
+    const allThinking = rows.filter(r => (r.kind === "thinking" || r.kind === "thinking-open") && r.stamp && r.stamp.done && r.stamp.reason === "stop").length;
+    const cotOn = Boolean(localProfile) && localProfile.cotEnabled !== false;
+    const limitNames = [...new Set(limited.map(r => LIMIT_BY[r.stamp.limitBy] || LIMIT_BY[""]))];
     const advice = [
-        filtered ? "A filtered reply is the provider's content filter: a swipe carries a line that says the request is approved fiction (VCRP adds it), the Gemini JB add-on helps, so does the V11 preset's USER Hard prompt." : "",
-        unstamped ? "A reply with no stop reason recorded came before VCRP read the answers (10.0.0-vcrp.13), or SillyTavern did not add a message for it." : "",
+        limited.length ? `${limited.length} stopped at the output limit before the story (${limitNames.join(", ")}): raise it.` : "",
+        allThinking && cotOn && vcrpModelReasonsHidden() ? `${allThinking} ${allThinking === 1 ? "is" : "are"} all thinking, the model having ended its turn there: this model reasons on its own, and asked to think aloud as well it can put the whole reply into the thinking. Turn Chain of Thought off in Presets & CoT (Model Setup's loadout for it does).` : "",
+        filtered ? "A reply the provider's content filter stopped is the provider's decision: VCRP sent the request as it was, and does not retry or change it." : "",
+        unstamped ? "A reply with no stop reason recorded came before VCRP read the answers (10.0.0-vcrp.13), or the answer could not be read." : "",
     ].filter(Boolean).join(" ");
     add("warn", `${rows.length} repl${rows.length === 1 ? "y" : "ies"} in this chat came back empty: ${summary}`,
         `${rows.slice(-5).map(r => `#${r.index} ${r.line}`).join(" · ")}. Copy the details (the button on this card) and send them along when asking about it. ${advice}`.trim());
@@ -454,8 +483,8 @@ function lastRepliesCheck(add) {
     const failed = recent.filter(r => r.error).length;
     const trouble = [cut ? `${cut} stopped by the output limit` : "", filtered ? `${filtered} stopped by the provider's filter` : "", failed ? `${failed} failed` : ""].filter(Boolean);
     const advice = [
-        cut ? "A reply stopped by the limit while still reasoning comes back with nothing in it: raise the limit named, or set the Safety cap to 0 (off)." : "",
-        filtered ? "A filtered reply comes back empty: swipe, or turn on the Gemini JB add-on (Global Toggles & Add-ons) or the V11 preset's USER Hard prompt." : "",
+        cut ? "A reply stopped by the limit while still reasoning comes back with nothing in it: raise the limit named." : "",
+        filtered ? "A reply the provider's content filter stopped is the provider's decision: VCRP sent the request as it was." : "",
     ].filter(Boolean);
     add(trouble.length ? "warn" : "ok",
         trouble.length ? `Of the last ${recent.length} replies, ${trouble.join(", ")}` : `The last ${recent.length} replies ended on their own`,

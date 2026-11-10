@@ -16,8 +16,7 @@ export { extension_settings, getContext } from "../../../../extensions.js";
 
 // SillyTavern's saveChat() refuses a group chat (it throws). saveChatConditional saves either
 // kind (what getContext().saveChat does), so it is what "saveChat" means below (V11's 04/11 fix).
-// The quiet prompt is wrapped below: while a helper job runs on its own connection
-// (vcrp/helper/index.js), every quiet prompt goes there instead.
+// The quiet prompt is wrapped below (both ways of naming its text accepted, and a time limit).
 import {
     saveSettingsDebounced,
     generateQuietPrompt as stGenerateQuietPrompt,
@@ -61,14 +60,18 @@ import * as worldInfo from "../../../../world-info.js";
 export const checkWorldInfo = typeof worldInfo.checkWorldInfo === "function" ? worldInfo.checkWorldInfo : null;
 export const getSortedEntries = typeof worldInfo.getSortedEntries === "function" ? worldInfo.getSortedEntries : null;
 
-// While a helper job runs on its own connection profile, vcrp/helper/index.js points every
-// quiet prompt here at it. Null the rest of the time.
-let quietRoute = null;
-export function setQuietRoute(fn) { quietRoute = typeof fn === "function" ? fn : null; }
+// A background call that never comes back (a phone that slept mid-request, a provider that
+// hung) would otherwise hold whatever its caller keeps while it waits: "a summary is
+// running", "an audit is running", a parked job. After this long the call is given up on:
+// it rejects like any failed request, the caller's cleanup runs, and a late answer is ignored.
+export const QUIET_TIMEOUT_MS = 6 * 60 * 1000;
+let quietTimeoutMs = QUIET_TIMEOUT_MS;
+/** For tests: a shorter wait (the default when called with nothing). */
+export function setQuietTimeout(ms) { quietTimeoutMs = Number(ms) > 0 ? Number(ms) : QUIET_TIMEOUT_MS; }
 
 /**
  * SillyTavern's generateQuietPrompt, with { prompt } and { quietPrompt } both accepted (the
- * call sites use either), and the helper's route when one is set.
+ * call sites use either), and given up on after QUIET_TIMEOUT_MS.
  * @param {object|string} params
  * @returns {Promise<string>}
  */
@@ -78,6 +81,17 @@ export async function generateQuietPrompt(params = {}) {
         const text = params.quietPrompt ?? params.prompt ?? "";
         params = { ...params, quietPrompt: text, prompt: text };
     }
-    if (quietRoute) return await quietRoute(params.quietPrompt);
-    return await stGenerateQuietPrompt(params);
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            const err = new Error(`a background call got no answer in ${Math.round(quietTimeoutMs / 60000) || 1} minutes (timed out)`);
+            err.name = "TimeoutError";
+            reject(err);
+        }, quietTimeoutMs);
+    });
+    try {
+        return await Promise.race([stGenerateQuietPrompt(params), timeout]);
+    } finally {
+        clearTimeout(timer);
+    }
 }

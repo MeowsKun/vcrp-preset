@@ -174,10 +174,14 @@ included. While it is set, the model is told its room and the story's share of i
 (after the thinking and what your blocks take), so it plans to finish inside it; the panel shows
 that split. A reply that still reaches the cap mid-sentence ends on its last full sentence
 (Continue writes the rest), and the next reply carries the last complete blocks. For a reply of
-about 2,000 tokens on Claude: Story length 450–550 words, Thinking length 250 words, a cap of
-2,000. On a model that reasons before it writes (Gemini, DeepSeek, GLM; Claude with a reasoning
-effort set) that reasoning counts against the cap and never shows in the reply, so there the cap
-is 0 (off) or 4,000 and up; Setup Check says so.
+about 2,000 tokens: Story length 450–550 words, Thinking length 250 words, a cap of 2,000. On a
+model that reasons before it writes (Gemini, DeepSeek, GLM; Claude with a reasoning effort set)
+that reasoning is paid for in the request's output limit without being part of the reply, so
+there the cap stands for the reply you see: the request's limit is the cap plus room for the
+reasoning (half again the most this chat's recent replies used, by the API's own count, and
+never less than 6,000). A request limited to the cap itself was used up by the reasoning on
+a hard turn, and the reply came back with nothing in it. A reply can run a little over the cap
+when the model reasons less than the room it was given; Setup Check shows the number.
 
 **Hold each reply to the target** (on by default, with Story Memory): input and output together
 stay within the per-request target.
@@ -199,8 +203,10 @@ stay within the per-request target.
   model's thinking is paid for in that same limit and VCRP cannot see its size, so a limit set
   from the reply's measured size, even half again a reply, was used up by the thinking on a hard
   turn (the first reply after a break in a long chat most of all, where the room is tightest) and
-  the reply came back with nothing in it. There, only the safety cap and SillyTavern's Max
-  Response Length limit a reply.
+  the reply came back with nothing in it. There, only the safety cap (with its room for the
+  reasoning, above) and SillyTavern's Max Response Length limit a reply, and VCRP's own
+  background calls keep SillyTavern's limit too. Setup Check warns when Max Response Length
+  itself is under 8,000 on such a model.
 - **How each reply ended** (`src/vcrp/generationTrace.js`): VCRP reads the answer to each of
   SillyTavern's chat-completion requests as it passes (a copy of the response, read alongside;
   the request and what SillyTavern reads are untouched) and stamps the reply with the provider's
@@ -224,33 +230,39 @@ stay within the per-request target.
 - **A blank reply is told apart** (`src/vcrp/blankReply.js`): nothing at all, stopped inside its
   thinking, all reasoning with no story, or only blocks. A toast says which and what to do, from
   the answer's own stop reason when it was read (the output limit, named with what set it; the
-  provider's filter, with its word; an error) and from the reply's shape otherwise. **A reply
-  with no story at all is retried once, by itself:** SillyTavern's own Auto-swipe passes an
-  empty reply on purpose (so a broken API cannot loop it), so VCRP swipes once a moment after
-  it lands, with SillyTavern's own auto-swipe call, and that swipe carries a line after the chat
-  saying the last attempt came back with no text (at the `[[GeminiJB]]` spot, the add-on on or
-  off): a prompt that changes a little passes where the same one came back empty again. Never a
-  second time for one message (SillyTavern starts the new swipe with the last one's extras, so
-  the mark travels with it), never for a reply the output limit stopped, off in Global Settings.
-  **A reply the provider's filter emptied also changes the prompt's start once:** flipping an
-  add-on off and on made Gemini's filter let the story through again for twenty or thirty
-  messages, the setting the same after and only the prompt's start (the cached prefix every
-  request reused) changed; so such a reply bumps a count kept with the chat
-  (`chat_metadata.vcrp_prompt_salt`) and a short line carrying it sits in the Main Prompt (the
-  `[[pronouns]]` spot, the cached part of every preset; the language rule sits after the chat)
-  from then on: one cold request, then the cache is warm again. Nothing in a chat that was never
-  filtered.
+  provider's filter, with its word; an error) and from the reply's shape otherwise.
+  **A reply the provider's content filter stopped is the provider's decision:** VCRP says so, with
+  the provider's own word, and leaves the request as it was. It does not retry it, and nothing
+  in a later request changes because a reply came back empty (10.0.0-vcrp.15 added a line to the
+  swipe and a marker to the prompt's start for that; both are gone).
+  **A reply that nothing explains** (the model ended its turn with nothing written and no reason,
+  or the answer could not be read) **is sent once more, as it was:** SillyTavern's own Auto-swipe
+  passes an empty reply on purpose (so a broken API cannot loop it), so VCRP swipes once a
+  moment after the reply lands, with SillyTavern's own auto-swipe call (the plain right swipe or
+  the swipe button on a SillyTavern without it; when it cannot, it says so). Never a second time
+  for one message, never for a reply a limit stopped (the same limit would stop it again), off
+  in Global Settings.
+  **How a reply ended stays under the reply** (`src/vcrp/finishNote.js`): a reply that did not
+  end normally carries a small line ("No reply: the provider's content filter stopped it
+  (PROHIBITED_CONTENT)", "No reply: the output limit was used up before the story", "Cut short
+  by the output limit"); tap it for who served the request, what was written and read, the limit
+  and what set it. A reply that ended on its own with its story has none.
   **Setup Check reads the open chat's empty replies back** from the stamps saved with them: by
   cause, with the provider that served each (OpenRouter names it) and the generation's id; *Copy
-  empty-reply details* on the card copies the setup and one line per empty reply as text to send
-  along when asking about them. Such a reply is not measured as a reply (it would
-  shrink the room every reply is given), the one-shot direction stays for the swipe, no rolls note
-  is added to it and no blocks are asked for. Setup Check warns when a Safety cap is set on a model
-  that reasons before it writes (Gemini, DeepSeek, GLM, Kimi, Qwen; Claude with Request model
-  reasoning on): the reasoning counts against the cap.
+  empty-reply details* on the card copies the setup and one line per empty reply as text. Such a
+  reply is not measured as a reply (it would shrink the room every reply is given), the one-shot
+  direction stays for the swipe, no rolls note is added to it and no blocks are asked for.
 - **VCRP's own background calls** (summaries and their checks, audits, the Story Director, NPC
   scans and updates, the ban list, style generators) are each limited to 8,000 output tokens,
-  well above what they write, so none can run away. Other extensions' calls are left alone.
+  well above what they write, so none can run away (not on a model that reasons out of sight:
+  its reasoning is paid for in that limit too). Other extensions' calls are left alone.
+- **A background job's prompt is its own, and only its own** (`src/core/activeRequests.js`,
+  `TASK_MARKERS`): each job sends its marker as its quiet prompt, SillyTavern puts that text in
+  the prompt it builds for the job, and VCRP swaps a job's prompt in only for the prompt that
+  carries its marker. A reply sent while a job is still running (or after one hung) carries none
+  and stays a story prompt; a Story Memory call's prompt is told the same way, by the instruction
+  it carries. A background call that never answers is given up on after six minutes
+  (`src/st.js`): it fails like any other, and nothing it was holding stays held.
 
 **Pin** a fact or a chapter (the pin button beside it) to keep it in the memory text for good:
 the size cap never trims it and a pinned chapter is never folded into an arc. The meter also
@@ -570,8 +582,12 @@ character, in the **Helper** tab.
 - **One job at a time.** A pill at the bottom of the screen shows a running job, with Stop; a
   reply you send while the helper still writes the last reply's blocks waits for it (at most 30
   seconds, with a line under the input), so the next prompt carries them. Leaving a chat stops
-  its queued jobs. While a job runs on the profile, the payload it parked for VCRP's prompt
-  handler is its own: a prompt built for the story's connection meanwhile leaves it alone.
+  its queued jobs. A job on the profile is handed its own way to send (a job that stays with the
+  story model and runs at the same time keeps SillyTavern's), the prompt built for it is told
+  which job it is for, and the reply it writes blocks for is read when the job runs, not when it
+  was queued; if that reply changes while the helper writes (an edit, the second call for the
+  story model's own blocks), it writes once more from the reply as it stands. A request to the
+  profile that never answers is given up on after five minutes, and said.
 - **When something goes wrong** it is said in plain words: a refused key, a rate limit, a
   provider outage, a model that is not there; an empty answer (a censored model refusing an
   NSFW story) once per chat; an answer in the wrong shape. The helper gets no jailbreak, so use

@@ -111,6 +111,7 @@ import { puraSettings } from "./src/vcrp/pura/index.js";
 import { vcrpInstallSwipeGuard } from "./src/vcrp/swipeGuard.js";
 import { vcrpInstallQuickPanel, refreshQuickPanel } from "./src/vcrp/quickPanel.js";
 import { vcrpCostOnReply, drawCostBadge, drawAllCostBadges, forgetCostPending } from "./src/vcrp/replyCost.js";
+import { drawFinishNote, drawAllFinishNotes } from "./src/vcrp/finishNote.js";
 import { vcrpOneShotOnReply, forgetOneShotPending } from "./src/vcrp/oneShot.js";
 import { vcrpCutOnReply } from "./src/vcrp/replyCut.js";
 import { vcrpBlankOnReply } from "./src/vcrp/blankReply.js";
@@ -408,9 +409,9 @@ jQuery(async () => {
             vcrpInstallQuickPanel(undefined, { fallback: false });
             // VCRP: each reply's cost badge, drawn with the message and kept up as it changes.
             [event_types.CHARACTER_MESSAGE_RENDERED, event_types.MESSAGE_SWIPED, event_types.MESSAGE_UPDATED, event_types.MESSAGE_EDITED]
-                .forEach(evt => { if (evt) eventSource.on(evt, id => drawCostBadge(id)); });
+                .forEach(evt => { if (evt) eventSource.on(evt, id => { drawCostBadge(id); drawFinishNote(id); }); });
             [event_types.CHAT_CHANGED, event_types.MORE_MESSAGES_LOADED]
-                .forEach(evt => { if (evt) eventSource.on(evt, () => setTimeout(() => drawAllCostBadges(), 300)); });
+                .forEach(evt => { if (evt) eventSource.on(evt, () => setTimeout(() => { drawAllCostBadges(); drawAllFinishNotes(); }, 300)); });
             if (event_types.APP_READY) eventSource.on(event_types.APP_READY, () => vcrpInstallQuickPanel());
             if (event_types.CHAT_CHANGED) eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(() => { vcrpInstallQuickPanel(); refreshQuickPanel(); }, 250));
             // VCRP: keep the setup-problem dot on the VCRP button current.

@@ -11,19 +11,18 @@
 // task; it is kept so every call site stays identical to upstream.
 // ──────────────────────────────────────────────────────────────────────────────
 
-import { generateQuietPrompt } from "../st.js";
 import { runHelperJob } from "../vcrp/helper/index.js";
 import { extensionName } from "../core/constants.js";
-import { setActiveBanListChat, setActiveGenerationOrder } from "../core/activeRequests.js";
+import { setActiveBanListChat, setActiveGenerationOrder, TASK_MARKERS } from "../core/activeRequests.js";
 import { vcrpCountBackgroundOutput } from "../vcrp/memory/index.js";
 
 // VCRP: on the helper model when its ban list job is on (vcrp/helper); the payload is parked
 // inside the job, when it runs. What the helper writes is on its own bill.
 export async function analyzeSlopDirectly(chatText) {
     try {
-        const r = await runHelperJob("banList", async () => {
+        const r = await runHelperJob("banList", async send => {
             setActiveBanListChat(chatText);
-            try { return await generateQuietPrompt({ prompt: "___PS_BANLIST___" }); } finally { setActiveBanListChat(null); }
+            try { return await send({ prompt: TASK_MARKERS.banList }); } finally { setActiveBanListChat(null); }
         });
         if (r.stopped || r.failed) return null;
         const rawOutput = String(r.value || "");
@@ -57,9 +56,9 @@ export async function useMeguminEngine(task, _targetPreset) {
 // replaces the whole prompt with the task prompt built in buildOrderTaskMessages().
 // VCRP: on the helper model when its writing-style job is on (vcrp/helper).
 export async function runMeguminTask(orderText) {
-    const r = await runHelperJob("styleGen", async () => {
+    const r = await runHelperJob("styleGen", async send => {
         setActiveGenerationOrder(orderText);
-        try { return await generateQuietPrompt({ prompt: "___PS_DUMMY___" }); } finally { setActiveGenerationOrder(null); }
+        try { return await send({ prompt: TASK_MARKERS.order }); } finally { setActiveGenerationOrder(null); }
     });
     if (r.stopped || r.failed) return "";
     const out = typeof r.value === "string" ? r.value : "";

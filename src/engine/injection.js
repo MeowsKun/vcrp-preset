@@ -10,7 +10,7 @@ import { extension_settings, substituteParams, Popup, POPUP_TYPE } from "../st.j
 import { getContext } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
-import { activeHelperBlocks, helperOwnsPayloads } from "../core/activeRequests.js";
+import { activeHelperBlocks, TASK_MARKERS } from "../core/activeRequests.js";
 import {
     activeStoryPlanRequest, activeBanListChat,
     activeNpcScanRequest, activeNpcUpdateRequest,
@@ -23,10 +23,10 @@ import { npcBuildDossierPrompt } from "../features/npc/fields.js";
 import { escapeRegex } from "../utils/regex.js";
 import { buildBaseDict } from "./buildBaseDict.js";
 import { meguminAllSlotTriggers } from "../../data/slots.js";
-import { vcrpApplyGenerationToDict, vcrpFinalizeMessages, vcrpGenerationKind, vcrpRouteNeedsAlternation, vcrpJoinSameRole } from "../vcrp/generation.js";
+import { vcrpApplyGenerationToDict, vcrpFinalizeMessages, vcrpRouteNeedsAlternation, vcrpJoinSameRole } from "../vcrp/generation.js";
 import { buildFocusAuditMessages, plotFocusForDirector } from "../vcrp/focus/index.js";
 import { vcrpCostAfterPrompt, vcrpCostRequestCancelled } from "../vcrp/replyCost.js";
-import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, memoryTaskStandalone, vcrpCountBackgroundPrompt, memoryTaskActive } from "../vcrp/memory/index.js";
+import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, vcrpCountBackgroundPrompt, setMemoryPromptScope, memoryPromptIsStandalone } from "../vcrp/memory/index.js";
 import { vcrpOn, blankVcrpTags } from "../vcrp/power.js";
 import { loreForChat, loreForNames, loreBlock } from "../vcrp/lore.js";
 import { vcrpCacheCheckRecord } from "../vcrp/cacheCheck.js";
@@ -47,9 +47,12 @@ export async function handlePromptInjection(data, type) {
     // its own connection, never counted on the story model's bill, and never the one the
     // reply-length cap waits for.
     const forHelper = data?.helper === true;
-    // While a helper job runs on its own profile, the payloads below are that job's: a prompt
-    // built for the story's connection meanwhile is a story prompt.
-    const jobsOwned = helperOwnsPayloads && !forHelper;
+    // A parked job's payload is used only for that job's own prompt: the one that carries its
+    // marker (SillyTavern adds the job's quiet prompt to the prompt it builds for it), or the
+    // one the helper builds for it and names. A story prompt built meanwhile (a reply sent
+    // while a job is still running, or after one hung) carries no marker and stays a story
+    // prompt, whatever is parked.
+    const carries = marker => (forHelper ? data.marker === marker : messages.some(m => typeof m?.content === "string" && m.content.includes(marker)));
     const countsHere = data?.dryRun !== true && !forHelper;
     if (countsHere) vcrpNotePrompt(false);
     // Opt IN, not opt out. The prefill breaks utility generations on Claude and
@@ -59,7 +62,7 @@ export async function handlePromptInjection(data, type) {
     const disablePrefill = extension_settings[extensionName]?.globalSettings?.enableUtilityPrefill !== true;
 
     // --- INJECT STORY PLANNER PROMPT ---
-    if (activeStoryPlanRequest && !jobsOwned) {
+    if (activeStoryPlanRequest && carries(TASK_MARKERS.storyPlan)) {
         messages.length = 0;
 
         // SillyTavern macro substitutions to get Lore and Persona
@@ -115,7 +118,7 @@ export async function handlePromptInjection(data, type) {
     }
 
     // --- INJECT NPC SCAN PROMPT ---
-    if (activeNpcScanRequest && !jobsOwned) {
+    if (activeNpcScanRequest && carries(TASK_MARKERS.npcScan)) {
         messages.length = 0;
         const nbPrompts = (localProfile.npcBank && localProfile.npcBank.customPromptsEnabled && localProfile.npcBank.customPrompts) ? localProfile.npcBank.customPrompts : DEFAULT_PROMPTS.npcBank;
         // Same instruction the roleplay prompt carries, so a scan writes dossiers
@@ -152,7 +155,7 @@ export async function handlePromptInjection(data, type) {
     // The refresh button on an NPC card. Unlike the in-story update, this asks
     // about ONE named NPC and hands over their whole record, so the model is
     // comparing against what is actually on file rather than recalling it.
-    if (activeNpcUpdateRequest && !jobsOwned) {
+    if (activeNpcUpdateRequest && carries(TASK_MARKERS.npcUpdate)) {
         messages.length = 0;
         const r = activeNpcUpdateRequest;
         // VCRP: the lorebook entries that name this NPC (lore.js).
@@ -182,7 +185,7 @@ export async function handlePromptInjection(data, type) {
         return;
     }
 
-    if (activeBanListChat && !jobsOwned) {
+    if (activeBanListChat && carries(TASK_MARKERS.banList)) {
         messages.length = 0;
         
         const banCustom = localProfile.banListCustomPromptsEnabled ? localProfile.banListCustomPrompts : null;
@@ -203,7 +206,7 @@ export async function handlePromptInjection(data, type) {
     // --- INJECT FREE-FORM TASK ("order") PROMPT ---
     // VCRP: upstream relied on the separate Engine preset's [[order]] slot. VCRP ships no
     // Engine preset, so the task prompt is built here from the text that preset carried.
-    if (activeGenerationOrder && !jobsOwned) {
+    if (activeGenerationOrder && carries(TASK_MARKERS.order)) {
         messages.length = 0;
         const sub = s => (typeof substituteParams === 'function' ? substituteParams(s) : s);
         const sheet = ['{{description}}', '{{personality}}', '{{scenario}}'].map(sub).filter(s => s && s.trim()).join("\n\n");
@@ -222,7 +225,7 @@ export async function handlePromptInjection(data, type) {
     // --- VCRP: THE HELPER MODEL'S BLOCKS ---
     // The blocks written after a reply (vcrp/helper/blocks.js): its two messages, nothing of
     // the preset, no prefill (a model that reasons answers on its own).
-    if (activeHelperBlocks && !jobsOwned || (activeHelperBlocks && forHelper)) {
+    if (activeHelperBlocks && carries(TASK_MARKERS.helperBlocks)) {
         messages.length = 0;
         messages.push({ role: "system", content: activeHelperBlocks.system });
         messages.push({ role: "user", content: activeHelperBlocks.user });
@@ -232,10 +235,8 @@ export async function handlePromptInjection(data, type) {
     }
 
     // --- VCRP FOCUS AUDIT ---
-    // Runs on its own after a reply, so unlike the buttons above it checks that this is its
-    // own quiet call: a reply sent while it runs keeps the roleplay prompt (the helper builds
-    // its prompts with type "quiet", on an empty list).
-    if (activeFocusAudit && !jobsOwned && (type === "quiet" || vcrpGenerationKind() === "quiet")) {
+    // Runs on its own after a reply: like every job above, only its own prompt takes it.
+    if (activeFocusAudit && carries(TASK_MARKERS.focus)) {
         messages.length = 0;
         // VCRP: the lorebook entries the story has active, for what the card does not say (lore.js).
         messages.push(...buildFocusAuditMessages({ ...activeFocusAudit, lore: loreBlock(await loreForChat()) }));
@@ -247,12 +248,23 @@ export async function handlePromptInjection(data, type) {
         return;
     }
 
+    // A prompt the helper asked for and no job claimed (its payload is gone): nothing to build.
+    if (forHelper) return;
+    // A job is parked and this prompt is not its own: said in the console, for whoever wonders
+    // why a job's prompt was not swapped in (its marker never reached this prompt).
+    if (data?.dryRun !== true && (activeStoryPlanRequest || activeNpcScanRequest || activeNpcUpdateRequest || activeBanListChat || activeGenerationOrder || activeFocusAudit || activeHelperBlocks)) {
+        console.debug(`[${extensionName}] A background job is in flight; this prompt does not carry its marker, so it is built as the prompt it is.`);
+    }
     if (!localProfile) return;
 
     // VCRP off (power.js): the prompt goes out as SillyTavern built it, a VCRP preset's own
     // tags blanked. A background job asked for from the window (above, or a summary the
     // reader started) still gets its prompt.
-    if (!vcrpOn() && !memoryTaskActive()) {
+    // VCRP: is this prompt Story Memory's own summary or check call (it carries the call's
+    // marker)? Asked once per prompt, here: everything below that treats a summary call
+    // differently goes by the answer, never by "a summary is in flight somewhere".
+    const memoryTaskPrompt = setMemoryPromptScope(messages);
+    if (!vcrpOn() && !memoryTaskPrompt) {
         blankVcrpTags(messages);
         return;
     }
@@ -438,5 +450,5 @@ export async function handlePromptInjection(data, type) {
 
     // VCRP: what changed since the last prompt that went out (Memory tab → Testing). Last,
     // so a prompt cancelled in the preview above is never counted.
-    if (replacementsMade > 0 && data?.dryRun !== true && !memoryTaskStandalone()) vcrpCacheCheckRecord(messages, vcrpGen);
+    if (replacementsMade > 0 && data?.dryRun !== true && !memoryPromptIsStandalone()) vcrpCacheCheckRecord(messages, vcrpGen);
 }

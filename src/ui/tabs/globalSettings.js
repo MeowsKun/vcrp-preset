@@ -124,7 +124,7 @@ export function renderGlobalSettings(c) {
         <div class="mtab-toggle-row ${retryOn ? 'active' : ''}" id="gs_toggle_blank_retry" style="cursor: pointer;">
             <div class="toggle-info">
                 <div class="toggle-label"><i class="fa-solid fa-rotate-right" style="color: #f43f5e;"></i> Retry an empty reply once</div>
-                <div class="toggle-desc">A reply with no story at all (nothing, or reasoning alone) is swiped again by itself a moment after it lands, once per message, and that swipe carries a line saying the last attempt came back empty: a prompt that changes a little often passes where the same one came back empty again. Not for a reply the output limit stopped. SillyTavern's own Auto-swipe never retries an empty reply. Off: the toast names the cause and you swipe yourself.</div>
+                <div class="toggle-desc">A reply that came back with no story and no reason (the model ended its turn with nothing written, or the answer could not be read) is sent once more by itself, as it was, a moment after it lands; once per message. Not when the provider's content filter stopped it (that is the provider's decision) and not when a limit stopped it (the same limit would again): those are said, under the reply too. SillyTavern's own Auto-swipe never retries an empty reply. Off: you swipe yourself.</div>
             </div>
             <div class="ps-switch" style="${retryOn ? 'background: #f43f5e;' : ''}"></div>
         </div>

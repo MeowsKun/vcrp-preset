@@ -4310,3 +4310,17 @@
     .vcrp-msx-row { grid-template-columns: 1fr; }
     .vcrp-helper-pill { bottom: 96px; }
 }
+
+/* ── VCRP: how a reply ended, under the reply ───────────────────────────────── */
+.vcrp-finish-note {
+    margin: 6px 0 2px;
+    padding: 5px 9px;
+    border-left: 3px solid #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+    border-radius: 4px;
+    font-size: 0.74rem;
+    line-height: 1.35;
+    color: #fbbf24;
+    cursor: pointer;
+}
+.vcrp-finish-note.cut { border-left-color: #94a3b8; color: #cbd5e1; background: rgba(148, 163, 184, 0.08); }

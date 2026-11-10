@@ -28,12 +28,12 @@
 // reply count runs out).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getContext, chat_metadata, saveMetadata, generateQuietPrompt, substituteParams, isGenerating } from "../../st.js";
+import { getContext, chat_metadata, saveMetadata, substituteParams, isGenerating } from "../../st.js";
 import { runHelperJob } from "../helper/index.js";
 import { localProfile } from "../../core/state.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
 import {
-    activeFocusAudit, setActiveFocusAudit,
+    activeFocusAudit, setActiveFocusAudit, TASK_MARKERS,
     activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder, activeBlockRepair,
 } from "../../core/activeRequests.js";
 import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
@@ -252,9 +252,9 @@ export async function runFocusAudit() {
     try {
         // On the helper model when its Focus job is on (vcrp/helper); the payload is parked
         // inside the job, when it runs.
-        const r = await runHelperJob("focus", async () => {
+        const r = await runHelperJob("focus", async send => {
             setActiveFocusAudit(input);
-            try { return await generateQuietPrompt({ prompt: "___PS_FOCUS___" }); } finally { setActiveFocusAudit(null); }
+            try { return await send({ prompt: TASK_MARKERS.focus }); } finally { setActiveFocusAudit(null); }
         });
         raw = r.stopped || r.failed ? null : (typeof r.value === "string" ? r.value : "");
         if (raw && r.route !== "profile") vcrpCountBackgroundOutput(raw);

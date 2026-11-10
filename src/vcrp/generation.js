@@ -20,12 +20,24 @@ let currentGen = "reply";
 let currentRaw = "normal";       // SillyTavern's own name for it: "swipe" is a reply to VCRP, but not to a scan
 let currentDry = false;
 
+let storySeq = 0;                // counts the story generations (a reply or a Continue) that started
+
 /** GENERATION_STARTED handler: (type, params, dryRun). Dry runs never change the next real request. */
 export function vcrpSetGenerationType(type, _params, dryRun) {
     currentDry = !!dryRun;
     if (dryRun) return;
     currentRaw = String(type || "normal");
     currentGen = ["continue", "impersonate", "quiet"].includes(type) ? type : "reply";
+    if (currentGen === "reply" || currentGen === "continue") storySeq++;
+}
+
+/**
+ * Which story generation is under way, as a count: it goes up with every reply or Continue
+ * that starts. The request made for it is the first one sent after it started
+ * (generationTrace.js tells a story's own request from any other by it).
+ */
+export function vcrpStorySeq() {
+    return storySeq;
 }
 
 /** What VCRP is building: "reply" (normal, swipe, regenerate), "continue", "impersonate" or "quiet". */

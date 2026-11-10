@@ -31,8 +31,9 @@
 // and the reply's measured size never holds it. A limit set from the measure, even half again
 // a reply, is then used up by the thinking on a hard turn and the reply comes back with
 // nothing in it. So on such a model the room under the target is worked out and shown, but
-// not put on the request: only the safety cap (the reader's own, warned about in Setup Check)
-// lowers it. The cost of the one thing that goes unenforced, a reply over its room after a
+// not put on the request: only the safety cap lowers it, and the cap goes on the request with
+// room for the reasoning on top (capRequestLimit). VCRP's background calls are not limited
+// there either. The cost of the one thing that goes unenforced, a reply over its room after a
 // break, is a few cents; the cost of a reply with nothing in it was the whole turn.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -74,12 +75,49 @@ export function replyCapTokens() {
     return n > 0 ? n : 0;
 }
 
+// ── The safety cap on a model that reasons out of sight ─────────────────────
+// The cap is a limit on the reply the reader sees. Such a model's reasoning is paid for in
+// the same request limit without being part of that reply, so a request limited to the cap
+// itself is used up by the reasoning on a hard turn, and the reply comes back with nothing in
+// it. There the request's limit is the cap plus room for the reasoning: half again the most
+// this chat's recent replies used (the API's own count, kept with each reply by
+// generationTrace.js), and never less than a floor: one easy stretch of replies must not
+// shrink the room so far that the next hard turn is starved. A reply can then run a little
+// over the cap when the model reasons less than that; it can no longer be starved by it.
+const REASONING_DEFAULT = 6000;   // until some replies are measured
+const REASONING_MIN = 6000;       // and the least it is ever given
+const REASONING_MAX = 32000;
+const REASONING_RECENT = 10;      // replies looked at
+const REASONING_MARGIN = 1.5;
+
+/** Room for the model's own reasoning on top of the safety cap; 0 on a model whose thinking is in the reply. */
+export function reasoningAllowance() {
+    if (!vcrpModelReasonsHidden()) return 0;
+    let chat = [];
+    try { chat = ((getContext() || {}).chat) || []; } catch (e) { chat = []; }
+    const seen = [];
+    for (let i = chat.length - 1; i >= 0 && seen.length < REASONING_RECENT; i--) {
+        const m = chat[i];
+        const f = m && !m.is_user && !m.is_system && m.extra && m.extra.vcrp_finish;
+        const r = f && f.usage ? Number(f.usage.reasoning) : 0;
+        if (r > 0) seen.push(r);
+    }
+    if (!seen.length) return REASONING_DEFAULT;
+    return Math.min(REASONING_MAX, Math.max(REASONING_MIN, Math.round(Math.max(...seen) * REASONING_MARGIN)));
+}
+
+/** The request limit the safety cap stands for: the cap, plus room for reasoning out of sight. 0 with no cap. */
+export function capRequestLimit() {
+    const cap = replyCapTokens();
+    return cap ? cap + reasoningAllowance() : 0;
+}
+
 /**
- * The hard limit a reply really has: the safety cap or SillyTavern's own Max Response Length,
- * whichever is lower (0 when neither is known).
+ * The hard limit a reply really has: the safety cap (as the request's limit) or SillyTavern's
+ * own Max Response Length, whichever is lower (0 when neither is known).
  */
 export function replyLimitTokens() {
-    const cap = replyCapTokens();
+    const cap = capRequestLimit();
     let st = 0;
     try { st = Math.round(Number(((getContext() || {}).chatCompletionSettings || {}).openai_max_tokens) || 0); } catch (e) { st = 0; }
     const limits = [cap, st].filter(n => n > 0);
@@ -238,8 +276,9 @@ export function vcrpReplyRoom(messages, dryRun) {
         break;
     }
     if (dryRun) return;
-    // The request's own limit: the room, or a whole reply when the room is less.
-    const hard = hidden ? replyCapTokens() : Math.min(Math.max(limit, Math.round(typicalReply() * WHOLE_REPLY)), cap);
+    // The request's own limit: the room, or a whole reply when the room is less. On a model
+    // that reasons out of sight: the safety cap alone, with room for that reasoning.
+    const hard = hidden ? capRequestLimit() : Math.min(Math.max(limit, Math.round(typicalReply() * WHOLE_REPLY)), cap);
     nextRoom = hard;
     lastRoom = { tokens: limit, limit: hard, input, cold, held: limit <= room, hidden };
 }
@@ -273,10 +312,13 @@ export function vcrpApplyReplyCap(data) {
     nextRoom = null;
     if (!data || typeof data !== "object") return;
     if (vcrpGenerationKind() === "quiet") {
-        if (vcrpBackgroundCall()) lowerLimit(data, BACKGROUND_OUTPUT);
+        // Not on a model that reasons out of sight: its reasoning is paid for in this limit
+        // too, and a summary or an audit starved by it comes back with nothing in it.
+        if (vcrpBackgroundCall() && !vcrpModelReasonsHidden()) lowerLimit(data, BACKGROUND_OUTPUT);
         return;
     }
-    const limits = ours ? [replyCapTokens(), room || 0].filter(n => n > 0) : [];
+    const capLimit = capRequestLimit();
+    const limits = ours ? [capLimit, room || 0].filter(n => n > 0) : [];
     const before = Number(data.max_tokens ?? data.max_completion_tokens) || 0;
     sentBy = "";
     if (limits.length) {
@@ -284,7 +326,7 @@ export function vcrpApplyReplyCap(data) {
         lowerLimit(data, lim);
         // Who set the limit that went out: the safety cap, the room under the target, or
         // neither (SillyTavern's own was lower, or the request carried none to lower).
-        if (!before || lim < before) sentBy = lim === replyCapTokens() ? "cap" : "hold";
+        if (!before || lim < before) sentBy = lim === capLimit ? "cap" : "hold";
     }
     // The limit this reply really went out with, whichever preset built it: what a reply that
     // stops mid-sentence is measured against (replyCut.js).

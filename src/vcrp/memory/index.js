@@ -46,6 +46,7 @@ export const memoryNow = () => clock();
 let lastVisibleChars = -1;        // history text carried by the request being built (-1: not measured)
 let taskActive = false;           // a summary or check call is being built
 let taskStandalone = null;        // ...and, for a standalone call, the messages that replace the prompt
+let promptIsTask = false;         // the prompt in hand is that call's own (it carries the task's marker)
 let stampedOver = null;           // lastRequestAt before the request being built stamped it
 
 export function vcrpMemoryEnabled() {
@@ -270,10 +271,10 @@ export function vcrpMemoryAfterPrompt(messages, dryRun) {
     const st = memoryState();
     if (!st || !Array.isArray(messages)) return;
     countPromptSpend(st, messages);   // before the stamp: it needs to know whether the cache was warm
-    if (taskStandalone) return;   // a standalone summary call never touches the roleplay cache
+    if (promptIsTask && taskStandalone) return;   // a standalone summary call never touches the roleplay cache
     stampedOver = st.lastRequestAt || 0;
     st.lastRequestAt = clock();
-    if (taskActive || lastVisibleChars < 0) return;   // not a fair measure of the roleplay prompt
+    if (promptIsTask || lastVisibleChars < 0) return;   // not a fair measure of the roleplay prompt
     const total = messages.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : 0), 0);
     st.fixedTokens = Math.max(0, Math.round((total - lastVisibleChars) / CHARS_PER_TOKEN));
     lastVisibleChars = -1;
@@ -354,13 +355,13 @@ function countPromptSpend(st, messages) {
     const budget = currentMemoryBudget();
     if (!budget) return;
     // A standalone summary call carries a prompt of its own: priced as written.
-    const cold = !!taskStandalone || isCold({ lastRequestAt: st.lastRequestAt }, clock(), budget);
+    const cold = (promptIsTask && !!taskStandalone) || isCold({ lastRequestAt: st.lastRequestAt }, clock(), budget);
     const { total, read, write, plain } = promptSpendSplit(messages, cold);
     const cost = requestCost(budget, { read, write, plain });
     const s = spendOf(st);
     // Every background call (Story Memory's, an NPC scan, the Story Director, another
     // extension's) is counted apart, and never stands in for "the last reply".
-    if (taskActive || vcrpGenerationKind() === "quiet") {
+    if (promptIsTask || vcrpGenerationKind() === "quiet") {
         s.tasks++; s.taskCost += cost;
         spendUndo = { kind: "task", cost };
         return;
@@ -465,8 +466,26 @@ export function vcrpMemoryMarkCache(messages, dryRun) {
 export function setMemoryTaskActive(on, standalone = null) {
     taskActive = !!on;
     taskStandalone = on && Array.isArray(standalone) ? standalone : null;
+    if (!taskActive) promptIsTask = false;
 }
 export const memoryTaskActive = () => taskActive;
+
+/**
+ * Called with every prompt before it is shaped (injection.js): is it the summary or check
+ * call's own? That call's prompt carries its instruction (SillyTavern adds the quiet prompt to
+ * the prompt it builds for it), marker and all. A story prompt built while such a call is
+ * still in flight (a reply sent meanwhile, or the call hung) carries none: it is shaped,
+ * recalled for, counted and stamped as the story prompt it is.
+ */
+export function setMemoryPromptScope(messages) {
+    promptIsTask = taskActive && Array.isArray(messages)
+        && messages.some(m => typeof (m && m.content) === "string" && m.content.includes(TASK_MARKER));
+    return promptIsTask;
+}
+/** The prompt in hand is a summary or check call's own. */
+export const memoryPromptIsTask = () => promptIsTask;
+/** ...and a standalone one: a prompt of its own, which replaces the roleplay prompt. */
+export const memoryPromptIsStandalone = () => promptIsTask && !!taskStandalone;
 /** The standalone call's own messages (copies), for a helper model that sends them itself; null otherwise. */
 export function memoryStandaloneMessages() {
     return taskActive && taskStandalone ? taskStandalone.map(m => ({ ...m })) : null;
@@ -484,7 +503,9 @@ export const memoryTaskStandalone = () => !!taskStandalone;
  * wherever it is. All of it sits after the cached part.
  */
 export function vcrpMemoryShapeTask(messages) {
-    if (!taskActive || !Array.isArray(messages)) return;
+    // Only the call's own prompt (setMemoryPromptScope): a story prompt built while a summary
+    // is in flight is never replaced by the summary's.
+    if (!promptIsTask || !Array.isArray(messages)) return;
     if (taskStandalone) {
         messages.length = 0;
         taskStandalone.forEach(m => messages.push({ ...m }));
@@ -563,7 +584,7 @@ const recallExtra = () => [...recallQueries].map(fn => { try { return String(fn(
  * the cap keeps out, when the last few messages touch them. Empty before the first cut.
  */
 export function vcrpMemoryRecall() {
-    if (taskActive) return "";   // a summary call drops the after-chat part anyway
+    if (promptIsTask) return "";   // a summary call drops the after-chat part anyway
     const st = memoryState();
     if (!st) return "";
     const chat = memoryChat();

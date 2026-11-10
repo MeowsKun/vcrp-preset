@@ -632,6 +632,28 @@ for (let k = 0; k < memCount; k++) {
     check(badge().length === 0, "switching the cost off does not take the badges away");
     box.find("#vmem_cost_badges").prop("checked", true).trigger("change");
     check(badge().length === 1, "switching the cost on does not bring the badges back");
+    // How a reply ended, under the reply: drawn once for one that did not end normally, taken
+    // away when it did (a swipe to a reply that ended on its own), its details on a tap.
+    const fin = await imp("src/vcrp/finishNote.js");
+    const noteEls = () => chatBox.querySelectorAll(".mes_block .vcrp-finish-note");
+    fin.drawFinishNote(1, w.document);
+    check(noteEls().length === 0, "a reply that ended normally gets a line under it");
+    const keepMes = chat[1].mes;
+    chat[1].mes = "";
+    chat[1].extra.vcrp_finish = { done: true, reason: "filter", native: "PROHIBITED_CONTENT", provider: "Google AI Studio", usage: { out: 0, input: 51000 }, limit: 20000, limitBy: "" };
+    fin.drawFinishNote(1, w.document);
+    fin.drawFinishNote(1, w.document);
+    check(noteEls().length === 1 && /No reply: the provider's content filter stopped it \(PROHIBITED_CONTENT\)/.test(noteEls()[0].textContent) && /served by Google AI Studio/.test(noteEls()[0].title) && noteEls()[0].classList.contains("blank"), `the line under an empty reply: ${noteEls().length} ${noteEls()[0] && noteEls()[0].textContent}`);
+    const toastsWas = globalThis.toastr.info;
+    let shown = "";
+    globalThis.toastr.info = m => { shown = String(m); };
+    noteEls()[0].dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    globalThis.toastr.info = toastsWas;
+    check(/decision is the provider's/.test(shown) && /limit 20k/.test(shown), `a tap on the line does not show its details: ${shown.slice(0, 120)}`);
+    chat[1].mes = keepMes;
+    delete chat[1].extra.vcrp_finish;
+    fin.drawAllFinishNotes(w.document);
+    check(noteEls().length === 0, "the line stays after the reply is replaced by one that ended normally");
     chatBox.innerHTML = keepBox;
     delete chat[1].extra;
 

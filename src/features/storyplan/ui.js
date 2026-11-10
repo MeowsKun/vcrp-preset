@@ -2,13 +2,13 @@
 // Story Director — the tab, the genre/flavour vocabulary, and the generation call.
 // ──────────────────────────────────────────────────────────────────────────────
 
-import { generateQuietPrompt, getContext } from "../../st.js";
+import { getContext } from "../../st.js";
 import { runHelperJob } from "../../vcrp/helper/index.js";
 import { extensionName } from "../../core/constants.js";
 import { localProfile } from "../../core/state.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
 import { syncPromptsGlobally } from "../../core/sync.js";
-import { setActiveStoryPlanRequest } from "../../core/activeRequests.js";
+import { setActiveStoryPlanRequest, TASK_MARKERS } from "../../core/activeRequests.js";
 import { saveProfileToMemory, saveProfileDebounced } from "../../core/profile.js";
 import { DEFAULT_PROMPTS } from "../../prompts/index.js";
 import { renderPromptEditor } from "../../ui/promptEditor.js";
@@ -492,9 +492,9 @@ export async function handleDirectiveGeneration(sp, btn, isEvolve) {
 // VCRP: on the helper model when its Story Director job is on (vcrp/helper); the payload is
 // parked inside the job, when it runs. What the helper writes is on its own bill.
 export async function generateStoryPlanLogic(chatText) {
-    const r = await runHelperJob("director", async () => {
+    const r = await runHelperJob("director", async send => {
         setActiveStoryPlanRequest(chatText);
-        try { return await generateQuietPrompt({ prompt: "___PS_STORY_PLAN___" }); } finally { setActiveStoryPlanRequest(null); }
+        try { return await send({ prompt: TASK_MARKERS.storyPlan }); } finally { setActiveStoryPlanRequest(null); }
     });
     if (r.stopped || r.failed) return "";
     const rawOutput = typeof r.value === "string" ? r.value : "";

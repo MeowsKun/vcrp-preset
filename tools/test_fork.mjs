@@ -27,7 +27,8 @@ globalThis.__ST__ = {
     extension_settings, getContext: () => ctx, substituteParams,
     saveSettingsDebounced() {}, saveMetadata() {}, saveChat() {}, chat_metadata: {}, isGenerating: () => false,
     debounce: fn => fn, cancelDebounce() {}, humanizedDateTime: () => "now",
-    generateQuietPrompt: async (...a) => { if (quietImpl) return quietImpl(...a); const m = [{ role: "system", content: "main preset" }, { role: "user", content: "___PS_DUMMY___" }]; await quietHook(m); return JSON.stringify(m); },
+    // SillyTavern adds the quiet prompt it is given to the prompt it builds: each job is known by its own marker there.
+    generateQuietPrompt: async (...a) => { if (quietImpl) return quietImpl(...a); const text = (a[0] && (a[0].quietPrompt ?? a[0].prompt)) || "___PS_DUMMY___"; const m = [{ role: "system", content: "main preset" }, { role: "user", content: text }]; await quietHook(m); return JSON.stringify(m); },
     event_types: new Proxy({}, { get: (t, k) => String(k) }), eventSource: { on() {}, once() {}, emit: async () => {}, removeListener() {} },
 };
 installBrowserGlobals();
@@ -1672,6 +1673,8 @@ console.log("30 ok knowledgebase (whole words, scan depth, hypnosis keyed, guard
     assert(close(st.spend.replyCost - before, 500 * price.output / 1e6), "a Continue counts only the new text");
     vcrpSetGenerationType("normal", {}, false);
     memory.setMemoryTaskActive(true);
+    // The prompt in hand is the summary call's own: it carries the call's instruction.
+    memory.setMemoryPromptScope([...prompt, { role: "system", content: "[VCRP MEMORY TASK: summarize]" }]);
     memory.vcrpMemoryAfterPrompt(prompt, false);
     memory.setMemoryTaskActive(false);
     memory.vcrpMemoryCountTaskOutput("word ".repeat(350));
@@ -2003,10 +2006,14 @@ console.log("34 ok reply length (safety cap on VCRP replies only, never raised, 
     const { setActiveStoryPlanRequest } = await imp("src/core/activeRequests.js");
     const money = "Bob paid $$5 for it, $& change, and $' tip.";
     setActiveStoryPlanRequest(money);
-    const director = [{ role: "user", content: "x" }];
+    const director = [{ role: "user", content: "___PS_STORY_PLAN___" }];   // SillyTavern adds the job's quiet prompt
     await handlePromptInjection({ chat: director, dryRun: false });
-    setActiveStoryPlanRequest(null);
     assert(text(director).includes(money), "the Story Director gets the chat as written");
+    // A prompt without the job's marker is not the job's: a reply sent meanwhile stays a story prompt.
+    const notIts = [{ role: "user", content: "x" }];
+    await handlePromptInjection({ chat: notIts, dryRun: false });
+    setActiveStoryPlanRequest(null);
+    assert(notIts.length === 1 && notIts[0].content === "x", "a prompt that does not carry the job's marker is left alone");
     const kbOn = q.knowledgebase.enabled;
     q.addons = []; q.knowledgebase.enabled = false;
     chat.push({ is_user: true, mes: "Hi." }, { is_user: false, mes: "Hello." }, { is_user: true, mes: "Go on." });
@@ -2028,7 +2035,8 @@ console.log("35 ok background calls (counted apart, the Director reads the memor
     const q = state.localProfile;
     const textOf = x => typeof x.content === "string" ? x.content : x.content.map(p => p.text).join("");
     const seed = n => { chat.length = 0; for (let i = 0; i < n; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `f${i}`, mes: `Line ${i}. ` + (i % 2 ? "Alice smirks and pours the coffee, the air thick with tension. " : "Bob orders. ").repeat(4) }); };
-    const answer = body => async () => { const m = [{ role: "system", content: "main preset" }]; vcrpSetGenerationType("quiet", {}, false); await handlePromptInjection({ chat: m, dryRun: false }); sent.push(m); return body; };
+    // SillyTavern adds the job's quiet prompt (its marker) to the prompt it builds for the call.
+    const answer = body => async params => { const asked = (params && (params.quietPrompt ?? params.prompt)) || ""; const m = [{ role: "system", content: "main preset" }, { role: "user", content: asked }]; vcrpSetGenerationType("quiet", {}, false); await handlePromptInjection({ chat: m, dryRun: false }); sent.push(m); return body; };
     let sent = [];
     const FIRST = "<think>Reading.</think>\n<recurring>none</recurring>\n<findings>\n- [motif] Alice smirks in every reply\n- [slop] \"the air thick with tension\" in most replies\n- [drift] Alice has gone soft and agreeable\n</findings>\n<note>\nStop the smirk. Drop \"air thick with\". Alice is curt and sardonic again.\n</note>";
 
@@ -2307,7 +2315,7 @@ console.log("36 ok Focus (audit every N replies, its own prompt, review first, n
 
     // The Story Director plans around it.
     setActiveStoryPlanRequest("Bob: hello\n\nAlice: hi there, this is the story so far, long enough to plan from.");
-    const director = [{ role: "user", content: "x" }];
+    const director = [{ role: "user", content: "___PS_STORY_PLAN___" }];
     await handlePromptInjection({ chat: director, dryRun: false });
     setActiveStoryPlanRequest(null);
     assert(text(director).includes(`- Plot Focus (Driving; build the blueprint around it): ${PLOT}`), "the Director's settings carry it");
@@ -4021,14 +4029,15 @@ console.log("54 ok one chat's story stays in it (the plan and where it was made,
     assert.equal(await lore.loreForNames(["Ann Reyes"]), "LORE: Ann is a courier.", "the entries that name one character (by first name too)");
     const { setActiveStoryPlanRequest, setActiveFocusAudit, setActiveNpcUpdateRequest } = await imp("src/core/activeRequests.js");
     const { handlePromptInjection: inject } = await imp("src/engine/injection.js");
-    const bg = async (set, value) => { set(value); vcrpSetGenerationType("quiet", {}, false); const m = [{ role: "system", content: "x" }]; await inject({ chat: m, dryRun: true }); set(null); vcrpSetGenerationType("normal", {}, false); return text(m); };
+    // Each job's prompt carries its marker (SillyTavern adds the job's quiet prompt to it).
+    const bg = async (set, value, marker) => { set(value); vcrpSetGenerationType("quiet", {}, false); const m = [{ role: "system", content: marker }]; await inject({ chat: m, dryRun: true }); set(null); vcrpSetGenerationType("normal", {}, false); return text(m); };
     q.storyPlan = { ...(q.storyPlan || {}), contentRating: "none" };
-    assert((await bg(setActiveStoryPlanRequest, "the chat")).includes("LORE: the Lantern burned once."), "the Story Director gets the active lore");
-    assert((await bg(setActiveNpcUpdateRequest, { npcName: "Ann Reyes", npcText: "Ann", chatText: "...", rules: "" })).includes("What the lore says about Ann Reyes:"), "an NPC update gets the entries that name the NPC");
-    const audit = await bg(setActiveFocusAudit, { checks: { drift: true }, items: [], text: "replies", card: "card", charName: "Mara" });
+    assert((await bg(setActiveStoryPlanRequest, "the chat", "___PS_STORY_PLAN___")).includes("LORE: the Lantern burned once."), "the Story Director gets the active lore");
+    assert((await bg(setActiveNpcUpdateRequest, { npcName: "Ann Reyes", npcText: "Ann", chatText: "...", rules: "" }, "___PS_NPC_UPDATE___")).includes("What the lore says about Ann Reyes:"), "an NPC update gets the entries that name the NPC");
+    const audit = await bg(setActiveFocusAudit, { checks: { drift: true }, items: [], text: "replies", card: "card", charName: "Mara" }, "___PS_FOCUS___");
     assert(audit.includes("<Lore>\nLORE: the Lantern burned once."), "a Focus audit gets the active lore");
     g.loreInTasks = false;
-    assert(!(await bg(setActiveStoryPlanRequest, "the chat")).includes("LORE:"), "switched off: no lore");
+    assert(!(await bg(setActiveStoryPlanRequest, "the chat", "___PS_STORY_PLAN___")).includes("LORE:"), "switched off: no lore");
     delete g.loreInTasks;
     loreImpl.check = null; loreImpl.entries = null;
 
@@ -4751,24 +4760,22 @@ console.log("62 ok the Author's Notebook as V11 has it since 01/11 (a deleted tr
     vcrpBlankOnReply(chat.length - 1, "normal");
     chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose.", swipes: [""], swipe_id: 0 });
     vcrpBlankOnReply(chat.length - 1, "normal");
-    assert(toasts.length === 2 && /is its reasoning/.test(toasts[0]) && /content filter|USER Hard/.test(toasts[1]), `blank replies said, with why (${JSON.stringify(toasts)})`);
+    assert(toasts.length === 2 && /is its reasoning/.test(toasts[0]) && /sent nothing back/.test(toasts[1]) && toasts.every(t => /sends the same request once more/.test(t) && !/Swipe for another/.test(t)), `blank replies said, with why (${JSON.stringify(toasts)})`);
     globalThis.toastr = toastrWas;
-    // Setup Check: a Safety cap on a model that reasons before it writes.
+    // Setup Check: a Safety cap on a model that reasons before it writes. The cap stands for the
+    // reply the reader sees; the request allows the cap plus room for the reasoning.
     ctx.mainApi = "openai";
     const vp = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V10 Universal.json"), "utf8"));
     Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: vp.prompts, prompt_order: vp.prompt_order, show_thoughts: false });
     extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 2000 };
     let items = vcrpHealthCheck().items;
-    assert(items.some(i => i.level === "warn" && /Safety cap \(2,000 tokens\) on a model that reasons/.test(i.title)), "Gemini with a 2,000 cap: warned");
-    extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 6000 };
-    assert(vcrpHealthCheck().items.some(i => i.level === "info" && /Safety cap \(6,000 tokens\)/.test(i.title)), "a roomy cap: a note");
+    assert(items.some(i => i.level === "info" && /Safety cap \(2,000 tokens\): the request allows 8,000, with room for the model's reasoning/.test(i.title)), `Gemini with a 2,000 cap: told what the request allows (${items.filter(i => /Safety cap/.test(i.title)).map(i => i.title)})`);
     // Claude reasons only when a reasoning effort is asked for (Request model reasoning alone
     // shows what there is; it asks for none).
     Object.assign(chatCompletionSettings, { openrouter_model: "anthropic/claude-opus-4.6", show_thoughts: true, reasoning_effort: "high" });
-    extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 2000 };
-    assert(vcrpHealthCheck().items.some(i => i.level === "warn" && /on a model that reasons/.test(i.title)), "Claude with a reasoning effort set: warned too");
+    assert(vcrpHealthCheck().items.some(i => i.level === "info" && /with room for the model's reasoning/.test(i.title)), "Claude with a reasoning effort set: the same");
     Object.assign(chatCompletionSettings, { reasoning_effort: "auto" });
-    assert(!vcrpHealthCheck().items.some(i => /on a model that reasons/.test(i.title)), "Claude without it: nothing");
+    assert(!vcrpHealthCheck().items.some(i => /with room for the model's reasoning/.test(i.title)), "Claude without it: the cap is the request's limit, nothing to say");
     delete extension_settings.VCRP.globalSettings.memoryBudget;
     for (const k of ["prompts", "prompt_order", "show_thoughts", "reasoning_effort"]) delete chatCompletionSettings[k];
 
@@ -5436,8 +5443,36 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
     vcrpSetGenerationType("normal", {}, false);
     await scope.fetch("/api/other", { method: "POST", body: "{}" });
     assert.equal(trace.vcrpGenerationRecords().length, 0, "other requests are not watched");
-    // The limit the request carries is the cap's (put on the request a moment before, replyLength.js).
+    // The safety cap on a model that reasons out of sight stands for the reply the reader sees:
+    // the request allows the cap plus room for the reasoning (a default, then half again the
+    // most this chat's replies used by the API's own count); VCRP's background calls are not
+    // limited there either. On a model whose thinking is in the reply, the cap is the limit.
     gs.memoryBudget = { targetCost: 0.30, replyCap: 8233 };
+    chat.length = 0;
+    RL.forgetReplyRoom();   // no prompt is built here: an earlier group's room is not this request's
+    setModel("openrouter", "openrouter_model", "google/gemini-4-argon");
+    assert(RL.reasoningAllowance() === 6000 && RL.capRequestLimit() === 14233, "no reply measured yet: the cap plus a default for the reasoning");
+    RL.vcrpNotePrompt(true);
+    let hiddenCap = { max_tokens: 20000 };
+    RL.vcrpApplyReplyCap(hiddenCap);
+    assert(hiddenCap.max_tokens === 14233 && RL.sentReplyLimitBy() === "cap", `the request allows the cap and the reasoning: ${hiddenCap.max_tokens}`);
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "Prose.", extra: { vcrp_finish: { done: true, reason: "stop", usage: { out: 9400, reasoning: 9000 } } } });
+    assert.equal(RL.reasoningAllowance(), 13500, "measured: half again the most a recent reply reasoned");
+    RL.vcrpNotePrompt(true);
+    hiddenCap = { max_tokens: 20000 };
+    RL.vcrpApplyReplyCap(hiddenCap);
+    assert(hiddenCap.max_tokens === 20000 && RL.sentReplyLimitBy() === "", "above SillyTavern's own limit: nothing lowered, nothing claimed");
+    vcrpSetGenerationType("quiet", {}, false);
+    memory.setMemoryTaskActive(true);
+    const hiddenTask = { max_tokens: 20000 };
+    RL.vcrpApplyReplyCap(hiddenTask);
+    memory.setMemoryTaskActive(false);
+    vcrpSetGenerationType("normal", {}, false);
+    assert.equal(hiddenTask.max_tokens, 20000, "a background call on such a model keeps its limit: its reasoning is paid for in it too");
+    chat.length = 0;
+    // The limit the request carries is the cap's (put on the request a moment before, replyLength.js).
+    setModel("openrouter", "openrouter_model", "anthropic/claude-opus-4.6");
+    assert(RL.reasoningAllowance() === 0 && RL.capRequestLimit() === 8233, "a model whose thinking is in the reply: the cap itself");
     RL.vcrpNotePrompt(true);
     const capped = { max_tokens: 20000 };
     RL.vcrpApplyReplyCap(capped);
@@ -5445,13 +5480,18 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
     const res = await scope.fetch("/api/backends/chat-completions/generate", { method: "POST", body: JSON.stringify({ model: "google/gemini-4-argon", chat_completion_source: "openrouter", stream: true, max_tokens: 8233 }) });
     assert.equal(await res.text(), sse, "SillyTavern reads the answer whole");
     chat.length = 0;
-    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "", extra: { reasoning: "hm" } });
+    chat.push({ is_user: true, mes: "go" }, { is_user: false, mes: "", extra: { reasoning: "hm" }, swipes: [""], swipe_id: 0, swipe_info: [{ extra: {} }] });
     await trace.vcrpFinishOnReply(1, "normal");
     const stamp = chat[1].extra.vcrp_finish;
     assert(stamp && stamp.done && stamp.reason === "length" && stamp.native === "MAX_TOKENS" && stamp.limit === 8233 && stamp.limitBy === "cap" && stamp.usage.out === 8233 && stamp.model === "google/gemini-4-argon", `the reply is stamped with how it ended: ${JSON.stringify(stamp)}`);
+    assert(chat[1].swipe_info[0].extra.vcrp_finish && chat[1].swipe_info[0].extra.vcrp_finish.reason === "length", "and so is its swipe: SillyTavern puts a swipe's own extras back when it is shown again");
     assert.equal(trace.vcrpLastGeneration().stamped, true, "and the record is used up");
-    await trace.vcrpFinishOnReply(1, "normal");
-    assert.equal(chat[1].extra.vcrp_finish, stamp, "a reply with no record of its own is not stamped");
+    await trace.vcrpFinishOnReply(1, "continue");
+    assert.equal(chat[1].extra.vcrp_finish, stamp, "a Continue with no record of its own keeps the reply's stamp");
+    // A new swipe starts with a copy of the last one's extras: how that one ended is not its own.
+    chat[1].extra.vcrp_cut = "thinking";
+    await trace.vcrpFinishOnReply(1, "swipe");
+    assert(!chat[1].extra.vcrp_finish && !chat[1].extra.vcrp_cut, "a new swipe with no record of its own does not keep the last swipe's stamp or its cut mark");
     assert.equal(trace.vcrpLastGeneration(["quiet"]), null, "no quiet call was made");
     const failing = { fetch: async () => new Response('{"error":true,"response":"no key"}', { status: 401 }) };
     trace.vcrpResetGenerationTrace();
@@ -5464,10 +5504,11 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
     // The blank-reply note from the stamp.
     assert(/output limit stopped it: 8,233 tokens, set by VCRP's Safety cap/.test(blankReplyWhy("empty", stamp)) && /8,233 of them reasoning/.test(blankReplyWhy("thinking", stamp)) && /Raise the Safety cap/.test(blankReplyWhy("empty", stamp)), `the limit, what set it, what was written: ${blankReplyWhy("empty", stamp)}`);
     assert(/Hold each reply to the target/.test(blankReplyWhy("empty", { ...stamp, limitBy: "hold" })) && /Max Response Length/.test(blankReplyWhy("empty", { ...stamp, limitBy: "" })), "the other two setters named");
-    assert(/stopped the reply \(PROHIBITED_CONTENT\)/.test(blankReplyWhy("empty", { done: true, reason: "filter", native: "PROHIBITED_CONTENT" })), "the filter, in the provider's word");
+    const declined = blankReplyWhy("empty", { done: true, reason: "filter", native: "PROHIBITED_CONTENT", provider: "Google AI Studio" });
+    assert(/content filter stopped this reply \(PROHIBITED_CONTENT\) \(served by Google AI Studio\)/.test(declined) && /decision is the provider's/.test(declined) && /does not retry or change it/.test(declined), `the provider's filter, in its own word, said as its decision: ${declined}`);
     assert(/failed on the provider's side: Provider returned error/.test(blankReplyWhy("empty", { done: true, reason: "error", error: "Provider returned error" })), "an error");
-    assert(/Chain of Thought off/.test(blankReplyWhy("thinking", { done: true, reason: "stop" })) && /content filter/.test(blankReplyWhy("empty", { done: true, reason: "stop" })), "ended on its own: the custom thinking on Gemini 4, or the filter");
-    assert(/usually its content filter/.test(blankReplyWhy("empty", null)) && /output limit cut it/.test(blankReplyWhy("thinking-open", { done: false })), "no answer read: the reply's shape");
+    assert(/Chain of Thought off/.test(blankReplyWhy("thinking", { done: true, reason: "stop" })) && /ended its turn with nothing written/.test(blankReplyWhy("empty", { done: true, reason: "stop" })), "ended on its own: the custom thinking on Gemini 4, or nothing written");
+    assert(/sent nothing back, and the answer gave no reason/.test(blankReplyWhy("empty", null)) && /output limit cut it/.test(blankReplyWhy("thinking-open", { done: false })), "no answer read: the reply's shape");
 
     // The cut from the stamp: a reply the answer says ended on its own is left alone, one the
     // limit stopped is cut whatever its size looks like.
@@ -5623,12 +5664,29 @@ console.log("69 ok how each reply ended, from the API's own answer (OpenRouter, 
     const toastrWas = globalThis.toastr;
     globalThis.toastr = { info() {}, success() {}, error: m => toasts.push(m), warning: m => toasts.push(m) };
     sendAnswer = async () => { throw new Error("Unauthorized"); };
-    const rf = await H.runHelperJob("npc", async () => {
+    const rf = await H.runHelperJob("npc", async send => {
         setActiveNpcScanRequest({ chatText: "Bob met Cole.", existingNames: "" });
-        try { return await generateQuietPrompt({ prompt: "___PS_NPC_SCAN___" }); } finally { setActiveNpcScanRequest(null); }
+        try { return await send({ prompt: "___PS_NPC_SCAN___" }); } finally { setActiveNpcScanRequest(null); }
     });
     assert(rf.failed && rf.value === null && rf.route === "profile" && toasts.some(m => /didn't accept the API key/.test(m)), `a refused key, said in plain words: ${JSON.stringify(toasts)}`);
     assert(sent.at(-1).messages.some(m => /Analyze the following story history/.test(m.content) && /Bob met Cole/.test(m.content)), "the scan's own prompt was built for the profile");
+    // A job that stays with the story model keeps SillyTavern's own quiet prompt while another
+    // runs on the profile: the profile's sender is handed to its own job only.
+    let storyQuiet = 0;
+    quietImpl = async () => { storyQuiet++; return "from the story model"; };
+    const nSent = sent.length;
+    sendAnswer = async () => { const own = await generateQuietPrompt({ prompt: "a story-route job's call" }); return { content: `profile saw: ${own}` }; };
+    const both = await H.runHelperJob("npc", send => send({ prompt: "plain question" }));
+    quietImpl = null;
+    assert(both.value === "profile saw: from the story model" && storyQuiet === 1 && sent.length === nSent + 1, `a call made beside a profile job goes through SillyTavern, not to the profile: ${JSON.stringify(both)}`);
+    // Each parked payload goes to its own job's prompt: with a scan parked for the story model,
+    // the helper's blocks prompt is still the blocks prompt.
+    setActiveNpcScanRequest({ chatText: "parked for the story model", existingNames: "" });
+    sendAnswer = async () => ({ content: ANSWER });
+    chat[3].extra.vcrp_helper_blocks = "";
+    const rb = await HB.helperWriteBlocks(3, { force: true });
+    setActiveNpcScanRequest(null);
+    assert(rb.status === "done" && /running notes/.test(sent.at(-1).messages[0].content) && !sent.at(-1).messages.some(m => /Analyze the following story history/.test(m.content)), "the helper's blocks prompt is not taken over by another job's parked payload");
     // An empty answer: the reply keeps its text, the warning comes once per chat.
     toasts.length = 0;
     sendAnswer = async () => ({ content: "" });
@@ -5663,11 +5721,29 @@ console.log("69 ok how each reply ended, from the API's own answer (OpenRouter, 
     gs.helper.jobs.memory = true;
     assert.equal(H.helperRoute("memory"), "profile");
     sendAnswer = async messages => ({ content: `got ${messages.length}` });
-    const rm = await H.runHelperJob("memory", async () => {
+    const rm = await H.runHelperJob("memory", async send => {
         memory.setMemoryTaskActive(true, [{ role: "system", content: "sys" }, { role: "user", content: "<chat>x</chat>" }, { role: "assistant", content: "I have read" }, { role: "user", content: "task" }]);
-        try { return await generateQuietPrompt({ quietPrompt: "task [VCRP MEMORY]" }); } finally { memory.setMemoryTaskActive(false); }
+        try { return await send({ quietPrompt: "[VCRP MEMORY TASK: summarize] the task" }); } finally { memory.setMemoryTaskActive(false); }
     });
     assert(rm.route === "profile" && rm.value === "got 4" && sent.at(-1).messages[1].content === "<chat>x</chat>", `a standalone summary call, sent as it is: ${JSON.stringify(rm)}`);
+    // A summary that reads the story's cache (no prompt of its own) cannot go to the profile: it fails, said.
+    const rc = await H.runHelperJob("memory", async send => {
+        memory.setMemoryTaskActive(true, null);
+        try { return await send({ quietPrompt: "[VCRP MEMORY TASK: summarize] the task" }); } finally { memory.setMemoryTaskActive(false); }
+    });
+    assert(rc.failed && /cannot go to the helper/.test(String(rc.error && rc.error.message)), "a cache-reading summary is refused, not sent as something else");
+    // While a summary is in flight, a story prompt built meanwhile stays a story prompt: it is
+    // not replaced by the summary's own messages, and it is recalled for and counted as a reply.
+    memory.setMemoryTaskActive(true, [{ role: "system", content: "sys" }, { role: "user", content: "[VCRP MEMORY TASK: summarize] the task" }]);
+    const during = await run(V11);
+    assert(during.length > 3 && text(during).includes("latest user msg") && !text(during).includes("[VCRP MEMORY TASK") && !memory.memoryPromptIsTask(), "a reply sent while a summary is in flight keeps the story's prompt");
+    const own = buildQuietPrompt(V11, "[VCRP MEMORY TASK: summarize] the task");
+    vcrpSetGenerationType("quiet", {}, false);
+    await handlePromptInjection({ chat: own, dryRun: false });
+    vcrpSetGenerationType("normal", {}, false);
+    assert(own.length === 2 && own[0].content === "sys" && memory.memoryPromptIsStandalone(), "the summary's own prompt (it carries the task) is the one replaced");
+    memory.setMemoryTaskActive(false);
+    assert(!memory.memoryPromptIsTask(), "and nothing is left marked once the call is over");
     delete gs.helper.jobs.memory;
 
     // The story's own connection: no request to the profile, the job runs through SillyTavern.
@@ -5818,15 +5894,17 @@ console.log("71 ok the NPC Bank's name finder (a first name, a nickname, a name 
 }
 console.log("72 ok Model Setup's loadouts (a preview that writes nothing; the engine with its thinking and style, the add-ons, the length and the global rows written; Gemini JB off elsewhere; a Thinking Cap kept; changed from the loadout in use; the global rows written once; every loadout's engine and length exist)");
 
-// 73. Empty replies, read back and retried: the retry note on a swipe of a blank reply (not a
-//     normal turn, not a reply the output limit stopped), the chat's empty replies read from the
-//     stamps saved with them (Setup Check, the text to copy), and the once-only automatic swipe
-//     (SillyTavern's own auto-swipe never retries an empty reply).
+// 73. Empty replies, read back: the chat's empty replies from the stamps kept with them (Setup
+//     Check, the text to copy); the line under a reply that did not end normally; one plain
+//     retry for a reply that nothing explains, never for the provider's filter (its decision)
+//     or a limit; and nothing in the prompt changes because a reply came back empty.
 {
     const q = state.localProfile;
     const BR = await imp("src/vcrp/blankReply.js");
     const H = await imp("src/vcrp/health.js");
+    const FN = await imp("src/vcrp/finishNote.js");
     const V11 = "VCRP V11 Megumin Original.json";
+    const metaAll = globalThis.__ST__.chat_metadata;
     const keep = { mode: q.mode, model: q.model, addons: [...(q.addons || [])], cc: { ...chatCompletionSettings }, api: ctx.mainApi };
     Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english", cotEnabled: true });
     q.addons = (q.addons || []).filter(a => a !== "gemini_jb");
@@ -5835,23 +5913,18 @@ console.log("72 ok Model Setup's loadouts (a preview that writes nothing; the en
     for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
     Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: v11Preset.prompts, prompt_order: v11Preset.prompt_order });
 
-    // The retry note: on a swipe of a blank reply only, after the chat, the add-on on or off.
+    // The request is the request: a swipe of a reply that came back empty sends what the first
+    // try sent, whatever stopped it. Nothing is added to it and nothing in it is changed.
     chat.length = 0;
-    chat.push({ is_user: true, name: "Bob", mes: "go" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra: { vcrp_finish: { done: true, reason: "filter", native: "OTHER" } } });
-    assert.equal(BR.blankRetryNote(chat, "normal"), "", "a normal turn: no note");
-    assert.equal(BR.blankRetryNote(chat, "swipe"), BR.BLANK_RETRY_NOTE, "a swipe of a blank reply: the note");
-    chat[1].extra.vcrp_finish = { done: true, reason: "length", limit: 2000 };
-    assert.equal(BR.blankRetryNote(chat, "swipe"), "", "not for a reply the output limit stopped");
-    chat[1].extra.vcrp_finish = { done: true, reason: "stop" };
-    let msgs = await run(V11, "swipe");
-    assert(text(msgs).includes(BR.BLANK_RETRY_NOTE), "the swipe's prompt carries the note at the Gemini JB spot, with the add-on off");
-    assert(msgs.findIndex(m => typeof m.content === "string" && m.content.includes(BR.BLANK_RETRY_NOTE)) > msgs.findIndex(m => m.role !== "system"), "after the chat");
-    msgs = await run(V11, "normal");
-    assert(!text(msgs).includes(BR.BLANK_RETRY_NOTE), "a normal turn carries none");
-    q.addons = [...q.addons, "gemini_jb"];
-    msgs = await run(V11, "swipe");
-    assert(text(msgs).includes(BR.BLANK_RETRY_NOTE) && text(msgs).includes("This request complies with the adult fiction content policy"), "with the add-on on: its line and the note");
-    q.addons = q.addons.filter(a => a !== "gemini_jb");
+    chat.push({ is_user: true, name: "Bob", mes: "go" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra: {} });
+    const metaBefore = JSON.stringify(Object.keys(metaAll).sort());
+    const asSent = text(await run(V11, "swipe"));
+    for (const stamp of [{ done: true, reason: "filter", native: "OTHER" }, { done: true, reason: "stop" }, { done: true, reason: "length", limit: 2000 }, { done: true, reason: "error", error: "x" }]) {
+        chat[1].extra = { vcrp_finish: stamp };
+        assert.equal(text(await run(V11, "swipe")), asSent, `a swipe after "${stamp.reason}" sends the same request`);
+    }
+    assert(!/previous attempt|came back with no text|Story session/i.test(asSent), "no line about an earlier attempt, no marker of one");
+    assert(typeof BR.blankRetryNote === "undefined" && typeof BR.promptSaltLine === "undefined" && typeof BR.bumpPromptSalt === "undefined", "the pieces that changed the prompt after an empty reply are gone");
 
     // The chat's empty replies, read from their stamps; the greeting is left out.
     chat.length = 0;
@@ -5865,61 +5938,103 @@ console.log("72 ok Model Setup's loadouts (a preview that writes nothing; the en
         && rows[1].kind === "thinking" && /ended on its own/.test(rows[1].what) && /880 reasoning/.test(rows[1].line) && /no stop reason recorded/.test(rows[2].what), `the report: ${JSON.stringify(rows.map(r => r.line))}`);
     const txt = H.vcrpEmptyRepliesText({ chat, chatCompletionSettings });
     assert(txt.startsWith("VCRP empty replies: 3 of 4 replies") && txt.includes("google/gemini-4-argon") && txt.includes("#4 empty: stopped by the provider's filter (OTHER)") && txt.includes("Gemini JB: off"), `the text to copy: ${txt.slice(0, 300)}`);
-    assert(H.vcrpHealthCheck().items.some(i => i.level === "warn" && /3 replies in this chat came back empty/.test(i.title) && /1 stopped by the provider's filter \(OTHER\)/.test(i.title)), "Setup Check counts them by cause");
+    const item = H.vcrpHealthCheck().items.find(i => /3 replies in this chat came back empty/.test(i.title));
+    assert(item && item.level === "warn" && /1 stopped by the provider's filter \(OTHER\)/.test(item.title) && /the provider's decision/.test(item.detail) && !/add-on|USER Hard/i.test(item.detail), `Setup Check counts them by cause and says whose decision a filter's is: ${item && item.detail}`);
+    assert(/1 is all thinking/.test(item.detail) && /Turn Chain of Thought off/.test(item.detail), "and what the chat's own record points to: all thinking on a model that reasons by itself, with Chain of Thought on");
+    q.cotEnabled = false;
+    assert(!/all thinking/.test(H.vcrpHealthCheck().items.find(i => /came back empty/.test(i.title)).detail), "not said with Chain of Thought already off");
+    q.cotEnabled = true;
     assert.equal(H.vcrpEmptyRepliesText({ chat: chat.slice(0, 3), chatCompletionSettings }), "", "a chat without one: nothing to copy");
 
-    // The automatic retry: once, with SillyTavern's own swipe call; not when the limit stopped
-    // it; not when switched off; not for an older reply.
+    // The line under a reply that did not end normally; none under one that did.
+    assert.equal(FN.finishNoteFor(chat[2]), null, "a reply that ended on its own with its story: no line");
+    assert.equal(FN.finishNoteFor(chat[1]), null, "nor under the reader's message");
+    const nFilter = FN.finishNoteFor(chat[4]);
+    assert(nFilter && nFilter.level === "blank" && /No reply: the provider's content filter stopped it \(OTHER\)/.test(nFilter.short) && /decision is the provider's/.test(nFilter.detail) && /served by Google AI Studio/.test(nFilter.detail) && /read 51k \(48k from the cache\)/.test(nFilter.detail) && /gen-1/.test(nFilter.detail), `the filter: ${JSON.stringify(nFilter)}`);
+    assert(/No story: the reply is all reasoning/.test(FN.finishNoteFor(chat[6]).short) && /No reply came back \(no stop reason was recorded\)/.test(FN.finishNoteFor(chat[8]).short), "all reasoning; no reason recorded");
+    const nLimit = FN.finishNoteFor({ is_user: false, mes: "", extra: { vcrp_finish: { done: true, reason: "length", limit: 2000, limitBy: "cap", usage: { out: 2000, reasoning: 2000 } } } });
+    assert(/No reply: the output limit \(2\.0k, VCRP's Safety cap\) was used up before the story/.test(nLimit.short) && /wrote 2\.0k tokens \(2\.0k of them reasoning\)/.test(nLimit.detail), `the limit: ${JSON.stringify(nLimit)}`);
+    const nCut = FN.finishNoteFor({ is_user: false, mes: "She turned toward the door and", extra: { vcrp_finish: { done: true, reason: "filter", native: "PROHIBITED_CONTENT" } } });
+    assert(nCut && nCut.level === "cut" && /Cut short by the provider's content filter \(PROHIBITED_CONTENT\)/.test(nCut.short), "a reply with text that was cut short says so too");
+    assert(/failed/.test(FN.finishNoteFor({ is_user: false, mes: "", extra: { vcrp_finish: { done: true, reason: "error", error: "Provider returned error" } } }).short), "a failed request");
+
+    // The one retry: for a reply nothing explains, with SillyTavern's own swipe call.
     const toastrWas = globalThis.toastr;
     const toasts = [];
     globalThis.toastr = { info: (m, t) => toasts.push(`${t}: ${m}`), warning: (m, t) => toasts.push(`${t}: ${m}`), success() {}, error() {} };
     const swipes = [];
     ctx.swipe = { to: async (ev, dir, opts) => { swipes.push({ dir, ...opts }); }, right: async () => { swipes.push({ dir: "right-plain" }); } };
     const wait = () => new Promise(r => setTimeout(r, 900));
+    const blank = extra => { chat.push({ is_user: true, name: "Bob", mes: "go" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra }); return chat.length - 1; };
     chat.length = 0;
-    // Earlier groups' blank replies bumped the count; this chat starts never filtered.
-    delete globalThis.__ST__.chat_metadata.vcrp_prompt_salt;
-    assert.equal(BR.promptSaltLine(), "", "never filtered: no line");
-    chat.push({ is_user: true, name: "Bob", mes: "go" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra: { vcrp_finish: { done: true, reason: "filter", native: "OTHER" } } });
-    BR.vcrpBlankOnReply(1, "normal");
-    assert(chat[1].extra.vcrp_blank_retry === 1 && toasts.length === 1 && /retrying/.test(toasts[0]) && /swipes once more by itself/.test(toasts[0]) && /PROHIBITED_CONTENT|OTHER|content filter/.test(toasts[0]), `the first empty reply: retried, said why: ${toasts[0]}`);
+    let id = blank({ vcrp_finish: { done: true, reason: "stop", native: "STOP" } });
+    BR.vcrpBlankOnReply(id, "normal");
+    assert(chat[id].extra.vcrp_blank_retry === 1 && toasts.length === 1 && /retrying/.test(toasts[0]) && /ended its turn with nothing written/.test(toasts[0]) && /sends the same request once more by itself/.test(toasts[0]), `ended with nothing and no reason: retried, said so: ${toasts[0]}`);
     await wait();
-    assert(swipes.length === 1 && swipes[0].dir === "right" && swipes[0].source === "auto_swipe" && swipes[0].forceMesId === 1, `SillyTavern's own auto-swipe call: ${JSON.stringify(swipes)}`);
-    // The filtered reply changed the prompt's start once: the line sits in the cached part.
-    assert(globalThis.__ST__.chat_metadata.vcrp_prompt_salt === 1 && BR.promptSaltLine() === "(Story session 1.)", "a filtered reply bumps the chat's count");
-    const salted = await run(V11, "swipe");
-    const firstNonSystem = salted.findIndex(m => m.role !== "system");
-    assert(salted.slice(0, firstNonSystem).some(m => typeof m.content === "string" && m.content.includes("(Story session 1.)")), "the line is in the prompt's cached start (the Main Prompt)");
-    assert(toasts[0].includes("the prompt's start changed once"), "and the toast says so");
+    assert(swipes.length === 1 && swipes[0].dir === "right" && swipes[0].source === "auto_swipe" && swipes[0].forceMesId === id, `SillyTavern's own auto-swipe call: ${JSON.stringify(swipes)}`);
+    assert.equal(JSON.stringify(Object.keys(metaAll).sort()), metaBefore, "and nothing is kept with the chat because of it");
     // The retry came back empty too (its extras copied from the last swipe): said, not retried again.
     toasts.length = 0;
-    chat[1].mes = ""; chat[1].swipes = ["", ""]; chat[1].swipe_id = 1;
-    BR.vcrpBlankOnReply(1, "swipe");
+    chat[id].swipes = ["", ""]; chat[id].swipe_id = 1;
+    BR.vcrpBlankOnReply(id, "swipe");
     await wait();
-    assert(swipes.length === 1 && toasts.length === 1 && /retried once already/.test(toasts[0]), `not a second time: ${toasts[0]}`);
+    assert(swipes.length === 1 && toasts.length === 1 && /second time already/.test(toasts[0]) && /Swipe for another/.test(toasts[0]), `not a second time: ${toasts[0]}`);
+    // The provider's filter declined it: its decision. Said, with its word; not retried.
     toasts.length = 0;
-    chat.push({ is_user: true, name: "Bob", mes: "more" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra: { vcrp_finish: { done: true, reason: "length", limit: 2000, limitBy: "cap" } } });
-    BR.vcrpBlankOnReply(3, "normal");
+    id = blank({ vcrp_finish: { done: true, reason: "filter", native: "PROHIBITED_CONTENT", provider: "Google AI Studio" } });
+    BR.vcrpBlankOnReply(id, "normal");
     await wait();
-    assert(swipes.length === 1 && !chat[3].extra.vcrp_blank_retry && toasts.length === 1 && /output limit stopped it/.test(toasts[0]), `the limit's doing: no retry (${toasts[0]})`);
-    // The retry's own empty answer (filtered again) changed the start a second time; the limit's did not.
-    assert.equal(globalThis.__ST__.chat_metadata.vcrp_prompt_salt, 2, "no change to the prompt's start for the limit's doing: the limit, not the content, emptied it");
+    assert(swipes.length === 1 && !chat[id].extra.vcrp_blank_retry && toasts.length === 1 && !/retrying/.test(toasts[0]) && /content filter stopped this reply \(PROHIBITED_CONTENT\)/.test(toasts[0]) && /does not retry or change it/.test(toasts[0]), `the filter's decision is reported, not retried: ${toasts[0]}`);
+    // A limit stopped it: the same limit would again. Said; not retried.
+    toasts.length = 0;
+    id = blank({ vcrp_finish: { done: true, reason: "length", limit: 2000, limitBy: "cap" } });
+    BR.vcrpBlankOnReply(id, "normal");
+    await wait();
+    assert(swipes.length === 1 && !chat[id].extra.vcrp_blank_retry && toasts.length === 1 && /output limit stopped it/.test(toasts[0]), `the limit's doing: no retry (${toasts[0]})`);
+    // No stop reason read at all: retried.
+    toasts.length = 0;
+    id = blank({});
+    BR.vcrpBlankOnReply(id, "normal");
+    await wait();
+    assert(swipes.length === 2 && chat[id].extra.vcrp_blank_retry === 1, "nothing says why: retried");
+    // Switched off: said only. An older reply: said only.
     extension_settings.VCRP.globalSettings.blankRetry = false;
     toasts.length = 0;
-    chat.push({ is_user: true, name: "Bob", mes: "again" }, { is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, extra: {} });
-    BR.vcrpBlankOnReply(5, "normal");
+    id = blank({});
+    BR.vcrpBlankOnReply(id, "normal");
     await wait();
-    assert(swipes.length === 1 && !chat[5].extra.vcrp_blank_retry && toasts.length === 1 && !/retrying/.test(toasts[0]), "switched off: said only");
+    assert(swipes.length === 2 && !chat[id].extra.vcrp_blank_retry && toasts.length === 1 && !/retrying/.test(toasts[0]), "switched off: said only");
     delete extension_settings.VCRP.globalSettings.blankRetry;
     toasts.length = 0;
     chat.push({ is_user: true, name: "Bob", mes: "x" });
-    BR.vcrpBlankOnReply(5, "normal");
+    BR.vcrpBlankOnReply(id, "normal");
     await wait();
-    assert(swipes.length === 1 && toasts.length === 1 && !chat[5].extra.vcrp_blank_retry, "an older empty reply is only said");
-    globalThis.toastr = toastrWas;
+    assert(swipes.length === 2 && toasts.length === 1 && !chat[id].extra.vcrp_blank_retry, "an older empty reply is only said");
+    // A SillyTavern with only the plain right swipe; one with none (the swipe button itself); one with nothing.
+    chat.pop();
+    ctx.swipe = { right: async () => { swipes.push({ dir: "right-plain" }); } };
+    assert(await BR.swipeForAnother(id) && swipes.at(-1).dir === "right-plain", "the plain right swipe where that is all there is");
     delete ctx.swipe;
-    delete globalThis.__ST__.chat_metadata.vcrp_prompt_salt;
-    assert.equal(BR.promptSaltLine(), "", "a chat never filtered carries no line");
+    const qsWas = document.querySelector;
+    let clicked = 0;
+    document.querySelector = sel => (/\.last_mes \.swipe_right/.test(sel) ? { click() { clicked++; } } : null);
+    assert(await BR.swipeForAnother(id) && clicked === 1, "the swipe button itself where the context offers no swipe");
+    document.querySelector = () => null;
+    toasts.length = 0;
+    delete chat[id].extra.vcrp_blank_retry;
+    BR.vcrpBlankOnReply(id, "normal");
+    await wait();
+    assert(toasts.length === 2 && /could not swipe by itself/.test(toasts[1]), `no way to swipe: said, not silent (${JSON.stringify(toasts)})`);
+    document.querySelector = qsWas;
+    globalThis.toastr = toastrWas;
+    // Thinking left open. The answer says the model ended on its own: everything it wrote sits
+    // inside the open <think>; said for what it is, and sent once more. Nothing read: a limit's
+    // doing as far as anyone can tell; said, not retried. A reply of blocks alone: not retried.
+    const one = [1];
+    assert(BR.blankRetryWanted("thinking-open", { extra: { vcrp_finish: { done: true, reason: "stop" } } }, 0, one) && !BR.blankRetryWanted("thinking-open", { extra: {} }, 0, one) && !BR.blankRetryWanted("thinking-open", { extra: { vcrp_finish: { done: true, reason: "length" } } }, 0, one), "thinking left open: retried only when the model ended on its own");
+    assert(/without closing its thinking/.test(BR.blankReplyWhy("thinking-open", { done: true, reason: "stop" })) && /Chain of Thought off/.test(BR.blankReplyWhy("thinking-open", { done: true, reason: "stop" })) && /output limit cut it/.test(BR.blankReplyWhy("thinking-open", null)), "and said for what it is");
+    assert(/inside its thinking/.test(BR.blankReplyWhy("thinking", { done: true, reason: "stop" })) && /Open the thinking to read it/.test(BR.blankReplyWhy("thinking", { done: true, reason: "stop" })), "a reply that is all thinking: the story, if written, is in there");
+    assert(!BR.blankRetryWanted("blocks", { extra: {} }, 0, one), "a reply of blocks alone is not retried");
 
     chat.length = 0;
     Object.assign(q, { mode: keep.mode, model: keep.model });
@@ -5928,6 +6043,144 @@ console.log("72 ok Model Setup's loadouts (a preview that writes nothing; the en
     Object.assign(chatCompletionSettings, keep.cc);
     ctx.mainApi = keep.api;
 }
-console.log("73 ok empty replies read back and retried (the retry note on a swipe of a blank reply, after the chat, not for the limit's doing; the chat's empty replies from their stamps, by cause, with the provider and the generation id, the text to copy; one automatic swipe with SillyTavern's own call, never a second, never for the limit, never when off or for an older reply)");
+console.log("73 ok empty replies read back (a swipe after an empty reply sends the same request, whatever stopped it; the chat's empty replies from their stamps, by cause, with the provider and the generation id, the text to copy; the line under a reply that did not end normally; one plain retry for a reply nothing explains, with SillyTavern's own call or the swipe button, said when it cannot; never for the provider's filter, a limit, an older reply or when off)");
+
+// 74. From the sweep: a background call that never answers is given up on (st.js), and what its
+//     caller held is released; the helper's request to a profile too, said as a failure; a
+//     stopped job stops counting as waiting at once; the helper writes again when the reply
+//     changed under it; Setup Check on a forced prefill and a low Max Response Length.
+{
+    const q = state.localProfile;
+    const ST = await imp("src/st.js");
+    const H = await imp("src/vcrp/helper/index.js");
+    const HS = await imp("src/vcrp/helper/settings.js");
+    const HB = await imp("src/vcrp/helper/blocks.js");
+    const HSt = await imp("src/vcrp/helper/status.js");
+    const focus = await imp("src/vcrp/focus/index.js");
+    const { activeFocusAudit } = await imp("src/core/activeRequests.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const gs = extension_settings.VCRP.globalSettings;
+    const keepHelper = JSON.stringify(gs.helper || null);
+    const keepCm = extension_settings.connectionManager;
+    const keep = { mode: q.mode, model: q.model, order: JSON.stringify(q.blockStack.order), focus: JSON.stringify(q.focus || null), cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+
+    // A quiet call that never answers: given up on, like a failed request.
+    ST.setQuietTimeout(60);
+    quietImpl = () => new Promise(() => {});   // never settles
+    let err = null;
+    const t0 = Date.now();
+    try { await ST.generateQuietPrompt({ prompt: "anything" }); } catch (e) { err = e; }
+    assert(err && err.name === "TimeoutError" && /timed out/.test(err.message) && Date.now() - t0 < 2000, `a call that never answers is given up on: ${err && err.message}`);
+    // What its caller held is released: a Focus audit whose call hangs is not "running" for ever.
+    q.focus = { enabled: true, every: 10, checks: { drift: true, motifs: true, slop: true } };
+    chat.length = 0;
+    chat.push({ is_user: false, name: "Alice", mes: "Greeting." });
+    for (let i = 1; i <= 24; i++) chat.push({ is_user: i % 2 === 1, name: i % 2 ? "Bob" : "Alice", mes: `Line ${i}.` });
+    const audit = await focus.runFocusAudit();
+    assert(audit.status === "failed" && !focus.focusAuditRunning() && activeFocusAudit === null, `the audit fails, and nothing stays held: ${JSON.stringify(audit)}`);
+    quietImpl = null;
+    ST.setQuietTimeout();
+    q.focus = JSON.parse(keep.focus) || undefined;
+
+    // The helper on a profile: a stopped job that was still waiting its turn stops counting at once.
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english", cotEnabled: true });
+    q.blockStack.order = ["world", "bonds"]; meguminSyncLegacyBlockIds();
+    ctx.mainApi = "openai";
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    const v11Preset = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: v11Preset.prompts, prompt_order: v11Preset.prompt_order, openai_max_tokens: 20000 });
+    extension_settings.connectionManager = { profiles: [{ id: "p1", name: "Helper", mode: "cc" }] };
+    let sendAnswer = (messages, opts) => new Promise((resolve, reject) => { opts.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))); });
+    ctx.ConnectionManagerRequestService = { sendRequest: async (profileId, messages, maxTokens, opts) => sendAnswer(messages, opts) };
+    HS.helperSettings();
+    gs.helper.enabled = true; gs.helper.profileId = "p1";
+    const first = H.runHelperJob("npc", send => send({ prompt: "one" }));
+    const second = H.runHelperJob("npc", send => send({ prompt: "two" }));
+    await new Promise(r => setTimeout(r, 20));
+    assert(HSt.getHelperStatus().running && HSt.getHelperStatus().waiting === 1, "one running, one waiting");
+    assert.equal(H.stopHelperJobs(), 2, "both stopped");
+    assert.equal(HSt.getHelperStatus().waiting, 0, "the one that was waiting no longer counts as waiting, at once");
+    assert((await first).stopped && (await second).stopped && !H.helperBusy(), "and both come back stopped");
+
+    // The helper writes again when the reply changed while it was writing.
+    const ANSWER = "<Blocks>\n<Scene>\nHere: Alice\nRemote:\n</Scene>\n<World_State>\nTime: dusk\n</World_State>\n<Bonds>\nAlice: Mood: wary\n</Bonds>\n</Blocks>";
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "go" }, { is_user: false, name: "Alice", mes: "Prose, first wording.", swipes: ["Prose, first wording."], swipe_id: 0, extra: {} });
+    let calls = 0;
+    sendAnswer = async messages => {
+        calls++;
+        if (calls === 1) chat[1].mes = "Prose, edited meanwhile.";   // the reader edits the reply while the helper writes
+        return { content: ANSWER };
+    };
+    const rw = await HB.helperWriteBlocks(1);
+    assert(rw.status === "done" && calls === 2 && chat[1].mes.startsWith("Prose, edited meanwhile.") && chat[1].mes.endsWith("</Blocks>") && chat[1].extra.vcrp_helper_blocks === "done", `written again from the reply as it stands: ${JSON.stringify({ rw, calls, mes: chat[1].mes.slice(0, 60) })}`);
+    // The reply gone by the time the job runs: nothing is sent.
+    chat.push({ is_user: true, name: "Bob", mes: "more" }, { is_user: false, name: "Alice", mes: "Prose two.", swipes: ["Prose two."], swipe_id: 0, extra: {} });
+    calls = 0;
+    const queued = HB.helperWriteBlocks(3);
+    chat.length = 2;   // the reader deletes it before the helper gets to it
+    const rg = await queued;
+    assert(rg.status === "aborted" && calls === 0, `a reply that is gone when its turn comes: nothing sent (${JSON.stringify(rg)})`);
+
+    // Setup Check: CoT Prefill forced on for a model that refuses one; a low Max Response Length
+    // on a model that reasons out of sight.
+    gs.cotPrefillMode = "on";
+    let items = vcrpHealthCheck().items;
+    assert(items.some(i => i.level === "warn" && /CoT Prefill is set to Always on, and this model refuses a prefill/.test(i.title)), `a forced prefill on Gemini 4: warned (${items.map(i => i.title).filter(t => /Prefill|prefill/.test(t))})`);
+    gs.cotPrefillMode = "auto";
+    assert(!vcrpHealthCheck().items.some(i => /refuses a prefill/.test(i.title)), "Auto: nothing to say");
+    gs.enableUtilityPrefill = true;
+    assert(vcrpHealthCheck().items.some(i => i.level === "warn" && /Utility Prefills are on, and this model refuses a prefill/.test(i.title)), "the background jobs' prefill on such a model: warned");
+    delete gs.enableUtilityPrefill;
+    chatCompletionSettings.openai_max_tokens = 3000;
+    assert(vcrpHealthCheck().items.some(i => i.level === "warn" && /Max Response Length \(3,000 tokens\) is low for a model that reasons/.test(i.title)), "a low Max Response Length on Gemini: warned");
+    chatCompletionSettings.openai_max_tokens = 20000;
+    assert(!vcrpHealthCheck().items.some(i => /is low for a model that reasons/.test(i.title)), "the presets' 20,000: fine");
+    Object.assign(chatCompletionSettings, { openrouter_model: "anthropic/claude-opus-4.6", openai_max_tokens: 3000 });
+    assert(!vcrpHealthCheck().items.some(i => /is low for a model that reasons/.test(i.title)), "a model whose thinking is in the reply: its own business");
+
+    // The trace tells a story's own request from the helper's and from anyone else's: a reply
+    // is stamped from the request made for it, whatever else reached the endpoint meanwhile.
+    const trace = await imp("src/vcrp/generationTrace.js");
+    const bodies = ['{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}],"provider":"Story"}', '{"choices":[{"message":{"content":""},"finish_reason":"content_filter","native_finish_reason":"OTHER"}],"provider":"Else"}', '{"choices":[{"message":{"content":""},"finish_reason":"length"}],"provider":"Helper"}'];
+    let nth = 0;
+    const scope = { fetch: async () => new Response(bodies[nth++], { status: 200 }) };
+    trace.vcrpResetGenerationTrace();
+    trace.vcrpInstallGenerationTrace(scope);
+    const GEN = "/api/backends/chat-completions/generate";
+    vcrpSetGenerationType("normal", {}, false);
+    await scope.fetch(GEN, { method: "POST", body: "{}" });   // the story's own
+    await scope.fetch(GEN, { method: "POST", body: "{}" });   // another extension's, while the reply is written
+    trace.vcrpTraceHelperRequest();
+    await scope.fetch(GEN, { method: "POST", body: "{}" });   // the helper's
+    await new Promise(r => setTimeout(r, 20));
+    assert.deepEqual(trace.vcrpGenerationRecords().map(r => `${r.kind}${r.story ? "*" : ""}`), ["reply*", "other", "helper"], "one story request; the others are not replies");
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "go" }, { is_user: false, name: "Alice", mes: "x", extra: {} });
+    await trace.vcrpFinishOnReply(1, "normal");
+    assert(chat[1].extra.vcrp_finish && chat[1].extra.vcrp_finish.reason === "stop" && chat[1].extra.vcrp_finish.provider === "Story", `the reply is stamped from its own request: ${JSON.stringify(chat[1].extra.vcrp_finish)}`);
+    assert.equal(trace.vcrpGenerationRecords().filter(r => r.kind === "reply" || r.kind === "continue").length, 1, "and Setup Check's list of replies holds only replies");
+    vcrpSetGenerationType("swipe", {}, false);
+    await new Promise(r => setTimeout(r, 5));
+    nth = 0;
+    await scope.fetch(GEN, { method: "POST", body: "{}" });
+    await new Promise(r => setTimeout(r, 20));
+    assert.equal(trace.vcrpGenerationRecords().at(-1).story, true, "the next generation's request is a story's again");
+    trace.vcrpResetGenerationTrace();
+
+    gs.helper = JSON.parse(keepHelper) || undefined;
+    if (gs.helper === undefined) delete gs.helper;
+    delete gs.cotPrefillMode;
+    extension_settings.connectionManager = keepCm;
+    delete ctx.ConnectionManagerRequestService;
+    chat.length = 0;
+    Object.assign(q, { mode: keep.mode, model: keep.model });
+    q.blockStack.order = JSON.parse(keep.order); meguminSyncLegacyBlockIds();
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+}
+console.log("74 ok from the sweep (a background call that never answers is given up on and what its caller held is released; a stopped helper job stops counting as waiting at once; the helper writes again when the reply changed under it and sends nothing for one that is gone; Setup Check on a forced prefill and a low Max Response Length)");
 
 console.log("\nALL FORK CHECKS PASSED");

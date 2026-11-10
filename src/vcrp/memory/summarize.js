@@ -17,7 +17,7 @@
 // generate interceptor sees, so anchors line up.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getContext, generateQuietPrompt, isGenerating, saveMetadata } from "../../st.js";
+import { getContext, isGenerating, saveMetadata } from "../../st.js";
 import { runHelperJob } from "../helper/index.js";
 import { helperJobOn } from "../helper/settings.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
@@ -124,9 +124,9 @@ const otherTaskRunning = () => !!(activeStoryPlanRequest || activeBanListChat ||
 // On the helper model when its Story Memory job is on (vcrp/helper): a standalone call, sent
 // to its connection. The task is marked inside the job, when it runs, never while it waits.
 async function quiet(prompt, standalone) {
-    const r = await runHelperJob("memory", async () => {
+    const r = await runHelperJob("memory", async send => {
         setMemoryTaskActive(true, standalone || null);
-        try { return await generateQuietPrompt({ quietPrompt: prompt }); } finally { setMemoryTaskActive(false); }
+        try { return await send({ quietPrompt: prompt }); } finally { setMemoryTaskActive(false); }
     });
     if (r.stopped || r.failed) return "";
     const out = typeof r.value === "string" ? r.value : "";

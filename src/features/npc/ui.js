@@ -2,14 +2,14 @@
 // The NPC Bank tab and the NPC list.
 // ────────────────────────────────────────────────────────────────────────────
 
-import { getContext, generateQuietPrompt, Popup, POPUP_TYPE } from "../../st.js";
+import { getContext, Popup, POPUP_TYPE } from "../../st.js";
 import { runHelperJob } from "../../vcrp/helper/index.js";
 import { npcFileDossier } from "./data.js";
 import { localProfile } from "../../core/state.js";
 import { saveProfileToMemory, saveProfileDebounced } from "../../core/profile.js";
 import { syncPromptsGlobally } from "../../core/sync.js";
 import { registerRefreshHook, REFRESH } from "../../core/refreshHooks.js";
-import { setActiveNpcScanRequest, setActiveNpcUpdateRequest } from "../../core/activeRequests.js";
+import { setActiveNpcScanRequest, setActiveNpcUpdateRequest, TASK_MARKERS } from "../../core/activeRequests.js";
 import { DEFAULT_PROMPTS } from "../../prompts/index.js";
 import { renderPromptEditor } from "../../ui/promptEditor.js";
 import { downloadJsonFile } from "../../utils/download.js";
@@ -339,9 +339,9 @@ export function renderNpcBank(c) {
             const existingNames = (localProfile.npcBank.npcs || []).map(n => n.name).join(", ");
             // VCRP: on the helper model when its NPC job is on (vcrp/helper); the payload is
             // parked inside the job, when it runs. What the helper writes is on its own bill.
-            const hr = await runHelperJob("npc", async () => {
+            const hr = await runHelperJob("npc", async send => {
                 setActiveNpcScanRequest({ chatText, existingNames });
-                try { return await generateQuietPrompt({ prompt: "___PS_NPC_SCAN___" }); } finally { setActiveNpcScanRequest(null); }
+                try { return await send({ prompt: TASK_MARKERS.npcScan }); } finally { setActiveNpcScanRequest(null); }
             });
             if (hr.stopped || hr.failed) { toastr.info("The helper could not scan the story.", "NPC Bank"); return; }
             let rawOutput = typeof hr.value === "string" ? hr.value : "";
@@ -746,9 +746,9 @@ export function renderNpcList() {
             try {
                 // VCRP: on the helper model when its NPC job is on (vcrp/helper); the payload is
                 // parked inside the job, when it runs.
-                const hr = await runHelperJob("npc", async () => {
+                const hr = await runHelperJob("npc", async send => {
                     setActiveNpcUpdateRequest(updateRequest);
-                    try { return await generateQuietPrompt({ prompt: "___PS_NPC_UPDATE___" }); } finally { setActiveNpcUpdateRequest(null); }
+                    try { return await send({ prompt: TASK_MARKERS.npcUpdate }); } finally { setActiveNpcUpdateRequest(null); }
                 });
                 if (hr.stopped || hr.failed) { toastr.info(`The helper could not update ${target.name}.`, "VCRP"); return; }
                 const raw = typeof hr.value === "string" ? hr.value : "";

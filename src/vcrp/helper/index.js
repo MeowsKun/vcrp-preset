@@ -4,26 +4,29 @@
 //
 // Each job goes straight to the helper's connection profile through SillyTavern's own
 // connection manager (ConnectionManagerRequestService.sendRequest): the story's connection
-// never changes, nothing switches, the chat never reloads. While a job runs on the profile,
-// every quiet prompt VCRP makes (st.js) comes here instead of SillyTavern's quiet
-// generation: the job's own messages are built as they are for the story's connection (the
-// prompt handler on an empty list) and sent to the profile. "Use my current connection" runs
+// never changes, nothing switches, the chat never reloads. A job on the profile is handed a
+// `quiet` function that sends there instead of through SillyTavern's quiet generation: the
+// job's own messages are built as they are for the story's connection (the prompt handler
+// on an empty list, told which job it is building for) and sent to the profile. Only that
+// job: one that stays with the story model keeps SillyTavern's. "Use my current connection" runs
 // the jobs as before, on the story's connection, one at a time and never while a reply is
 // being written. A SillyTavern without sendRequest runs them on the story model, and Setup
 // Check says so.
 //
-// Jobs run one at a time. While one runs on the profile, the payload it parked for the
-// prompt handler is its own (activeRequests.js, helperOwnsPayloads): a prompt built for the
-// story's connection meanwhile leaves it alone. Each job can be stopped (the indicator's
-// Stop, or leaving the chat); a stopped job sends nothing more and comes back as stopped,
-// with no warning. A failed request on the profile is said once, in plain words (notice.js),
-// and comes back null; on the story's connection it throws, as it always did.
+// Jobs run one at a time. The payload a job parks for the prompt handler is taken only by
+// that job's own prompt: the handler is told which job's marker the helper is building for
+// (activeRequests.js, TASK_MARKERS), and a prompt built for the story's connection meanwhile
+// carries none. Each job can be stopped (the indicator's Stop, or leaving the chat); a
+// stopped job sends nothing more and comes back as stopped, with no warning. A failed
+// request on the profile is said once, in plain words (notice.js), and comes back null; on
+// the story's connection it throws, as it always did.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getContext, extension_settings, generateQuietPrompt, setQuietRoute, isGenerating } from "../../st.js";
+import { getContext, extension_settings, generateQuietPrompt, isGenerating } from "../../st.js";
 import { handlePromptInjection } from "../../engine/injection.js";
-import { setHelperOwnsPayloads } from "../../core/activeRequests.js";
-import { memoryTaskActive, memoryStandaloneMessages } from "../memory/index.js";
+import { memoryStandaloneMessages } from "../memory/index.js";
+import { TASK_MARKER as MEMORY_TASK_MARKER } from "../memory/prompts.js";
+import { vcrpTraceHelperRequest } from "../generationTrace.js";
 import { helperSettings, helperJobOn, CURRENT_CONNECTION } from "./settings.js";
 import { warnHelper, TEST_PROMPT, testAnswerKind } from "./notice.js";
 import { setHelperStatus, onHelperStatus } from "./status.js";
@@ -108,18 +111,22 @@ async function sendToProfile(text, entry) {
     if (signal.aborted) throw abortError();
     const ctx = getContext();
     let messages;
-    const standalone = memoryTaskActive() ? memoryStandaloneMessages() : null;
-    if (standalone) messages = standalone;
-    else if (isJobMarker(text)) {
+    // Which call this is, by its own text (never by what else is in flight): a Story Memory
+    // call carries its instruction, a job its marker, the test its plain question.
+    if (String(text || "").includes(MEMORY_TASK_MARKER)) {
+        messages = memoryStandaloneMessages();
+        if (!messages) throw new Error("a Story Memory call that reads the story's cache cannot go to the helper");
+    } else if (isJobMarker(text)) {
         messages = [];
-        await handlePromptInjection({ chat: messages, dryRun: false, helper: true }, "quiet");
+        await handlePromptInjection({ chat: messages, dryRun: false, helper: true, marker: String(text).trim() }, "quiet");
         if (!messages.length) throw new Error("VCRP built no prompt for this job");
-    } else if (memoryTaskActive()) throw new Error("a Story Memory call that reads the story's cache cannot go to the helper");
-    else messages = plainMessages(text);
+    } else messages = plainMessages(text);
     if (!messages.length) return "";
     const profileId = helperSettings().profileId;
     const maxTokens = profileReplyLength(ctx, profileId);
     console.debug(`[VCRP] Helper → ${entry.job}: ${messages.length} messages, up to ${maxTokens} tokens.`);
+    // Its request reaches the same endpoint as a reply's: said, so it is never taken for one.
+    vcrpTraceHelperRequest();
     let res = await ctx.ConnectionManagerRequestService.sendRequest(profileId, messages, maxTokens, { stream: false, extractData: true, includePreset: true, signal });
     // Streamed after all (a preset that forces it): read it to the end.
     if (typeof res === "function") {
@@ -140,7 +147,8 @@ const chatIdNow = () => { try { return String((getContext() || {}).chatId || "")
 
 function publish() {
     const running = [...live].find(e => e.running);
-    setHelperStatus({ running: running ? { jobs: [running.job] } : null, waiting: [...live].filter(e => !e.running).length });
+    // A stopped job still waiting its turn is not waiting for anything.
+    setHelperStatus({ running: running ? { jobs: [running.job] } : null, waiting: [...live].filter(e => !e.running && !e.abort.signal.aborted).length });
 }
 
 // A job on the story's own connection never starts while a reply is being written.
@@ -152,15 +160,22 @@ async function waitForIdle(signal) {
     }
 }
 
+// The text of a quiet prompt, whichever way the caller named it.
+const quietText = params => (typeof params === "string" ? params : String((params && (params.quietPrompt ?? params.prompt)) ?? ""));
+
 /**
- * Runs one job's `task` (which parks its payload and sends its quiet prompt, as always) on
- * the route the helper's settings give it. Resolves to { value, route, stopped?, failed?,
- * error? }: on the profile, a failed request is said and comes back null; on the story's
- * connection the task's own error is thrown, as before.
+ * Runs one job's `task` on the route the helper's settings give it. The task is handed the
+ * `quiet` function to send its quiet prompt with (it parks its payload first, as always):
+ * SillyTavern's own on the story's connection, the helper's profile otherwise. Handed to the
+ * task rather than switched on for everyone, so a job that stays with the story model and
+ * runs at the same time keeps the story's connection.
+ * Resolves to { value, route, stopped?, failed?, error? }: on the profile, a failed request
+ * is said and comes back null; on the story's connection the task's own error is thrown, as
+ * before.
  */
 export function runHelperJob(job, task, { force = false } = {}) {
     const route = helperRoute(job, { force });
-    if (route === "story") return Promise.resolve().then(task).then(value => ({ value, route }));
+    if (route === "story") return Promise.resolve().then(() => task(generateQuietPrompt)).then(value => ({ value, route }));
     const entry = { job, chatId: chatIdNow(), abort: new AbortController(), route, running: false };
     live.add(entry);
     publish();
@@ -168,25 +183,19 @@ export function runHelperJob(job, task, { force = false } = {}) {
         if (entry.abort.signal.aborted) { live.delete(entry); publish(); return { value: null, route, stopped: true }; }
         entry.running = true;
         publish();
-        if (route === "profile") {
-            setHelperOwnsPayloads(true);
-            setQuietRoute(text => sendToProfile(text, entry));
-        }
+        const quiet = route === "profile" ? params => withTimeout(sendToProfile(quietText(params), entry), PROFILE_TIMEOUT_MS, entry) : generateQuietPrompt;
         try {
             if (route === "current") await waitForIdle(entry.abort.signal);
-            const value = await task();
+            const value = await task(quiet);
             return { value, route };
         } catch (e) {
-            if (isAbort(e) || entry.abort.signal.aborted) return { value: null, route, stopped: true };
+            // Stopped by the reader (or by leaving the chat): no warning. A timeout is a failure.
+            if (!entry.timedOut && (isAbort(e) || entry.abort.signal.aborted)) return { value: null, route, stopped: true };
             if (route !== "profile") throw e;
             console.error(`[VCRP] Helper: ${job} failed`, e);
             warnHelper("failed", [job], { error: e });
             return { value: null, route, failed: true, error: e };
         } finally {
-            if (route === "profile") {
-                setQuietRoute(null);
-                setHelperOwnsPayloads(false);
-            }
             live.delete(entry);
             publish();
         }
@@ -196,17 +205,35 @@ export function runHelperJob(job, task, { force = false } = {}) {
     return p;
 }
 
+// A request to the profile that never answers must not hold the queue (and the reply that
+// waits for the blocks) forever: after this long it is cut off and fails like any other.
+const PROFILE_TIMEOUT_MS = 5 * 60 * 1000;
+function withTimeout(promise, ms, entry) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            entry.timedOut = true;
+            try { entry.abort.abort(); } catch (e) { /* already aborted */ }
+            reject(new Error(`the helper's connection gave no answer in ${Math.round(ms / 60000)} minutes (timed out)`));
+        }, ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /** Stops every queued or running job. Returns how many. */
 export function stopHelperJobs() {
     let n = 0;
     for (const e of live) if (!e.abort.signal.aborted) { e.abort.abort(); n++; }
+    if (n) publish();   // whoever waits on the blocks job (the send guard) hears it now, not when the queue gets there
     return n;
 }
 
 /** Leaving a chat stops the jobs queued in it: nothing is written into the wrong chat. */
 export function stopHelperJobsForOtherChats() {
     const now = chatIdNow();
-    for (const e of live) if (e.chatId !== now && !e.abort.signal.aborted) e.abort.abort();
+    let n = 0;
+    for (const e of live) if (e.chatId !== now && !e.abort.signal.aborted) { e.abort.abort(); n++; }
+    if (n) publish();
 }
 
 /** True while any job is queued or running. */
@@ -228,7 +255,7 @@ export function helperBlocksPending() {
 
 /** The Test button: one short question on the helper's connection, whatever the switches say. */
 export async function helperTest() {
-    const r = await runHelperJob("test", () => generateQuietPrompt({ prompt: TEST_PROMPT }), { force: true });
+    const r = await runHelperJob("test", quiet => quiet({ prompt: TEST_PROMPT }), { force: true });
     if (r.failed) return { kind: "failed", error: r.error, route: r.route };
     if (r.stopped) return { kind: "stopped", route: r.route };
     const reply = typeof r.value === "string" ? r.value.trim() : "";

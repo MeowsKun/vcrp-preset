@@ -16,9 +16,9 @@
 // blocks again" in the Helper tab does it over.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getContext, saveChat, updateMessageBlock, substituteParams, generateQuietPrompt } from "../../st.js";
+import { getContext, saveChat, updateMessageBlock, substituteParams } from "../../st.js";
 import { meguminActiveDataIdentity } from "../../core/keys.js";
-import { setActiveHelperBlocks } from "../../core/activeRequests.js";
+import { setActiveHelperBlocks, TASK_MARKERS } from "../../core/activeRequests.js";
 import { buildBlocksEnvelope } from "../../features/blocks/registry.js";
 import { buildBaseDict } from "../../engine/buildBaseDict.js";
 import { meguminCleanChatHistoryText } from "../../engine/chatText.js";
@@ -130,7 +130,7 @@ const storyPart = s => { let at = 0, m; const re = /<\/think(?:ing)?\s*>/gi; whi
  * Writes the reply's blocks now. Returns what happened:
  * { status: "done" | "whole" | "off" | "blank" | "stopped" | "aborted" | "failed", reason? }.
  */
-export async function helperWriteBlocks(id, { force = false } = {}) {
+export async function helperWriteBlocks(id, { force = false, again = false } = {}) {
     const chat = ((getContext() || {}).chat) || [];
     const index = Number(id);
     const msg = chat[index];
@@ -139,23 +139,36 @@ export async function helperWriteBlocks(id, { force = false } = {}) {
     if (!helperRoutesBlocks()) return { status: "off" };
     if (!force && msg.extra && msg.extra.vcrp_helper_blocks === "done") return { status: "done", reason: "already written" };
     if (blankReplyKind(msg.mes)) return { status: "blank" };
-    const prompt = buildHelperBlocksPrompt(index);
-    if (!prompt) return { status: "whole" };
+    if (!buildHelperBlocksPrompt(index)) return { status: "whole" };
     const identity = meguminActiveDataIdentity();
-    const was = msg.mes;
+    let was = msg.mes;
     msg.extra = { ...(msg.extra || {}), vcrp_helper_blocks: "asked" };
-    // The payload is parked inside the job, when it runs: a job waiting its turn must not be
-    // read by the one before it.
-    const r = await runHelperJob("blocks", async () => {
+    const GONE = Symbol("gone");
+    // The prompt is built, and its payload parked, inside the job, when it runs: it reads the
+    // reply as it stands then, and a job waiting its turn is never read by the one before it.
+    const r = await runHelperJob("blocks", async send => {
+        const here = (((getContext() || {}).chat) || [])[index];
+        if (here !== msg || meguminActiveDataIdentity() !== identity || blankReplyKind(msg.mes)) return GONE;
+        was = msg.mes;
+        const prompt = buildHelperBlocksPrompt(index);
+        if (!prompt) return GONE;
         setActiveHelperBlocks(prompt);
-        try { return await generateQuietPrompt({ prompt: "___PS_HELPER_BLOCKS___" }); } finally { setActiveHelperBlocks(null); }
+        try { return await send({ prompt: TASK_MARKERS.helperBlocks }); } finally { setActiveHelperBlocks(null); }
     }, { force });
     if (r.stopped) { msg.extra.vcrp_helper_blocks = ""; return { status: "stopped" }; }
     if (r.failed) { msg.extra.vcrp_helper_blocks = "failed"; return { status: "failed", reason: "the request failed" }; }
+    if (r.value === GONE) { msg.extra.vcrp_helper_blocks = ""; return { status: "aborted", reason: "the reply changed before the helper got to it" }; }
     const raw = typeof r.value === "string" ? r.value : "";
     if (meguminActiveDataIdentity() !== identity) return { status: "aborted", reason: "the chat changed" };
     const now = ((getContext() || {}).chat) || [];
-    if (now[index] !== msg || msg.mes !== was) return { status: "aborted", reason: "the reply changed meanwhile" };
+    if (now[index] !== msg) return { status: "aborted", reason: "the reply is gone" };
+    if (msg.mes !== was) {
+        // The reply changed while the helper was writing (an edit, the second call for the
+        // story model's own blocks): once more, from the reply as it stands now.
+        msg.extra.vcrp_helper_blocks = "";
+        if (!again && !blankReplyKind(msg.mes)) return helperWriteBlocks(id, { force: true, again: true });
+        return { status: "aborted", reason: "the reply changed meanwhile" };
+    }
     const env = envelopeIn(cleanHelperAnswer(raw));
     if (!env) {
         msg.extra.vcrp_helper_blocks = "failed";

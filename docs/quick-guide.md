@@ -58,15 +58,17 @@ reply's cost*.
 |---|---|
 | Story length | 450–550 words |
 | Thinking length | 250 words |
-| Safety cap | 2000 on Claude; **0 (off)** on Gemini, DeepSeek, GLM |
+| Safety cap | 2000 |
 
-The safety cap is a hard limit: a reply can never go over it. While it's set, VCRP tells the model
-how much room it has (the panel shows the split, e.g. *story about 850 words, thinking about 250
+The safety cap is a hard limit on the reply you see. While it's set, VCRP tells the model how
+much room it has (the panel shows the split, e.g. *story about 850 words, thinking about 250
 words*), so it plans to finish in time. If a reply still runs into the cap mid-sentence, it ends
 on its last full sentence and a note tells you; press **Continue** if you want the rest. On a
 model that reasons before it writes (Gemini, DeepSeek, GLM; Claude with a reasoning effort set),
-that reasoning counts against the cap and never shows in the reply, so a cap near your usual reply
-leaves nothing for the reply itself: keep it at 0 there, or 4,000 and up.
+that reasoning is paid for in the request's limit without being part of the reply. There VCRP
+puts the cap on the request with room for the reasoning on top, so the reasoning can no longer
+use the cap up and leave you an empty reply; a reply can run a little over the cap when the model
+reasons less. Setup Check shows the number the request allows.
 
 **One budget for the whole request.** With Story Memory on, each reply is held to its target
 (e.g. $0.30), input and output together. You don't need to set anything: *Hold each reply to the
@@ -265,10 +267,12 @@ Switch it off in Global Settings → Behaviour → *Lore for background calls*.
   the target* still shows the room but leaves the limit to your Safety cap and SillyTavern. Each
   reply's cost badge now shows the output as the API billed it, reasoning included.
 - **Safety cap and reasoning models.** On Gemini, DeepSeek, GLM, or Claude with a reasoning effort
-  set, the model's hidden reasoning counts against the Safety cap. Setup Check warns when the cap
-  is set on such a model; 0 (off) or 4,000 and up is safe. On Gemini 4 it also notes that Megumin
-  Suite's Gemini loadout keeps custom thinking (Chain of Thought) off, since the model reasons on
-  its own.
+  set, the model's hidden reasoning is paid for in the request's limit. The Safety cap now stands
+  for the reply you see: the request allows the cap plus room for the reasoning, so it cannot be
+  used up before the reply starts. Setup Check shows the number, warns when SillyTavern's own Max
+  Response Length is under 8,000 on such a model, and warns when CoT Prefill is forced on for a
+  model that refuses one. On Gemini 4 it also notes that Megumin Suite's Gemini loadout keeps
+  custom thinking (Chain of Thought) off, since the model reasons on its own.
 - **Gemini JB** (Global Toggles & Add-ons; from Megumin Suite V11's 04/11 update): on Gemini, turn
   it on when gritty or heavy NSFW scenes come back cut off or empty. It tells the model the request
   complies with the adult fiction policy and asks for a `^` before every word; VCRP removes them as
@@ -328,19 +332,25 @@ on. You can change any row before using it, and skip the page altogether.
 her under a short name fills her record instead of making a second one, and the short name stays
 on her card as a nickname. Two characters who both fit a name are never guessed between.
 
-**An empty reply is retried once, by itself.** SillyTavern's own Auto-swipe deliberately never
-retries an empty reply, so VCRP does, once per message: a reply with no story at all is swiped
-again a moment after it lands, and that swipe carries a line saying the last attempt came back
-with no text (a prompt that changes a little often passes where the same one came back empty).
-The toast still names the cause: the provider's filter, the output limit, an error. Not for a
-reply the output limit stopped; off in Global Settings if you would rather swipe yourself.
+## 12. When a reply comes back empty
 
-**When empty replies keep coming, send the details.** Setup Check (Global Settings) lists the
-open chat's empty replies by cause, with the provider that served each request and its id. Press
-**Copy empty-reply details** on the card and paste it when asking about them.
+**The reply itself tells you why.** A reply that did not end normally carries a small line under
+it: *No reply: the provider's content filter stopped it (PROHIBITED_CONTENT)*, *No reply: the
+output limit was used up before the story*, *No reply: the request failed*, *Cut short by the
+output limit*. Tap the line for who served the request, what was written and read, and the limit
+and what set it. It stays with the message, so you can read it later.
 
-**A filtered reply changes the prompt's start once.** Flipping Gemini JB off and on made the
-filter let the story through for a while: the setting was the same after, only the prompt's
-start had changed. VCRP now does that by itself after a filtered empty reply, with a short line
-in the Main Prompt (the cached part), kept with the chat. The next request is written to the cache again
-(one cold request), then it is warm as before.
+**What VCRP does about each cause.**
+
+- **The provider's content filter stopped it.** That is the provider's decision about that
+  request. VCRP sent the request as it was, says so, and does not retry or change it.
+- **The output limit stopped it.** A setting: the line names the limit and what set it (your
+  Safety cap, or SillyTavern's Max Response Length). Raise that one.
+- **The request failed.** Swipe; if it keeps failing, check the model and provider.
+- **Nothing explains it** (the model ended its turn with nothing written, or the answer could
+  not be read). VCRP sends the same request once more by itself, as swiping would. Never twice
+  for one message; off in Global Settings (*Retry an empty reply once*).
+
+**For the whole chat:** Setup Check (Global Settings) lists the open chat's empty replies by
+cause, with the provider that served each request and its id. **Copy empty-reply details** on the
+card copies it as text.
