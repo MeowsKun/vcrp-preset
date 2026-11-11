@@ -643,7 +643,7 @@ for (let k = 0; k < memCount; k++) {
     chat[1].extra.vcrp_finish = { done: true, reason: "filter", native: "PROHIBITED_CONTENT", provider: "Google AI Studio", usage: { out: 0, input: 51000 }, limit: 20000, limitBy: "" };
     fin.drawFinishNote(1, w.document);
     fin.drawFinishNote(1, w.document);
-    check(noteEls().length === 1 && /No reply: the provider's content filter stopped it \(PROHIBITED_CONTENT\)/.test(noteEls()[0].textContent) && /served by Google AI Studio/.test(noteEls()[0].title) && noteEls()[0].classList.contains("blank"), `the line under an empty reply: ${noteEls().length} ${noteEls()[0] && noteEls()[0].textContent}`);
+    check(noteEls().length === 1 && /No reply: the API's answer names a content-policy stop \(PROHIBITED_CONTENT\)/.test(noteEls()[0].textContent) && /served by Google AI Studio/.test(noteEls()[0].title) && noteEls()[0].classList.contains("blank"), `the line under an empty reply: ${noteEls().length} ${noteEls()[0] && noteEls()[0].textContent}`);
     const toastsWas = globalThis.toastr.info;
     let shown = "";
     globalThis.toastr.info = m => { shown = String(m); };

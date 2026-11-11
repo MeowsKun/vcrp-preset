@@ -210,11 +210,16 @@ stay within the per-request target.
 - **How each reply ended** (`src/vcrp/generationTrace.js`): VCRP reads the answer to each of
   SillyTavern's chat-completion requests as it passes (a copy of the response, read alongside;
   the request and what SillyTavern reads are untouched) and stamps the reply with the provider's
-  stop reason (OpenRouter's native one, such as Gemini's `MAX_TOKENS` or `PROHIBITED_CONTENT`),
-  the output as billed, reasoning counted, and the limit the request went out with and what set
-  it. From it, the blank-reply note says what really happened, a cut is known for certain rather
-  than guessed from the reply's size, the cost badge and Story Memory count the output as billed,
-  and Setup Check lists how the last five replies ended.
+  stop reason (OpenRouter's native one, such as Gemini's `MAX_TOKENS` or `PROHIBITED_CONTENT`,
+  and OpenRouter's own word beside it), the output as billed, reasoning counted, and the limit
+  the request went out with and what set it. The answer is read as it arrives, so the stamp also
+  says how long the reply took and when its first text or reasoning came, how much of what
+  arrived was reply text and how much reasoning, and how the stream itself ended: with its end
+  marker, closed with none, stopped on this side, or broken. (SillyTavern's server prints nothing
+  of a streamed answer, only "Streaming request in progress" and "finished".) From it, the
+  blank-reply note says what really happened, a cut is known for certain rather than guessed from
+  the reply's size, the cost badge and Story Memory count the output as billed, and Setup Check
+  lists how the last five replies ended.
 - **A block a reply leaves out, or is cut off in,** is carried to the next reply from where it was
   last written whole (World State, Bonds, Character Sheet, Story Tracker), and the model is asked
   to write it in full again, so one bad reply doesn't drop it from every reply after.
@@ -227,26 +232,54 @@ stay within the per-request target.
   short of a block keeps its own extras), the reply is saved and redrawn, and the NPC capture and
   the Story Director's tracker read it again. Once per reply, never for a blank one, after the other
   handlers; the switch is in the BLOCKS tab (*Ask again for missing blocks*, on by default).
+- **A reply SillyTavern's Reasoning Auto-Parse swallowed is put back** (`src/vcrp/replyRescue.js`).
+  With Auto-Parse on (Advanced Formatting → Reasoning), SillyTavern moves a streamed reply that
+  opens with its template's prefix into the Thinking box until it meets the template's suffix to
+  the letter (in the DeepSeek template: a line break, then `</think>`). A reply that closes its
+  thinking any other way (`...done.</think>` on one line, `</thinking>`, a space or a `^` before
+  the tag), or never closes it, stayed there whole, story and all, and the message came back
+  empty: nothing failed, nothing was filtered, and the terminal shows a stream that finished. As
+  the reply arrives, before anything else reads it, VCRP looks again: closed another way, the
+  story goes back into the message and the thinking stays in its box; never closed, the text goes
+  back into the message as it came. A reply that closed its thinking and wrote nothing after is
+  told from one that never closed it by what the model itself sent, and left alone. Setup Check
+  says when Auto-Parse is on beside Chain of Thought, and counts the replies put back. (Found by
+  running a real SillyTavern against a scripted provider; without Auto-Parse the preset's own
+  regex draws the thinking box and takes any of those closings.)
 - **A blank reply is told apart** (`src/vcrp/blankReply.js`): nothing at all, stopped inside its
-  thinking, all reasoning with no story, or only blocks. A toast says which and what to do, from
-  the answer's own stop reason when it was read (the output limit, named with what set it; the
-  provider's filter, with its word; an error) and from the reply's shape otherwise.
-  **A reply the provider's content filter stopped is the provider's decision:** VCRP says so, with
-  the provider's own word, and leaves the request as it was. It does not retry it, and nothing
-  in a later request changes because a reply came back empty (10.0.0-vcrp.15 added a line to the
-  swipe and a marker to the prompt's start for that; both are gone).
+  thinking, all thinking with no story, a model that reasoned and never wrote, or only blocks. A
+  toast says which and what to do, from the answer itself when it was read (the output limit,
+  named with what set it; a stream that closed, or a connection that broke, before the model had
+  finished; the reader's own Stop; an error; a content-policy stop) and from the reply's shape
+  otherwise.
+  **A content-policy stop named in the API's answer is the provider's decision:** VCRP says so, in
+  the API's own words (OpenRouter's `finish_reason` and the provider's own word), and leaves the
+  request as it was. It does not send it again, and nothing in a later request changes because a
+  reply came back empty. Only a word that names a content-policy stop is called one: Gemini's
+  `OTHER` ("unknown reason" in Google's own reference) is said as no reason given, a broken tool
+  call (`MALFORMED_FUNCTION_CALL`) as the model's slip.
   **A reply that nothing explains** (the model ended its turn with nothing written and no reason,
+  reasoned and never wrote, slipped into a tool call, the stream closed before it had finished,
   or the answer could not be read) **is sent once more, as it was:** SillyTavern's own Auto-swipe
   passes an empty reply on purpose (so a broken API cannot loop it), so VCRP swipes once a
   moment after the reply lands, with SillyTavern's own auto-swipe call (the plain right swipe or
   the swipe button on a SillyTavern without it; when it cannot, it says so). Never a second time
-  for one message, never for a reply a limit stopped (the same limit would stop it again), off
-  in Global Settings.
+  for one message, never for a reply a limit stopped (the same limit would stop it again), never
+  for one the provider ended without a reason, never for one the reader stopped; off in Global
+  Settings.
+  **A stream that goes quiet is said** (`src/vcrp/streamStall.js`). SillyTavern's server does not
+  notice a provider connection that drops mid-reply: it neither ends the reply nor reports an
+  error (its terminal shows "Streaming request in progress" and never "finished"), and the page
+  waits with an empty message until Stop is pressed. When nothing has arrived for 90 seconds on
+  OpenRouter (four minutes elsewhere, where a model may reason in silence), a notice says so and
+  stays until data comes again; a tap stops the reply and sends the same request again.
   **How a reply ended stays under the reply** (`src/vcrp/finishNote.js`): a reply that did not
-  end normally carries a small line ("No reply: the provider's content filter stopped it
-  (PROHIBITED_CONTENT)", "No reply: the output limit was used up before the story", "Cut short
-  by the output limit"); tap it for who served the request, what was written and read, the limit
-  and what set it. A reply that ended on its own with its story has none.
+  end normally carries a small line ("No reply: the output limit was used up before the story",
+  "No reply: the model reasoned and wrote nothing", "No reply: the stream closed before the model
+  had finished", "No reply: the API's answer names a content-policy stop (PROHIBITED_CONTENT)",
+  "Cut short by the output limit"); tap it for the stop reason as the API gave it, who served the
+  request, what was written and read, the limit and what set it, how long it took and how much of
+  what arrived was reply text. A reply that ended on its own with its story has none.
   **Setup Check reads the open chat's empty replies back** from the stamps saved with them: by
   cause, with the provider that served each (OpenRouter names it) and the generation's id; *Copy
   empty-reply details* on the card copies the setup and one line per empty reply as text. Such a

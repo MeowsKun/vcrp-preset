@@ -121,6 +121,8 @@ import { vcrpDedashOnReply } from "./src/vcrp/dedash.js";
 import { vcrpCaretOnReply, vcrpCaretOnEdit } from "./src/vcrp/geminiJb.js";
 import { vcrpApplyReplyCap, forgetReplyRoom } from "./src/vcrp/replyLength.js";
 import { vcrpInstallGenerationTrace, vcrpFinishOnReply } from "./src/vcrp/generationTrace.js";
+import { vcrpRescueOnReply } from "./src/vcrp/replyRescue.js";
+import { vcrpInstallStallNotice } from "./src/vcrp/streamStall.js";
 import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
 import { vcrpOn, setVcrpOn, whenOn, drawPowerState } from "./src/vcrp/power.js";
 import { updateLiveTokenCount } from "./src/core/tokens.js";
@@ -454,6 +456,13 @@ jQuery(async () => {
             // stamped on the reply before the handlers below read it.
             vcrpInstallGenerationTrace();
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpFinishOnReply));
+            // VCRP: a stream that has gone quiet (a provider connection that dropped: SillyTavern
+            // does not notice, and waits for good) is said, with a tap to stop and send again.
+            vcrpInstallStallNotice();
+            // VCRP: a reply SillyTavern's Reasoning Auto-Parse moved whole into the Thinking box
+            // (its thinking closed another way than the template's suffix, or never) comes back
+            // into the message, before anything below reads it.
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpRescueOnReply));
             // VCRP: each reply's cost, measured on the reply as the model wrote it (before
             // anything below adds to it), and the one-shot direction used up by its reply.
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpCostOnReply));

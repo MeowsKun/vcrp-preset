@@ -2961,9 +2961,10 @@ console.log("44 ok Tone Rules (per chat, after the newest message with every eng
     // Each handler is wrapped in whenOn(...) (the master switch, power.js).
     const order = [...src.matchAll(/eventSource\.on\(event_types\.MESSAGE_RECEIVED, (?:whenOn\()?(\w+)\)/g)].map(m => m[1]);
     const at = name => order.indexOf(name);
-    // The stamp of how the generation ended goes first (the cost reads the output as billed from it).
-    assert(at("vcrpFinishOnReply") === 0 && at("vcrpCostOnReply") === 1 && at("vcrpPuraTidyOnReply") < at("vcrpDedashOnReply") && at("vcrpDedashOnReply") < at("vcrpDialogueColorsOnReply") && at("vcrpPuraTidyOnReply") > 0,
-        `reply handler order (the stop-reason stamp first, then the cost measured on the reply as written; the tidy before the dash cleaner): ${order.join(", ")}`);
+    // The stamp of how the generation ended goes first (the cost reads the output as billed from it),
+    // then a reply SillyTavern's Auto-Parse swallowed is put back, before anything reads its text.
+    assert(at("vcrpFinishOnReply") === 0 && at("vcrpRescueOnReply") === 1 && at("vcrpCostOnReply") === 2 && at("vcrpPuraTidyOnReply") < at("vcrpDedashOnReply") && at("vcrpDedashOnReply") < at("vcrpDialogueColorsOnReply") && at("vcrpPuraTidyOnReply") > 0,
+        `reply handler order (the stop-reason stamp first, a swallowed reply put back, then the cost measured on the reply as written; the tidy before the dash cleaner): ${order.join(", ")}`);
     const tidy = await imp("src/vcrp/pura/tidy.js");
     const { vcrpDedashOnReply } = await imp("src/vcrp/dedash.js");
     const colors = await imp("src/vcrp/dialogueColors.js");
@@ -5422,9 +5423,14 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
         "data: [DONE]",
     ].join("\n");
     const r1 = trace.readGenerationBody(sse);
-    assert.deepEqual(r1, { reason: "length", native: "MAX_TOKENS", usage: { out: 8233, reasoning: 8233, input: 96000, cached: 90000 }, error: "", provider: "", genId: "x" }, "OpenRouter's stream: stopped by the limit, in Gemini's own word, the usage from the last chunk, the generation's id");
+    assert.deepEqual(r1, { reason: "length", native: "MAX_TOKENS", raw: "length", usage: { out: 8233, reasoning: 8233, input: 96000, cached: 90000 }, error: "", provider: "", genId: "x", text: 0, think: 2, firstMs: null, ended: "done" }, "OpenRouter's stream: stopped by the limit, in Gemini's own word and OpenRouter's, the usage from the last chunk, the generation's id, what arrived (two characters of reasoning, no reply text), its end marker read");
     const r1b = trace.readGenerationBody('data: {"id":"gen-77","provider":"Google AI Studio","choices":[{"delta":{"content":""},"finish_reason":"content_filter","native_finish_reason":"OTHER"}]}');
-    assert(r1b.provider === "Google AI Studio" && r1b.genId === "gen-77" && r1b.reason === "filter" && r1b.native === "OTHER", "OpenRouter names the provider and the generation; Gemini's OTHER is its filter");
+    assert(r1b.provider === "Google AI Studio" && r1b.genId === "gen-77" && r1b.reason === "filter" && r1b.native === "OTHER" && r1b.raw === "content_filter", "OpenRouter names the provider and the generation; its own word names a content-policy stop, whatever the provider's");
+    const r1c = trace.readGenerationBody('data: {"choices":[{"delta":{"content":""},"finish_reason":"stop","native_finish_reason":"OTHER"}]}');
+    assert(r1c.reason === "other" && r1c.native === "OTHER" && r1c.raw === "stop", "Gemini's OTHER under OpenRouter's stop is no reason given: not called a filter");
+    const r1d = trace.readGenerationBody('data: {"choices":[{"delta":{"content":""},"finish_reason":"error","native_finish_reason":"MALFORMED_FUNCTION_CALL"}]}');
+    assert(r1d.reason === "tool" && r1d.native === "MALFORMED_FUNCTION_CALL", "a broken tool call under OpenRouter's error is the model's slip, said as one");
+    assert.equal(trace.combineStopReasons("tool_calls", "STOP"), "tool"); assert.equal(trace.combineStopReasons("stop", "eos_token"), "stop"); assert.equal(trace.combineStopReasons("length", "MAX_TOKENS"), "length"); assert.equal(trace.combineStopReasons("stop", "SAFETY"), "filter"); assert.equal(trace.combineStopReasons("", "STOP"), "stop");
     const r2 = trace.readGenerationBody('{"choices":[{"message":{"content":""},"finish_reason":"content_filter","native_finish_reason":"PROHIBITED_CONTENT"}],"usage":{"prompt_tokens":10,"completion_tokens":0}}');
     assert(r2.reason === "filter" && r2.native === "PROHIBITED_CONTENT" && r2.usage.out === 0, "a whole answer: the provider's filter");
     const r3 = trace.readGenerationBody('data: {"choices":[{"delta":{"content":"a"},"finish_reason":null}]}\ndata: {"error":{"message":"Provider returned error","code":502}}');
@@ -5434,7 +5440,7 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
     const r5 = trace.readGenerationBody('data: {"candidates":[{"content":{"parts":[{"text":""}]},"finishReason":"SAFETY"}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":0,"thoughtsTokenCount":1200}}');
     assert(r5.reason === "filter" && r5.native === "SAFETY" && r5.usage.out === 1200 && r5.usage.reasoning === 1200, "Google's own shape: the thoughts counted in the output");
     assert(trace.readGenerationBody("").reason === "" && trace.readGenerationBody("not json at all").reason === "" && trace.readGenerationBody("{broken").reason === "", "nothing read: nothing claimed");
-    assert.equal(trace.normalizeStopReason("end_turn"), "stop"); assert.equal(trace.normalizeStopReason("OTHER"), "filter"); assert.equal(trace.normalizeStopReason("tool_calls"), "tool"); assert.equal(trace.normalizeStopReason("whatever"), "other");
+    assert.equal(trace.normalizeStopReason("end_turn"), "stop"); assert.equal(trace.normalizeStopReason("OTHER"), "other"); assert.equal(trace.normalizeStopReason("tool_calls"), "tool"); assert.equal(trace.normalizeStopReason("UNEXPECTED_TOOL_CALL"), "tool"); assert.equal(trace.normalizeStopReason("whatever"), "unknown"); assert.equal(trace.normalizeStopReason("RECITATION"), "filter");
 
     // The wrapper reads a request's answer as it passes, the answer untouched; the reply is stamped.
     const scope = { fetch: async () => new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }) };
@@ -5505,7 +5511,7 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
     assert(/output limit stopped it: 8,233 tokens, set by VCRP's Safety cap/.test(blankReplyWhy("empty", stamp)) && /8,233 of them reasoning/.test(blankReplyWhy("thinking", stamp)) && /Raise the Safety cap/.test(blankReplyWhy("empty", stamp)), `the limit, what set it, what was written: ${blankReplyWhy("empty", stamp)}`);
     assert(/Hold each reply to the target/.test(blankReplyWhy("empty", { ...stamp, limitBy: "hold" })) && /Max Response Length/.test(blankReplyWhy("empty", { ...stamp, limitBy: "" })), "the other two setters named");
     const declined = blankReplyWhy("empty", { done: true, reason: "filter", native: "PROHIBITED_CONTENT", provider: "Google AI Studio" });
-    assert(/content filter stopped this reply \(PROHIBITED_CONTENT\) \(served by Google AI Studio\)/.test(declined) && /decision is the provider's/.test(declined) && /does not retry or change it/.test(declined), `the provider's filter, in its own word, said as its decision: ${declined}`);
+    assert(/names a content-policy stop for this reply \("PROHIBITED_CONTENT"\) \(served by Google AI Studio\)/.test(declined) && /decision is the provider's/.test(declined) && /does not send it again or change it/.test(declined), `a content-policy stop, in the API's own word, said as the provider's decision: ${declined}`);
     assert(/failed on the provider's side: Provider returned error/.test(blankReplyWhy("empty", { done: true, reason: "error", error: "Provider returned error" })), "an error");
     assert(/Chain of Thought off/.test(blankReplyWhy("thinking", { done: true, reason: "stop" })) && /ended its turn with nothing written/.test(blankReplyWhy("empty", { done: true, reason: "stop" })), "ended on its own: the custom thinking on Gemini 4, or nothing written");
     assert(/sent nothing back, and the answer gave no reason/.test(blankReplyWhy("empty", null)) && /output limit cut it/.test(blankReplyWhy("thinking-open", { done: false })), "no answer read: the reply's shape");
@@ -5930,16 +5936,16 @@ console.log("72 ok Model Setup's loadouts (a preview that writes nothing; the en
     chat.length = 0;
     chat.push({ is_user: false, name: "Alice", mes: "Greeting." },
         { is_user: true, name: "Bob", mes: "a" }, { is_user: false, name: "Alice", mes: "Fine prose." },
-        { is_user: true, name: "Bob", mes: "b" }, { is_user: false, name: "Alice", mes: "", extra: { vcrp_finish: { done: true, reason: "filter", native: "OTHER", provider: "Google AI Studio", model: "google/gemini-4-argon", usage: { out: 0, input: 51000, cached: 48000 }, genId: "gen-1", at: 1 } } },
+        { is_user: true, name: "Bob", mes: "b" }, { is_user: false, name: "Alice", mes: "", extra: { vcrp_finish: { done: true, reason: "filter", native: "PROHIBITED_CONTENT", raw: "content_filter", provider: "Google AI Studio", model: "google/gemini-4-argon", usage: { out: 0, input: 51000, cached: 48000 }, genId: "gen-1", at: 1 } } },
         { is_user: true, name: "Bob", mes: "c" }, { is_user: false, name: "Alice", mes: "<think>only</think>", extra: { vcrp_finish: { done: true, reason: "stop", native: "STOP", provider: "Google Vertex", usage: { out: 900, reasoning: 880, input: 52000 }, at: 2 } } },
         { is_user: true, name: "Bob", mes: "d" }, { is_user: false, name: "Alice", mes: "" });
     const rows = H.emptyRepliesReport(chat);
-    assert(rows.length === 3 && rows[0].index === 4 && /provider's filter \(OTHER\)/.test(rows[0].what) && /via Google AI Studio/.test(rows[0].line) && /gen-1/.test(rows[0].line)
+    assert(rows.length === 3 && rows[0].index === 4 && /content-policy stop by the API's answer \(PROHIBITED_CONTENT\)/.test(rows[0].what) && /the API's words: finish_reason "content_filter", the provider's own word "PROHIBITED_CONTENT"/.test(rows[0].line) && /via Google AI Studio/.test(rows[0].line) && /gen-1/.test(rows[0].line)
         && rows[1].kind === "thinking" && /ended on its own/.test(rows[1].what) && /880 reasoning/.test(rows[1].line) && /no stop reason recorded/.test(rows[2].what), `the report: ${JSON.stringify(rows.map(r => r.line))}`);
     const txt = H.vcrpEmptyRepliesText({ chat, chatCompletionSettings });
-    assert(txt.startsWith("VCRP empty replies: 3 of 4 replies") && txt.includes("google/gemini-4-argon") && txt.includes("#4 empty: stopped by the provider's filter (OTHER)") && txt.includes("Gemini JB: off"), `the text to copy: ${txt.slice(0, 300)}`);
+    assert(txt.startsWith("VCRP empty replies: 3 of 4 replies") && txt.includes("google/gemini-4-argon") && txt.includes("#4 empty: a content-policy stop by the API's answer (PROHIBITED_CONTENT)") && txt.includes("Gemini JB: off") && txt.includes("SillyTavern Reasoning Auto-Parse: off"), `the text to copy: ${txt.slice(0, 300)}`);
     const item = H.vcrpHealthCheck().items.find(i => /3 replies in this chat came back empty/.test(i.title));
-    assert(item && item.level === "warn" && /1 stopped by the provider's filter \(OTHER\)/.test(item.title) && /the provider's decision/.test(item.detail) && !/add-on|USER Hard/i.test(item.detail), `Setup Check counts them by cause and says whose decision a filter's is: ${item && item.detail}`);
+    assert(item && item.level === "warn" && /1 a content-policy stop by the API's answer \(PROHIBITED_CONTENT\)/.test(item.title) && /the provider's decision/.test(item.detail) && !/add-on|USER Hard/i.test(item.detail), `Setup Check counts them by cause and says whose decision a filter's is: ${item && item.detail}`);
     assert(/1 is all thinking/.test(item.detail) && /Turn Chain of Thought off/.test(item.detail), "and what the chat's own record points to: all thinking on a model that reasons by itself, with Chain of Thought on");
     q.cotEnabled = false;
     assert(!/all thinking/.test(H.vcrpHealthCheck().items.find(i => /came back empty/.test(i.title)).detail), "not said with Chain of Thought already off");
@@ -5950,12 +5956,12 @@ console.log("72 ok Model Setup's loadouts (a preview that writes nothing; the en
     assert.equal(FN.finishNoteFor(chat[2]), null, "a reply that ended on its own with its story: no line");
     assert.equal(FN.finishNoteFor(chat[1]), null, "nor under the reader's message");
     const nFilter = FN.finishNoteFor(chat[4]);
-    assert(nFilter && nFilter.level === "blank" && /No reply: the provider's content filter stopped it \(OTHER\)/.test(nFilter.short) && /decision is the provider's/.test(nFilter.detail) && /served by Google AI Studio/.test(nFilter.detail) && /read 51k \(48k from the cache\)/.test(nFilter.detail) && /gen-1/.test(nFilter.detail), `the filter: ${JSON.stringify(nFilter)}`);
-    assert(/No story: the reply is all reasoning/.test(FN.finishNoteFor(chat[6]).short) && /No reply came back \(no stop reason was recorded\)/.test(FN.finishNoteFor(chat[8]).short), "all reasoning; no reason recorded");
+    assert(nFilter && nFilter.level === "blank" && /No reply: the API's answer names a content-policy stop \(PROHIBITED_CONTENT\)/.test(nFilter.short) && /decision is the provider's/.test(nFilter.detail) && /with Streaming off/.test(nFilter.detail) && /stop reason as the API gave it: finish_reason "content_filter", the provider's own word "PROHIBITED_CONTENT"/.test(nFilter.detail) && /served by Google AI Studio/.test(nFilter.detail) && /read 51k \(48k from the cache\)/.test(nFilter.detail) && /gen-1/.test(nFilter.detail), `the filter: ${JSON.stringify(nFilter)}`);
+    assert(/No story: the reply is all thinking/.test(FN.finishNoteFor(chat[6]).short) && /No reply came back \(no stop reason was recorded\)/.test(FN.finishNoteFor(chat[8]).short), "all thinking; no reason recorded");
     const nLimit = FN.finishNoteFor({ is_user: false, mes: "", extra: { vcrp_finish: { done: true, reason: "length", limit: 2000, limitBy: "cap", usage: { out: 2000, reasoning: 2000 } } } });
     assert(/No reply: the output limit \(2\.0k, VCRP's Safety cap\) was used up before the story/.test(nLimit.short) && /wrote 2\.0k tokens \(2\.0k of them reasoning\)/.test(nLimit.detail), `the limit: ${JSON.stringify(nLimit)}`);
     const nCut = FN.finishNoteFor({ is_user: false, mes: "She turned toward the door and", extra: { vcrp_finish: { done: true, reason: "filter", native: "PROHIBITED_CONTENT" } } });
-    assert(nCut && nCut.level === "cut" && /Cut short by the provider's content filter \(PROHIBITED_CONTENT\)/.test(nCut.short), "a reply with text that was cut short says so too");
+    assert(nCut && nCut.level === "cut" && /Cut short: the API's answer names a content-policy stop \(PROHIBITED_CONTENT\)/.test(nCut.short), "a reply with text that was cut short says so too");
     assert(/failed/.test(FN.finishNoteFor({ is_user: false, mes: "", extra: { vcrp_finish: { done: true, reason: "error", error: "Provider returned error" } } }).short), "a failed request");
 
     // The one retry: for a reply nothing explains, with SillyTavern's own swipe call.
@@ -5984,7 +5990,7 @@ console.log("72 ok Model Setup's loadouts (a preview that writes nothing; the en
     id = blank({ vcrp_finish: { done: true, reason: "filter", native: "PROHIBITED_CONTENT", provider: "Google AI Studio" } });
     BR.vcrpBlankOnReply(id, "normal");
     await wait();
-    assert(swipes.length === 1 && !chat[id].extra.vcrp_blank_retry && toasts.length === 1 && !/retrying/.test(toasts[0]) && /content filter stopped this reply \(PROHIBITED_CONTENT\)/.test(toasts[0]) && /does not retry or change it/.test(toasts[0]), `the filter's decision is reported, not retried: ${toasts[0]}`);
+    assert(swipes.length === 1 && !chat[id].extra.vcrp_blank_retry && toasts.length === 1 && !/retrying/.test(toasts[0]) && /names a content-policy stop for this reply \("PROHIBITED_CONTENT"\)/.test(toasts[0]) && /does not send it again or change it/.test(toasts[0]), `a content-policy stop is reported, not retried: ${toasts[0]}`);
     // A limit stopped it: the same limit would again. Said; not retried.
     toasts.length = 0;
     id = blank({ vcrp_finish: { done: true, reason: "length", limit: 2000, limitBy: "cap" } });
@@ -6182,5 +6188,274 @@ console.log("73 ok empty replies read back (a swipe after an empty reply sends t
     ctx.mainApi = keep.api;
 }
 console.log("74 ok from the sweep (a background call that never answers is given up on and what its caller held is released; a stopped helper job stops counting as waiting at once; the helper writes again when the reply changed under it and sends nothing for one that is gone; Setup Check on a forced prefill and a low Max Response Length)");
+
+// 75. Empty replies with nothing wrong at the provider. A reply SillyTavern's Reasoning
+//     Auto-Parse left whole in the Thinking box is put back (replyRescue.js); the answer, read
+//     as it arrives, says how long it took, how much of it was reply text and how its stream
+//     ended (generationTrace.js); a stream gone quiet is said, with a tap to stop it and send
+//     again (streamStall.js); the reader's own Stop is theirs; only a word that names a
+//     content-policy stop is called one.
+{
+    const q = state.localProfile;
+    const RR = await imp("src/vcrp/replyRescue.js");
+    const BR = await imp("src/vcrp/blankReply.js");
+    const FN = await imp("src/vcrp/finishNote.js");
+    const H = await imp("src/vcrp/health.js");
+    const T = await imp("src/vcrp/generationTrace.js");
+    const SS = await imp("src/vcrp/streamStall.js");
+    const keep = { cot: q.cotEnabled, mode: q.mode, model: q.model, cc: { ...chatCompletionSettings }, api: ctx.mainApi, pu: ctx.powerUserSettings, umb: ctx.updateMessageBlock, stop: ctx.stopGeneration, swipe: ctx.swipe };
+    const v11Preset = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
+    const toastrWas = globalThis.toastr;
+    const toasts = [];
+    const push = kind => (m, t, o) => { const entry = { kind, title: String(t || ""), text: String(m || ""), opts: o || {} }; toasts.push(entry); return entry; };
+    globalThis.toastr = { info: push("info"), warning: push("warning"), success: push("success"), error: push("error"), clear(t) { const i = toasts.indexOf(t); if (i >= 0) toasts[i].cleared = true; } };
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: v11Preset.prompts, prompt_order: v11Preset.prompt_order });
+    ctx.mainApi = "openai";
+    ctx.powerUserSettings = { reasoning: { auto_parse: true, prefix: "<think>\n", suffix: "\n</think>" } };
+    const drawn = [];
+    ctx.updateMessageBlock = id => { drawn.push(id); };
+    const COT = "1. Where are we.\n2. Final check.";
+    const STORY = "She kneels beside the bed. \"Easy now,\" she says.";
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    // Where a swallowed reply's thinking ends, however the model closed it.
+    for (const [name, kept] of [["to the letter", `${COT}\n</think>\n${STORY}`], ["on the same line", `${COT}</think>\n${STORY}`], ["</thinking>", `${COT}\n</thinking>\n${STORY}`], ["a space before", `${COT}\n </think>\n${STORY}`], ["a ^ before", `${COT}\n^</think>\n${STORY}`], ["capitals, no line break after", `${COT}\n</THINK>${STORY}`]]) {
+        const cut = RR.splitSwallowedReply(kept);
+        assert(cut.closed && cut.thinking === COT && cut.story === STORY, `the thinking's end found (${name}): ${JSON.stringify(cut)}`);
+    }
+    assert.deepEqual(RR.splitSwallowedReply(`${COT}\n\n${STORY}`), { closed: false, thinking: `${COT}\n\n${STORY}`, story: "" }, "no closing tag anywhere: said so");
+
+    // What to do with a message SillyTavern left empty (pure).
+    const swallowed = (kept, extra = {}) => ({ is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, swipe_info: [{ extra: {} }], extra: { reasoning: kept, reasoning_type: "parsed", reasoning_duration: 900, ...extra } });
+    let plan = RR.rescuePlan(swallowed(`${COT}</think>\n${STORY}`), "<think>\n");
+    assert(plan && plan.how === "closed" && plan.mes === STORY && plan.reasoning === COT, `closed another way than the template's suffix: the story back, the thinking kept (${JSON.stringify(plan)})`);
+    assert.equal(RR.rescuePlan(swallowed(COT), "<think>\n", `<think>\n${COT}\n</think>\n`), null, "closed to the letter with nothing after: all thinking, nothing to put back");
+    plan = RR.rescuePlan(swallowed(`${COT}\n\n${STORY}`), "<think>\n", `<think>\n${COT}\n\n${STORY}`);
+    assert(plan && plan.how === "open" && plan.mes === `<think>\n${COT}\n\n${STORY}`, `never closed, by what the model sent: back as it came (${JSON.stringify(plan)})`);
+    assert.equal(RR.rescuePlan(swallowed(`${COT}\n\n${STORY}`), "<think>\n", null), null, "no closing tag and the answer not read: left as it is (it may have closed with nothing after)");
+    assert.equal(RR.rescuePlan({ ...swallowed(`${COT}</think>${STORY}`), mes: "Text." }), null, "a message with text is not touched");
+    assert.equal(RR.rescuePlan(swallowed("The model's own reasoning.</think>Not a story.", { reasoning_type: "model" })), null, "a provider's reasoning beside the reply is never read for a story");
+    assert(RR.rescuePlan({ ...swallowed(`${COT}</think>${STORY}`), mes: "..." }) && RR.isEmptyMessage("  ...  ") && !RR.isEmptyMessage("... and then"), "SillyTavern's placeholder counts as an empty message");
+    assert.equal(BR.blankReplyKind("..."), "empty", "and as a blank reply");
+
+    // As a reply arrives: the answer is read, the reply stamped, then put back.
+    const sseOf = (content, { reasoning = "", finish = "stop", native = "STOP", done = true, usage = true } = {}) => [
+        ...(reasoning ? [`data: ${JSON.stringify({ id: "gen-9", provider: "Google AI Studio", choices: [{ delta: { content: "", reasoning } }] })}`] : []),
+        ...(content ? [`data: ${JSON.stringify({ id: "gen-9", provider: "Google AI Studio", choices: [{ delta: { content } }] })}`] : []),
+        ...(finish ? [`data: ${JSON.stringify({ id: "gen-9", provider: "Google AI Studio", choices: [{ delta: { content: "" }, finish_reason: finish, native_finish_reason: native }], ...(usage ? { usage: { prompt_tokens: 100, completion_tokens: 50, completion_tokens_details: { reasoning_tokens: reasoning ? 40 : 0 } } } : {}) })}`] : []),
+        ...(done ? ["data: [DONE]"] : []),
+    ].join("\n\n") + "\n\n";
+    const GEN = "/api/backends/chat-completions/generate";
+    const body = JSON.stringify({ model: "google/gemini-4-argon", chat_completion_source: "openrouter", stream: true, max_tokens: 20000 });
+    async function arrive(response, msg, type = "normal") {
+        const scope = { fetch: async () => (typeof response === "function" ? response() : new Response(response, { status: 200 })) };
+        T.vcrpResetGenerationTrace();
+        T.vcrpInstallGenerationTrace(scope);
+        vcrpSetGenerationType(type, {}, false);
+        try { await scope.fetch(GEN, { method: "POST", body }); } catch (e) { /* a request that failed outright */ }
+        chat.length = 0;
+        chat.push({ is_user: true, name: "Bob", mes: "go" }, msg);
+        await T.vcrpFinishOnReply(1, type);
+        return RR.vcrpRescueOnReply(1, type);
+    }
+    RR.resetRescueNotice();
+    let how = await arrive(sseOf(`<think>\n${COT}</think>\n${STORY}`), swallowed(`${COT}</think>\n${STORY}`));
+    let m = chat[1];
+    assert(how === "closed" && m.mes === STORY && m.extra.reasoning === COT && m.extra.reasoning_type === "parsed" && m.extra.vcrp_rescued === "closed", `the story is back in the message, the thinking stays in its box: ${JSON.stringify({ how, mes: m.mes, extra: m.extra })}`);
+    assert(m.swipes[0] === STORY && m.swipe_info[0].extra.reasoning === COT && m.swipe_info[0].extra.vcrp_finish && m.swipe_info[0].extra.vcrp_rescued === "closed", "the swipe SillyTavern filed with the empty text holds it too");
+    assert(drawn.at(-1) === 1 && toasts.length === 1 && toasts[0].title === "VCRP: a reply put back" && /closed its thinking, but not to the letter/.test(toasts[0].text), `redrawn, and said the first time: ${JSON.stringify(toasts.map(t => t.title))}`);
+    BR.vcrpBlankOnReply(1, "normal");
+    assert(BR.blankKindOf(m).kind === null && FN.finishNoteFor(m) === null && toasts.length === 1 && !m.extra.vcrp_blank_retry, "it is a reply like any other now: not blank, no line under it, nothing said about it and nothing sent again");
+    assert(m.extra.vcrp_finish.ended === "done" && m.extra.vcrp_finish.text === `<think>\n${COT}</think>\n${STORY}`.length && m.extra.vcrp_finish.think === 0 && typeof m.extra.vcrp_finish.ms === "number", `its stamp says the reply's text arrived: ${JSON.stringify(m.extra.vcrp_finish)}`);
+    assert.equal(T.vcrpArrivedText(1), null, "what the model sent is let go of once asked for");
+    // Never closed: back as it came, said the second time only in the log.
+    how = await arrive(sseOf(`<think>\n${COT}\n\n${STORY}`), swallowed(`${COT}\n\n${STORY}`));
+    m = chat[1];
+    assert(how === "open" && m.mes === `<think>\n${COT}\n\n${STORY}` && m.extra.reasoning === undefined && m.extra.reasoning_duration === undefined && m.extra.vcrp_rescued === "open" && m.swipes[0] === m.mes, `never closed: the text back in the message, no Thinking box beside it: ${JSON.stringify({ how, extra: m.extra })}`);
+    assert(toasts.length === 1 && BR.blankKindOf(m).kind === "thinking-open" && BR.blankRetryWanted("thinking-open", m, 1, chat), "said once a session; handled from here as a reply that left its thinking open");
+    // Closed to the letter, nothing after: SillyTavern cut its suffix away, so what it kept has no
+    // closing tag either; what the model sent has. All thinking: left alone.
+    how = await arrive(sseOf(`<think>\n${COT}\n</think>\n`), swallowed(COT));
+    m = chat[1];
+    assert(how === "" && m.mes === "" && m.extra.reasoning === COT && !m.extra.vcrp_rescued, "a reply that closed its thinking and wrote nothing after is not mistaken for one that never closed it");
+    assert.deepEqual(BR.blankKindOf(m), { kind: "thinking", own: true }, "it is a reply that is all thinking, of its own");
+    // A Continue adds to a reply: not looked at. A new swipe does not keep the last one's mark.
+    how = await arrive(sseOf(`<think>\n${COT}</think>\n${STORY}`), swallowed(`${COT}</think>\n${STORY}`), "continue");
+    assert(how === "" && chat[1].mes === "", "a Continue is left alone");
+    how = await arrive(sseOf(STORY), { is_user: false, name: "Alice", mes: STORY, swipes: [STORY], swipe_id: 0, swipe_info: [{ extra: {} }], extra: { vcrp_rescued: "closed" } }, "swipe");
+    assert(how === "" && !chat[1].extra.vcrp_rescued, "a new swipe starts without the last swipe's mark");
+
+    // The answer read as it arrives: a line split across pieces, what arrived and when, how it ended.
+    const enc = new TextEncoder();
+    const slow = (pieces, end = "close") => () => new Response(new globalThis.ReadableStream({
+        async start(c) {
+            for (const [ms, piece] of pieces) { await sleep(ms); c.enqueue(enc.encode(piece)); }
+            if (end === "close") c.close();
+            else if (end === "abort") c.error(new DOMException("The user aborted a request.", "AbortError"));
+            else c.error(new TypeError("network error"));
+        },
+    }), { status: 200 });
+    const last = async () => { await sleep(30); return T.vcrpGenerationRecords().at(-1); };
+    const blankMsg = () => ({ is_user: false, name: "Alice", mes: "", swipes: [""], swipe_id: 0, swipe_info: [{ extra: {} }], extra: {} });
+    await arrive(slow([[0, ': OPENROUTER PROCESSING\n\ndata: {"id":"g","provider":"Google Vertex","choices":[{"delta":{"content":"","rea'], [40, 'soning":"hm hm"}}]}\n\n'], [40, 'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\ndata: {"choices":[{"delta":{"content":""},"finish_reason":"stop","native_finish_reason":"STOP"}]}\n\ndata: [DONE]\n\n']]), blankMsg());
+    let rec = await last();
+    assert(rec.done && rec.reason === "stop" && rec.ended === "done" && rec.think === 5 && rec.text === 5 && rec.provider === "Google Vertex" && rec.firstMs >= 30 && rec.ms >= rec.firstMs && rec.ms >= 70, `read as it arrives: ${JSON.stringify(rec)}`);
+    await arrive(slow([[0, 'data: {"choices":[{"delta":{"content":"","reasoning":"thinking it over"}}]}\n\n'], [20, ""]]), blankMsg());
+    rec = await last();
+    assert(rec.done && rec.reason === "" && rec.ended === "closed" && rec.think === 16 && rec.text === 0 && !rec.error, `a stream that ends with no stop reason and no end marker closed early: ${JSON.stringify(rec)}`);
+    await arrive(slow([[0, 'data: {"choices":[{"delta":{"content":"","reasoning":"thinking"}}]}\n\n'], [60, ""]], "abort"), blankMsg());
+    rec = await last();
+    assert(rec.done && rec.ended === "abort" && rec.reason === "" && !rec.error && rec.think === 8 && rec.quietMs >= 40, `the reader's Stop is no error, and what was read stands: ${JSON.stringify(rec)}`);
+    const stopped = chat[1];
+    await arrive(slow([[0, 'data: {"choices":[{"delta":{"content":"He"}}]}\n\n'], [10, ""]], "broke"), blankMsg());
+    rec = await last();
+    assert(rec.done && rec.ended === "error" && rec.reason === "error" && /connection broke before the end/.test(rec.error) && rec.text === 2, `a connection that broke is one: ${JSON.stringify(rec)}`);
+    await arrive(JSON.stringify({ id: "w", choices: [{ message: { content: "A whole answer.", reasoning: "brief" }, finish_reason: "stop", native_finish_reason: "STOP" }], usage: { prompt_tokens: 5, completion_tokens: 9 } }), blankMsg());
+    rec = await last();
+    assert(rec.ended === "done" && rec.text === 15 && rec.think === 5 && rec.reason === "stop" && rec.usage.out === 9, `a whole answer, not streamed: ${JSON.stringify(rec)}`);
+    const reader = T.createAnswerReader(1000);
+    reader.push('data: {"candidates":[{"content":{"parts":[{"text":"plan","thought":true},{"text":"Hi"}]}}]}\n', 1250);
+    reader.push('data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"mm"}}\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"there"}}\n', 1300);
+    const read = reader.result("end", 1400);
+    assert(read.text === 7 && read.think === 6 && read.firstMs === 250 && read.ended === "closed" && reader.content() === "Hithere", `Google's and Anthropic's shapes counted, the first text timed: ${JSON.stringify(read)}`);
+
+    // A stream gone quiet is told; data again, or the end, takes the telling back.
+    const events = [];
+    T.vcrpOnStreamStall((what, info) => events.push([what, info.source, info.quietMs >= 0]));
+    await (async () => {
+        const scope = { fetch: async () => slow([[0, 'data: {"choices":[{"delta":{"content":"","reasoning":"a"}}]}\n\n'], [260, 'data: {"choices":[{"delta":{"content":"b"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n']])() };
+        T.vcrpResetGenerationTrace(); T.vcrpInstallGenerationTrace(scope); T.vcrpSetStallTimes(80, 20);
+        vcrpSetGenerationType("normal", {}, false);
+        await scope.fetch(GEN, { method: "POST", body });
+        await sleep(200);
+        assert(events.length === 1 && events[0][0] === "stall" && events[0][1] === "openrouter", `silence past the limit is told once: ${JSON.stringify(events)}`);
+        await sleep(160);
+        assert(events.length === 2 && (events[1][0] === "resume" || events[1][0] === "end"), `and taken back when data comes again or the reply ends: ${JSON.stringify(events)}`);
+    })();
+    events.length = 0;
+    await (async () => {
+        const quietScope = { fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: "x" }, finish_reason: "stop" }] }), { status: 200 }) };
+        T.vcrpResetGenerationTrace(); T.vcrpInstallGenerationTrace(quietScope); T.vcrpSetStallTimes(20, 10);
+        vcrpSetGenerationType("normal", {}, false);
+        await quietScope.fetch(GEN, { method: "POST", body: JSON.stringify({ model: "google/gemini-4-argon", chat_completion_source: "openrouter", stream: false }) });
+        await sleep(80);
+        assert.equal(events.length, 0, "an unstreamed request is not watched for silence: nothing arrives until its whole answer does");
+    })();
+    T.vcrpOnStreamStall(null);
+
+    // The notice: what it says, a tap stops the reply and asks for it to be sent again, once.
+    assert(/95 seconds/.test(SS.stallText(95000, "openrouter")) && /usually means the connection has dropped/.test(SS.stallText(95000, "openrouter")) && /Streaming request in progress/.test(SS.stallText(95000, "openrouter")) && /may still be billed/.test(SS.stallText(95000, "openrouter")) && /may still be reasoning in silence/.test(SS.stallText(250000, "makersuite")), "the notice's words, by where the request went");
+    let stops = 0;
+    ctx.stopGeneration = () => { stops++; return true; };
+    toasts.length = 0;
+    SS.resetStallNotice();
+    SS.vcrpInstallStallNotice();
+    await (async () => {
+        const scope = { fetch: async () => slow([[0, 'data: {"choices":[{"delta":{"content":"","reasoning":"a"}}]}\n\n'], [400, ""]], "abort")() };
+        T.vcrpResetGenerationTrace(); T.vcrpInstallGenerationTrace(scope); T.vcrpSetStallTimes(60, 15);
+        vcrpSetGenerationType("normal", {}, false);
+        await scope.fetch(GEN, { method: "POST", body });
+        await sleep(160);
+        const notice = toasts.find(t => t.title === "VCRP: the reply has gone quiet");
+        assert(notice && notice.kind === "warning" && notice.opts.timeOut === 0 && typeof notice.opts.onclick === "function" && /Tap here to stop this reply and send the same request again/.test(notice.text), `the notice stays until dealt with: ${JSON.stringify(toasts.map(t => t.title))}`);
+        assert.equal(SS.stallRetryAsked(), false, "nothing asked until it is tapped");
+        notice.opts.onclick();
+        assert(stops === 1 && notice.cleared, "a tap stops the reply (SillyTavern's own stop) and takes the notice away");
+        await sleep(320);
+    })();
+    // The stopped reply arrives blank: sent again because the reader asked, once.
+    const swipes = [];
+    ctx.swipe = { to: async (ev, dir, opts) => { swipes.push({ dir, ...opts }); } };
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "go" }, { ...blankMsg(), extra: { reasoning: "a", reasoning_type: "model" } });
+    await T.vcrpFinishOnReply(1, "normal");
+    toasts.length = 0;
+    BR.vcrpBlankOnReply(1, "normal");
+    await sleep(900);
+    assert(chat[1].extra.vcrp_finish.ended === "abort" && chat[1].extra.vcrp_blank_retry === 1 && swipes.length === 1 && toasts.length === 1 && /retrying/.test(toasts[0].title) && /sends the same request once more\./.test(toasts[0].text) && !/by itself/.test(toasts[0].text), `stopped at the reader's asking and sent again: ${JSON.stringify(toasts.map(t => t.text))}`);
+    assert.equal(SS.stallRetryAsked(), false, "the asking is used up");
+    T.vcrpOnStreamStall(null);
+    T.vcrpResetGenerationTrace();
+
+    // The reader's own Stop: theirs. Not sent again, and not told unless the stream had gone quiet.
+    toasts.length = 0;
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "go" }, { ...blankMsg(), extra: { vcrp_finish: { ...stopped.extra.vcrp_finish } } });
+    BR.vcrpBlankOnReply(1, "normal");
+    await sleep(900);
+    assert(swipes.length === 1 && !chat[1].extra.vcrp_blank_retry && toasts.length === 0, `the reader's Stop: no retry, nothing said (${JSON.stringify(toasts.map(t => t.text))})`);
+    assert(/No reply: it was stopped before anything was written/.test(FN.finishNoteFor(chat[1]).short), "the line under it says it was stopped");
+    chat[1].extra.vcrp_finish = { ...chat[1].extra.vcrp_finish, ms: 140000, quietMs: 95000 };
+    BR.vcrpBlankOnReply(1, "normal");
+    await sleep(900);
+    assert(swipes.length === 1 && toasts.length === 1 && /nothing had arrived for 1 min 35 s/.test(toasts[0].text) && /connection to the provider may have dropped/.test(toasts[0].text) && /goes on waiting/.test(toasts[0].text), `stopped after the stream had gone quiet: what that means is said (${toasts[0] && toasts[0].text})`);
+    assert(/stopped after nothing had arrived for 1 min 35 s/.test(FN.finishNoteFor(chat[1]).short), "and kept under the reply");
+    assert.equal(FN.finishNoteFor({ is_user: false, mes: "She turned toward the door and", extra: { vcrp_finish: { done: true, reason: "", ended: "abort", ms: 4000, quietMs: 10 } } }), null, "a reply with text the reader stopped carries no line");
+
+    // What is retried, and what is said, by how the answer ended.
+    const one = [1];
+    const with_ = f => ({ extra: { vcrp_finish: { done: true, ...f } } });
+    assert(!BR.blankRetryWanted("empty", with_({ ended: "abort", reason: "" }), 0, one) && BR.blankRetryWanted("empty", with_({ ended: "abort", reason: "" }), 0, one, { stallRetry: true }), "stopped on this side: only at the reader's asking");
+    assert(BR.blankRetryWanted("empty", with_({ reason: "tool", native: "MALFORMED_FUNCTION_CALL" }), 0, one) && BR.blankRetryWanted("thinking", with_({ reason: "", ended: "closed" }), 0, one) && BR.blankRetryWanted("empty", with_({ reason: "error", ended: "error" }), 0, one), "a tool call on a request with no tools, a stream that closed early, a broken connection: sent once more");
+    assert(!BR.blankRetryWanted("empty", with_({ reason: "other", native: "OTHER" }), 0, one) && !BR.blankRetryWanted("empty", with_({ reason: "filter", native: "SAFETY" }), 0, one) && !BR.blankRetryWanted("empty", with_({ reason: "length" }), 0, one) && !BR.blankRetryWanted("empty", with_({ reason: "unknown", native: "eos_token" }), 0, one), "no reason given, a content-policy stop, a limit, an unknown word: said, and left to the reader");
+    const whyOther = BR.blankReplyWhy("empty", { done: true, reason: "other", native: "OTHER", raw: "stop", provider: "Google AI Studio", ms: 48000 });
+    assert(/its only word for why is "OTHER"/.test(whyOther) && /no reason given/.test(whyOther) && /after 48 s/.test(whyOther) && !/filter|policy/i.test(whyOther), `Gemini's OTHER is not called a filter: ${whyOther}`);
+    assert(/tool call \(MALFORMED_FUNCTION_CALL\) on a request that offers no tools/.test(BR.blankReplyWhy("empty", { done: true, reason: "tool", native: "MALFORMED_FUNCTION_CALL" })), "a broken tool call said as the model's slip");
+    assert(/no stop reason and no end marker/.test(BR.blankReplyWhy("empty", { done: true, reason: "", ended: "closed", ms: 65000 })) && /after 1 min 5 s/.test(BR.blankReplyWhy("empty", { done: true, reason: "", ended: "closed", ms: 65000 })), "a stream that closed early, with how long it had run");
+    assert(/connection broke after 12 s/.test(BR.blankReplyWhy("empty", { done: true, reason: "error", ended: "error", error: "the connection broke before the end (network error)", ms: 12000 })), "a broken connection");
+    const reasoned = BR.blankReplyWhy("thinking", { done: true, reason: "stop", usage: { out: 5200, reasoning: 5200 }, provider: "Google AI Studio" }, { own: false });
+    assert(/The model reasoned \(5,200 tokens\) and ended its turn without writing the reply/.test(reasoned) && /holds that reasoning, not a story/.test(reasoned) && !/wrote it in there/.test(reasoned), `a model's own reasoning with no reply is not said to hold the story: ${reasoned}`);
+    assert(/inside its thinking: nothing follows the closing tag/.test(BR.blankReplyWhy("thinking", { done: true, reason: "stop" })), "a reply's own thinking with nothing after it");
+    assert(/text arrived \(1,840 characters\)/.test(BR.blankReplyWhy("empty", { done: true, reason: "stop", text: 1840 })) && /took it out after it arrived/.test(BR.blankReplyWhy("empty", { done: true, reason: "stop", text: 1840 })), "text that arrived and is gone: something here took it out");
+    assert(/after 4,100 tokens of reasoning/.test(BR.blankReplyWhy("empty", { done: true, reason: "stop", text: 0, usage: { out: 4100, reasoning: 4100 } })), "hidden reasoning, then nothing");
+    assert.equal(BR.apiWords({ raw: "content_filter", native: "PROHIBITED_CONTENT" }), 'finish_reason "content_filter", the provider\'s own word "PROHIBITED_CONTENT"');
+    assert(BR.spell(42000) === "42 s" && BR.spell(95000) === "1 min 35 s", "times for reading");
+
+    // The line under a reply, with the new endings.
+    const note = f => FN.finishNoteFor({ is_user: false, mes: "", extra: { vcrp_finish: { done: true, ...f } } });
+    assert(/the provider ended it with no reason given \(its word: OTHER\)/.test(note({ reason: "other", native: "OTHER" }).short) && /ended in a tool call instead \(UNEXPECTED_TOOL_CALL\)/.test(note({ reason: "tool", native: "UNEXPECTED_TOOL_CALL" }).short) && /stream closed before the model had finished/.test(note({ reason: "", ended: "closed" }).short) && /connection broke before the end/.test(note({ reason: "error", ended: "error", error: "x" }).short), "no reason given, a tool call, a stream that closed, a broken connection");
+    const nReasoned = FN.finishNoteFor({ is_user: false, mes: "", extra: { reasoning: "thoughts", reasoning_type: "model", vcrp_finish: { done: true, reason: "stop", native: "STOP", ms: 71000, firstMs: 3000, text: 0, think: 5400, usage: { out: 1300, reasoning: 1300 } } } });
+    assert(/No reply: the model reasoned and wrote nothing/.test(nReasoned.short) && /took 1 min 11 s \(first text or reasoning after 3 s\)/.test(nReasoned.detail) && /0 characters of reply and 5\.4k of reasoning arrived/.test(nReasoned.detail), `reasoning only, with the times and what arrived: ${JSON.stringify(nReasoned)}`);
+    assert(/never closed its <think>/.test(FN.finishNoteFor({ is_user: false, mes: "<think>\nplan and story", extra: { vcrp_finish: { done: true, reason: "stop" } } }).short), "thinking left open");
+    const nOther = FN.finishNoteFor({ is_user: false, mes: "She turned toward the door and", extra: { vcrp_finish: { done: true, reason: "other", native: "OTHER" } } });
+    assert(nOther && nOther.level === "cut" && /may be cut short/.test(nOther.short), "a reply with text the provider ended without a reason says it may be cut short");
+    assert.equal(FN.finishNoteFor({ is_user: false, mes: "A whole reply.", extra: { vcrp_finish: { done: true, reason: "unknown", native: "eos_token" } } }), null, "a stop word VCRP does not know on a reply with its story: no line");
+
+    // Setup Check: Auto-Parse beside Chain of Thought, the replies put back, the report's new causes.
+    q.cotEnabled = true;
+    chat.length = 0;
+    chat.push({ is_user: false, name: "Alice", mes: "Greeting." },
+        { is_user: true, name: "Bob", mes: "a" }, { is_user: false, name: "Alice", mes: STORY, extra: { vcrp_rescued: "closed", reasoning: COT, reasoning_type: "parsed" } },
+        { is_user: true, name: "Bob", mes: "b" }, { is_user: false, name: "Alice", mes: "", extra: { reasoning: "thoughts", reasoning_type: "model", vcrp_finish: { done: true, reason: "stop", native: "STOP", provider: "Google AI Studio", ms: 71000, text: 0, think: 5400, usage: { out: 1300, reasoning: 1300 }, at: 3 } } },
+        { is_user: true, name: "Bob", mes: "c" }, { is_user: false, name: "Alice", mes: "", extra: { vcrp_finish: { done: true, reason: "", ended: "abort", ms: 140000, quietMs: 95000, text: 0, think: 0, at: 4 } } },
+        { is_user: true, name: "Bob", mes: "d" }, { is_user: false, name: "Alice", mes: "", extra: { vcrp_finish: { done: true, reason: "other", native: "OTHER", raw: "stop", ms: 30000, text: 0, think: 0, at: 5 } } });
+    let items = H.vcrpHealthCheck().items;
+    const ap = items.find(i => /Reasoning Auto-Parse is on/.test(i.title));
+    assert(ap && ap.level === "info" && /1 reply it had left empty in this chat was put back/.test(ap.title) && /"<think>\\n"/.test(ap.detail) && /"\\n<\/think>"/.test(ap.detail) && /turn Auto-Parse off/.test(ap.detail), `Setup Check says what Auto-Parse does beside the thinking, and counts the replies put back: ${ap && ap.title} / ${ap && ap.detail}`);
+    const rows = H.emptyRepliesReport(chat);
+    assert(rows.length === 3 && /^reasoning only: ended on its own with no text/.test(rows[0].line) && /took 1 min 11 s/.test(rows[0].line) && /0 characters of reply and 5\.4k of reasoning arrived/.test(rows[0].line) && rows[0].own === false
+        && /stopped after the stream had gone quiet/.test(rows[1].what) && /silent for the last 1 min 35 s/.test(rows[1].line)
+        && /ended by the provider with no reason given \(OTHER\)/.test(rows[2].what) && /the API's words: finish_reason "stop", the provider's own word "OTHER"/.test(rows[2].line), `the report: ${JSON.stringify(rows.map(r => r.line))}`);
+    const empty = items.find(i => /came back empty/.test(i.title));
+    assert(empty && /1 ended with the connection, not the model/.test(empty.detail) && /termux-wake-lock/.test(empty.detail) && /1 was ended by the provider with no reason given/.test(empty.detail) && !/all thinking/.test(empty.detail), `Setup Check's advice for them (a model's own reasoning is not counted as the reply's thinking): ${empty && empty.detail}`);
+    const txt = H.vcrpEmptyRepliesText({ chat, chatCompletionSettings, powerUserSettings: ctx.powerUserSettings });
+    assert(/SillyTavern Reasoning Auto-Parse: on \(prefix "<think>\\n", suffix "\\n<\/think>"\); replies VCRP put back from the Thinking box in this chat: 1/.test(txt), `the text to copy names the setting: ${txt}`);
+    ctx.powerUserSettings = { reasoning: { auto_parse: false, prefix: "<think>\n", suffix: "\n</think>" } };
+    assert(!H.vcrpHealthCheck().items.some(i => /Reasoning Auto-Parse is on/.test(i.title)), "with Auto-Parse off there is nothing to say");
+
+    globalThis.toastr = toastrWas;
+    RR.resetRescueNotice();
+    SS.resetStallNotice();
+    T.vcrpResetGenerationTrace();
+    chat.length = 0;
+    Object.assign(q, { cotEnabled: keep.cot, mode: keep.mode, model: keep.model });
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+    for (const [k, v] of [["powerUserSettings", keep.pu], ["updateMessageBlock", keep.umb], ["stopGeneration", keep.stop], ["swipe", keep.swipe]]) { if (v === undefined) delete ctx[k]; else ctx[k] = v; }
+}
+console.log("75 ok empty replies with nothing wrong at the provider (a reply SillyTavern's Reasoning Auto-Parse left in the Thinking box put back: closed another way, never closed, told from one that closed with nothing after by what the model sent; the answer read as it arrives: what arrived, when, how the stream ended; a stream gone quiet said, a tap stops it and sends again; the reader's own Stop theirs; only a content-policy word called one; the line under a reply and Setup Check for each)");
 
 console.log("\nALL FORK CHECKS PASSED");

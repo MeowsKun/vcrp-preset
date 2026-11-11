@@ -335,22 +335,37 @@ on her card as a nickname. Two characters who both fit a name are never guessed 
 ## 12. When a reply comes back empty
 
 **The reply itself tells you why.** A reply that did not end normally carries a small line under
-it: *No reply: the provider's content filter stopped it (PROHIBITED_CONTENT)*, *No reply: the
-output limit was used up before the story*, *No reply: the request failed*, *Cut short by the
-output limit*. Tap the line for who served the request, what was written and read, and the limit
-and what set it. It stays with the message, so you can read it later.
+it: *No reply: the output limit was used up before the story*, *No reply: the model reasoned and
+wrote nothing*, *No reply: the stream closed before the model had finished*, *No reply: the API's
+answer names a content-policy stop (PROHIBITED_CONTENT)*, *Cut short by the output limit*. Tap the
+line for the stop reason in the API's own words, who served the request, what was written and
+read, the limit and what set it, how long it took, and how much of what arrived was reply text.
+It stays with the message, so you can read it later.
 
 **What VCRP does about each cause.**
 
-- **The provider's content filter stopped it.** That is the provider's decision about that
-  request. VCRP sent the request as it was, says so, and does not retry or change it.
+- **SillyTavern put the whole reply in the Thinking box.** With Reasoning *Auto-Parse* on
+  (Advanced Formatting → Reasoning), a reply that opens with `<think>` goes into the Thinking box
+  until SillyTavern meets the template's closing to the letter. A model that closes its thinking
+  slightly differently, or not at all, had its whole reply left there and the message came back
+  empty, with nothing wrong anywhere. VCRP puts the story back by itself as the reply arrives. To
+  avoid it altogether, turn Auto-Parse off: the preset's own regex draws the thinking box.
+- **Nothing is arriving.** SillyTavern does not notice when the connection to the provider drops
+  in the middle of a reply; it waits for good. After 90 seconds of silence on OpenRouter VCRP
+  shows a notice: tap it to stop the reply and send the same request again. On a phone, keep
+  Termux awake (`termux-wake-lock`) and stay on one network while a reply is being written.
 - **The output limit stopped it.** A setting: the line names the limit and what set it (your
   Safety cap, or SillyTavern's Max Response Length). Raise that one.
 - **The request failed.** Swipe; if it keeps failing, check the model and provider.
-- **Nothing explains it** (the model ended its turn with nothing written, or the answer could
-  not be read). VCRP sends the same request once more by itself, as swiping would. Never twice
-  for one message; off in Global Settings (*Retry an empty reply once*).
+- **Nothing explains it** (the model ended its turn with nothing written, reasoned and never
+  wrote, the stream closed early, or the answer could not be read). VCRP sends the same request
+  once more by itself, as swiping would. Never twice for one message, and never a reply you
+  stopped yourself; off in Global Settings (*Retry an empty reply once*).
+- **The API's answer names a content-policy stop.** That is the provider's decision about that
+  request. VCRP sent the request as it was, says so in the API's own words, and does not send it
+  again or change it. (SillyTavern's terminal prints nothing of a streamed answer; with Streaming
+  off it prints the whole answer, stop reason included.)
 
 **For the whole chat:** Setup Check (Global Settings) lists the open chat's empty replies by
-cause, with the provider that served each request and its id. **Copy empty-reply details** on the
-card copies it as text.
+cause, with the provider that served each request, its id, how long each took and what arrived.
+**Copy empty-reply details** on the card copies it as text.

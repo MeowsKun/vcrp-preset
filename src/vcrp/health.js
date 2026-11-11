@@ -12,7 +12,7 @@ import { extensionName } from "../core/constants.js";
 import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem, vcrpRouteMarksCache, vcrpModelReasonsHidden } from "./generation.js";
 import { vcrpGenerationRecords } from "./generationTrace.js";
 import { helperSettings, helperJobWanted, HELPER_JOBS, CURRENT_CONNECTION } from "./helper/settings.js";
-import { blankReplyKind } from "./blankReply.js";
+import { blankKindOf, spell, apiWords, QUIET_MS } from "./blankReply.js";
 import { connectionProfiles, isChatProfile, canSendToProfile } from "./helper/index.js";
 import { escapeHtmlAttr } from "../utils/html.js";
 import { vcrpMemoryEnabled, currentMemoryBudget, memoryBudgetSettings, memoryState, estimateTokens, memoryCanReachPrompt } from "./memory/index.js";
@@ -236,6 +236,9 @@ export function vcrpHealthCheck() {
             "Megumin Suite V11's Gemini loadouts turn it on: it helps Gemini get through gritty and heavy NSFW scenes without cutting the reply off (not for NSFL). Global Toggles & Add-ons → Gemini JB.");
     }
 
+    // SillyTavern's Reasoning Auto-Parse beside VCRP's Chain of Thought.
+    reasoningParseCheck(add, ctx);
+
     // The helper model: its connection, and whether this SillyTavern can send to it.
     helperChecks(add);
 
@@ -376,40 +379,74 @@ function helperChecks(add) {
 const LIMIT_BY = { cap: "VCRP's Safety cap", hold: "VCRP's Hold each reply to the target", "": "SillyTavern's Max Response Length" };
 const kTok = n => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(Math.round(n)));
 
+// ── SillyTavern's Reasoning Auto-Parse beside VCRP's Chain of Thought ────────
+// With Auto-Parse on, SillyTavern takes a streamed reply that opens with its template's prefix
+// and keeps everything in the Thinking box until it meets the suffix, to the letter. A thinking
+// closed any other way, or never, used to leave the whole reply there and the message empty
+// (replyRescue.js puts it back now).
+const reasoningSettings = ctx => (ctx && ctx.powerUserSettings && ctx.powerUserSettings.reasoning) || null;
+const autoParseOn = ctx => { const rs = reasoningSettings(ctx); return Boolean(rs && rs.auto_parse && rs.prefix && rs.suffix); };
+const putBackCount = chat => (Array.isArray(chat) ? chat : []).filter(m => m && m.extra && m.extra.vcrp_rescued).length;
+
+function reasoningParseCheck(add, ctx) {
+    if (!autoParseOn(ctx)) return;
+    const rs = reasoningSettings(ctx);
+    const cotOn = Boolean(localProfile) && localProfile.cotEnabled !== false;
+    const back = putBackCount(ctx && ctx.chat);
+    if (!cotOn && !back) return;
+    const show = s => JSON.stringify(String(s)).slice(1, -1);
+    add("info", `SillyTavern's Reasoning Auto-Parse is on${back ? `: ${back} repl${back === 1 ? "y" : "ies"} it had left empty in this chat ${back === 1 ? "was" : "were"} put back` : ""}`,
+        `With it on, a streamed reply that opens with "${show(rs.prefix)}" goes into the Thinking box until SillyTavern meets "${show(rs.suffix)}", to the letter (a line break in the template has to be there too). A reply that closes its thinking any other way ("...done.</think>" on one line, </thinking>), or never closes it, stayed there whole, story and all, and the message came back empty with nothing wrong on the provider's side. VCRP now puts such a reply back as it arrives. To keep it from happening at all, turn Auto-Parse off (Advanced Formatting → Reasoning): the preset's own regex draws the thinking box, and takes any of those closings.`);
+}
+
 // ── The empty replies of a chat ──────────────────────────────────────────────
 // Each reply carries how its generation ended (generationTrace.js stamps msg.extra.vcrp_finish,
 // saved with the chat), so a chat can be read back for what stopped its empty replies, long
 // after the toasts are gone: the thing to send along when asking about them.
 
+const wentQuiet = f => Boolean(f) && f.ended === "abort" && f.quietMs >= QUIET_MS;
+// The connection's doing, not the model's or the provider's: it broke, closed early, or went quiet.
+const connectionEnded = f => Boolean(f) && f.done && (f.ended === "error" || f.ended === "closed" || wentQuiet(f));
+
 const whatStopped = f => {
     if (!f || !f.done) return "no stop reason recorded";
-    if (f.error) return `failed (${f.error})`;
+    if (f.ended === "abort") return wentQuiet(f) ? "stopped after the stream had gone quiet" : "stopped by the reader";
     if (f.reason === "length") return "stopped by the output limit";
-    if (f.reason === "filter") return `stopped by the provider's filter (${f.native || "content filter"})`;
+    if (f.reason === "filter") return `a content-policy stop by the API's answer (${f.native || "content filter"})`;
+    if (f.reason === "tool") return `ended in a tool call (${f.native || "tool call"})`;
+    if (f.reason === "other") return `ended by the provider with no reason given (${f.native || "none"})`;
+    if (f.ended === "error") return "the connection broke";
+    if (f.error) return `failed (${f.error})`;
+    if (f.ended === "closed") return "the stream closed with no stop reason";
     if (f.reason === "stop") return "ended on its own with no text";
     return f.reason ? `${f.reason}${f.native ? ` (${f.native})` : ""}` : "no stop reason given";
 };
 
 /**
- * The replies of `chat` that are blank (pure): [{ index, kind, what, line, stamp }], oldest
- * first. The greeting is the card's and is left out.
+ * The replies of `chat` that are blank (pure): [{ index, kind, own, what, line, stamp }],
+ * oldest first. The greeting is the card's and is left out.
  */
 export function emptyRepliesReport(chat) {
     const out = [];
     (Array.isArray(chat) ? chat : []).forEach((m, index) => {
         if (!index || !m || m.is_user || m.is_system || typeof m.mes !== "string") return;
-        const kind = blankReplyKind(m.mes);
+        const { kind, own } = blankKindOf(m);
         if (!kind) return;
         const f = (m.extra && m.extra.vcrp_finish) || null;
         const what = whatStopped(f);
         const bits = [what];
+        const words = apiWords(f);
+        if (words) bits.push(`the API's words: ${words}`);
         if (f && f.provider) bits.push(`via ${f.provider}`);
         if (f && f.model) bits.push(f.model);
         if (f && f.usage && f.usage.out) bits.push(`wrote ${kTok(f.usage.out)} tokens${f.usage.reasoning ? ` (${kTok(f.usage.reasoning)} reasoning)` : ""}`);
         if (f && f.usage && f.usage.input) bits.push(`read ${kTok(f.usage.input)}${f.usage.cached ? ` (${kTok(f.usage.cached)} cached)` : ""}`);
         if (f && f.limit) bits.push(`limit ${kTok(f.limit)} (${LIMIT_BY[f.limitBy] || LIMIT_BY[""]})`);
+        if (f && typeof f.ms === "number") bits.push(`took ${spell(f.ms)}${typeof f.firstMs === "number" ? `, first text or reasoning after ${spell(f.firstMs)}` : ""}${f.quietMs >= QUIET_MS ? `, silent for the last ${spell(f.quietMs)}` : ""}`);
+        if (f && typeof f.ms === "number") bits.push(`${kTok(f.text || 0)} characters of reply and ${kTok(f.think || 0)} of reasoning arrived`);
         if (f && f.genId) bits.push(f.genId);
-        out.push({ index, kind, what, line: `${kind}: ${bits.join(", ")}`, stamp: f });
+        const label = kind === "thinking" && !own ? "reasoning only" : kind;
+        out.push({ index, kind, own, what, line: `${label}: ${bits.join(", ")}`, stamp: f });
     });
     return out;
 }
@@ -428,6 +465,7 @@ export function vcrpEmptyRepliesText(ctx = null) {
         `VCRP empty replies: ${rows.length} of ${chat.filter((m, i) => i > 0 && m && !m.is_user && !m.is_system).length} replies in this chat`,
         `model: ${source} ${model}; engine: ${p.mode || "?"}; preset max tokens: ${cc.openai_max_tokens || "?"}; reasoning effort: ${cc.reasoning_effort || "?"}; stream: ${cc.stream_openai !== false}`,
         `Gemini JB: ${usesCaretWords(p) ? "on" : "off"}; CoT: ${p.cotEnabled !== false ? "on" : "off"}; Safety cap: ${replyCapTokens() || 0}; helper blocks: ${(() => { try { return helperJobWanted("blocks") && helperSettings().enabled ? "on" : "off"; } catch (e) { return "?"; } })()}`,
+        `SillyTavern Reasoning Auto-Parse: ${autoParseOn(c) ? `on (prefix ${JSON.stringify(reasoningSettings(c).prefix)}, suffix ${JSON.stringify(reasoningSettings(c).suffix)})` : "off"}; replies VCRP put back from the Thinking box in this chat: ${putBackCount(chat)}`,
     ];
     return `${head.join("\n")}\n${rows.map(r => `#${r.index} ${r.line}${r.stamp && r.stamp.at ? ` @ ${new Date(r.stamp.at).toISOString()}` : ""}`).join("\n")}`;
 }
@@ -439,18 +477,24 @@ function emptyRepliesCheck(add, ctx) {
     const by = {};
     for (const r of rows) by[r.what] = (by[r.what] || 0) + 1;
     const summary = Object.entries(by).map(([k, n]) => `${n} ${k}`).join(", ");
-    const filtered = rows.filter(r => r.stamp && r.stamp.reason === "filter").length;
-    const unstamped = rows.filter(r => !r.stamp || !r.stamp.done).length;
-    const limited = rows.filter(r => r.stamp && r.stamp.done && r.stamp.reason === "length");
-    // All thinking, the model having ended on its own: on a model that reasons by itself, VCRP's
-    // own Chain of Thought asked for a second round of thinking, and the reply went into it.
-    const allThinking = rows.filter(r => (r.kind === "thinking" || r.kind === "thinking-open") && r.stamp && r.stamp.done && r.stamp.reason === "stop").length;
+    const stamped = r => r.stamp && r.stamp.done;
+    const filtered = rows.filter(r => stamped(r) && r.stamp.ended !== "abort" && r.stamp.reason === "filter").length;
+    const unstamped = rows.filter(r => !stamped(r)).length;
+    const limited = rows.filter(r => stamped(r) && r.stamp.ended !== "abort" && r.stamp.reason === "length");
+    const dropped = rows.filter(r => connectionEnded(r.stamp)).length;
+    const noReason = rows.filter(r => stamped(r) && r.stamp.ended !== "abort" && r.stamp.reason === "other").length;
+    // All thinking of the reply's own, the model having ended on its own: on a model that
+    // reasons by itself, VCRP's own Chain of Thought asked for a second round of thinking, and
+    // the reply went into it.
+    const allThinking = rows.filter(r => (r.kind === "thinking" || r.kind === "thinking-open") && r.own && stamped(r) && r.stamp.ended !== "abort" && r.stamp.reason === "stop").length;
     const cotOn = Boolean(localProfile) && localProfile.cotEnabled !== false;
     const limitNames = [...new Set(limited.map(r => LIMIT_BY[r.stamp.limitBy] || LIMIT_BY[""]))];
     const advice = [
         limited.length ? `${limited.length} stopped at the output limit before the story (${limitNames.join(", ")}): raise it.` : "",
+        dropped ? `${dropped} ended with the connection, not the model: it broke, closed before the model had finished, or went quiet until the reply was stopped. SillyTavern's server does not notice a provider connection that drops mid-reply; VCRP now says so when a stream goes quiet. On a phone, keep Termux awake (termux-wake-lock) and stay on one network while a reply is being written.` : "",
         allThinking && cotOn && vcrpModelReasonsHidden() ? `${allThinking} ${allThinking === 1 ? "is" : "are"} all thinking, the model having ended its turn there: this model reasons on its own, and asked to think aloud as well it can put the whole reply into the thinking. Turn Chain of Thought off in Presets & CoT (Model Setup's loadout for it does).` : "",
-        filtered ? "A reply the provider's content filter stopped is the provider's decision: VCRP sent the request as it was, and does not retry or change it." : "",
+        noReason ? `${noReason} ${noReason === 1 ? "was" : "were"} ended by the provider with no reason given (its word: OTHER): VCRP does not send those again by itself.` : "",
+        filtered ? "A content-policy stop named in the API's answer is the provider's decision: VCRP sent the request as it was, and does not send it again or change it." : "",
         unstamped ? "A reply with no stop reason recorded came before VCRP read the answers (10.0.0-vcrp.13), or the answer could not be read." : "",
     ].filter(Boolean).join(" ");
     add("warn", `${rows.length} repl${rows.length === 1 ? "y" : "ies"} in this chat came back empty: ${summary}`,
@@ -467,24 +511,32 @@ function lastRepliesCheck(add) {
     try { recent = vcrpGenerationRecords().filter(r => r.done && (r.kind === "reply" || r.kind === "continue")).slice(-5); } catch (e) { recent = []; }
     if (!recent.length) return;
     const line = r => {
-        const how = r.error ? `failed (${r.error})`
-            : r.reason === "stop" ? "ended on its own"
-                : r.reason === "length" ? "stopped by the output limit"
-                    : r.reason === "filter" ? "stopped by the provider's filter"
-                        : r.reason ? r.reason : "no stop reason given";
+        const how = r.ended === "abort" ? (wentQuiet(r) ? "stopped after the stream had gone quiet" : "stopped by the reader")
+            : r.ended === "error" ? "the connection broke"
+                : r.error ? `failed (${r.error})`
+                    : r.reason === "stop" ? "ended on its own"
+                        : r.reason === "length" ? "stopped by the output limit"
+                            : r.reason === "filter" ? "a content-policy stop by the API's answer"
+                                : r.reason === "tool" ? "ended in a tool call"
+                                    : r.reason === "other" ? "ended by the provider with no reason given"
+                                        : r.ended === "closed" ? "the stream closed with no stop reason"
+                                            : r.reason ? r.reason : "no stop reason given";
         const native = r.native && r.native.toLowerCase() !== (r.reason || "") && !r.error ? ` (${r.native})` : "";
         const via = r.provider ? ` via ${r.provider}` : "";
         const wrote = r.usage && r.usage.out ? `, wrote ${kTok(r.usage.out)} tokens${r.usage.reasoning ? ` (${kTok(r.usage.reasoning)} of them reasoning)` : ""}` : "";
         const limit = r.limit ? `, limit ${kTok(r.limit)} from ${LIMIT_BY[r.limitBy] || LIMIT_BY[""]}` : "";
-        return `${new Date(r.at).toLocaleTimeString()}: ${how}${native}${via}${wrote}${limit}`;
+        const took = typeof r.ms === "number" ? `, took ${spell(r.ms)}` : "";
+        return `${new Date(r.at).toLocaleTimeString()}: ${how}${native}${via}${wrote}${limit}${took}`;
     };
-    const cut = recent.filter(r => r.reason === "length").length;
-    const filtered = recent.filter(r => r.reason === "filter").length;
-    const failed = recent.filter(r => r.error).length;
-    const trouble = [cut ? `${cut} stopped by the output limit` : "", filtered ? `${filtered} stopped by the provider's filter` : "", failed ? `${failed} failed` : ""].filter(Boolean);
+    const cut = recent.filter(r => r.ended !== "abort" && r.reason === "length").length;
+    const filtered = recent.filter(r => r.ended !== "abort" && r.reason === "filter").length;
+    const dropped = recent.filter(connectionEnded).length;
+    const failed = recent.filter(r => r.error && r.ended !== "error").length;
+    const trouble = [cut ? `${cut} stopped by the output limit` : "", filtered ? `${filtered} named a content-policy stop` : "", dropped ? `${dropped} ended with the connection` : "", failed ? `${failed} failed` : ""].filter(Boolean);
     const advice = [
         cut ? "A reply stopped by the limit while still reasoning comes back with nothing in it: raise the limit named." : "",
-        filtered ? "A reply the provider's content filter stopped is the provider's decision: VCRP sent the request as it was." : "",
+        dropped ? "A connection that broke, closed early or went quiet is between SillyTavern and the provider, not the model's doing: swipe for another." : "",
+        filtered ? "A content-policy stop named in the API's answer is the provider's decision: VCRP sent the request as it was." : "",
     ].filter(Boolean);
     add(trouble.length ? "warn" : "ok",
         trouble.length ? `Of the last ${recent.length} replies, ${trouble.join(", ")}` : `The last ${recent.length} replies ended on their own`,
