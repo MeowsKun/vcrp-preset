@@ -1775,9 +1775,47 @@ console.log("31 ok pins, spend estimate, swipe-aware scanning, Dev Mode's live l
     assert(vcrpHealthCheck().items.some(x => x.level === "warn" && x.title.startsWith("The prompt changed early")), "Setup Check shows it");
     ctx.mainApi = "textgenerationwebui";
     delete chatCompletionSettings.prompts; delete chatCompletionSettings.prompt_order;
+
+    // A background call after a reply (a summary, a check) is compared with that reply too, and
+    // kept apart: it does not take the reply's finding away, and a fault of its own is still said.
+    const P = (sys, n, tail = []) => [{ role: "system", content: sys }, ...Array.from({ length: n }, (_, k) => ({ role: k % 2 ? "assistant" : "user", content: `message ${k}` })), ...tail];
+    const TASK = [{ role: "system", content: "a summary task" }];
+    let at = 1e6;
+    const record = (messages, kind = "reply") => { at += 1000; cc.vcrpCacheCheckRecord(messages, kind, at); return cc.vcrpCacheCheckReport(); };
+    cc.vcrpCacheCheckReset();
+    record(P("rules", 3));
+    assert(record(P("rules", 3, TASK), "quiet").kind === "quiet" && !cc.vcrpCacheCheckTrouble(), "before a second reply, the background call's comparison is the one there is");
+    assert(record(P("rules, and the time is 3:28 PM", 5)).kind === "reply" && cc.vcrpCacheCheckTrouble(), "a reply whose prompt changed early is flagged");
+    assert(record(P("rules, and the time is 3:28 PM", 5, TASK), "quiet").kind === "reply" && cc.vcrpCacheCheckTrouble() && cc.vcrpCacheCheckSummary().level === "warn", "a background call a moment later does not take the finding away");
+    assert(record(P("rules, and the time is 3:28 PM", 7)).kind === "reply" && !cc.vcrpCacheCheckTrouble(), "the next reply, unchanged, clears it");
+    assert(record(P("rules, and the time is 3:29 PM", 7, TASK), "quiet").kind === "quiet" && cc.vcrpCacheCheckTrouble() && /3:29 PM/.test(cc.vcrpCacheCheckSummary().detail), "a background call that changes the prompt early itself is said");
+    assert(record(P("rules, and the time is 3:28 PM", 9)).kind === "reply" && !cc.vcrpCacheCheckTrouble(), "until the next reply, which is compared with the reply before it");
+    // With a five-minute cache, a background call ten minutes after the reply had no cache to break.
+    at += 10 * 60000;
+    cc.vcrpCacheCheckRecord(P("rules, and the time is 3:40 PM", 9, TASK), "quiet", at);
+    assert(cc.vcrpCacheCheckReport(5).kind === "reply" && cc.vcrpCacheCheckReport(60).kind === "quiet", "which comparison shows goes by the cache's lifetime");
+
+    // The Canon sheet sits in the cached part on purpose: a change to it is the reader's, said
+    // as that, once. Anything else that changes there is still a fault.
+    const { canonBlock } = await imp("src/vcrp/canon.js");
+    const A = { text: "Mara is Bob's older sister." }, B = { text: "The Lantern stands on the pier." }, B2 = { text: "The Lantern stands at the end of the pier." };
+    const sysOf = (items, kb = "An always-on entry.", rules = "rules") => [rules, canonBlock(items), `<kb>\n${kb}\n</kb>`].filter(Boolean).join("\n\n");
+    cc.vcrpCacheCheckReset();
+    let turns = 3;
+    record(P(sysOf([A]), turns));
+    for (const [what, sys, canon] of [
+        ["a line added", sysOf([A, B]), true], ["a line reworded", sysOf([A, B2]), true], ["a line taken off", sysOf([A]), true],
+        ["the last line taken off (no sheet left)", sysOf([]), true], ["the first line added", sysOf([A]), true],
+        ["the text after the sheet", sysOf([A], "Another entry."), false], ["the text before the sheet", sysOf([A], "Another entry.", "rules, and the time is 3:28 PM"), false],
+    ]) {
+        turns += 2;
+        const r = record(P(sys, turns)), s = cc.vcrpCacheCheckSummary(r);
+        assert(r.change.early && r.change.canon === canon && cc.vcrpCacheCheckTrouble(r) === !canon && s.level === (canon ? "ok" : "warn") && /the Canon sheet changed/.test(s.title) === canon, `${what}: ${canon ? "said as a change to the Canon sheet, not as a fault" : "still a fault"} (${s.title})`);
+    }
+    assert(!cc.vcrpCacheCheckTrouble(record(P(sysOf([A], "Another entry.", "rules, and the time is 3:28 PM"), turns + 2))) && !cc.vcrpCacheCheckReport().change.early, "and the reply after a change reads from the cache again");
     cc.vcrpCacheCheckReset();
 }
-console.log("32 ok cache check (normal turns pass, early changes flagged with place and text, cold cache silent, Setup Check)");
+console.log("32 ok cache check (normal turns pass, early changes flagged with place and text, cold cache silent, Setup Check; a background call keeps the reply's finding; a Canon sheet change is not a fault)");
 
 // 33. The live bug: the preset's "Blocks cleanup" regex strips <Blocks> only from depth 3 on,
 //     so the newest reply kept its blocks for one turn and lost them the next, and every turn

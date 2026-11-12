@@ -38,7 +38,8 @@ const esc = s => escapeHtmlAttr(s == null ? "" : s);
 function cacheCheckHtml(s) {
     // The lifetime the budget counts with: a model that keeps its own cache counts 5 minutes.
     const b = currentMemoryBudget();
-    const c = vcrpCacheCheckSummary(vcrpCacheCheckReport(), (b ? b.ttl : s.ttl) === "5m" ? 5 : 60);
+    const life = (b ? b.ttl : s.ttl) === "5m" ? 5 : 60;
+    const c = vcrpCacheCheckSummary(vcrpCacheCheckReport(life), life);
     if (!c) return `<div style="margin-top:10px; font-size:0.75rem; opacity:.75;"><b>Cache check:</b> send two messages within the cache lifetime, and this shows how much of the prompt the second one kept from the first.</div>`;
     return `<div style="margin-top:10px; font-size:0.75rem; line-height:1.5;${c.level === "warn" ? " color:#f59e0b;" : ""}"><b>${c.level === "warn" ? '<i class="fa-solid fa-triangle-exclamation"></i> ' : ""}${esc(c.title)}.</b> ${esc(c.detail)}</div>`;
 }

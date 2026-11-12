@@ -380,7 +380,12 @@ message box would bring back, and the memory text the prompt carries is shown in
 before it. When something before the chat history changes from one turn to the next (a lorebook
 entry switching on and off, a `{{time}}` or `{{random}}` macro), the cache can only be read up to
 that point and the rest is written again at double price on every request. The check names the
-message where the prompt first changed and shows the text before and after.
+message where the prompt first changed and shows the text before and after. It reports on your
+last reply's request, and keeps that finding when a background call (a summary, a check) goes out
+after it (10.0.0-vcrp.23; before, the background call's own comparison took its place within
+seconds). A line you add to or take off the Canon sheet is said as what it is, not as a fault:
+the sheet sits in the cached part on purpose, so the request after a change is written in full
+once, and the one after that reads from the cache again.
 
 ### Facts that hold: the Canon sheet, the continuity check, story dates, the helper's recall pick
 

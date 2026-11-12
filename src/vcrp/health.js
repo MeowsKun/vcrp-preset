@@ -271,7 +271,8 @@ export function vcrpHealthCheck() {
     }
 
     // 7. Cache check: did the last prompt keep the one before it, or change early on?
-    const cache = vcrpCacheCheckSummary(vcrpCacheCheckReport(), memoryBudgetSettings().ttl === "5m" ? 5 : 60);
+    const cacheLife = memoryBudgetSettings().ttl === "5m" ? 5 : 60;
+    const cache = vcrpCacheCheckSummary(vcrpCacheCheckReport(cacheLife), cacheLife);
     if (cache) add(cache.level, cache.title, cache.detail);
 
     return summarize(items);

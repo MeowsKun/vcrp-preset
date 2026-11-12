@@ -36,11 +36,12 @@ const substituteParams0 = s => String(s).replaceAll("{{user}}", "Bob").replaceAl
     .replaceAll("{{description}}", CARD).replaceAll("{{personality}}", "Guarded, funny, blunt.").replaceAll("{{scenario}}", "").replaceAll("{{persona}}", "Bob, a regular.");
 const meta = {};
 let gen = null;
+let quietImpl = null;   // a section can stand in for the model on a quiet call
 globalThis.__ST__ = {
     extension_settings, getContext: () => ctx, substituteParams,
     saveSettingsDebounced() {}, saveMetadata: async () => {}, saveChat() {}, chat_metadata: meta, isGenerating: () => false,
     debounce: fn => fn, cancelDebounce() {}, humanizedDateTime: () => "now",
-    generateQuietPrompt: async () => "",
+    generateQuietPrompt: async (...a) => (quietImpl ? quietImpl(...a) : ""),
     event_types: new Proxy({}, { get: (t, k) => String(k) }), eventSource: { on() {}, once() {}, emit: async () => {}, removeListener() {} },
 };
 installBrowserGlobals();
@@ -580,6 +581,191 @@ section("the helper model writes the blocks: the story model reads where they st
     q.blockStack.order = keepOrder3; meguminSyncLegacyBlockIds();
     Object.assign(chatCompletionSettings, keepRoute3);
     chat.length = 0;
+}
+
+// ── 10.0.0-vcrp.19 to .22, all on ────────────────────────────────────────────
+// The Canon sheet, Story Memory with dated chapters, the voices, the open ends' reminder, an arc
+// with its opening beat, the plot focus and a Focus correction, on a story in progress. Between
+// its turns, what a reader and the story do: a chapter is saved whose Bonds crossed a mark and
+// an arc is closed in Story Memory, the blocks are edited by hand, a line is added to the Canon
+// sheet. On Gemini (the system instruction and the chat's start must hold still) and on Claude
+// (VCRP's cache marks): the Canon sheet and the memory text are in the cached part, everything
+// else that is new rides after the chat, what Story Memory learns waits for its next cut, and
+// the one thing that rewrites the prompt is the reader changing the sheet, once, said as that.
+{
+    const canon = await imp("src/vcrp/canon.js");
+    const S = await imp("src/vcrp/memory/summarize.js");
+    const LEDGER = await imp("src/vcrp/memory/ledger.js");
+    const ARC = await imp("src/vcrp/arc.js");
+    const beats = await imp("src/vcrp/beats.js");
+    const TH = await imp("src/vcrp/threads.js");
+    const V = await imp("src/vcrp/voice.js");
+    const BE = await imp("src/vcrp/blocksEditor.js");
+    const focus = await imp("src/vcrp/focus/index.js");
+    const keepRoute4 = { ...chatCompletionSettings };
+    const keepOrder4 = q.blockStack.order, keepFocus4 = q.focus, keepAddons4 = q.addons, replyWas4 = replyFor, keepMemory4 = q.vcrpMemory;
+    const FOLD = "Mara hid a letter that was not hers, the pier asked whose it was, and she began to let Bob close.";
+    const THINGS = "anvil barrel candle dagger ember flask gauntlet hammer inkwell jar kettle lantern mallet needle oar pulley quill rope saddle tankard urn vial wagon yoke zither apron bell chisel drum easel".split(" ");
+    const BLOCKS = "<Blocks>\n<Scene>\nHere: Mara\nRemote:\n</Scene>\n<World_State>\n**📅 Time:** Day 2, dusk | **🌤 Loc:** The pier | Saltmere | **🌡 Wx:** Rain\n\n---\n**👥 NPCs Present:**\n**Mara:**\n* *Outfit:* a wet coat\n* *Mood:* wary\n\n---\n**🔥 Unresolved Threads:**\n* Who sent the unsigned letter to Mara?\n**🎯 Arc Phase:** Setup\n</World_State>\n<Bonds>\nMara: Affection: 48/100 (=) | Trust: 30/100 (=)\n</Bonds>\n</Blocks>";
+    const PER_TURN = [["the voices", "[VOICES]"], ["the arc", "[ARC]"], ["the plot focus", "[PLOT FOCUS]"], ["the Focus correction", "[FOCUS]"], ["the blocks as they stood", "The blocks as they stood"]];
+    const setUp = async () => {
+        chat.length = 0;
+        for (const k of Object.keys(meta)) delete meta[k];
+        Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english" });
+        q.addons = [...new Set([...(q.addons || []), "color"])];
+        q.blockStack.order = ["world", "bonds"]; meguminSyncLegacyBlockIds();
+        q.focus = { enabled: true, every: 100, checks: { drift: true, motifs: true, slop: true } };
+        replyFor = i => `<think>Turn ${i}.</think>\nRain on the pier. <font color="#c084fc" title="Mara">"Tch. Not tonight, kid, not for the ${THINGS[20 + i]}."</font>\n\n${BLOCKS}`;
+        // A story in progress: twenty-one exchanges, Mara's lines named, the same thread listed all along.
+        chat.push({ is_user: false, name: "Mara", send_date: "n0", mes: "\"We're closed,\" Mara says." });
+        for (let i = 0; i < 21; i++) {
+            chat.push({ is_user: true, name: "Bob", send_date: `nu${i}`, mes: `Bob asks about the ${THINGS[i]}.` });
+            // Her Trust stands at 22 for the first eight replies, and at 30 from then on.
+            chat.push({ is_user: false, name: "Mara", send_date: `na${i}`, mes: `The lamps burn low. <font color="#c084fc" title="Mara">"Tch. Do not waste my time with that ${THINGS[i]}, kid."</font>\n\n${i < 8 ? BLOCKS.replace("Trust: 30/100", "Trust: 22/100") : BLOCKS}`, swipes: [""], swipe_id: 0 });
+        }
+        V.forgetVoiceReading(); TH.forgetThreadReading();
+        // Story Memory: two chapters with their dates, and the cut it would make after a break.
+        q.vcrpMemory = { ...(q.vcrpMemory || {}), enabled: true };
+        const st = memory.memoryState();
+        Object.assign(st, {
+            cut: null, summarized: memory.anchorOf(chat, 13), shown: "", hiddenFacts: [], arcs: [], pending: [], chapterSeq: 2, nextFactId: 2,
+            ledger: [{ id: "F1", cat: "relationship", text: "Mara distrusts Jonah.", since: "C1", updated: "C1" }],
+            chapters: [
+                { id: "C1", gist: "Mara hid a letter that was not hers.", chapter: "Mara hid the unsigned letter under the Lantern's till and told nobody.", from: 0, to: 6, start: null, end: memory.anchorOf(chat, 7), when: "Day 1 · The pier", undo: {} },
+                { id: "C2", gist: "The town began to ask who sent it.", chapter: "By the second day the whole pier was asking about the letter.", from: 7, to: 12, start: memory.anchorOf(chat, 7), end: memory.anchorOf(chat, 13), when: "Day 2, noon · The Lantern", undo: {} },
+            ],
+        });
+        memory.forceCut(st, chat);
+        canon.addCanon("Mara is Bob's older sister.");
+        canon.addCanon("The Lantern stands on the pier at Saltmere.");
+        await ARC.startArc({ title: "The Long Freeze", genre: "Mystery / Thriller", tone: "tense", premise: "The harbour freezes over and the town turns on its smugglers.", opens: "Ice locks the fishing boats in overnight." });
+        await focus.setPlotFocus({ active: true, text: "The unsigned letter" });
+        Object.assign(focus.focusState(), { note: "Mara stays curt: short lines, no apologies.", noteAt: Date.now() });
+        cc.vcrpCacheCheckReset();
+    };
+    const land = async t => { await arrive(t); beats.vcrpBeatsOnReply(chat.length - 1, "normal"); V.forgetVoiceReading(); TH.forgetThreadReading(); };
+    const editBlocks = async () => {
+        const s = BE.blocksAsTheyStand();
+        return BE.saveBlocksAsTheyStand(s.index, s.envelope.replace("Day 2, dusk", "Day 3, dawn").replace("Affection: 48/100", "Affection: 52/100"), chat[s.index].mes);
+    };
+    // What Story Memory learns while the chat goes on: a chapter is saved over which Mara's Trust
+    // crossed a quarter of its scale (a milestone joins the facts), and the reader closes an arc
+    // (every chapter on a line of its own is folded under the arc's name).
+    const memoryLearns = async () => {
+        const st = memory.memoryState(), shown = st.shown;
+        S.commitChapter(st, chat, { gist: "Mara let Bob mind the till.", chapter: "Mara let Bob mind the till for an evening.", start: memory.anchorOf(chat, 13), end: memory.anchorOf(chat, 21), from: 13, to: 20, ops: [], checked: "ok", created: Date.now() });
+        quietImpl = async () => `<arc>${FOLD}</arc>`;
+        const closed = await S.closeStoryArc("Before the freeze");
+        quietImpl = null;
+        const milestone = st.ledger.find(f => f.bond);
+        return { milestone: milestone ? milestone.text : "", closed, shownKept: st.shown === shown, next: LEDGER.composeMemoryText({ arcs: st.arcs, chapters: st.chapters, ledger: st.ledger }) };
+    };
+
+    // Gemini 4 Argon on OpenRouter: the reader's own route.
+    section("10.0.0-vcrp.19 to .22, all on (Gemini 4 Argon): the prompt's start holds still");
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+    await setUp();
+    ok(V.voiceAnchorLines().startsWith('- Mara: "Tch. Do not waste my time with that anvil, kid."') && TH.threadsDue().length === 1 && beats.beatQueue().next && ARC.arcs().current, "set up: her early lines to send, a thread gone stale, an arc running with its opening beat in the box");
+    const nPrompts = [];
+    for (let t = 1; t <= 5; t++) {
+        if (t === 2) {
+            const l = await memoryLearns();
+            ok(/^Mara's Trust toward Bob rose past 25% \(22 to 30 of 100\)/.test(l.milestone) && l.closed.status === "folded" && l.closed.chapters === 3 && l.next.includes(`- Before the freeze: ${FOLD}`) && l.next.includes("rose past 25%"),
+                `between turns 1 and 2 a chapter is saved with a bond milestone and an arc is closed in Story Memory: ${l.milestone}`, JSON.stringify(l.closed));
+            ok(l.shownKept, "the memory text the prompt carries is left as the last cut wrote it");
+        }
+        if (t === 3) ok(await editBlocks(), "between turns 2 and 3 the blocks are edited by hand");
+        if (t === 4) canon.addCanon("Jonah owes the harbourmaster forty crowns.");
+        const p = await send("normal");
+        nPrompts.push(p);
+        const all = p.map(textOf).join("\n"), sys = p.filter(m => m.role === "system").map(textOf).join("\n");
+        const first = p.findIndex(m => m.role !== "system");
+        const lastText = textOf(p.at(-1));
+        const beforeLast = p.slice(0, -1).map(textOf).join("\n");
+        ok(beforeLast.includes("<story_memory>") && beforeLast.includes("- [Day 1 · The pier] Mara hid a letter that was not hers.\n- [Day 2, noon · The Lantern] The town began to ask who sent it.") && !all.includes(FOLD) && !all.includes("rose past 25%"),
+            `turn ${t}: the memory text, its chapters dated, is before the chat${t > 1 ? "; the fold and the milestone wait for Story Memory's next cut" : ""}`);
+        ok(!p.slice(first).some(m => m.role === "system") && p.every(m => typeof m.content === "string"), `turn ${t}: nothing after the chat is a system message, and no cache markers`);
+        ok(sys.includes("<canon>") && sys.includes("- Mara is Bob's older sister.") && (all.match(/<canon>/g) || []).length === 1, `turn ${t}: the Canon sheet is in the system instruction, once`);
+        const missing = PER_TURN.filter(([, mark]) => !lastText.includes(mark)).map(([name]) => name);
+        const early = PER_TURN.filter(([, mark]) => sys.includes(mark) || p.slice(first, -1).some(m => textOf(m).includes(mark))).map(([name]) => name);
+        ok(!missing.length && !early.length, `turn ${t}: the voices, the arc, the plot focus, the correction and the carried blocks ride in the last message, and nowhere before it`, `missing: ${missing} | early: ${early}`);
+        ok(lastText.includes("[OPEN ENDS]") === (t === 1) && lastText.includes("### Direction for this reply") === (t === 1), `turn ${t}: the stale thread's reminder and the arc's opening beat go out ${t === 1 ? "now" : "on their own turn only"}`);
+        if (t === 3) ok(lastText.includes("Day 3, dawn") && lastText.includes("Affection: 52/100"), "turn 3: the model is handed the blocks as edited");
+        if (t > 1) {
+            const a = geminiView(nPrompts.at(-2)), b = geminiView(p);
+            const rep = cc.vcrpCacheCheckReport();
+            if (t === 4) {
+                // The one change that is meant to rewrite the prompt, said as what it is.
+                const sum = cc.vcrpCacheCheckSummary(rep);
+                ok(a.sys !== b.sys && b.sys.includes("- Jonah owes the harbourmaster forty crowns."), "turn 4: a line added to the Canon sheet changes the system instruction");
+                ok(rep && rep.change && rep.change.early && rep.change.canon && !cc.vcrpCacheCheckTrouble(rep) && sum.level === "ok" && /the Canon sheet changed/.test(sum.title), `turn 4: the cache check says the Canon sheet changed, and does not call it a fault: ${sum && sum.title}`);
+            } else {
+                ok(a.sys === b.sys, `turn ${t}: the system instruction is the same as last turn's`, firstDiff([a.sys], [b.sys]));
+                ok(rep && !cc.vcrpCacheCheckTrouble(rep) && !(rep.change && rep.change.early), `turn ${t}: the cache check finds nothing already in the chat changed`, rep ? JSON.stringify(rep.change).slice(0, 240) : "no report");
+            }
+            // The previous prompt's contents, up to the reply before last, open this one unchanged
+            // (the hand-edited blocks included: no reply in the history carries its blocks).
+            const prevRoles = nPrompts.at(-2).filter(m => m.role !== "system").map(m => m.role);
+            const kept = a.contents.slice(0, prevRoles.lastIndexOf("assistant") + 1);
+            ok(JSON.stringify(b.contents.slice(0, kept.length)) === JSON.stringify(kept), `turn ${t}: the chat opens like last turn's, up to the reply before last`, firstDiff(kept, b.contents));
+        }
+        await land(t);
+        if (t === 4) {
+            // A background call a moment later (a summary on the roleplay prompt) is compared
+            // too, and no longer takes the reply's finding away.
+            memory.setMemoryTaskActive(true, null);
+            gen.vcrpSetGenerationType("quiet", {}, false);
+            const quiet = buildPrompt();
+            quiet.push({ role: "system", content: `${TASK_MARKER}: not a story turn.] Summarize the stretch.` });
+            await handlePromptInjection({ chat: quiet, dryRun: false });
+            memory.setMemoryTaskActive(false);
+            const rep = cc.vcrpCacheCheckReport();
+            ok(rep && rep.kind === "reply" && rep.change && rep.change.canon, `after a background call, the check still shows what the reply's request showed (${rep && rep.kind})`);
+        }
+    }
+    ok(beats.beatQueue().fired.length === 1 && beats.beatQueue().next === null, "the opening beat was spent by the reply it went out with");
+    {
+        // Story Memory's next cut is the one moment its text is written again: the fold and the milestone join it then.
+        const st = memory.memoryState();
+        memory.refreshShownMemory(st, chat, memory.resolveAnchor(chat, st.cut));
+        const p = await send("normal");
+        const beforeLast = p.slice(0, -1).map(textOf).join("\n");
+        ok(beforeLast.includes(`- Before the freeze: ${FOLD}`) && beforeLast.includes("- [relationship] Mara's Trust toward Bob rose past 25%") && !beforeLast.includes("- [Day 1 · The pier] Mara hid a letter that was not hers."),
+            "at Story Memory's next cut the memory text reads arc by arc and carries the milestone");
+        await land(6);
+    }
+
+    // Claude Opus 4.6 on OpenRouter: VCRP's cache marks.
+    section("10.0.0-vcrp.19 to .22, all on (Claude, VCRP's cache marks): the cached part is read back");
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "anthropic/claude-opus-4.6" });
+    await setUp();
+    const mPrompts = [];
+    for (let t = 1; t <= 4; t++) {
+        if (t === 2) await memoryLearns();
+        if (t === 3) await editBlocks();
+        const p = await send("normal");
+        mPrompts.push(p);
+        const mk = marked(p);
+        const cached = prefix(p, mk.at(-1)).join("\n"), all = p.map(textOf).join("\n");
+        ok(mk.length === 2 && cached.includes("<canon>") && cached.includes("- The Lantern stands on the pier at Saltmere.") && cached.includes("- [Day 1 · The pier] Mara hid a letter that was not hers."), `turn ${t}: two cache marks, the Canon sheet and the memory text inside the cached part`);
+        const inCache = [...PER_TURN, ["the open ends' reminder", "[OPEN ENDS]"], ["the beat", "### Direction for this reply"]].filter(([, mark]) => cached.includes(mark)).map(([name]) => name);
+        ok(!inCache.length && PER_TURN.every(([, mark]) => all.includes(mark)), `turn ${t}: everything that changes per turn is sent, after the cached part`, `in the cached part: ${inCache}`);
+        if (t > 1) {
+            const rep = cc.vcrpCacheCheckReport();
+            ok(rep && !cc.vcrpCacheCheckTrouble(rep) && !(rep.change && rep.change.early), `turn ${t}: the cache check finds nothing already in the chat changed`, rep ? JSON.stringify(rep.change).slice(0, 240) : "no report");
+            const prev = mPrompts.at(-2), a = prefix(prev, marked(prev).at(-1)), b = prefix(p, mk.at(-2));
+            ok(JSON.stringify(a) === JSON.stringify(b), `turn ${t}: the previous turn's cached part is read back byte for byte`, firstDiff(a, b));
+        }
+        await land(t);
+    }
+
+    replyFor = replyWas4;
+    q.addons = keepAddons4; q.focus = keepFocus4; q.vcrpMemory = keepMemory4;
+    q.blockStack.order = keepOrder4; meguminSyncLegacyBlockIds();
+    Object.assign(chatCompletionSettings, keepRoute4);
+    chat.length = 0;
+    for (const k of Object.keys(meta)) delete meta[k];
+    V.forgetVoiceReading(); TH.forgetThreadReading();
 }
 
 console.log(`\n${fail ? `${fail} PROBLEM(S)` : "ALL CHECKS PASSED"} (${pass} passed)`);
