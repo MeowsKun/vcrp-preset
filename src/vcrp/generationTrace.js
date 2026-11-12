@@ -474,6 +474,7 @@ export async function vcrpFinishOnReply(messageId, type) {
         delete msg.extra.vcrp_finish;
         delete msg.extra.vcrp_cut;
         delete msg.extra.vcrp_rescued;
+        delete msg.extra.vcrp_continuity;   // what the last swipe was found to contradict
     }
     arrived = null;
     let rec = null;

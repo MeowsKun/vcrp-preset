@@ -86,6 +86,13 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   small estimate under each reply's avatar, green when the cache was warm, amber when it was cold.
   Tap it for the breakdown: read from the cache, written to it, sent fresh, written by the model.
   Works with Story Memory on or off; a Continue adds its part to the reply.
+- **Facts that hold** (10.0.0-vcrp.19; details under Story Memory below): a **Canon sheet** of
+  this chat's never-changing facts, sent in the cached part of the prompt (Memory tab); a
+  **continuity check** by the helper model, with a line under a reply that contradicts the sheet
+  or the scene and a one-tap corrected swipe; chapters that know the **story's date and place**,
+  and **bond milestones** kept as facts, both read from the blocks with no call; and the helper's
+  **recall pick**, so an old chapter comes back when the scene returns to it in other words. Any
+  engine. No preset re-import needed.
 - **Tense** in Story Config: present or past. Left on default it sends nothing and each engine
   keeps its own (Megumin's Story Config has no tense, so the Megumin Original engines only get one
   if you pick it).
@@ -338,6 +345,61 @@ before it. When something before the chat history changes from one turn to the n
 entry switching on and off, a `{{time}}` or `{{random}}` macro), the cache can only be read up to
 that point and the rest is written again at double price on every request. The check names the
 message where the prompt first changed and shows the text before and after.
+
+### Facts that hold: the Canon sheet, the continuity check, story dates, the helper's recall pick
+
+Four things that keep a long story true to itself (10.0.0-vcrp.19). None of them can cut a reply
+off or hold one back: the two that call a model ask the helper, and those are background calls,
+outside the ceiling like every other.
+
+- **The Canon sheet** (Memory tab, with Story Memory on or off; `src/vcrp/canon.js`): this chat's
+  facts that never change, a line each: who people are to one another, what the world allows,
+  what was promised. You write them, or take them from the offers under the sheet (Story
+  Memory's pinned facts, then the ones that have stood longest unchanged, people and their ties
+  first). A fact taken from there is pinned in the fact ledger too, so no summary rewords it
+  without your review. Nothing is added by itself. The sheet is sent with every reply in the
+  cached part of the prompt (the always-on Knowledgebase slot, before the chat), under a line
+  that says nothing in a reply contradicts these facts and that they outrank anything else
+  remembered of the story. After the first request a line costs a fraction of its price; a change
+  to the sheet is paid for once, when the next request writes its prompt in full. A preset from
+  before that slot gets the sheet after the chat, at full price every turn, and the panel says
+  so. Kept with the chat. Past 30 lines the panel says the sheet is getting long: the more lines
+  there are, the less each one weighs.
+- **The continuity check** (`src/vcrp/continuity.js`; Helper tab → *Continuity check*, on while
+  the helper is on): as each reply lands, the helper reads it against the Canon sheet and the
+  scene as it stood before the reply (the last World State). It is told to report only what
+  cannot both be true: a change the reply itself shows happening is not a contradiction, and
+  neither is something the facts do not mention. A reply it finds one in gets a line under it.
+  A tap shows the quote and the fact, with **Swipe with the correction** (the facts go to that
+  one swipe as its direction, the one-shot VCRP Quick's *Next reply only* shows), **It is fine**
+  (takes the line away) and Close. The check runs after the reply is on screen and holds nothing
+  up; one that fails says nothing; with an empty sheet and no World State before the reply there
+  is nothing to read against, and nothing is asked. It costs a few thousand tokens in and a line
+  or two out on every reply, which is why only the helper does it: without a helper no check
+  runs, and the story model is never asked by itself. The helper can be wrong, and the dialog
+  says so.
+- **Story dates and bond milestones** (`src/vcrp/storyTime.js`), read from the blocks the story
+  already writes, with no model call: each chapter keeps where the story's clock and place stood
+  as it ended (the World State's Time and Loc), so the memory text lists its chapters as a
+  timeline (`- [Day 3, noon · The harbor] The vault.`) and a recalled chapter says when it was.
+  When a Bonds meter crosses a quarter, half or three quarters of its scale over a chapter, up
+  or down, that is kept as a fact in the ledger: "Mara's Affection toward Bob rose past 50% (31
+  to 55 of 100), Day 3, noon · The harbor. Earlier: rose past 25%, Day 2, morning · The
+  Lantern." One fact per character and meter, the latest crossing first, taken back out with
+  its chapter if a rewind deletes it. Chapters written before this release carry no date, and a
+  chat without those blocks gets neither.
+- **The helper's recall pick** (`src/vcrp/memory/smartRecall.js`; Helper tab → *Recall picks*):
+  Story Memory brings an old chapter back when the scene shares rare words with it, so a scene
+  that returned to something in other words ("the thing you promised my sister", for a chapter
+  about Mara and the ring) found nothing. With a helper on a connection profile of its own, the
+  helper is shown the old chapters' one-line gists, with their dates, beside the newest messages
+  before each reply, and names up to three the reply will need. Those come back first; matching
+  words fills what room is left. The reply waits four seconds at most for the pick, the time the
+  question spends behind the helper's other jobs included (the helper does one at a time, and a
+  question still in line at four seconds is dropped, never sent). Late, missing or unusable, and
+  matching words stands alone, as before. One question a turn: a swipe keeps the pick it was
+  given. It needs at least two chapters outside the prompt. The Memory tab's recall line says
+  which chapters the helper picked.
 
 ## Keeping long stories on track: Focus
 
@@ -627,6 +689,15 @@ character, in the **Helper** tab.
   writing-style generator go to the helper by default; Story Memory summaries and Focus audits
   only if you switch them (a summary on the story model reads the stretch from its cache for a
   few cents; the helper reads it fresh, in a standalone call).
+- **Two small questions only the helper is asked** (`src/vcrp/helper/aside.js`; both on while
+  the helper is on, a tick each): the **Continuity check** after each reply and the **Recall
+  pick** before one (above, under Story Memory). Each sends a short prompt of its own, a few
+  thousand tokens in and a line out. They are worth that on a cheap second model and not on the
+  story's, so without a helper they do not run at all; the recall pick also needs the helper on
+  a connection profile of its own, because it is asked while the story's connection is busy
+  with the reply. A job can be given a deadline counted from the moment it is asked for: the
+  recall pick's is four seconds, and a question still waiting behind another job by then is
+  dropped without being sent.
 - **One job at a time.** A pill at the bottom of the screen shows a running job, with Stop; a
   reply you send while the helper still writes the last reply's blocks waits for it (at most 30
   seconds, with a line under the input), so the next prompt carries them. Leaving a chat stops

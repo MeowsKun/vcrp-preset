@@ -17,7 +17,10 @@ export async function openChat(rig, profile = PROFILE, preset = "VCRP V11 Megumi
         if (c.chatCompletionSettings.preset_settings_openai !== preset) await run(`/preset "${preset}"`);
         const name = (c.characters[0] || {}).name;
         const cur = window.SillyTavern.getContext().characterId;
-        if (cur === undefined || cur === null) await run(`/go "${name}"`); else await run("/newchat");
+        // After a page reload no character is open, and /go opens the character's last chat (the
+        // one the last scenario left): a new chat either way, so every scenario starts clean.
+        if (cur === undefined || cur === null) { await run(`/go "${name}"`); await wait(1500); }
+        await run("/newchat");
         await wait(1500);
         const base = "/scripts/extensions/third-party/vcrp-preset/";
         const state = await import(base + "src/core/state.js");
@@ -27,6 +30,10 @@ export async function openChat(rig, profile = PROFILE, preset = "VCRP V11 Megumi
             if (v && typeof v === "object" && !Array.isArray(v) && q[k] && typeof q[k] === "object") Object.assign(q[k], v); else q[k] = v;
         }
         prof.saveProfileToMemory();
+        // The helper is global, so it would stay as the last scenario left it: off here, and a
+        // scenario that wants it switches it on after this.
+        const g = c.extensionSettings.VCRP.globalSettings;
+        if (g.helper) g.helper.enabled = false;
         await wait(400);
         return { chat: c.chat.length, mode: q.mode, cot: q.cotEnabled, addons: q.addons, blocks: q.blocks, order: q.blockStack && q.blockStack.order };
     }, profile, preset);

@@ -325,6 +325,8 @@ shows a running job, with **Stop**; a reply you send while the helper still writ
 reply's blocks waits a moment for it. The helper gets no jailbreak: use an uncensored or less
 censored model (GLM 5.3 Flash, DeepSeek 4.1 Flash). *Use my current connection* makes the story
 model do the helper's jobs in a second call, if you only want the blocks written separately.
+Since 10.0.0-vcrp.19 the helper also answers two small questions around each reply, the
+continuity check and the recall pick (section 13).
 
 **Model Setup, the first tab.** Pick the model you play with and press **Use this loadout**: the
 engine, Chain of Thought, the story length, Gemini JB, the CoT prefill, the Safety cap and the
@@ -373,3 +375,54 @@ It stays with the message, so you can read it later.
 **For the whole chat:** Setup Check (Global Settings) lists the open chat's empty replies by
 cause, with the provider that served each request, its id, how long each took and what arrived.
 **Copy empty-reply details** on the card copies it as text.
+
+---
+
+## 13. Facts that hold: the Canon sheet, the continuity check, story dates
+
+Four additions for long stories (10.0.0-vcrp.19). None of them can cut a reply off or hold one
+back.
+
+**The Canon sheet: the facts that must never change.** Open the **Memory** tab; the Canon sheet
+is the first panel, with Story Memory on or off.
+
+1. Type a fact in the box and press **Add**: *Mara is Bob's older sister. Magic costs the caster
+   a memory. Bob promised to bring the ring back.* One fact a line.
+2. If Story Memory has been running, the sheet offers facts from this chat under the box (the
+   ones you pinned, then the ones that have stood longest). Press **+** to take one. It gets
+   pinned in the fact list too, so a summary can't reword it without your review.
+3. Edit a line by typing in it; **✕** takes it off.
+
+The sheet belongs to the chat you have open. It is sent with every reply in the cached part of
+the prompt, so a line costs very little after the first request; changing the sheet costs one
+full-price request, once. Keep it to what the story stands on: past 30 lines the panel warns
+you, because the more lines there are, the less each one weighs. Nothing is ever added by itself.
+
+**The continuity check: a second pair of eyes on every reply.** This one needs the **Helper**
+(section 11). With the helper on, it reads each reply against your Canon sheet and the scene as
+it stood before the reply, and reports only what can't both be true. When it finds something,
+the reply gets a line under it: *⚠ May contradict the story: "her brown eyes" against "Mara has
+green eyes."* Tap the line:
+
+- **Swipe with the correction** swipes the reply and tells that one swipe the facts it got wrong.
+- **It is fine** takes the line away (the helper can be wrong).
+
+It runs after the reply is on screen, so it never slows a reply down. It costs one small helper
+call a reply, which is why only the helper does it: without a helper, nothing runs. If your
+helper is set to *Use my current connection*, the check is off until you tick it in the Helper
+tab, because there it would be an extra call on your story model with every reply.
+
+**Story dates and bond milestones (nothing to set).** With the World State block on, each Story
+Memory chapter now remembers the story's date and place, so the model reads its memory as a
+timeline: *[Day 3, noon · The harbor] The vault.* With the Bonds block on, a meter that crosses a
+quarter, half or three quarters of its scale is kept as a fact, with when and where: *Mara's
+Affection toward Bob rose past 50% (31 to 55 of 100), Day 3, noon · The harbor.* Both are read
+from the blocks the story already writes. No model call, no cost. Chapters from before this
+update have no date.
+
+**The helper's recall pick (nothing to set).** Story Memory used to bring an old chapter back only
+when your scene shared words with it. Now, with the helper on a connection profile of its own,
+the helper looks at the one-line summaries of your old chapters before each reply and picks up
+to three the reply will need, so *"the thing you promised my sister"* finds the chapter about
+Mara and the ring. It waits four seconds at most; if the helper is slow or busy, the old word
+matching is used and the reply goes out as usual. Switch: Helper tab → *Recall picks*.

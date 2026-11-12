@@ -31,8 +31,17 @@ function featureOff(key) {
         case "focus": return p.focus && p.focus.enabled !== false ? null : "Focus is off (Focus tab)";
         case "director": return p.storyPlan && p.storyPlan.enabled ? null : "The Story Director is off";
         case "npc": return p.npcBank && p.npcBank.enabled ? null : "The NPC Bank is off";
+        case "recall": return p.vcrpMemory && p.vcrpMemory.enabled ? null : "Story Memory is off (Memory tab)";
         default: return null;
     }
+}
+
+/** What the connection picked means for a job; null = nothing to say. */
+function connectionNote(key) {
+    if (helperSettings().profileId !== CURRENT_CONNECTION) return null;
+    if (key === "recall") return "Needs a connection profile of its own: it is asked while your connection is busy with the reply";
+    if (key === "continuity") return "On your current connection this is one more call on the story model with every reply, so it is off until you tick it";
+    return null;
 }
 
 export function renderHelperTab(c) {
@@ -117,8 +126,9 @@ export function renderHelperTab(c) {
     const jobs = jobsOnNow();
     const perReply = HELPER_JOBS.filter(j => j.perReply);
     const occasional = HELPER_JOBS.filter(j => !j.perReply);
-    const $every = $(`<div class="mtab-panel" style="margin-top:12px;"><div class="mtab-panel-title purple"><i class="fa-solid fa-rotate"></i> After every reply</div>
-        <div class="set-desc" style="margin-bottom:8px;">${!ready ? "The helper is not ready, so these run on your story model." : jobs.includes("Blocks") ? "Each reply costs one helper call for the blocks." : "No job runs after every reply right now."}</div></div>`);
+    const calls = perReply.filter(j => jobs.includes(j.title)).map(j => j.title);
+    const $every = $(`<div class="mtab-panel" style="margin-top:12px;"><div class="mtab-panel-title purple"><i class="fa-solid fa-rotate"></i> With every reply</div>
+        <div class="set-desc" style="margin-bottom:8px;">${!ready ? "The helper is not ready: the blocks stay with your story model, and the Continuity check and Recall picks do not run." : calls.length ? `Each reply costs one helper call for each of these: ${esc(calls.join(", "))}.` : "No job runs with every reply right now."}</div></div>`);
     perReply.forEach(j => $every.append(jobRow(j, h, save, redraw)));
     $every.append(blockTicks(h, save, redraw));
     const $again = $(`<button type="button" class="ps-modern-btn" style="margin-top:10px;" ${ready && helperWantsBlocksNow() ? "" : "disabled"}><i class="fa-solid fa-pen-to-square"></i> Write the last reply's blocks again</button>`);
@@ -157,7 +167,7 @@ const helperWantsBlocksNow = () => helperRoutedIdSet().size > 0;
 
 function jobRow(j, h, save, redraw) {
     const on = helperJobWanted(j.key);
-    const off = featureOff(j.key);
+    const off = featureOff(j.key) || connectionNote(j.key);
     const $row = $(`<div class="mtab-toggle-row ${on ? "active" : ""}" data-job="${j.key}">
         <div class="toggle-info">
             <div class="toggle-label"><i class="fa-solid ${j.icon}" style="color:${j.color}; margin-right:6px;"></i> ${esc(j.title)}${off ? ` <span class="set-desc" style="opacity:.8;">· ${esc(off)}</span>` : ""}</div>

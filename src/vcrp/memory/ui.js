@@ -29,6 +29,7 @@ import { isThinkingCap } from "../../../data/cot/index.js";
 import { puraSettings } from "../pura/index.js";
 import { costBadgesOn, setCostBadges, costReportLines } from "../replyCost.js";
 import { copyText } from "../health.js";
+import { renderCanonPanel } from "../canonUi.js";
 import { replyBudget, ceilingCost, lastReplyRoom } from "../replyLength.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
@@ -229,6 +230,8 @@ export function renderVcrpMemoryPanel($c) {
         if (!confirm(`This chat has about ${k(backlog)} tokens nobody has summarized. Until they are, the first request after a break can't be cut and costs far more than your target.\n\nCatch up now? About ${est.chapters} chapter${est.chapters > 1 ? "s" : ""}, roughly ${money(est.cost)}, around ${est.minutes} minute${est.minutes > 1 ? "s" : ""} in the background. Please don't send messages until it finishes. It is a one-off and is not limited by your target or your ceiling.${review ? (memoryBudgetSettings().autoApprove === false ? "\n\nReview is on: the chapters will wait for your approval, and only approved chapters can be cut, so approve them before your next break (there's an Approve all button)." : "\n\nA chapter its own check finds accurate is approved by itself; one the check had to correct waits for you, with the chapters after it.") : ""}`)) return;
         await runCatchUp($c, Infinity);
     });
+    // The Canon sheet: this chat's never-changing facts, with Story Memory on or off.
+    renderCanonPanel($c, rerender);
     if (!on) {
         renderReplyLength($c, s, budget, null, rerender);
         return;
@@ -267,7 +270,7 @@ export function renderVcrpMemoryPanel($c) {
                 : `<div style="opacity:.7;">No request sent yet with Story Memory on.</div>`}
             <div>${covered ? `Chapters cover messages 1–${covered} of ${chat.length}.` : `No chapters yet (${chat.length} messages).`} The prompt carries from message ${cutAt + 1}.${pending.length ? ` <b style="color:#f59e0b;">${pending.length} chapter${pending.length > 1 ? "s" : ""} waiting for review.</b>` : ""}</div>
             ${st && st.shown ? `<div style="opacity:.75;">Memory text in the prompt: about ${k(estimateTokens(st.shown))} tokens${(st.hiddenFacts || []).length ? `, ${st.hiddenFacts.length} older facts kept for recall only` : ""}.</div>` : ""}
-            ${st && (st.lastRecall || []).length ? `<div style="opacity:.75;">Recalled for the last request: ${esc(st.lastRecall.join(", "))}.</div>` : ""}
+            ${st && (st.lastRecall || []).length ? `<div style="opacity:.75;">Recalled for the last request: ${esc(st.lastRecall.join(", "))}${(st.lastRecallHelper || []).length ? ` (${esc(st.lastRecallHelper.join(", "))} picked by the helper)` : ""}.</div>` : ""}
             ${spendLine(st)}`;
         const hold = autoSummaryHold(st);
         if (hold) meter += `<div style="color:#f59e0b;"><i class="fa-solid fa-circle-pause"></i> Automatic summaries are ${hold === "waiting for review" ? "holding until you review the waiting chapters" : "paused after two failed summaries; Summarize now retries"}.</div>`;
@@ -532,7 +535,7 @@ export function renderVcrpMemoryPanel($c) {
         ${arcs.length ? `<div style="font-size:0.75rem; margin-bottom:8px;">${arcs.map(a => `<div>• <i>${esc(a.text)}</i></div>`).join("")}</div>` : ""}
         ${chapters.length ? `<div style="font-size:0.72rem; opacity:.75; margin-bottom:8px;"><i class="fa-solid fa-thumbtack"></i> A pinned chapter keeps its gist line in the memory text: never trimmed by the size cap, never folded into an arc. It reaches the prompt at the next cut, or with "Update the prompt now".</div>` : ""}
         ${chapters.length ? [...chapters].reverse().map(c => `<details style="margin-bottom:4px;${c.folded && !c.pinned ? " opacity:.6;" : ""}">
-            <summary style="cursor:pointer; font-size:0.78rem;"><button class="ps-modern-btn secondary vmem-ch-pin" data-id="${esc(c.id)}" style="padding:1px 6px; margin-right:4px;${c.pinned ? " color:#f59e0b; border-color:rgba(245,158,11,0.5);" : " opacity:.5;"}" title="${c.pinned ? "Pinned. Click to unpin." : "Pin this chapter's gist"}"><i class="fa-solid fa-thumbtack"></i></button><b>${esc(c.id)}</b> · messages ${c.from + 1}–${c.to + 1}${c.folded ? (c.pinned ? " · folded, kept by its pin" : " · folded into an arc") : ""} · ${esc(c.gist)}</summary>
+            <summary style="cursor:pointer; font-size:0.78rem;"><button class="ps-modern-btn secondary vmem-ch-pin" data-id="${esc(c.id)}" style="padding:1px 6px; margin-right:4px;${c.pinned ? " color:#f59e0b; border-color:rgba(245,158,11,0.5);" : " opacity:.5;"}" title="${c.pinned ? "Pinned. Click to unpin." : "Pin this chapter's gist"}"><i class="fa-solid fa-thumbtack"></i></button><b>${esc(c.id)}</b> · messages ${c.from + 1}–${c.to + 1}${c.when ? ` · <span title="Where the story's clock and place stood as this chapter ended, read from its World State">${esc(c.when)}</span>` : ""}${c.auto ? ` · <span style="opacity:.7;" title="Its own check found it accurate, so it was approved as written">approved by its check</span>` : ""}${c.folded ? (c.pinned ? " · folded, kept by its pin" : " · folded into an arc") : ""} · ${esc(c.gist)}</summary>
             <div style="font-size:0.75rem; white-space:pre-wrap; padding:6px 10px; opacity:.85;">${esc(c.chapter)}</div></details>`).join("")
         : `<div style="font-size:0.75rem; opacity:.7;">No chapters yet. They are written after replies, once the chat is long enough to need them.</div>`}
         </div>`);

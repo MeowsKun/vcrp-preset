@@ -122,6 +122,8 @@ import { vcrpCaretOnReply, vcrpCaretOnEdit } from "./src/vcrp/geminiJb.js";
 import { vcrpApplyReplyCap, forgetReplyRoom } from "./src/vcrp/replyLength.js";
 import { vcrpInstallGenerationTrace, vcrpFinishOnReply } from "./src/vcrp/generationTrace.js";
 import { vcrpRescueOnReply } from "./src/vcrp/replyRescue.js";
+import { vcrpContinuityOnReply, drawContinuityNote, drawAllContinuityNotes } from "./src/vcrp/continuity.js";
+import { vcrpInstallSmartRecall, forgetRecallPick } from "./src/vcrp/memory/smartRecall.js";
 import { vcrpInstallStallNotice } from "./src/vcrp/streamStall.js";
 import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
 import { vcrpOn, setVcrpOn, whenOn, drawPowerState } from "./src/vcrp/power.js";
@@ -411,9 +413,9 @@ jQuery(async () => {
             vcrpInstallQuickPanel(undefined, { fallback: false });
             // VCRP: each reply's cost badge, drawn with the message and kept up as it changes.
             [event_types.CHARACTER_MESSAGE_RENDERED, event_types.MESSAGE_SWIPED, event_types.MESSAGE_UPDATED, event_types.MESSAGE_EDITED]
-                .forEach(evt => { if (evt) eventSource.on(evt, id => { drawCostBadge(id); drawFinishNote(id); }); });
+                .forEach(evt => { if (evt) eventSource.on(evt, id => { drawCostBadge(id); drawFinishNote(id); drawContinuityNote(id); }); });
             [event_types.CHAT_CHANGED, event_types.MORE_MESSAGES_LOADED]
-                .forEach(evt => { if (evt) eventSource.on(evt, () => setTimeout(() => { drawAllCostBadges(); drawAllFinishNotes(); }, 300)); });
+                .forEach(evt => { if (evt) eventSource.on(evt, () => setTimeout(() => { drawAllCostBadges(); drawAllFinishNotes(); drawAllContinuityNotes(); }, 300)); });
             if (event_types.APP_READY) eventSource.on(event_types.APP_READY, () => vcrpInstallQuickPanel());
             if (event_types.CHAT_CHANGED) eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(() => { vcrpInstallQuickPanel(); refreshQuickPanel(); }, 250));
             // VCRP: keep the setup-problem dot on the VCRP button current.
@@ -432,6 +434,7 @@ jQuery(async () => {
                 forgetOneShotPending();
                 setPendingRolls(null);
                 forgetCostPending();
+                forgetRecallPick();   // the helper's recall pick was for the last chat's turn
                 // A save debounced at 500ms would die when initProfile swaps localProfile
                 // below. Flush it under the OLD key first — settings only, because
                 // chat_metadata already belongs to the chat we are switching TO.
@@ -506,6 +509,11 @@ jQuery(async () => {
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpMemoryAfterReply));
             // VCRP Focus: audit the recent replies for drift every N replies (after Story Memory).
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpFocusAfterReply));
+            // VCRP: the continuity check. The helper reads the reply against the Canon sheet and
+            // the scene before it, a moment after it lands; a contradiction gets a line under it.
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpContinuityOnReply));
+            // VCRP: before a reply, the helper picks which old chapters Story Memory brings back.
+            vcrpInstallSmartRecall();
             // IMAGE GEN AUTO-GEN & SWIPE TRIGGERS
             // VCRP: what a reply is read for once it is in (the Story Director's tracker, the NPC
             // sheets and updates). Run on every reply, and again on one whose missing blocks were

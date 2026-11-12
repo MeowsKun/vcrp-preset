@@ -173,17 +173,22 @@ const quietText = params => (typeof params === "string" ? params : String((param
  * is said and comes back null; on the story's connection the task's own error is thrown, as
  * before.
  */
-export function runHelperJob(job, task, { force = false } = {}) {
+export function runHelperJob(job, task, { force = false, timeoutMs = 0, deadlineMs = 0, quietFail = false } = {}) {
     const route = helperRoute(job, { force });
     if (route === "story") return Promise.resolve().then(() => task(generateQuietPrompt)).then(value => ({ value, route }));
     const entry = { job, chatId: chatIdNow(), abort: new AbortController(), route, running: false };
+    const asked = Date.now();
     live.add(entry);
     publish();
     const run = async () => {
         if (entry.abort.signal.aborted) { live.delete(entry); publish(); return { value: null, route, stopped: true }; }
         entry.running = true;
         publish();
-        const quiet = route === "profile" ? params => withTimeout(sendToProfile(quietText(params), entry), PROFILE_TIMEOUT_MS, entry) : generateQuietPrompt;
+        // `timeoutMs`: a request that gives up sooner than the five minutes a job is allowed.
+        // `deadlineMs`: the same, counted from when the job was asked for, its wait in the line
+        // included (the recall pick, which a reply waits for: see below).
+        const limit = deadlineMs > 0 ? Math.max(1, asked + deadlineMs - Date.now()) : timeoutMs > 0 ? timeoutMs : PROFILE_TIMEOUT_MS;
+        const quiet = route === "profile" ? params => withTimeout(sendToProfile(quietText(params), entry), limit, entry) : generateQuietPrompt;
         try {
             if (route === "current") await waitForIdle(entry.abort.signal);
             const value = await task(quiet);
@@ -192,6 +197,9 @@ export function runHelperJob(job, task, { force = false } = {}) {
             // Stopped by the reader (or by leaving the chat): no warning. A timeout is a failure.
             if (!entry.timedOut && (isAbort(e) || entry.abort.signal.aborted)) return { value: null, route, stopped: true };
             if (route !== "profile") throw e;
+            // `quietFail`: a job the story does without (it falls back, or simply has no note
+            // this time) fails without a notice; the console keeps the reason.
+            if (quietFail) { console.warn(`[VCRP] Helper: ${job} gave no answer (${e && e.message ? e.message : e}); going on without it.`); return { value: null, route, failed: true, error: e }; }
             console.error(`[VCRP] Helper: ${job} failed`, e);
             warnHelper("failed", [job], { error: e });
             return { value: null, route, failed: true, error: e };
@@ -202,7 +210,21 @@ export function runHelperJob(job, task, { force = false } = {}) {
     };
     const p = queue.then(run, run);
     queue = p.catch(() => {});
-    return p;
+    if (!(deadlineMs > 0)) return p;
+    // A job with a deadline is not worth its place in the line past it. The helper does one job
+    // at a time, and the one ahead (the last reply's blocks, a scan) may take a minute: if this
+    // job's turn has not come by its deadline it is dropped, never sent, and whoever asked goes
+    // on without it. Once it runs, its request's own limit (above) ends it at the same moment.
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            if (entry.running) return;
+            try { entry.abort.abort(); } catch (e) { /* already stopped */ }
+            publish();
+            console.warn(`[VCRP] Helper: ${job} was not reached in time (the helper was busy); going on without it.`);
+            resolve({ value: null, route, failed: true, expired: true });
+        }, deadlineMs);
+        p.then(r => { clearTimeout(timer); resolve(r); }, e => { clearTimeout(timer); reject(e); });
+    });
 }
 
 // A request to the profile that never answers must not hold the queue (and the reply that
@@ -214,7 +236,7 @@ function withTimeout(promise, ms, entry) {
         timer = setTimeout(() => {
             entry.timedOut = true;
             try { entry.abort.abort(); } catch (e) { /* already aborted */ }
-            reject(new Error(`the helper's connection gave no answer in ${Math.round(ms / 60000)} minutes (timed out)`));
+            reject(new Error(`the helper's connection gave no answer in ${ms >= 60000 ? `${Math.round(ms / 60000)} minutes` : `${Math.round(ms / 1000)} seconds`} (timed out)`));
         }, ms);
     });
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));

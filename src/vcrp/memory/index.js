@@ -587,21 +587,75 @@ export function vcrpMemoryRecall() {
     const chat = memoryChat();
     // The cut is counted in the whole chat; the scene, without a reply being swiped.
     const recent = [...vcrpWithoutSwipedReply(chat).slice(-RECENT_MESSAGES).map(m => carriedText(m)), recallExtra()].join(" ");
-    const r = recallFor(st, chat, recent);
+    const r = recallFor(st, chat, recent, { helper: true });
     // Only a request that goes out may claim "recalled for the last request": SillyTavern
     // also builds dry prompts just to count tokens.
-    if (!vcrpIsDryRun()) st.lastRecall = r.ids;
+    if (!vcrpIsDryRun()) { st.lastRecall = r.ids; st.lastRecallHelper = r.byHelper || []; }
     return r.text;
 }
 
+// ── The helper's pick (smartRecall.js) ──
+// Matching words finds a chapter only when the scene uses its words. Asked before a reply, a
+// helper model reads the old chapters' one-line gists against the newest messages and names
+// the ones the reply will need; those are brought back first, and matching words fills what
+// room is left. Made for one request: the cut and the scene it was asked about are its key.
+let helperRecall = null;   // { key, ids }
+const recallKey = (cutAt, recent) => `${cutAt}|${recent.length}|${recent.slice(-400)}`;
+
+/** The helper's pick for the request about to be built ({ key, ids }), or null for none. */
+export function setHelperRecall(pick) {
+    helperRecall = pick && Array.isArray(pick.ids) ? { key: String(pick.key || ""), ids: [...pick.ids] } : null;
+}
+
+/**
+ * What a pick has to choose from, for the request about to be built: { key, chapters: [{ id,
+ * gist, when }], scene: [{ user, text }], extra } (the chapters that have left the prompt, the
+ * last few messages, and what else recall looks for). null when nothing is cut yet or recall
+ * is off.
+ */
+export function recallCandidates() {
+    const st = memoryState();
+    const s = memoryBudgetSettings();
+    if (!st || !(s.recallTokens > 0)) return null;
+    const chat = memoryChat();
+    const cutAt = Math.max(0, resolveAnchor(chat, st.cut));
+    if (cutAt === 0) return null;
+    const before = chapterBefore(chat, cutAt);
+    const scene = vcrpWithoutSwipedReply(chat).slice(-RECENT_MESSAGES);
+    const extra = recallExtra();
+    const recent = [...scene.map(m => carriedText(m)), extra].join(" ");
+    return {
+        key: recallKey(cutAt, recent),
+        chapters: (st.chapters || []).filter(before).map(c => ({ id: c.id, gist: c.gist, when: c.when || "" })),
+        scene: scene.map(m => ({ user: !!m.is_user, text: carriedText(m) })), extra,
+    };
+}
+
+// The helper's chapters first (the first of them even when it alone is over the room), then
+// what matching words found, while it fits; back in story order.
+function withHelperPick(chapters, lexical, ids, capTokens) {
+    const byId = new Map(chapters.map(c => [c.id, c]));
+    const out = [];
+    let used = 0;
+    for (const c of ids.map(id => byId.get(id)).filter(Boolean)) {
+        if (out.length && used + c.tokens > capTokens) continue;
+        out.push(c); used += c.tokens;
+    }
+    for (const p of lexical) {
+        if (out.some(o => o.id === p.id) || used + p.tokens > capTokens) continue;
+        out.push(p); used += p.tokens;
+    }
+    return out.sort((a, b) => a.order - b.order);
+}
+
 /** What the recall would bring back for `recent`: {text, ids, cut}. Changes nothing. */
-function recallFor(st, chat, recent) {
+function recallFor(st, chat, recent, { helper = false } = {}) {
     const s = memoryBudgetSettings();
     const cutAt = Math.max(0, resolveAnchor(chat, st.cut));
     if (!(s.recallTokens > 0) || cutAt === 0) return { text: "", ids: [], cut: cutAt };
     const before = chapterBefore(chat, cutAt);
     const chapters = (st.chapters || []).map((c, i) => ({ c, i })).filter(x => before(x.c)).map(x => ({
-        id: x.c.id, order: x.i, label: `${x.c.id}, messages ${x.c.from + 1}-${x.c.to + 1}`,
+        id: x.c.id, order: x.i, label: `${x.c.id}${x.c.when ? `, ${x.c.when}` : ""}, messages ${x.c.from + 1}-${x.c.to + 1}`,
         text: x.c.chapter, tokens: estimateTokens(x.c.chapter) + 12,
     }));
     const hidden = new Set(st.hiddenFacts || []);
@@ -610,8 +664,10 @@ function recallFor(st, chat, recent) {
     }));
     // How rare a word is, measured across the whole memory: the main cast is in every chapter.
     const corpus = [...(st.chapters || []).map(c => ({ text: c.chapter })), ...(st.ledger || []).map(f => ({ text: f.text }))];
-    const picked = pickRecall([...chapters, ...facts], keywordsOf(recent), s.recallTokens, corpus);
-    return { text: formatRecall(picked.filter(p => !p.fact), picked.filter(p => p.fact)), ids: picked.map(p => p.id), cut: cutAt };
+    let picked = pickRecall([...chapters, ...facts], keywordsOf(recent), s.recallTokens, corpus);
+    const named = helper && helperRecall && helperRecall.key === recallKey(cutAt, recent) ? helperRecall.ids : null;
+    if (named && named.length) picked = withHelperPick(chapters, picked, named, s.recallTokens);
+    return { text: formatRecall(picked.filter(p => !p.fact), picked.filter(p => p.fact)), ids: picked.map(p => p.id), cut: cutAt, byHelper: named ? named.filter(id => picked.some(p => p.id === id)) : [] };
 }
 
 // ── Testing (the Memory tab's QA tools) ──────────────────────────────────────
@@ -671,8 +727,15 @@ export function vcrpMemoryBlock() {
 
 // The generate interceptor the manifest names. Off unless Story Memory is on (and VCRP is:
 // power.js, off means the history goes out uncut).
+// `interceptHook`: what else waits for the cut to be planned before the prompt is built (the
+// helper's recall pick, smartRecall.js). Its trouble never stops a request.
+let interceptHook = null;
+export function onMemoryIntercept(fn) { interceptHook = typeof fn === "function" ? fn : null; }
 globalThis.vcrp_memory_intercept = function (chat, _contextSize, _abort, type) {
-    if (vcrpOn() && vcrpMemoryEnabled()) return vcrpMemoryIntercept(chat, type);
+    if (!(vcrpOn() && vcrpMemoryEnabled())) return undefined;
+    const planned = vcrpMemoryIntercept(chat, type);
+    if (!interceptHook) return planned;
+    return Promise.resolve(planned).then(() => interceptHook(type)).catch(e => { console.warn("[VCRP] Story Memory: the step before the prompt failed; the request goes on without it", e); });
 };
 
 /** SillyTavern's chat without system messages: the list every position here counts in. */

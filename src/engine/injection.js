@@ -10,7 +10,7 @@ import { extension_settings, substituteParams, Popup, POPUP_TYPE } from "../st.j
 import { getContext } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
-import { activeHelperBlocks, TASK_MARKERS } from "../core/activeRequests.js";
+import { activeHelperBlocks, activeAside, TASK_MARKERS } from "../core/activeRequests.js";
 import {
     activeStoryPlanRequest, activeBanListChat,
     activeNpcScanRequest, activeNpcUpdateRequest,
@@ -231,6 +231,17 @@ export async function handlePromptInjection(data, type) {
         messages.push({ role: "user", content: activeHelperBlocks.user });
         if (countsHere) vcrpCountBackgroundPrompt(messages);
         console.log(`[${extensionName}] 🎯 Injected the helper's blocks array in memory.`);
+        return;
+    }
+
+    // --- VCRP: A SMALL QUESTION OF THE HELPER'S OWN ---
+    // The continuity check and the recall pick (vcrp/helper/aside.js): the messages they
+    // parked, nothing of the preset, no prefill.
+    if (activeAside && carries(TASK_MARKERS.aside)) {
+        messages.length = 0;
+        messages.push(...activeAside.messages.map(m => ({ role: m.role, content: m.content })));
+        if (countsHere) vcrpCountBackgroundPrompt(messages);
+        console.log(`[${extensionName}] 🎯 Injected the helper's question in memory.`);
         return;
     }
 

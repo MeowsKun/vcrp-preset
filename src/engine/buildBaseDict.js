@@ -35,7 +35,8 @@ import { npcBuildDossierPrompt, npcBuildUpdatePrompt } from "../features/npc/fie
 import { memGetCachedKeywords } from "../core/keywords.js";
 import { meguminOverridableSlots, meguminSlotIsLive, meguminModuleTrigger } from "../../data/slots.js";
 import { resolveSlot } from "../core/sharedFragments.js";
-import { buildKnowledgebase } from "../vcrp/knowledgebase.js";
+import { buildKnowledgebase, presetCarriesAlwaysSlot } from "../vcrp/knowledgebase.js";
+import { canonBlock } from "../vcrp/canon.js";
 import { buildAnimeMode } from "../vcrp/anime.js";
 import { vcrpMemoryEnabled, vcrpMemoryBlock, vcrpMemoryRecall, previewRecall } from "../vcrp/memory/index.js";
 import { vcrpFocusBlock, vcrpPlotFocusBlock } from "../vcrp/focus/index.js";
@@ -277,6 +278,13 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     const vcrpAnime = buildAnimeMode(localProfile);
     dict["[[knowledgebase]]"] = vcrpKb.block;
     dict["[[knowledgebase_always]]"] = vcrpKb.alwaysBlock;   // before the chat: cached
+    // VCRP: the Canon sheet (canon.js) rides with the always-on entries, in the cached part of
+    // the prompt; on a preset from before that slot, after the chat with the rest, every turn.
+    const vcrpCanon = canonBlock();
+    if (vcrpCanon) {
+        if (presetCarriesAlwaysSlot()) dict["[[knowledgebase_always]]"] = [dict["[[knowledgebase_always]]"], vcrpCanon].filter(Boolean).join("\n\n");
+        else dict["[[knowledgebase]]"] = [vcrpCanon, dict["[[knowledgebase]]"]].filter(Boolean).join("\n\n");
+    }
     dict["[[ANIMEMODE]]"] = vcrpAnime.block;
     if (dict["[[COT]]"]) {
         [vcrpKb.cotNote, vcrpAnime.cotNote].filter(Boolean).forEach(note => { dict["[[COT]]"] += `\n\n${note}`; });

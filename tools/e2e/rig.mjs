@@ -18,7 +18,10 @@
 //   node tools/e2e/call.mjs tools/e2e/s_reload.mjs                          this tree's code, reloaded
 //   node tools/e2e/call.mjs --stop
 // Scenarios: s_trap (how a reply's thinking is closed), s_stream (the ways a stream ends),
-// s_stall (a stream gone quiet, Stop), s_real (an engine with blocks and Gemini JB).
+// s_stall (a stream gone quiet, Stop), s_real (an engine with blocks and Gemini JB), s_cost (the
+// target, the ceiling, background calls), s_facts (the Canon sheet, the helper's continuity
+// check and recall pick on a connection profile of its own; a scenario scripts the helper's
+// answers with rig.mock.aside).
 import { spawn } from "node:child_process";
 import http from "node:http";
 import fs from "node:fs";
@@ -91,7 +94,9 @@ export function script({ reasoning = "", content = "", finish = "stop", native =
 }
 
 export function startMock() {
-    const state = { queue: [], log: [], server: null };
+    // `aside`: what an unstreamed request (a background call, the helper's own) is answered with:
+    // a function of the request body, set by a scenario; "OK." otherwise.
+    const state = { queue: [], log: [], server: null, aside: null };
     const json = (res, body, status = 200) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
     state.server = http.createServer((req, res) => {
         let body = "";
@@ -109,7 +114,10 @@ export function startMock() {
                     state.log.push(entry);
                     if (b.stream && !task && state.queue.length) { entry.story = true; entry.played = state.queue.shift(); return await play(entry.played, res); }
                     if (b.stream) return await play(script({ content: "OK." }), res);
-                    return json(res, { id: `gen-e2e-${++genSeq}`, provider: "Google AI Studio", model: MODEL.id, choices: [{ index: 0, message: { role: "assistant", content: "OK." }, finish_reason: "stop", native_finish_reason: "STOP" }], usage: { prompt_tokens: 100, completion_tokens: 2, total_tokens: 102 } });
+                    let content = "OK.";
+                    try { if (typeof state.aside === "function") content = String(state.aside(b) ?? "OK."); } catch (e) { content = "OK."; }
+                    entry.answered = content;
+                    return json(res, { id: `gen-e2e-${++genSeq}`, provider: "Google AI Studio", model: MODEL.id, choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop", native_finish_reason: "STOP" }], usage: { prompt_tokens: 100, completion_tokens: 2, total_tokens: 102 } });
                 }
                 return json(res, { data: {} });
             } catch (e) { console.error("[mock]", e); try { res.end(); } catch (e2) { /* gone */ } }

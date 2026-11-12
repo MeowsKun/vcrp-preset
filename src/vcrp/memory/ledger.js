@@ -180,8 +180,10 @@ export function composeMemory(parts, isBeforeCut = () => true, capTokens = Infin
 export function composeMemoryText({ arcs = [], chapters = [], ledger = [] }, isBeforeCut = () => true) {
     const lines = [];
     for (const a of arcs) lines.push(`- ${a.text}`);
-    // A pinned chapter keeps its own line even once an arc has folded it.
-    for (const c of chapters) if ((!c.folded || c.pinned) && isBeforeCut(c)) lines.push(`- ${c.gist}`);
+    // A pinned chapter keeps its own line even once an arc has folded it. A chapter that knows
+    // where the story's clock and place stood as it ended (read from its World State blocks:
+    // storyTime.js) says so first, which makes the list a timeline.
+    for (const c of chapters) if ((!c.folded || c.pinned) && isBeforeCut(c)) lines.push(`- ${c.when ? `[${c.when}] ` : ""}${c.gist}`);
     const parts = [];
     if (lines.length) parts.push(`<story_so_far>\n${lines.join("\n")}\n</story_so_far>`);
     if (ledger.length) parts.push(`<facts>\n${ledger.map(f => `- [${f.cat}] ${f.text}`).join("\n")}\n</facts>`);

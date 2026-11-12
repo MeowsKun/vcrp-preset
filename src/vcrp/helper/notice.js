@@ -17,6 +17,8 @@ export const HELPER_JOB_NAMES = {
     npc: "the NPC Bank",
     banList: "the ban list scan",
     styleGen: "the writing style",
+    continuity: "the continuity check",
+    recall: "the recall pick",
     test: "the test",
 };
 

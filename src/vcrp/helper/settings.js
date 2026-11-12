@@ -33,9 +33,16 @@ export const HELPER_JOBS = [
     { key: "npc", title: "NPC Bank scans and updates", icon: "fa-address-book", color: "#10b981", defaultOn: true, desc: "Scans the story for new characters, and re-reads one character's record when you ask." },
     { key: "banList", title: "Dynamic Ban List scan", icon: "fa-ban", color: "#ef4444", defaultOn: true, desc: "Finds the phrases the story keeps repeating." },
     { key: "styleGen", title: "Writing style generator", icon: "fa-wand-magic-sparkles", color: "#ec4899", defaultOn: true, desc: "Writes a writing style from your tags." },
+    // Two small questions asked only of the helper (helper/aside.js): without one they do not run.
+    {
+        key: "continuity", title: "Continuity check", icon: "fa-scale-balanced", color: "#f59e0b", perReply: true, defaultOn: true, helperOnly: true,
+        desc: "Reads each reply against this chat's Canon sheet and the scene as it stood, and puts a line under a reply that contradicts them, with a one-tap corrected swipe. A few thousand tokens in, a line or two out, on every reply. Only the helper does it: without one, no check runs.",
+    },
+    {
+        key: "recall", title: "Recall picks", icon: "fa-magnifying-glass", color: "#06b6d4", perReply: true, defaultOn: true, helperOnly: true, ownProfile: true,
+        desc: "Before a reply, picks which old chapters Story Memory brings back, from their one-line gists and your newest messages, so a scene that returns to something in other words still finds it. Waits four seconds at most, then falls back to matching words. Needs a helper connection of its own.",
+    },
 ];
-
-const jobDefault = key => { const j = HELPER_JOBS.find(x => x.key === key); return j ? j.defaultOn : false; };
 
 /** The settings, made whole: { enabled, profileId, testedProfileId, jobs, blockRoutes }. */
 export function helperSettings() {
@@ -54,7 +61,17 @@ export function helperSettings() {
 /** Is this job switched to the helper (its own switch, or the job's default)? */
 export function helperJobWanted(key) {
     const h = helperSettings();
-    return typeof h.jobs[key] === "boolean" ? h.jobs[key] : jobDefault(key);
+    const j = HELPER_JOBS.find(x => x.key === key);
+    const onCurrent = h.profileId === CURRENT_CONNECTION;
+    // Asked while the story's own connection is busy with the reply: only a connection of its
+    // own can answer it (`ownProfile`).
+    if (j && j.ownProfile && onCurrent) return false;
+    if (typeof h.jobs[key] === "boolean") return h.jobs[key];
+    // A question only the helper is asked (`helperOnly`) is on by default on a connection of
+    // its own. On the story's connection it would be one more call on the story model with
+    // every reply, which nobody asked for: there it waits to be ticked.
+    if (j && j.helperOnly && onCurrent) return false;
+    return j ? j.defaultOn : false;
 }
 
 /** The helper is on with a connection picked, and this job goes to it. */

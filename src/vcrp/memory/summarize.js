@@ -33,6 +33,7 @@ import { summaryTarget, isCold } from "./window.js";
 import { parseSummary, parseCheck, parseFactChanges, applyFactChanges, formatFactChanges, formatLedgerForTask, gistsToFold } from "./ledger.js";
 import { summaryTask, checkTask, foldTask } from "./prompts.js";
 import { localProfile } from "../../core/state.js";
+import { storyWhenAt, bondsOf, parseBonds, bondCrossings, crossingText } from "../storyTime.js";
 
 /** Global Settings' story language, if one is set. */
 const storyLanguage = () => {
@@ -257,6 +258,56 @@ export function checkedAccurate(st, entry) {
     return !(entry.ops || []).some(o => o.op !== "+" && pinned.has(o.id));
 }
 
+// ── Bond milestones ──────────────────────────────────────────────────────────
+// A meter in the Bonds block that ends a chapter across a mark from where it began it (25, 50
+// or 75 percent of its scale) is a turn in a relationship worth keeping: one fact per
+// character and meter, saying the latest crossing and where the story stood, with up to two
+// earlier ones behind it. Measured over the whole chapter, so a meter that wobbles across a
+// mark and back inside one leaves nothing. No model call.
+const MILESTONES_KEPT = 3;
+
+/** The Bonds readings before a chapter and at its end: [before, after], either one null. */
+function bondReadings(chat, from, to) {
+    const at = i => { const m = chat[i]; return m && !m.is_user && typeof m.mes === "string" ? parseBonds(bondsOf(m.mes)) : null; };
+    const has = r => r && Object.keys(r).length > 0;
+    let before = null, after = null;
+    for (let i = from - 1; i >= 0 && i >= from - 12 && !has(before); i--) before = at(i);
+    for (let i = from; i <= to && !has(before); i++) before = at(i);   // none before it: the chapter's own first
+    for (let i = to; i >= from && !has(after); i--) after = at(i);
+    return [has(before) ? before : null, has(after) ? after : null];
+}
+
+function noteBondMilestones(st, chat, entry, chapterId, undo) {
+    const [before, after] = bondReadings(chat, entry.from, entry.to);
+    if (!before || !after) return;
+    const crossings = bondCrossings(before, after);
+    if (!crossings.length) return;
+    let user = "";
+    try { user = String((getContext() || {}).name1 || ""); } catch (e) { user = ""; }
+    const when = storyWhenAt(chat, entry.to);
+    st.ledger = st.ledger || [];
+    // The furthest mark each meter ended past: one line per character and meter.
+    const latest = new Map();
+    for (const c of crossings) latest.set(`${c.name}|${c.field}`, c);
+    for (const [bond, c] of latest) {
+        const mark = { mark: c.mark, up: c.up, when };
+        const fact = st.ledger.find(f => f.bond === bond);
+        const earlier = fact && Array.isArray(fact.marks) ? fact.marks : [];
+        const marks = [mark, ...earlier].slice(0, MILESTONES_KEPT);
+        const tail = marks.slice(1).map(m => `${m.up ? "rose past" : "fell below"} ${m.mark}%${m.when ? `, ${m.when}` : ""}`);
+        const text = crossingText(c, { user, when }) + (tail.length ? ` Earlier: ${tail.join("; ")}.` : "");
+        if (fact) {
+            undo.reworded.push({ ...fact });
+            Object.assign(fact, { text, marks, updated: chapterId });
+        } else {
+            const id = `F${st.nextFactId || 1}`;
+            st.nextFactId = (st.nextFactId || 1) + 1;
+            st.ledger.push({ id, cat: "relationship", text, since: chapterId, updated: chapterId, bond, marks });
+            undo.added.push(id);
+        }
+    }
+}
+
 /** Saves a chapter: facts applied, gist added, the oldest gists folded if asked, coverage moved on. */
 export function commitChapter(st, chat, entry) {
     const id = `C${(st.chapterSeq || 0) + 1}`;
@@ -270,10 +321,16 @@ export function commitChapter(st, chat, entry) {
         reworded: r.applied.filter(o => o.op === "~").map(o => ({ ...before.get(o.id) })),
         retired: r.applied.filter(o => o.op === "-").map(o => ({ ...before.get(o.id) })),
     };
+    // Read from the blocks the chapter's replies carry, with no call of its own (storyTime.js):
+    // where the story's clock and place stood as the chapter ended, and the bonds that crossed a
+    // quarter, half or three quarters of their scale over it, kept as facts.
+    const when = storyWhenAt(chat, entry.to);
+    noteBondMilestones(st, chat, entry, id, undo);
     st.chapters = [...(st.chapters || []), {
         id, gist: entry.gist, chapter: entry.chapter, start: entry.start, end: entry.end,
         from: entry.from, to: entry.to, checked: entry.checked, created: entry.created, undo,
         ...(entry.auto ? { auto: true } : {}),
+        ...(when ? { when } : {}),
     }];
     // A fold asked for while this chapter waited for review may have been done since.
     const foldIds = entry.foldIds || [];

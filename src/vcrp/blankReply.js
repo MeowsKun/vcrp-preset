@@ -188,10 +188,18 @@ export function blankRetryWanted(kind, msg, index, chat, { stallRetry = false } 
  * that does not. Resolves true when a swipe was started.
  */
 export async function swipeForAnother(id) {
+    const chat = (getContext() || {}).chat || [];
+    const msg = chat[id];
+    if (!msg || !blankReplyKind(msg.mes)) return false;
+    return swipeLastReply(id);
+}
+
+/** The same swipe for any last reply, blank or not (the continuity check's corrected swipe). */
+export async function swipeLastReply(id) {
     const ctx = getContext() || {};
     const chat = ctx.chat || [];
     const msg = chat[id];
-    if (!msg || id !== chat.length - 1 || !blankReplyKind(msg.mes)) return false;
+    if (!msg || msg.is_user || id !== chat.length - 1) return false;
     if (typeof isGenerating === "function" && isGenerating()) return false;
     const sw = ctx.swipe;
     try {

@@ -28,6 +28,7 @@ export const TASK_MARKERS = {
     order: "___PS_DUMMY___",
     focus: "___PS_FOCUS___",
     helperBlocks: "___PS_HELPER_BLOCKS___",
+    aside: "___PS_ASIDE___",
 };
 
 // Story Director: the chat text being planned against.
@@ -65,6 +66,12 @@ export function setActiveBlockRepair(v) { activeBlockRepair = v; }
 // { system, user, index }. The handler sends those two messages and nothing else.
 export let activeHelperBlocks = null;
 export function setActiveHelperBlocks(v) { activeHelperBlocks = v; }
+
+// VCRP: a small question of the helper's own, with its whole prompt (vcrp/helper/aside.js):
+// { messages }. The continuity check and the recall pick ask theirs this way. The handler
+// sends those messages and nothing else.
+export let activeAside = null;
+export function setActiveAside(v) { activeAside = v; }
 
 // ── NPC reference images for the current generation ──────────────────────────
 // An array rather than a single payload: several NPCs can be attached at once.

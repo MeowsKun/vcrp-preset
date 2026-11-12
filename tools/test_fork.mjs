@@ -6636,4 +6636,318 @@ console.log("75 ok empty replies with nothing wrong at the provider (a reply Sil
 }
 console.log("76 ok the cost batch (the product's defaults: a $0.20 goal, a $0.50 ceiling, accurate chapters approving themselves; a chapter approved by its own check, one the check corrected waiting with those behind it, a pinned fact kept for the reader, the switch; a whole backlog summarised in one run; each reply priced from the API's own count of its prompt, cache reads and writes at their prices; the chat's costs read back; Setup Check)");
 
+// 77. Facts and memory (10.0.0-vcrp.19). The Canon sheet: this chat's never-changing facts,
+//     kept by the reader, sent in the cached part of the prompt. Chapters that know where the
+//     story's clock and place stood, and bonds that crossed a mark kept as facts, both read
+//     from the blocks with no model call. The helper's recall pick before a reply, and its
+//     continuity check after one: asked only of a helper, never of the story model unasked.
+{
+    const q = state.localProfile;
+    const memory = await imp("src/vcrp/memory/index.js");
+    const S = await imp("src/vcrp/memory/summarize.js");
+    const L = await imp("src/vcrp/memory/ledger.js");
+    const C = await imp("src/vcrp/canon.js");
+    const ST = await imp("src/vcrp/storyTime.js");
+    const SR = await imp("src/vcrp/memory/smartRecall.js");
+    const CT = await imp("src/vcrp/continuity.js");
+    const HS = await imp("src/vcrp/helper/settings.js");
+    const HA = await imp("src/vcrp/helper/aside.js");
+    const T = await imp("src/vcrp/generationTrace.js");
+    const AR = await imp("src/core/activeRequests.js");
+    const g = extension_settings.VCRP.globalSettings;
+    const metaAll = globalThis.__ST__.chat_metadata;
+    const keep = { budget: JSON.stringify(g.memoryBudget || null), helper: JSON.stringify(g.helper || null), cm: extension_settings.connectionManager, svc: ctx.ConnectionManagerRequestService,
+        mem: q.vcrpMemory.enabled, mode: q.mode, model: q.model, cc: { ...chatCompletionSettings }, api: ctx.mainApi, name1: ctx.name1, swipe: ctx.swipe };
+    const toastrWas = globalThis.toastr;
+    globalThis.toastr = { info() {}, warning() {}, success() {}, error() {} };
+    const V11 = "VCRP V11 Megumin Original.json";
+    const v11 = JSON.parse(readFileSync(join(REPO, "Presets", V11), "utf8"));
+    Object.assign(q, { mode: "v11-voice-megumin", model: "cot-v11-voice-english", cotEnabled: true });
+    ctx.mainApi = "openai";
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: v11.prompts, prompt_order: v11.prompt_order });
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    // ── The Canon sheet ──
+    delete metaAll.vcrp_canon;
+    assert.deepEqual(C.canonItems(), [], "a chat starts with an empty sheet");
+    assert.equal(C.canonBlock(), "", "and sends nothing for it");
+    const a = C.addCanon("  Mara Voss is Bob's   older sister. ");
+    assert(a && a.id === "K1" && a.text === "Mara Voss is Bob's older sister." && C.canonItems().length === 1, `a line is added, tidied: ${JSON.stringify(a)}`);
+    assert(C.addCanon("mara voss is bob's older sister") === null && C.addCanon("   ") === null, "the same words again, or nothing, add no line");
+    const b = C.addCanon("The Lantern stands on the pier at Saltmere.", "F7");
+    assert(b && b.from === "F7" && C.addCanon("The Lantern is on the pier.", "F7") === null, "a ledger fact is on the sheet once, however it is worded");
+    assert(C.editCanon("K1", "Mara Voss is Bob's elder sister.") && C.canonItems()[0].text === "Mara Voss is Bob's elder sister." && !C.editCanon("K1", "Mara Voss is Bob's elder sister."), "a line is reworded in place");
+    assert(/^<canon>\nThe facts of this story that never change\./.test(C.canonBlock()) && C.canonBlock().includes("- Mara Voss is Bob's elder sister.\n- The Lantern stands on the pier at Saltmere.\n</canon>") && C.canonTokens() > 20, "the sheet as the model reads it");
+    assert(metaAll.vcrp_canon && metaAll.vcrp_canon.items.length === 2, "kept with the chat");
+    C.addCanon("She said </canon> once.");
+    assert(!C.canonBlock().slice(0, -8).includes("</canon>"), "a line cannot close the sheet's own tag");
+    assert(C.removeCanon("K3") && C.editCanon("K2", "") && C.canonItems().length === 1, "a line is taken off, and an emptied one goes too");
+    // What the ledger has to offer: the pinned ones, then those that have stood longest, people and ties first; never one already on the sheet.
+    C.addCanon("The Lantern stands on the pier at Saltmere.", "F7");
+    const ledger = [
+        { id: "F1", cat: "item", text: "Bob carries a brass key.", since: "C1", updated: "C1" },
+        { id: "F2", cat: "relationship", text: "Mara distrusts Jonah.", since: "C1", updated: "C1" },
+        { id: "F3", cat: "place", text: "The vault is under the pier.", since: "C4", updated: "C4" },
+        { id: "F4", cat: "person", text: "Jonah fixes boats.", since: "C2", updated: "C6" },
+        { id: "F5", cat: "thread", text: "Who took the ring?", since: "C5", updated: "C5", pinned: true },
+        { id: "F7", cat: "place", text: "The Lantern stands on the pier.", since: "C1", updated: "C1" },
+    ];
+    const offers = C.canonSuggestions(ledger).map(f => f.id);
+    assert.deepEqual(offers, ["F5", "F2", "F1", "F3", "F4"], `the pinned fact, then by how long each has stood, ties before things: ${offers}`);
+    assert.equal(C.canonSuggestions(ledger, C.canonItems(), 2).length, 2, "as many as asked for");
+    // In the prompt: with the always-on slot, before the chat (cached); every turn the same text.
+    let msgs = await run(V11);
+    const firstUser = msgs.findIndex(m => m.role === "user");
+    const where = msgs.findIndex(m => typeof m.content === "string" && m.content.includes("<canon>"));
+    assert(where >= 0 && where < msgs.length - 1 && msgs.filter(m => typeof m.content === "string" && m.content.includes("<canon>")).length === 1 && !text(msgs.slice(-1)).includes("<canon>"),
+        `the sheet rides before the chat, once (message ${where} of ${msgs.length}, first user turn ${firstUser})`);
+    const again = await run(V11);
+    assert.equal(again[where].content, msgs[where].content, "and is the same text from turn to turn: the cache holds");
+    // A preset from before that slot: after the chat, with the rest.
+    const slotless = v11.prompts.map(pr => ({ ...pr, content: typeof pr.content === "string" ? pr.content.replace("[[knowledgebase_always]]", "") : pr.content }));
+    chatCompletionSettings.prompts = slotless;
+    const { presetCarriesAlwaysSlot } = await imp("src/vcrp/knowledgebase.js");
+    assert(!presetCarriesAlwaysSlot(), "a preset without the cached slot");
+    const { buildBaseDict } = await imp("src/engine/buildBaseDict.js");
+    const dict = await buildBaseDict();
+    assert(String(dict["[[knowledgebase]]"] || "").includes("<canon>") && !String(dict["[[knowledgebase_always]]"] || "").includes("<canon>"), "there it goes after the chat, every turn");
+    chatCompletionSettings.prompts = v11.prompts;
+    delete metaAll.vcrp_canon;
+    assert(!text(await run(V11)).includes("<canon>"), "another chat's sheet is its own: an empty one sends nothing");
+
+    // ── When and where, and the bonds, read from the blocks ──
+    const world = (time, loc) => `<World_State>\n**📅 Time:** ${time} | **🌤 Loc:** ${loc} | **🌡 Wx:** Rain, 9C, lamplight\n\n---\n**🧍 Bob:**\n* *Outfit:* coat\n</World_State>`;
+    assert.deepEqual(ST.storyWhen(ST.worldStateOf(world("Day 3, Tuesday, evening", "The Lantern | Saltmere"))), { time: "Day 3, Tuesday, evening", place: "The Lantern, Saltmere" }, "the story's clock and place from the World State's first line");
+    assert.deepEqual(ST.storyWhen(ST.worldStateOf(world("[Date, Day, Time]", "[Place | Region]"))), { time: "", place: "" }, "a template's own placeholders say nothing");
+    assert.deepEqual(ST.storyWhen("Time: Night 2 | Wx: clear"), { time: "Night 2", place: "" }, "one without the other");
+    assert.deepEqual(ST.storyWhen("Time: 08:15, Day 12\nLocation: Guild hall, Varn\nWeather: rain"), { time: "08:15, Day 12", place: "Guild hall, Varn" }, "a block written one field to a line");
+    assert.deepEqual(ST.storyWhen("**Time & Loc:** Dusk at the glade\n**PC:** cloak | sitting"), { time: "Dusk at the glade", place: "" }, "the compact World State's one field for both");
+    assert.deepEqual(ST.storyWhen("**Time & Loc:** [Time] at [Location]"), { time: "", place: "" }, "and its template left as it was says nothing");
+    assert.deepEqual(ST.storyWhen(ST.worldStateOf("<World_State>\n**📅 Time:** Night 2 | **🌤 Loc:** Cellar")), { time: "Night 2", place: "Cellar" }, "a block the reply was cut inside still tells");
+    assert.equal(ST.whenText({ time: "Day 3, evening", place: "the Lantern" }), "Day 3, evening · the Lantern");
+    const bonds = lines => `<Bonds>\n${lines.join("\n")}\n</Bonds>`;
+    const read = ST.parseBonds(ST.bondsOf(bonds(["Mara Voss: Mood: wary | Affection: 48/100 (+2) | Trust: 20/100 (=)", "[NPC Name]: Mood: x | Affection: 1/100", "Jonah: Mood: sour"])));
+    assert.deepEqual(read, { "Mara Voss": { Affection: { value: 48, max: 100 }, Trust: { value: 20, max: 100 } } }, `the meters, by character; a mood in words is not one, nor the template's own line: ${JSON.stringify(read)}`);
+    const up = ST.bondCrossings({ Mara: { Affection: { value: 48, max: 100 }, Trust: { value: 80, max: 100 } } }, { Mara: { Affection: { value: 53, max: 100 }, Trust: { value: 70, max: 100 } }, Jonah: { Affection: { value: 60, max: 100 } } });
+    assert.deepEqual(up.map(c => `${c.name} ${c.field} ${c.up ? "up" : "down"} ${c.mark}`), ["Mara Affection up 50", "Mara Trust down 75"], `a mark crossed either way; someone new has no before: ${JSON.stringify(up)}`);
+    assert.equal(ST.bondCrossings({ Mara: { Affection: { value: 10, max: 100 } } }, { Mara: { Affection: { value: 80, max: 100 } } }).length, 3, "a leap crosses every mark on the way");
+    assert.equal(ST.bondCrossings({ Mara: { Affection: { value: 4, max: 10 } } }, { Mara: { Affection: { value: 40, max: 100 } } }).length, 0, "a meter whose scale changed is not compared");
+    assert.equal(ST.crossingText(up[0], { user: "Bob", when: "Day 3, evening · the Lantern" }), "Mara's Affection toward Bob rose past 50% (48 to 53 of 100), Day 3, evening · the Lantern.");
+
+    // A chapter keeps where the story stood as it ended, and the bonds that crossed a mark over it.
+    q.vcrpMemory.enabled = true;
+    g.memoryBudget = { minVerbatim: 2000 };
+    ctx.name1 = "Bob";
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+    chat.length = 0;
+    const reply = (i, time, loc, aff) => ({ is_user: false, name: "Alice", send_date: `t${i}`, mes: `(${i}) Prose.\n\n<Blocks>\n${world(time, loc)}\n${bonds([`Mara: Mood: wary | Affection: ${aff}/100 (+1)`])}\n</Blocks>` });
+    const you = i => ({ is_user: true, name: "Bob", send_date: `t${i}`, mes: `(${i}) I ask.` });
+    chat.push(you(0), reply(1, "Day 1, noon", "The pier", 20), you(2), reply(3, "Day 1, dusk", "The Lantern | Saltmere", 24), you(4), reply(5, "Day 2, morning", "The Lantern | Saltmere", 31),
+        you(6), reply(7, "Day 2, night", "The vault", 52), you(8), reply(9, "Day 3, dawn", "The vault", 49), you(10), reply(11, "Day 3, noon", "The harbor", 55), you(12));
+    delete metaAll.vcrp_memory;
+    const meta = memory.memoryState();
+    Object.assign(meta, { cut: null, summarized: null, shown: "", chapters: [], arcs: [], ledger: [], retired: [], pending: [], nextFactId: 1, chapterSeq: 0 });
+    const story = S.storyChat();
+    const entry = (from, to, gist) => ({ start: memory.anchorOf(story, from), end: memory.anchorOf(story, to + 1), from, to, tokens: 100, gist, chapter: `${gist} In full.`, ops: [], checked: "ok", created: 1 });
+    S.commitChapter(meta, story, entry(0, 5, "Bob meets Mara."));
+    assert(meta.chapters[0].when === "Day 2, morning · The Lantern, Saltmere", `the chapter knows where the story stood as it ended: ${meta.chapters[0].when}`);
+    assert(meta.ledger.length === 1 && meta.ledger[0].bond === "Mara|Affection" && meta.ledger[0].cat === "relationship" && meta.ledger[0].text === "Mara's Affection toward Bob rose past 25% (20 to 31 of 100), Day 2, morning · The Lantern, Saltmere."
+        && meta.chapters[0].undo.added.includes(meta.ledger[0].id), `a bond that crossed a mark over the chapter is kept as a fact, the chapter's to undo: ${JSON.stringify(meta.ledger)}`);
+    // The next chapter: the same fact, said anew, the earlier crossing behind it. A wobble inside it (52, 49, 55) is one crossing, measured end to end.
+    S.commitChapter(meta, story, entry(6, 11, "The vault."));
+    assert(meta.ledger.length === 1 && meta.ledger[0].text === "Mara's Affection toward Bob rose past 50% (31 to 55 of 100), Day 3, noon · The harbor. Earlier: rose past 25%, Day 2, morning · The Lantern, Saltmere."
+        && meta.chapters[1].undo.reworded.length === 1 && meta.chapters[1].when === "Day 3, noon · The harbor", `one fact per character and meter, the latest first: ${meta.ledger[0].text}`);
+    assert(L.composeMemoryText({ chapters: meta.chapters, ledger: [] }).includes("- [Day 2, morning · The Lantern, Saltmere] Bob meets Mara.\n- [Day 3, noon · The harbor] The vault."), "the memory text lists the chapters as a timeline");
+    assert(!("when" in (() => { const m2 = { chapters: [], ledger: [], nextFactId: 1 }; S.commitChapter(m2, [you(0), { is_user: false, mes: "No blocks here." }, you(2)], entry(0, 1, "Plain.")); return m2.chapters[0]; })()), "a chapter whose replies carry no World State says nothing of it, and keeps no bond fact");
+
+    // ── The helper's recall pick ──
+    const pickMsgs = SR.recallPickMessages({ chapters: [{ id: "C1", gist: "Mara gave Bob a key.", when: "Day 1 · the pier" }, { id: "C2", gist: "Jonah fixed a boat.", when: "" }], scene: [{ user: false, text: "The rain kept on." }, { user: true, text: "I ask about the thing she promised my sister." }], extra: "the ring" });
+    assert(pickMsgs.length === 2 && pickMsgs[0].role === "system" && /C1 \[Day 1 · the pier\]: Mara gave Bob a key\.\nC2: Jonah fixed a boat\./.test(pickMsgs[1].content) && /STORY: The rain kept on\.\n\nREADER: I ask about the thing/.test(pickMsgs[1].content) && /<also_in_play>\nthe ring/.test(pickMsgs[1].content) && /or NONE\.$/.test(pickMsgs[1].content), "the question: the gists by id, the newest messages, what else is in play");
+    assert.deepEqual(SR.parseRecallPick("C2, c1 and C9", ["C1", "C2", "C3"]), ["C2", "C1"], "the ids it names that are real chapters, in its order");
+    assert.deepEqual(SR.parseRecallPick("<think>C3 maybe</think>NONE", ["C1", "C2", "C3"]), [], "NONE, whatever it thought on the way");
+    assert.equal(SR.parseRecallPick("C1 C2 C3 C4 C5", ["C1", "C2", "C3", "C4", "C5"]).length, 3, "three at most");
+    // A long chat, cut at message 20: matching words finds the chapter that shares the scene's words; the helper names another.
+    g.memoryBudget = { recallTokens: 60 };
+    chat.length = 0;
+    for (let i = 0; i < 40; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `r${i}`, mes: `(${i}) The bar was busy tonight.` });
+    chat.push({ is_user: true, name: "Bob", send_date: "r40", mes: "I take out Mara's brass key and walk down to the cellar." });
+    delete metaAll.vcrp_memory;
+    const m3 = memory.memoryState();
+    const rc = memory.memoryChat();
+    Object.assign(m3, {
+        cut: memory.anchorOf(rc, 20), summarized: memory.anchorOf(rc, 20), shown: "", hiddenFacts: [], ledger: [], arcs: [],
+        chapters: [
+            { id: "C1", gist: "Mara gave Bob a key.", chapter: "Mara Voss gave Bob a brass key to the cellar under the Lantern.", from: 0, to: 9, start: null, end: memory.anchorOf(rc, 10) },
+            { id: "C2", gist: "Jonah fixed a boat.", chapter: "Jonah fixed the boat engine at the harbor and swore Bob to silence about it.", from: 10, to: 19, start: memory.anchorOf(rc, 10), end: memory.anchorOf(rc, 20), when: "Day 2 · the harbor" },
+        ],
+    });
+    vcrpSetGenerationType("normal", {}, false);
+    memory.setHelperRecall(null);
+    assert(memory.vcrpMemoryRecall().includes("brass key") && m3.lastRecall.join() === "C1" && m3.lastRecallHelper.length === 0, "matching words alone: the chapter that shares the scene's words");
+    const cand = memory.recallCandidates();
+    assert(cand && cand.chapters.map(c => c.id).join() === "C1,C2" && cand.chapters[1].when === "Day 2 · the harbor" && cand.scene.at(-1).user && /brass key/.test(cand.scene.at(-1).text), `what a pick chooses from: ${JSON.stringify(cand && cand.chapters)}`);
+    memory.setHelperRecall({ key: cand.key, ids: ["C2"] });
+    const withPick = memory.vcrpMemoryRecall();
+    assert(withPick.includes("[C2, Day 2 · the harbor, messages 11-20]") && withPick.includes("swore Bob to silence") && m3.lastRecallHelper.join() === "C2", `the helper's chapter is brought back first, with its place in the story: ${m3.lastRecall} / ${withPick.slice(0, 160)}`);
+    memory.setHelperRecall({ key: "another turn's", ids: ["C2"] });
+    assert(memory.vcrpMemoryRecall().includes("brass key") && m3.lastRecallHelper.length === 0, "a pick made for another turn is not used");
+    // Asked of a helper with its own connection, with a few seconds to answer; without one, or late, matching words stands.
+    extension_settings.connectionManager = { profiles: [{ id: "p1", name: "Helper", mode: "cc" }] };
+    let answer = async () => ({ content: "C2" });
+    const asked = [];
+    ctx.ConnectionManagerRequestService = { sendRequest: async (profileId, messages, maxTokens, opts) => { asked.push({ profileId, messages, opts }); return answer(messages, opts); } };
+    HS.helperSettings();
+    g.helper.enabled = false; g.helper.profileId = "p1";
+    SR.forgetRecallPick();
+    await SR.vcrpSmartRecall("normal");
+    assert(asked.length === 0 && !memory.vcrpMemoryRecall().includes("swore Bob"), "the helper off: nothing is asked");
+    g.helper.enabled = true;
+    assert(HS.HELPER_JOBS.some(j => j.key === "recall" && j.helperOnly && j.perReply) && HS.helperJobOn("recall") && HA.helperAnswers("recall") === "profile", "the helper on: recall picks are among its jobs, on by default");
+    await SR.vcrpSmartRecall("normal");
+    assert(asked.length === 1 && asked[0].profileId === "p1" && asked[0].messages.length === 2 && /C1: Mara gave Bob a key\./.test(asked[0].messages[1].content) && memory.vcrpMemoryRecall().includes("swore Bob to silence"), `asked once, with the question alone, and its pick used: ${asked.length}`);
+    assert(T.vcrpGenerationRecords().length === 0 && AR.activeAside === null, "the question's messages are parked only while it is asked");
+    await SR.vcrpSmartRecall("swipe");
+    assert.equal(asked.length, 1, "a swipe of the same turn keeps the pick it was given");
+    await SR.vcrpSmartRecall("quiet");
+    assert.equal(asked.length, 1, "a background call asks for none");
+    // An answer that never comes: the reply waits a few seconds at most, then matching words stands.
+    SR.forgetRecallPick();
+    chat.push({ is_user: false, name: "Alice", send_date: "r41", mes: "(41) She nods." }, { is_user: true, name: "Bob", send_date: "r42", mes: "I think about the boat engine at the harbor." });
+    answer = (messages, opts) => new Promise((resolve, reject) => { opts.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))); });
+    const H = await imp("src/vcrp/helper/index.js");
+    const slow = H.runHelperJob("recall", async send => send({ prompt: "x" }), { timeoutMs: 60, quietFail: true });
+    const late = await slow;
+    assert(late.failed && /gave no answer in 0 seconds/.test(String(late.error && late.error.message)), `a job may be given a shorter wait, and fail without a notice: ${late.error && late.error.message}`);
+    g.helper.jobs = { recall: false };
+    SR.forgetRecallPick();
+    await SR.vcrpSmartRecall("normal");
+    assert.equal(asked.length, 2, "its switch off in the Helper tab: nothing more is asked (the one above was the test's own)");
+    g.helper.jobs = {};
+    // The helper does one job at a time. A job with a deadline that is still waiting in the line
+    // when it passes is dropped and never sent; one that runs is ended at the same moment.
+    let release = () => {};
+    answer = () => new Promise(resolve => { release = () => resolve({ content: "done" }); });
+    let sentBefore = asked.length;
+    let ahead = H.runHelperJob("director", async send => send({ prompt: "x" }), { quietFail: true });
+    await sleep(15);
+    let t0 = Date.now();
+    const dropped = await H.runHelperJob("recall", async send => send({ prompt: "y" }), { deadlineMs: 80, quietFail: true });
+    assert(dropped.failed && dropped.expired && dropped.value === null && Date.now() - t0 < 1500 && asked.length === sentBefore + 1, `a job still in the line at its deadline is given up on: ${JSON.stringify({ ...dropped, error: undefined })} after ${Date.now() - t0} ms`);
+    release();
+    assert.equal((await ahead).value, "done", "the job ahead of it finishes as it would have");
+    await sleep(30);
+    assert.equal(asked.length, sentBefore + 1, "and the dropped one is never sent once the line moves");
+    answer = (messages, opts) => new Promise((resolve, reject) => { opts.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))); });
+    t0 = Date.now();
+    const ended = await H.runHelperJob("recall", async send => send({ prompt: "y" }), { deadlineMs: 80, quietFail: true });
+    assert(ended.failed && !ended.expired && Date.now() - t0 < 1500, `one that runs is ended at its deadline: ${Date.now() - t0} ms`);
+    // So a pick that waits behind the last reply's blocks does not hold the next reply up.
+    SR.setRecallWait(80);
+    SR.forgetRecallPick();
+    answer = () => new Promise(resolve => { release = () => resolve({ content: "C1" }); });
+    sentBefore = asked.length;
+    ahead = H.runHelperJob("director", async send => send({ prompt: "x" }), { quietFail: true });
+    await sleep(15);
+    t0 = Date.now();
+    await SR.vcrpSmartRecall("normal");
+    memory.vcrpMemoryRecall();
+    assert(Date.now() - t0 < 1500 && asked.length === sentBefore + 1 && m3.lastRecallHelper.length === 0, `the reply goes on by matching words (${Date.now() - t0} ms, helper's picks ${m3.lastRecallHelper})`);
+    release();
+    await ahead;
+    await sleep(30);
+    assert.equal(asked.length, sentBefore + 1, "and no late question follows it");
+    SR.setRecallWait();
+    SR.forgetRecallPick();
+
+    // ── The continuity check ──
+    C.addCanon("Mara Voss has green eyes.");
+    C.addCanon("The Lantern stands on the pier at Saltmere.");
+    const cm = CT.continuityMessages({ canon: ["Mara Voss has green eyes."], scene: "Time: Day 3 | Loc: the Lantern", reply: "Her brown eyes narrow." });
+    assert(cm.length === 2 && /report only clear contradictions/.test(cm[0].content) && /<established_facts>\n- Mara Voss has green eyes\.\n<\/established_facts>/.test(cm[1].content) && /<scene_before_this_reply>\nTime: Day 3/.test(cm[1].content) && /<reply>\nHer brown eyes narrow\.\n<\/reply>/.test(cm[1].content) && /answer exactly: OK$/.test(cm[1].content), "the question: the facts, the scene before, the reply, the form to answer in");
+    assert.deepEqual(CT.parseContinuity("OK"), { ok: true, findings: [] });
+    const found = CT.parseContinuity('Sure.\nCONTRADICTION: "Her brown eyes narrow" | Mara Voss has green eyes.\n- contradiction: “the bar in the hills” | The Lantern stands on the pier at Saltmere.\nCONTRADICTION: no bar here');
+    assert(!found.ok && found.findings.length === 2 && found.findings[0].quote === "Her brown eyes narrow" && found.findings[0].fact === "Mara Voss has green eyes." && found.findings[1].quote === "the bar in the hills", `the lines in the form are read, the rest left: ${JSON.stringify(found)}`);
+    assert(CT.parseContinuity("I could not tell.").ok && CT.parseContinuity("").ok, "anything unreadable counts as nothing found");
+    assert(/^Keep to what the story has established:\n- Established: Mara Voss has green eyes\. The last version of this reply had it wrong \("Her brown eyes narrow"\)\.\nWrite the reply so that it agrees with this/.test(CT.correctionText(found.findings.slice(0, 1))), "the direction a corrected swipe is written with");
+    // As a reply arrives: read by the helper, the finding kept with the reply, a line under it.
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", send_date: "c0", mes: "I look at her." },
+        { is_user: false, name: "Alice", send_date: "c1", mes: `Prose.\n<Blocks>\n${world("Day 3, evening", "The Lantern | Saltmere")}\n</Blocks>` },
+        { is_user: true, name: "Bob", send_date: "c2", mes: "And?" },
+        { is_user: false, name: "Alice", send_date: "c3", mes: `<think>plan</think>\nHer <font color="#fff" title="Mara">"brown eyes"</font> narrow in the hill bar.\n<Blocks>\n${world("Day 3, night", "The hill bar")}\n</Blocks>`, swipes: ["x"], swipe_id: 0, swipe_info: [{ extra: {} }], extra: {} });
+    assert(/Time: Day 3, evening \| .*Loc: The Lantern/.test(CT.sceneBefore(chat, 3)) && CT.sceneBefore(chat, 1) === "", "the scene as it stood before the reply: the last World State before it");
+    asked.length = 0;
+    answer = async () => ({ content: 'CONTRADICTION: "brown eyes" | Mara Voss has green eyes.' });
+    assert(CT.continuityOn() && HS.HELPER_JOBS.some(j => j.key === "continuity" && j.helperOnly), "the check is the helper's job, on with it");
+    // On the story's own connection ("Use my current connection") neither runs unasked: the check
+    // would be one more call on the story model with every reply, so it waits for its tick; the
+    // recall pick cannot be asked there at all (the connection is busy with the reply).
+    g.helper.profileId = HS.CURRENT_CONNECTION;
+    assert(!HS.helperJobWanted("continuity") && !CT.continuityOn() && !HS.helperJobWanted("recall") && HA.helperAnswers("recall") === "" && HS.helperJobWanted("blocks") && HS.helperJobWanted("director"),
+        "on the current connection: the two questions are off by default, the helper's other jobs as they were");
+    g.helper.jobs = { continuity: true, recall: true };
+    assert(HS.helperJobWanted("continuity") && HA.helperAnswers("continuity") === "current" && CT.continuityOn() && !HS.helperJobWanted("recall") && HA.helperAnswers("recall") === "", "ticked, the check runs there; the recall pick still does not");
+    g.helper.jobs = {};
+    g.helper.profileId = "p1";
+    let outcome = await CT.checkContinuity(3);
+    const sentTo = asked[0].messages[1].content;
+    assert(outcome === "found" && asked.length === 1 && /<reply>\nHer "brown eyes" narrow in the hill bar\.\n<\/reply>/.test(sentTo) && !/plan|<Blocks>|font/.test(sentTo.split("<reply>")[1]) && /- Mara Voss has green eyes\./.test(sentTo) && /Loc: The Lantern/.test(sentTo),
+        `the reply as the reader sees it goes to the helper, with the sheet and the scene before: ${sentTo.slice(-260)}`);
+    assert(chat[3].extra.vcrp_continuity.findings.length === 1 && chat[3].swipe_info[0].extra.vcrp_continuity.findings[0].quote === "brown eyes", "what it found is kept with the reply and its swipe");
+    const line = CT.continuityNoteFor(chat[3]);
+    assert(line && /^May contradict the story: "brown eyes" against "Mara Voss has green eyes\."\.$/.test(line.short), `the line under the reply: ${line && line.short}`);
+    // Nothing found: nothing shown. No sheet and no scene: nothing asked. A blank reply, or the helper off: nothing asked.
+    answer = async () => ({ content: "OK" });
+    chat[3].extra = {};
+    outcome = await CT.checkContinuity(3);
+    assert(outcome === "ok" && chat[3].extra.vcrp_continuity.ok === true && CT.continuityNoteFor(chat[3]) === null, "nothing found: no line");
+    asked.length = 0;
+    assert.equal(await CT.checkContinuity(2), "skipped", "the reader's own message is not read");
+    chat.push({ is_user: true, name: "Bob", send_date: "c4", mes: "..." }, { is_user: false, name: "Alice", send_date: "c5", mes: "" });
+    assert.equal(await CT.checkContinuity(5), "skipped", "nor a blank reply");
+    g.helper.enabled = false;
+    assert(!CT.continuityOn() && await CT.checkContinuity(3) === "skipped" && asked.length === 0, "without the helper nothing runs: the story model is never asked");
+    g.helper.enabled = true;
+    delete metaAll.vcrp_canon;
+    chat.splice(1, 1, { is_user: false, name: "Alice", send_date: "c1", mes: "No blocks." });
+    assert(await CT.checkContinuity(3) === "skipped" && asked.length === 0, "an empty sheet and no scene before: nothing to read against");
+    // The helper gives no answer: said by nothing, kept as nothing.
+    C.addCanon("Mara Voss has green eyes.");
+    answer = async () => { throw new Error("502"); };
+    chat[3].extra = {};
+    assert(await CT.checkContinuity(3) === "failed" && !chat[3].extra.vcrp_continuity, "a check that fails leaves no mark");
+    // A new swipe does not keep the last swipe's finding.
+    chat[3].extra = { vcrp_continuity: { findings: [{ quote: "a", fact: "b" }] } };
+    vcrpSetGenerationType("swipe", {}, false);
+    await T.vcrpFinishOnReply(3, "swipe");
+    assert(!chat[3].extra.vcrp_continuity, "a new swipe starts without the last one's finding");
+    // The helper's own question is built as it is, whatever else is parked: its messages alone.
+    AR.setActiveAside({ messages: [{ role: "system", content: "S" }, { role: "user", content: "U" }] });
+    const built = [];
+    await handlePromptInjection({ chat: built, dryRun: false, helper: true, marker: AR.TASK_MARKERS.aside }, "quiet");
+    AR.setActiveAside(null);
+    assert.deepEqual(built, [{ role: "system", content: "S" }, { role: "user", content: "U" }], "the question's own messages, nothing of the preset");
+
+    globalThis.toastr = toastrWas;
+    SR.forgetRecallPick();
+    chat.length = 0;
+    delete metaAll.vcrp_canon;
+    delete metaAll.vcrp_memory;
+    g.memoryBudget = JSON.parse(keep.budget) || undefined;
+    if (!g.memoryBudget) delete g.memoryBudget;
+    g.helper = JSON.parse(keep.helper) || undefined;
+    if (g.helper === undefined) delete g.helper;
+    extension_settings.connectionManager = keep.cm;
+    if (keep.svc === undefined) delete ctx.ConnectionManagerRequestService; else ctx.ConnectionManagerRequestService = keep.svc;
+    if (keep.swipe === undefined) delete ctx.swipe; else ctx.swipe = keep.swipe;
+    ctx.name1 = keep.name1;
+    q.vcrpMemory.enabled = keep.mem;
+    Object.assign(q, { mode: keep.mode, model: keep.model });
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+}
+console.log("77 ok facts and memory (the Canon sheet: kept per chat, offered from the ledger, sent once before the chat, after it on a preset without the slot; chapters dated from their World State and bonds that crossed a mark kept as facts, with no call; the helper's recall pick: asked once a turn, brought back first, never without a helper, given up on at its deadline even while it waits behind another of the helper's jobs; the continuity check: the reply read against the sheet and the scene before, the finding kept and shown, nothing found or failed leaving no mark)");
+
 console.log("\nALL FORK CHECKS PASSED");
