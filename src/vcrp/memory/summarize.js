@@ -31,7 +31,7 @@ import {
 } from "./index.js";
 import { summaryTarget, isCold } from "./window.js";
 import { parseSummary, parseCheck, parseFactChanges, applyFactChanges, formatFactChanges, formatLedgerForTask, gistsToFold } from "./ledger.js";
-import { summaryTask, checkTask, foldTask } from "./prompts.js";
+import { summaryTask, checkTask, foldTask, arcCloseTask } from "./prompts.js";
 import { localProfile } from "../../core/state.js";
 import { storyWhenAt, bondsOf, parseBonds, bondCrossings, crossingText } from "../storyTime.js";
 
@@ -241,6 +241,45 @@ async function foldNext(st) {
         return { status: "folded" };
     } catch (e) {
         return noteFailure(st, e && e.message ? e.message : String(e));
+    } finally {
+        running = false;
+    }
+}
+
+/**
+ * A story arc has ended (vcrp/arc.js): every chapter still on a line of its own (not folded,
+ * not pinned) is folded into one entry that says how the arc went and how things stood as it
+ * ended, under the arc's name. Reads the gists, not the chat; saved without review; the
+ * chapters stay recallable, as after any fold. A step the reader asked for, so a failure is
+ * said and never pauses the automatic summaries.
+ * Returns { status: "folded" | "idle" | "busy" | "failed" | "aborted", reason?, chapters? }.
+ */
+export async function closeStoryArc(title) {
+    if (!vcrpMemoryEnabled()) return { status: "idle", reason: "Story Memory is off" };
+    if (running || otherTaskRunning()) return { status: "busy" };
+    const st = memoryState();
+    const open = ((st && st.chapters) || []).filter(c => !c.folded && !c.pinned);
+    if (!st || open.length < 2) return { status: "idle", reason: "fewer than two chapters to fold" };
+    running = true;
+    const identity = meguminActiveDataIdentity();
+    try {
+        const name = String(title || "").replace(/\s+/g, " ").trim();
+        const task = arcCloseTask(name, open.map(c => `${c.when ? `[${c.when}] ` : ""}${c.gist}`), storyLanguage());
+        const raw = await quiet(task, [
+            { role: "system", content: "You keep the story memory for a long roleplay." },
+            { role: "user", content: task },
+        ]);
+        if (meguminActiveDataIdentity() !== identity || memoryState() !== st) return { status: "aborted", reason: "the chat changed" };
+        const m = String(raw || "").replace(/<(think|thinking)>[\s\S]*?<\/\1>/gi, "").match(/<arc>([\s\S]*?)<\/arc>/i);
+        if (!m || !m[1].trim()) return { status: "failed", reason: raw ? "the answer came back without its arc tag" : "the request failed" };
+        const ids = open.map(c => c.id);
+        st.chapters = st.chapters.map(c => ids.includes(c.id) ? { ...c, folded: true } : c);
+        st.arcs = [...(st.arcs || []), { text: `${name ? `${name}: ` : ""}${m[1].trim()}`, covers: ids, ...(name ? { title: name } : {}) }];
+        await saveMetadata();
+        return { status: "folded", chapters: ids.length };
+    } catch (e) {
+        console.error("[VCRP] closing the arc in Story Memory failed", e);
+        return { status: "failed", reason: e && e.message ? e.message : String(e) };
     } finally {
         running = false;
     }

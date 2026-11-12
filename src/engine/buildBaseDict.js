@@ -43,6 +43,8 @@ import { vcrpFocusBlock, vcrpPlotFocusBlock } from "../vcrp/focus/index.js";
 import { applyPuraEngine, PURA_ADAPTED_CONFIG } from "../vcrp/pura/index.js";
 import { colorLockNote } from "../vcrp/dialogueColors.js";
 import { vcrpGenerationKind, vcrpIsDryRun } from "../vcrp/generation.js";
+import { threadsNudge } from "../vcrp/threads.js";
+import { arcBlock } from "../vcrp/arc.js";
 
 // VCRP: whether the loaded preset has a place for a tag (one imported before the tag has none).
 function presetCarries(tag) {
@@ -375,10 +377,13 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
         dict["[[banlist]]"] = "";
     }
 
-    // VCRP Focus: the approved correction, in the per-turn rules (after the chat, so the cache never sees it).
-    dict["[[focus]]"] = vcrpFocusBlock();
-    // VCRP Focus: the plot focus, last in the prompt (after the newest message, outside the cache).
-    dict["[[plotfocus]]"] = vcrpPlotFocusBlock();
+    // VCRP Focus: the correction in use, the voices and the every-reply findings, in the per-turn
+    // rules (after the chat, so the cache never sees it); then the thread ledger's reminder of
+    // open ends the story has left hanging, on the replies it falls due (vcrp/threads.js).
+    dict["[[focus]]"] = [vcrpFocusBlock(), threadsNudge(measure ? "reply" : vcrpGenerationKind())].filter(Boolean).join("\n\n");
+    // Last in the prompt (after the newest message, outside the cache): the running arc
+    // (vcrp/arc.js), then the plot focus, the one thing to revolve around inside it.
+    dict["[[plotfocus]]"] = arcBlock() + vcrpPlotFocusBlock();
 
     if (dict["[[cyoa]]"]) dict["[[cyoa2]]"] = "[CYOA block here]"; else dict["[[cyoa2]]"] = "";
     if (dict["[[infoblock]]"]) dict["[[infoblock2]]"] = "[World state block here]"; else dict["[[infoblock2]]"] = "";

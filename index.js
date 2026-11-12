@@ -125,6 +125,8 @@ import { vcrpRescueOnReply } from "./src/vcrp/replyRescue.js";
 import { vcrpContinuityOnReply, drawContinuityNote, drawAllContinuityNotes } from "./src/vcrp/continuity.js";
 import { vcrpInstallSmartRecall, forgetRecallPick } from "./src/vcrp/memory/smartRecall.js";
 import { forgetVoiceReading } from "./src/vcrp/voice.js";
+import { forgetThreadReading } from "./src/vcrp/threads.js";
+import { vcrpBeatsOnReply } from "./src/vcrp/beats.js";
 import { vcrpInstallStallNotice } from "./src/vcrp/streamStall.js";
 import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
 import { vcrpOn, setVcrpOn, whenOn, drawPowerState } from "./src/vcrp/power.js";
@@ -437,6 +439,7 @@ jQuery(async () => {
                 forgetCostPending();
                 forgetRecallPick();   // the helper's recall pick was for the last chat's turn
                 forgetVoiceReading(); // and the voices' reading of the chat was the last chat's
+                forgetThreadReading(); // so was the thread ledger's
                 // A save debounced at 500ms would die when initProfile swaps localProfile
                 // below. Flush it under the OLD key first — settings only, because
                 // chat_metadata already belongs to the chat we are switching TO.
@@ -472,6 +475,9 @@ jQuery(async () => {
             // anything below adds to it), and the one-shot direction used up by its reply.
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpCostOnReply));
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpOneShotOnReply));
+            // The beat queue, once the one-shot direction has settled its own account: a beat
+            // the reply used is spent, and the next one whose time has come goes into the box.
+            eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpBeatsOnReply));
             // Story Memory's spend estimate: the reply's output, added to its request. Measured
             // here, before the rolls' notes are added to the reply: its size plans the budget.
             eventSource.on(event_types.MESSAGE_RECEIVED, whenOn(vcrpMemoryCountReply));

@@ -23,7 +23,9 @@
 // check and recall pick on a connection profile of its own; a scenario scripts the helper's
 // answers with rig.mock.aside), s_voices (a story in progress put straight into the chat: the
 // voice anchors in the request, the drift meter calling the audit, its correction applying
-// itself, the Focus tab and Undo).
+// itself, the Focus tab and Undo), s_plot (the reminder of a stale thread, an arc with its
+// opening move, a beat firing by itself, three pitches from the Plot tab, VCRP Quick, Story
+// Memory closing an arc).
 import { spawn } from "node:child_process";
 import http from "node:http";
 import fs from "node:fs";

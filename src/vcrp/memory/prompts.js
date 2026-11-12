@@ -55,6 +55,17 @@ Answer with exactly one tag and nothing else:
 <arc>One line, at most 30 words, covering all of them together.</arc>`;
 }
 
+/** A story arc the reader closed (vcrp/arc.js): its chapters' gists, folded into one entry under its name. */
+export function arcCloseTask(title, gists, language) {
+    return `${TASK_MARKER} FOLD: this is not a story turn. Do not continue the roleplay or write as any character.]
+
+The reader has closed a story arc${title ? ` called "${title}"` : ""}. These are its consecutive chapter summaries from the story memory, oldest first:
+${gists.map(g => `- ${g}`).join("\n")}
+
+Answer with exactly one tag and nothing else:
+<arc>At most 70 words: what this arc was about, how it went, and how things stood for the characters as it ended.</arc>${language ? `\nWrite it in ${language}.` : ""}`;
+}
+
 export function checkTask({ startQuote, endQuote, gist, chapter, changesText, language }) {
     return `${TASK_MARKER} CHECK: this is not a story turn. Do not continue the roleplay or write as any character.]
 

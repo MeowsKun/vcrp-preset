@@ -188,6 +188,9 @@ export function initProfile() {
         vcrpMemory: { enabled: false },
         // VCRP Focus. The note and what audits flagged are the chat's (chat_metadata).
         focus: { enabled: false, every: 20, checks: { drift: true, motifs: true, slop: true }, standing: true },
+        // VCRP Plot tab. The arc, the beats and the open ends are the chat's (chat_metadata);
+        // only the reminders' switch is the profile's.
+        plot: { threadNudges: true },
         npcBank: {
             enabled: false,
             oocTrigger: false,

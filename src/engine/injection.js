@@ -10,7 +10,7 @@ import { extension_settings, substituteParams, Popup, POPUP_TYPE } from "../st.j
 import { getContext } from "../st.js";
 import { extensionName } from "../core/constants.js";
 import { localProfile } from "../core/state.js";
-import { activeHelperBlocks, activeAside, TASK_MARKERS } from "../core/activeRequests.js";
+import { activeHelperBlocks, asideFor, TASK_MARKERS } from "../core/activeRequests.js";
 import {
     activeStoryPlanRequest, activeBanListChat,
     activeNpcScanRequest, activeNpcUpdateRequest,
@@ -25,6 +25,7 @@ import { buildBaseDict } from "./buildBaseDict.js";
 import { meguminAllSlotTriggers } from "../../data/slots.js";
 import { vcrpApplyGenerationToDict, vcrpFinalizeMessages, vcrpRouteNeedsAlternation, vcrpJoinSameRole } from "../vcrp/generation.js";
 import { buildFocusAuditMessages, plotFocusForDirector } from "../vcrp/focus/index.js";
+import { arcForDirector } from "../vcrp/arc.js";
 import { vcrpCostAfterPrompt, vcrpCostRequestCancelled } from "../vcrp/replyCost.js";
 import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, vcrpCountBackgroundPrompt, setMemoryPromptScope, memoryPromptIsStandalone, memoryState, vcrpMemoryEnabled } from "../vcrp/memory/index.js";
 import { vcrpOn, blankVcrpTags } from "../vcrp/power.js";
@@ -85,6 +86,7 @@ export async function handlePromptInjection(data, type) {
         settingsStr += `- Primary Genre: ${sdGenreLabel(sp)}\n`;
         if (sp.flavorTags && sp.flavorTags.length > 0) settingsStr += `- Flavor Elements: ${sp.flavorTags.join(', ')}\n`;
         if (sp.directorsNote && sp.directorsNote.trim()) settingsStr += `- Director's Note: ${sp.directorsNote.trim()}\n`;
+        settingsStr += arcForDirector();         // VCRP: the arc the reader has running
         settingsStr += plotFocusForDirector();   // VCRP Focus: the reader's plot focus
         
         if (sp.currentPlan && sp.currentPlan.trim()) {
@@ -234,14 +236,15 @@ export async function handlePromptInjection(data, type) {
         return;
     }
 
-    // --- VCRP: A SMALL QUESTION OF THE HELPER'S OWN ---
-    // The continuity check and the recall pick (vcrp/helper/aside.js): the messages they
-    // parked, nothing of the preset, no prefill.
-    if (activeAside && carries(TASK_MARKERS.aside)) {
+    // --- VCRP: A QUESTION WITH A PROMPT OF ITS OWN ---
+    // The continuity check, the recall pick, the arc pitches (vcrp/helper/aside.js): the
+    // messages parked under the marker this prompt carries, nothing of the preset, no prefill.
+    const aside = asideFor(carries);
+    if (aside) {
         messages.length = 0;
-        messages.push(...activeAside.messages.map(m => ({ role: m.role, content: m.content })));
+        messages.push(...aside.messages.map(m => ({ role: m.role, content: m.content })));
         if (countsHere) vcrpCountBackgroundPrompt(messages);
-        console.log(`[${extensionName}] 🎯 Injected the helper's question in memory.`);
+        console.log(`[${extensionName}] 🎯 Injected a parked question in memory.`);
         return;
     }
 

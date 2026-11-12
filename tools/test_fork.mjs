@@ -3253,13 +3253,13 @@ console.log("47 ok one-shot direction (next reply only, after the newest message
     const src = readFileSync(join(REPO, "index.js"), "utf8");
     const order = [...src.matchAll(/eventSource\.on\(event_types\.MESSAGE_RECEIVED, (?:whenOn\()?(\(id, type\) => )?(\w+)/g)].map(m => m[2]);
     const mods = {
-        vcrpCostOnReply: await imp("src/vcrp/replyCost.js"), vcrpOneShotOnReply: await imp("src/vcrp/oneShot.js"),
+        vcrpCostOnReply: await imp("src/vcrp/replyCost.js"), vcrpOneShotOnReply: await imp("src/vcrp/oneShot.js"), vcrpBeatsOnReply: await imp("src/vcrp/beats.js"),
         vcrpMemoryCountReply: await imp("src/vcrp/memory/index.js"), vcrpCutOnReply: await imp("src/vcrp/replyCut.js"), vcrpPuraTidyOnReply: await imp("src/vcrp/pura/tidy.js"),
         vcrpPuraRollsOnReply: await imp("src/vcrp/pura/rolls.js"), vcrpDedashOnReply: await imp("src/vcrp/dedash.js"),
         vcrpDialogueColorsOnReply: await imp("src/vcrp/dialogueColors.js"),
     };
     const pipeline = order.filter(n => mods[n]);
-    assert.deepEqual(pipeline, ["vcrpCostOnReply", "vcrpOneShotOnReply", "vcrpMemoryCountReply", "vcrpCutOnReply", "vcrpPuraTidyOnReply", "vcrpPuraRollsOnReply", "vcrpDedashOnReply", "vcrpDialogueColorsOnReply"], `the reply handlers, in order: ${pipeline.join(", ")}`);
+    assert.deepEqual(pipeline, ["vcrpCostOnReply", "vcrpOneShotOnReply", "vcrpBeatsOnReply", "vcrpMemoryCountReply", "vcrpCutOnReply", "vcrpPuraTidyOnReply", "vcrpPuraRollsOnReply", "vcrpDedashOnReply", "vcrpDialogueColorsOnReply"], `the reply handlers, in order: ${pipeline.join(", ")}`);
     const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
     const { estimateTokens } = mods.vcrpMemoryCountReply;
     const q = state.localProfile;
@@ -6811,7 +6811,7 @@ console.log("76 ok the cost batch (the product's defaults: a $0.20 goal, a $0.50
     assert(HS.HELPER_JOBS.some(j => j.key === "recall" && j.helperOnly && j.perReply) && HS.helperJobOn("recall") && HA.helperAnswers("recall") === "profile", "the helper on: recall picks are among its jobs, on by default");
     await SR.vcrpSmartRecall("normal");
     assert(asked.length === 1 && asked[0].profileId === "p1" && asked[0].messages.length === 2 && /C1: Mara gave Bob a key\./.test(asked[0].messages[1].content) && memory.vcrpMemoryRecall().includes("swore Bob to silence"), `asked once, with the question alone, and its pick used: ${asked.length}`);
-    assert(T.vcrpGenerationRecords().length === 0 && AR.activeAside === null, "the question's messages are parked only while it is asked");
+    assert(T.vcrpGenerationRecords().length === 0 && AR.asidesParked() === 0, "the question's messages are parked only while it is asked");
     await SR.vcrpSmartRecall("swipe");
     assert.equal(asked.length, 1, "a swipe of the same turn keeps the pick it was given");
     await SR.vcrpSmartRecall("quiet");
@@ -6928,11 +6928,22 @@ console.log("76 ok the cost batch (the product's defaults: a $0.20 goal, a $0.50
     await T.vcrpFinishOnReply(3, "swipe");
     assert(!chat[3].extra.vcrp_continuity, "a new swipe starts without the last one's finding");
     // The helper's own question is built as it is, whatever else is parked: its messages alone.
-    AR.setActiveAside({ messages: [{ role: "system", content: "S" }, { role: "user", content: "U" }] });
+    // Each question is parked under a marker of its own, so two in flight at once (the helper's
+    // check on its connection, a call on the story's) never take each other's prompt.
+    const parkedA = AR.parkAside([{ role: "system", content: "S" }, { role: "user", content: "U" }]);
+    const parkedB = AR.parkAside([{ role: "user", content: "Another question" }]);
+    assert(parkedA !== parkedB && /^___PS_[A-Z_]+___$/.test(parkedA) && /^___PS_[A-Z_]+___$/.test(parkedB) && AR.asidesParked() === 2, `a marker of its own for each: ${parkedA} ${parkedB}`);
     const built = [];
-    await handlePromptInjection({ chat: built, dryRun: false, helper: true, marker: AR.TASK_MARKERS.aside }, "quiet");
-    AR.setActiveAside(null);
+    await handlePromptInjection({ chat: built, dryRun: false, helper: true, marker: parkedA }, "quiet");
     assert.deepEqual(built, [{ role: "system", content: "S" }, { role: "user", content: "U" }], "the question's own messages, nothing of the preset");
+    // On the story's connection SillyTavern builds a prompt around the marker: the one it carries decides.
+    const builtB = [{ role: "system", content: "main preset" }, { role: "user", content: parkedB }];
+    vcrpSetGenerationType("quiet", {}, false);
+    await handlePromptInjection({ chat: builtB, dryRun: false });
+    assert.deepEqual(builtB, [{ role: "user", content: "Another question" }], "the other question, by its own marker");
+    AR.unparkAside(parkedA);
+    AR.unparkAside(parkedB);
+    assert.equal(AR.asidesParked(), 0, "and taken back out");
 
     globalThis.toastr = toastrWas;
     SR.forgetRecallPick();
@@ -7206,5 +7217,273 @@ console.log("77 ok facts and memory (the Canon sheet: kept per chat, offered fro
     ctx.mainApi = keep.api;
 }
 console.log("78 ok characters that stay themselves (who says what, read from the names on the dialogue; voice anchors: the earliest lines, sent after the chat for who is in the scene once they lie well back, the reader's own lines, hide, leave out, the switch, on a Megumin Original engine; the drift meter: a line in numbers, Welch's t, the same voice 0 and a changed one said in words, a habit lost by chance left out; the audit's schedule by the meter: half as often with nobody drifting, called by a character newly drifting, not twice by one reading; the audit shown the early lines; a small correction applying itself with Undo, one about the plot or the tone or a long one waiting; a voice taken from later on)");
+
+// 79. The plot in the reader's hands (10.0.0-vcrp.21). The thread ledger: the World State's
+//     open threads, seeds and timers read across the whole chat, with their real ages, and a
+//     reminder of the stale ones now and then. The beat queue: plot points lined up ahead,
+//     fired through the one-shot direction. Arcs: a genre, a tone and a premise for the stretch
+//     that starts now, by hand or from three pitches, with Story Memory closing the old one.
+{
+    const q = state.localProfile;
+    const TH = await imp("src/vcrp/threads.js");
+    const BT = await imp("src/vcrp/beats.js");
+    const ARC = await imp("src/vcrp/arc.js");
+    const shot = await imp("src/vcrp/oneShot.js");
+    const focus = await imp("src/vcrp/focus/index.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const S = await imp("src/vcrp/memory/summarize.js");
+    const L = await imp("src/vcrp/memory/ledger.js");
+    const AR = await imp("src/core/activeRequests.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { focus: JSON.stringify(q.focus || null), plot: JSON.stringify(q.plot || null), mode: q.mode, model: q.model, cot: q.cotEnabled, mem: q.vcrpMemory.enabled, name1: ctx.name1, cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+    const toastrWas = globalThis.toastr;
+    const toasts = [];
+    globalThis.toastr = { info: (t, h) => toasts.push(`${h}: ${t}`), warning() {}, success() {}, error() {} };
+    const UNIVERSAL = "VCRP V10 Universal.json";
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
+    q.focus = { enabled: false, live: { swipes: false, repeats: false, user: false }, voice: { anchors: false, meter: false } };
+    q.vcrpMemory.enabled = false;
+    for (const k of ["vcrp_threads", "vcrp_beats", "vcrp_arc", "vcrp_oneshot", "vcrp_focus", "vcrp_memory", "vcrp_canon"]) delete meta[k];
+    vcrpSetGenerationType("normal", {}, false);
+    const textOf = x => (typeof x.content === "string" ? x.content : x.content.map(part => part.text).join(""));
+    const world = ({ threads = null, seeds = null, timers = null } = {}) => `<Blocks>\n<World_State>\n**📅 Time:** Day 1, dusk | **🌤 Loc:** The pier | Saltmere | **🌡 Wx:** Rain\n\n---\n**👥 NPCs Present:**\n**Mara:**\n* *Outfit:* a wet coat\n* *Mood:* wary\n\n---\n**📡 Off-Screen:**\n* Jonah: mending nets\n`
+        + (threads ? `---\n**🔥 Unresolved Threads:**\n${threads.map(t => `* ${t}`).join("\n")}\n` : "")
+        + (seeds !== null ? `**🌱 Planted Seeds:** ${seeds}\n` : "") + (timers !== null ? `**⏳ Consequence Timers:** ${timers}\n` : "")
+        + "**🎯 Arc Phase:** Setup\n**🎬 Scene Phase:** Building\n</World_State>\n</Blocks>";
+    const COMPACT = "<Blocks>\n<World_State>\n**Time & Loc:** Dusk at the pier\n**PC:** coat | standing\n**NPCs Present:**\n* Mara: wet coat | leaning on the rail\n</World_State>\n</Blocks>";
+    // A chat of replies, each with the blocks `at(i)` gives it (reply numbers start at 1).
+    const story = at => {
+        chat.length = 0;
+        let i = 0;
+        for (;;) {
+            const blocks = at(++i);
+            if (blocks === undefined) break;
+            chat.push({ is_user: true, name: "Bob", send_date: `t${2 * i}`, mes: `(${i}) I ask.` });
+            chat.push({ is_user: false, name: "Alice", send_date: `t${2 * i + 1}`, mes: `Prose of reply ${i}, long enough to read.\n\n${blocks}` });
+        }
+        TH.forgetThreadReading();
+    };
+    const A = "Who sent the unsigned letter to Mara?", B = "Jonah's debt to the harbourmaster", C = "The smuggler's ledger is missing";
+    const SEED = "the cracked locket | Mara's mother";
+    const TIMER = "Bob skipped the rent | the landlord escalates";
+
+    // ── One World State ──
+    const body = TH.worldStateBody(`Prose.\n${world({ threads: [A, B], seeds: `${SEED} | 1 turn; a gull with a ring on its leg | the lighthouse | 1 turn`, timers: `${TIMER} | 3 turns` })}`);
+    assert.deepEqual(TH.worldThreads(body), { threads: [A, B], seeds: [`${SEED} | 1 turn`, "a gull with a ring on its leg | the lighthouse | 1 turn"], timers: [`${TIMER} | 3 turns`] }, `the open ends one World State lists: ${JSON.stringify(TH.worldThreads(body))}`);
+    assert.deepEqual(TH.worldThreads(TH.worldStateBody(COMPACT)), { threads: null, seeds: null, timers: null }, "the compact World State leaves them out: that is not an empty list");
+    assert.deepEqual(TH.worldThreads(TH.worldStateBody(world({ threads: ["[Active tension, unanswered question, or simmering conflict, one line each]", "[Keep to 3–5 max. Drop resolved ones, add new ones as they emerge]"], seeds: "[Foreshadow or setup element | what it hints at | turns since planted]", timers: "None" }))),
+        { threads: [], seeds: [], timers: [] }, "the template's own lines and a plain \"none\" list nothing");
+    assert(TH.worldStateBody("No blocks.") === "" && TH.worldStateBody("<Blocks><World_State>\n**🔥 Unresolved Threads:**\n* Cut off he").includes("Cut off he"), "no World State, and one the reply was cut inside");
+    assert(TH.alike(A, "Who sent the unsigned letter to Mara") === 1 && TH.alike(B, "Jonah's debt to the harbourmaster comes due on Friday") === 1 && TH.alike(A, C) === 0 && [...TH.lineWords("The seeds planted 4 turns ago")].join() === "seed,ago", "two lines are the same open end by the words that carry them; a count ticking is not a change");
+
+    // ── The ledger, read across the chat ──
+    story(i => [
+        world({ threads: [A, B], seeds: `${SEED} | 1 turn`, timers: `${TIMER} | 3 turns` }),
+        world({ threads: ["Who sent the unsigned letter to Mara", `${B} comes due on Friday`], seeds: `${SEED} | 2 turns`, timers: `${TIMER} | 2 turns` }),
+        COMPACT,
+        world({ threads: [A, C], seeds: `${SEED} | 4 turns`, timers: "none" }),
+        world({ threads: [A, C, B], seeds: `${SEED} | 5 turns`, timers: "none" }),
+    ][i - 1]);
+    const read = TH.readThreads(chat);
+    const by = text => read.items.find(i => i.text.startsWith(text));
+    assert(read.replies === 5 && read.items.length === 5 && read.listed.threads === 5, `five replies, five open ends ever listed: ${JSON.stringify(read.items.map(i => [i.kind, i.text, i.first, i.last, i.moved, i.closed, i.due]))}`);
+    assert(by("Who sent").first === 1 && by("Who sent").last === 5 && by("Who sent").moved === 1 && by("Who sent").closed === null, "a thread listed again in the same words has not moved");
+    assert(by(B).first === 1 && by(B).moved === 2 && by(B).closed === null && by(B).last === 5, `a reworded thread moved when it was reworded; one that left the list for a reply and came back was never closed: ${JSON.stringify(by(B))}`);
+    assert(by(C).first === 4 && by(SEED).moved === 1 && by(SEED).closed === null && by(SEED).kind === "seeds", "a new thread starts its own count; a seed whose turn count ticks up has not moved");
+    assert(by(TIMER).due === 4 && by(TIMER).closed === 4 && by(TIMER).kind === "timers", "a timer falls due by its own count, and left the list at reply 4");
+    let ledger = TH.threadLedger();
+    assert(ledger.open.length === 4 && ledger.closed.length === 1 && ledger.closed[0].ago === 1 && ledger.closed[0].age === 3 && ledger.current.threads && ledger.open.every(i => !i.stale), `ages for the tab: ${JSON.stringify(ledger.open.map(i => [i.text, i.age, i.still]))}`);
+
+    // ── Stale ones are named, now and then ──
+    const steady = n => story(i => (i <= n ? world({ threads: [A], seeds: `${SEED} | ${i} turns`, timers: `${TIMER} | 3 turns` }) : undefined));
+    steady(TH.STALE_AFTER);
+    assert.deepEqual(TH.threadsDue().map(i => i.kind), ["timers"], `twenty replies in: the thread has stood ${TH.STALE_AFTER - 1} replies, not yet stale; the timer, sixteen replies past its count, has its turn (every eight)`);
+    assert(TH.threadsNudge().includes("- A consequence that was due 16 replies ago: \"Bob skipped the rent\"") && !TH.threadsNudge().includes("open thread"), `and only the timer is named: ${TH.threadsNudge()}`);
+    steady(TH.STALE_AFTER - 1);
+    assert.equal(TH.threadsNudge(), "", "a reply earlier nothing was due: the timer waits its eight replies, the thread is not stale yet");
+    steady(4);
+    assert(TH.threadsDue().length === 1 && /^- A consequence that was due now: "Bob skipped the rent" \(what it brings: the landlord escalates\)$/.test(TH.dueLine(TH.threadsDue()[0])), `a timer is named the reply its count runs out: ${TH.threadsDue().map(TH.dueLine)}`);
+    steady(TH.STALE_AFTER + 1);
+    let due = TH.threadsDue();
+    assert(due.some(i => i.kind === "threads" && i.still === TH.STALE_AFTER) && /^- An open thread that has not moved in 20 replies: "Who sent the unsigned letter to Mara\?"$/.test(TH.dueLine(due.find(i => i.kind === "threads"))), `a thread unmoved for twenty replies is named: ${due.map(TH.dueLine)}`);
+    const nudge = TH.threadsNudge();
+    assert(/^\[OPEN ENDS\]\nThe story has left /.test(nudge) && nudge.includes("An open thread that has not moved in 20 replies") && /Never mention this note\./.test(nudge), `the reminder: ${nudge}`);
+    assert(TH.threadsNudge("continue") === "" && TH.threadsNudge("impersonate") === "", "a fresh reply only");
+    let msgs = await run(UNIVERSAL);
+    let at = msgs.findIndex(m => textOf(m).includes("[OPEN ENDS]"));
+    assert(at > msgs.map(m => m.role).lastIndexOf("assistant", msgs.length - 2) && leftovers(msgs).length === 0, `it rides after the chat, in the per-turn rules (message ${at} of ${msgs.length})`);
+    assert(!text(await run(UNIVERSAL, "impersonate")).includes("[OPEN ENDS]"), "never for the reader's own turn");
+    steady(TH.STALE_AFTER + 2);
+    assert(!TH.threadsDue().some(i => i.kind === "threads"), "the next reply it is not named again");
+    steady(TH.STALE_AFTER + 1 + TH.NUDGE_EVERY);
+    assert(TH.threadsDue().some(i => i.kind === "threads"), "eight replies on it is, while it still waits");
+    steady(TH.SEED_STALE + 1);
+    assert(TH.threadsDue().some(i => i.kind === "seeds") && /^- Set up 30 replies ago and never paid off: "the cracked locket" \(it pointed at: Mara's mother\)$/.test(TH.dueLine(TH.threadsDue().find(i => i.kind === "seeds"))), "a seed unpaid for thirty replies is named");
+    // The reader's part: one never to be named, and the switch.
+    steady(TH.STALE_AFTER + 1);
+    const key = TH.threadsDue().find(i => i.kind === "threads").key;
+    await TH.setThreadIgnored(key, true);
+    assert(!TH.threadsDue().some(i => i.kind === "threads") && TH.threadLedger().open.find(i => i.key === key).ignored, "an open end the reader set aside is never named");
+    await TH.setThreadIgnored(key, false);
+    q.plot = { threadNudges: false };
+    assert(!TH.threadNudgesOn() && TH.threadsNudge() === "" && !text(await run(UNIVERSAL)).includes("[OPEN ENDS]"), "the switch");
+    q.plot = { threadNudges: true };
+    // A list nobody has written for a while is out of date: nothing is named from it.
+    story(i => (i <= TH.STALE_AFTER + 1 ? world({ threads: [A] }) : i <= TH.STALE_AFTER + 12 ? COMPACT : undefined));
+    ledger = TH.threadLedger();
+    assert(!ledger.current.threads && ledger.open[0].still === TH.STALE_AFTER + 11 && TH.threadsNudge() === "", `threads not listed for eleven replies: no reminders from that list: ${JSON.stringify(ledger.current)}`);
+
+    // ── The beat queue ──
+    story(i => (i <= 3 ? COMPACT : undefined));
+    assert.deepEqual(BT.beatQueue(), { waiting: [], next: null, fired: [] }, "a chat starts with no beats");
+    const b1 = await BT.addBeat("  The landlord   finds the letter. ");
+    const b2 = await BT.addBeat("Jonah's boat is found empty.", { after: 2 });
+    await BT.addBeat("A storm closes the harbour.", { after: 0 });
+    assert(b1.text === "The landlord finds the letter." && b1.dueAt === 0 && b2.dueAt === 5 && (await BT.addBeat("   ")) === null, `a beat, tidied; one for a tap, one for two replies on: ${JSON.stringify([b1, b2])}`);
+    assert(BT.beatQueue().waiting.map(b => [b.id, b.in]).join("|") === "B1,|B2,2|B3,", `the queue, in the reader's order: ${JSON.stringify(BT.beatQueue().waiting)}`);
+    assert(await BT.moveBeat("B3", -1) && BT.beatQueue().waiting.map(b => b.id).join() === "B1,B3,B2" && !(await BT.moveBeat("B1", -1)), "moved up; the first stays first");
+    assert(await BT.editBeat("B3", { text: "A storm closes the harbour for a week.", after: 4 }) && BT.beatQueue().waiting[1].in === 4 && BT.beatQueue().waiting[1].text.endsWith("for a week."), "reworded, and set to fire four replies on");
+    // Fired on a tap: it goes out as the direction for the next reply, and that reply spends it.
+    assert.equal(await BT.fireBeat("B1"), "next");
+    assert(shot.oneShot().text === "The landlord finds the letter." && BT.beatQueue().next.id === "B1" && BT.beatQueue().waiting.length === 2, "a fired beat is in the Next reply only box");
+    assert.equal(await BT.fireBeat("B3"), "held", "the box holds one already: the second waits");
+    assert(BT.beatQueue().waiting.find(b => b.id === "B3").in === 0, "…and is due as soon as the box is free");
+    chat.push({ is_user: true, name: "Bob", send_date: "b1", mes: "I knock." });
+    msgs = await run(UNIVERSAL);
+    assert(text(msgs).includes("### Direction for this reply") && text(msgs).includes("The landlord finds the letter."), "the request carries the beat as its one-shot direction");
+    chat.push({ is_user: false, name: "Alice", send_date: "b2", mes: "The landlord holds the letter up to the light.", swipes: [""], swipe_id: 0 });
+    shot.vcrpOneShotOnReply(chat.length - 1, "normal");
+    let fired = BT.vcrpBeatsOnReply(chat.length - 1, "normal");
+    assert(BT.beatQueue().fired[0].id === "B1" && BT.beatQueue().fired[0].firedAt === 4, `the reply spent it: ${JSON.stringify(BT.beatQueue().fired)}`);
+    // The box being free, the beat that was held goes in for the next reply, said in a toast.
+    assert(fired && fired.id === "B3" && shot.oneShot().text === "A storm closes the harbour for a week." && toasts.some(t => /VCRP: beats: A beat you queued goes with your next message: "A storm closes/.test(t)), `the next due beat takes the box: ${JSON.stringify(fired)} / ${toasts}`);
+    // The reader rewrites the box before sending: the beat is theirs again, waiting for a tap.
+    shot.setOneShot("The storm passes them by.");
+    chat.push({ is_user: true, name: "Bob", send_date: "b3", mes: "I look at the sky." });
+    await run(UNIVERSAL);
+    chat.push({ is_user: false, name: "Alice", send_date: "b4", mes: "The clouds slide east.", swipes: [""], swipe_id: 0 });
+    shot.vcrpOneShotOnReply(chat.length - 1, "normal");
+    fired = BT.vcrpBeatsOnReply(chat.length - 1, "normal");
+    assert(BT.beatQueue().waiting.some(b => b.id === "B3" && b.in === null) && !BT.beatQueue().fired.some(b => b.id === "B3"), "a beat the reader wrote over is not spent: it waits for a tap");
+    // B2 was set for reply 5: its time has come, and the box is free.
+    assert(fired && fired.id === "B2" && BT.beatQueue().next.id === "B2", `a beat fires by itself once its replies have passed: ${JSON.stringify(fired)}`);
+    // A blank reply spends nothing: the beat stays in the box for the swipe.
+    chat.push({ is_user: true, name: "Bob", send_date: "b5", mes: "And Jonah?" });
+    await run(UNIVERSAL);
+    chat.push({ is_user: false, name: "Alice", send_date: "b6", mes: "", swipes: [""], swipe_id: 0 });
+    shot.vcrpOneShotOnReply(chat.length - 1, "normal");
+    BT.vcrpBeatsOnReply(chat.length - 1, "normal");
+    assert(BT.beatQueue().next && BT.beatQueue().next.id === "B2" && shot.oneShot().text === "Jonah's boat is found empty.", "a blank reply leaves the beat in the box");
+    assert(await BT.removeBeat("B2") && shot.oneShot().text === "" && BT.beatQueue().next === null, "taken back out of the queue, it leaves the box too");
+    assert(await BT.requeueBeat("B1") && BT.beatQueue().waiting.some(b => b.id === "B1") && (await BT.fireBeat("nope")) === "gone", "a fired beat can be queued again");
+    chat.pop(); chat.pop();
+
+    // ── Arcs ──
+    assert(ARC.arcs().current === null && ARC.arcBlock() === "" && ARC.arcForDirector() === "" && (await ARC.startArc({ premise: "   " })) === null, "no arc: nothing is sent, and one needs a premise");
+    const PREMISE = "The harbour freezes over and the town turns on its smugglers. Jonah has to choose who he owes more.";
+    delete meta.vcrp_beats; delete meta.vcrp_oneshot;
+    let started = await ARC.startArc({ genre: "Mystery / Thriller", tone: "tense,  dry humour", premise: PREMISE, opens: "Ice locks the fishing boats in overnight." });
+    assert(started.arc.id === "A1" && started.arc.title === "The harbour freezes over and the" && started.ended === null && started.arc.startedReply === 5, `an arc with no name takes one from its premise: ${JSON.stringify(started.arc)}`);
+    assert(started.beat && started.beat.fired === "next" && shot.oneShot().text === "Ice locks the fishing boats in overnight.", "its opening move is a beat, in the box for the next reply");
+    await ARC.editArc({ title: "The Long Freeze" });
+    const block = ARC.arcBlock();
+    assert(block.startsWith('\n\n[ARC]\nThe story\'s current arc: "The Long Freeze".\nGenre: Mystery / Thriller. Tone: tense, dry humour.\n' + PREMISE + "\nEverything established carries over unchanged") && block.endsWith("never mention this note."), `the arc as the model reads it: ${block}`);
+    await focus.setPlotFocus({ active: true, text: "The brass ring" });
+    chat.push({ is_user: true, name: "Bob", send_date: "a1", mes: "I walk out onto the ice." });
+    msgs = await run(UNIVERSAL);
+    const last = textOf(msgs[msgs.length - 1]) + (msgs[msgs.length - 2] ? "" : "");
+    const whole = text(msgs);
+    assert(whole.indexOf("[ARC]") > whole.lastIndexOf("I walk out onto the ice.") && whole.indexOf("[PLOT FOCUS]") > whole.indexOf("[ARC]") && leftovers(msgs).length === 0 && last.length > 0,
+        "the arc rides after the newest message, with the plot focus after it");
+    assert(!text(await run(UNIVERSAL, "impersonate")).includes("[ARC]"), "never for the reader's own turn");
+    await focus.setPlotFocus({ active: false });
+    assert(/^- Current arc \(the reader set it; plan within it\): "The Long Freeze", Mystery \/ Thriller, tense, dry humour\. The harbour freezes over/.test(ARC.arcForDirector()), "the Story Director is told the arc");
+    assert(ARC.arcs().current.replies === 0, "how long it has run");
+    // Another arc starts: the first one ends there.
+    started = await ARC.startArc({ title: "Thaw", premise: "Spring, and debts come due." });
+    assert(started.ended.title === "The Long Freeze" && ARC.arcs().past.length === 1 && ARC.arcs().past[0].endedReply === 5 && ARC.arcs().current.title === "Thaw" && started.beat === null, "starting an arc ends the one running");
+    assert(await ARC.editArc({ premise: "" }) && ARC.arcs().current === null && ARC.arcs().past.length === 2 && ARC.arcBlock() === "" && !(await ARC.endArc()), "an emptied premise ends the arc");
+    // Setup Check: an arc on a preset from before the slot it rides in.
+    await ARC.startArc({ title: "Thaw", premise: "Spring, and debts come due." });
+    const v10 = JSON.parse(readFileSync(join(REPO, "Presets", UNIVERSAL), "utf8"));
+    Object.assign(chatCompletionSettings, { prompts: v10.prompts.map(pr => ({ ...pr, content: typeof pr.content === "string" ? pr.content.replace("[[plotfocus]]", "") : pr.content })), prompt_order: v10.prompt_order, preset_settings_openai: "VCRP V10 Universal" });
+    assert(vcrpHealthCheck().items.some(c => /Re-import the preset: .*the arc/.test(c.title)), `Setup Check says when the arc cannot reach the model: ${vcrpHealthCheck().items.map(c => c.title).filter(t => /Re-import/.test(t))}`);
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    await ARC.endArc();
+
+    // ── Three pitches ──
+    const input = { story: "Mara and Bob run the Lantern. ".repeat(12), canon: ["Mara is Bob's sister."], open: [A, B], cast: ["Mara", "Bob", "Jonah"], current: { title: "Thaw", premise: "Spring, and debts come due." }, user: "Bob", genre: "Horror / Dark", tone: "slow dread", wish: "Something with Jonah's debts.", language: "" };
+    const pm = ARC.arcPitchMessages(input);
+    assert(pm.length === 2 && /story editor/.test(pm[0].content) && pm[1].content.startsWith("<story_so_far>\nMara and Bob run the Lantern.") && /<canon>\n- Mara is Bob's sister\.\n<\/canon>/.test(pm[1].content) && /<open_threads>\n- Who sent the unsigned letter/.test(pm[1].content)
+        && /<cast>\nMara, Bob, Jonah\n<\/cast>/.test(pm[1].content) && /<arc_ending_now>\n"Thaw": Spring/.test(pm[1].content) && /Genre: Horror \/ Dark\.\nTone: slow dread\.\nIn the reader's words: Something with Jonah's debts\./.test(pm[1].content)
+        && /Bob is the reader's own character/.test(pm[1].content) && /<pitch>\nTitle: /.test(pm[1].content), "the pitch call's own prompt: the story, the fixed facts, the open ends, the cast, the arc ending, what was asked");
+    assert(/The reader left the genre and tone open/.test(ARC.arcPitchMessages({ ...input, genre: "", tone: "", wish: "", canon: [], open: [], current: null })[1].content) && !ARC.arcPitchMessages({ ...input, canon: [], open: [] })[1].content.includes("<canon>"), "nothing asked: three that differ; an empty section is left out");
+    const ANSWER = `<think>Three ways.</think>\n<pitch>\n**Title:** The Ice Ledger\n**Premise:** The harbourmaster calls in every debt at once. Jonah's name is first on the list.\nIt will not stop with him.\n**Opens with:** A notice is nailed to the Lantern's door.\n</pitch>\n<pitch>\nTitle: What the Gulls Carry\nPremise: The ring on the gull's leg was a message.\nOpens with: The gull comes back.\n</pitch>\n<pitch>\nPremise: No title here, only what it is about, and that is enough to go on.\n</pitch>\n<pitch>\nTitle: A fourth\nPremise: Too many.\n</pitch>`;
+    const parsed = ARC.parseArcPitches(ANSWER);
+    assert(parsed.length === 3 && parsed[0].title === "The Ice Ledger" && parsed[0].premise === "The harbourmaster calls in every debt at once. Jonah's name is first on the list. It will not stop with him." && parsed[0].opens === "A notice is nailed to the Lantern's door."
+        && parsed[1].title === "What the Gulls Carry" && parsed[2].title === "No title here" && parsed[2].opens === "", `three pitches, however they are dressed: ${JSON.stringify(parsed)}`);
+    assert.deepEqual(ARC.parseArcPitches("I would rather not."), [], "an answer with none");
+    // Asked on the story's connection: its own messages and nothing else, counted as a background call.
+    const sent = [];
+    quietImpl = async params => { const asked = (params && (params.quietPrompt ?? params.prompt)) || ""; const m = [{ role: "system", content: "main preset" }, { role: "user", content: asked }]; vcrpSetGenerationType("quiet", {}, false); await handlePromptInjection({ chat: m, dryRun: false }); sent.push(m); return ANSWER; };
+    assert(ARC.arcPitchEstimate({ genre: "Horror" }).text.startsWith("Sends about"), "priced before it is asked");
+    let r = await ARC.pitchArcs({ genre: "Horror / Dark", tone: "slow dread", wish: "Something with Jonah's debts." });
+    assert(r.status === "ok" && r.pitches.length === 3 && ARC.arcs().pitches.length === 3 && ARC.arcs().asked.genre === "Horror / Dark" && AR.asidesParked() === 0, `three pitches, kept with the chat: ${JSON.stringify(r)}`);
+    assert(sent.length === 1 && sent[0].length === 2 && /story editor/.test(textOf(sent[0][0])) && !text(sent[0]).includes("main preset") && /Genre: Horror \/ Dark\./.test(textOf(sent[0][1])), "the request is the pitch call's own prompt");
+    quietImpl = async () => "No.";
+    assert.equal((await ARC.pitchArcs({})).status, "format", "an answer that is not three pitches is said, and changes nothing");
+    assert.equal(ARC.arcs().pitches.length, 3);
+    quietImpl = null;
+    // A pitch started: the arc, its opening move in the box, the pitches gone.
+    delete meta.vcrp_oneshot; delete meta.vcrp_beats;
+    started = await ARC.startArc({ ...ARC.arcs().pitches[0], genre: "Horror / Dark", tone: "slow dread" });
+    assert(started.arc.title === "The Ice Ledger" && shot.oneShot().text === "A notice is nailed to the Lantern's door." && ARC.arcs().pitches.length === 0 && ARC.arcs().asked === null, "a pitch started is the arc, with its opening move");
+    const short = chat.splice(0, chat.length);
+    assert.equal((await ARC.pitchArcs({})).status, "empty", "too little story to pitch from");
+    chat.push(...short);
+
+    // ── Story Memory closes the old arc ──
+    assert.equal((await S.closeStoryArc("Thaw")).status, "idle", "Story Memory off: nothing to close");
+    q.vcrpMemory.enabled = true;
+    extension_settings.VCRP.globalSettings.memoryBudget = { ...(extension_settings.VCRP.globalSettings.memoryBudget || {}) };
+    delete meta.vcrp_memory;
+    const st = memory.memoryState();
+    const chapter = (id, gist, extra = {}) => ({ id, gist, chapter: `${gist} In full.`, start: null, end: null, undo: {}, ...extra });
+    Object.assign(st, { cut: null, summarized: null, shown: "", arcs: [{ text: "An older fold.", covers: ["C0"] }], ledger: [], pending: [], chapters: [chapter("C0", "Before.", { folded: true }), chapter("C1", "Mara hid the letter.", { when: "Day 1 · The pier" }), chapter("C2", "The landlord found it.", { pinned: true }), chapter("C3", "Jonah's boat came back empty.")] });
+    const asked = [];
+    quietImpl = async params => { asked.push(String((params && (params.quietPrompt ?? params.prompt)) || "")); return "<think>Folding.</think><arc>Mara hid a letter that was not hers; when it surfaced, Jonah's boat came back without him.</arc>"; };
+    r = await S.closeStoryArc("  The Long   Freeze ");
+    assert(r.status === "folded" && r.chapters === 2, JSON.stringify(r));
+    assert(/MEMORY TASK FOLD/.test(asked[0]) && /closed a story arc called "The Long Freeze"/.test(asked[0]) && asked[0].includes("- [Day 1 · The pier] Mara hid the letter.\n- Jonah's boat came back empty.") && !asked[0].includes("The landlord found it.") && !asked[0].includes("Before."), `the fold reads the arc's gists, not a pinned or an already folded one: ${asked[0]}`);
+    assert(st.arcs.length === 2 && st.arcs[1].text === "The Long Freeze: Mara hid a letter that was not hers; when it surfaced, Jonah's boat came back without him." && st.arcs[1].covers.join() === "C1,C3" && st.arcs[1].title === "The Long Freeze"
+        && st.chapters.find(c => c.id === "C1").folded && st.chapters.find(c => c.id === "C3").folded && !st.chapters.find(c => c.id === "C2").folded && st.chapters.length === 4, `one entry under the arc's name; the chapters stay: ${JSON.stringify(st.arcs)}`);
+    const memText = L.composeMemoryText({ arcs: st.arcs, chapters: st.chapters, ledger: [] });
+    assert(memText.includes("- An older fold.\n- The Long Freeze: Mara hid a letter") && memText.includes("- The landlord found it.") && !memText.includes("- [Day 1 · The pier] Mara hid the letter."), "the memory text reads arc by arc, a pinned chapter keeping its line");
+    assert.equal((await S.closeStoryArc("Again")).status, "idle", "fewer than two chapters left on their own lines: nothing to fold");
+    st.chapters.push(chapter("C4", "Spring came."), chapter("C5", "Debts came due."));
+    quietImpl = async () => "I cannot.";
+    r = await S.closeStoryArc("Thaw");
+    assert(r.status === "failed" && st.arcs.length === 2 && !st.chapters.find(c => c.id === "C4").folded && !(st.summaryFailures > 0), `an answer without its tag changes nothing, and does not pause the summaries: ${JSON.stringify(r)}`);
+    quietImpl = null;
+
+    globalThis.toastr = toastrWas;
+    chat.length = 0;
+    for (const k of ["vcrp_threads", "vcrp_beats", "vcrp_arc", "vcrp_oneshot", "vcrp_focus", "vcrp_memory"]) delete meta[k];
+    TH.forgetThreadReading();
+    shot.forgetOneShotPending();
+    q.focus = JSON.parse(keep.focus) || undefined;
+    if (q.focus === undefined) delete q.focus;
+    q.plot = JSON.parse(keep.plot) || undefined;
+    if (q.plot === undefined) delete q.plot;
+    q.vcrpMemory.enabled = keep.mem;
+    Object.assign(q, { mode: keep.mode, model: keep.model, cotEnabled: keep.cot });
+    ctx.name1 = keep.name1;
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+}
+console.log("79 ok the plot in the reader's hands (the thread ledger: one World State's open ends, the compact form and the template told apart; read across the chat with first, moved, closed and due; the stale ones named when their turn comes, after the chat, never twice running, never for a list out of date, the reader's ignore and the switch; the beat queue: queued, moved, reworded, fired through the one-shot box, spent by the reply, the next due one taking the box, one the reader wrote over waiting again, a blank reply spending nothing; arcs: started, named, sent last with the plot focus after it, told to the Director, ended by the next; three pitches: the call's own prompt and what it reads, parsed however dressed, kept with the chat; Story Memory closing an arc: its chapters folded under its name, pinned ones kept, a failure changing nothing)");
 
 console.log("\nALL FORK CHECKS PASSED");

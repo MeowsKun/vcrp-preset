@@ -23,6 +23,8 @@ import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "./cacheCheck.js";
 import { replyCapTokens, ceilingActive, ceilingCost, reasoningAllowance } from "./replyLength.js";
 import { focusSettings, peekFocusState } from "./focus/index.js";
 import { voiceSettings } from "./voice.js";
+import { arcs } from "./arc.js";
+import { threadNudgesOn, threadLedger } from "./threads.js";
 import { isPuraEngine, isV11Engine } from "../core/engines.js";
 import { notebookOn } from "./notebook/index.js";
 import { vcrpOn } from "./power.js";
@@ -215,6 +217,9 @@ export function vcrpHealthCheck() {
     }
     const plot = peekFocusState() && peekFocusState().plot;
     if (plot && plot.active && !carries("[[plotfocus]]")) focusOff.push("the plot focus");
+    // The Plot tab: the running arc rides where the plot focus does, the open ends' reminders in [[focus]].
+    if (arcs().current && !carries("[[plotfocus]]")) focusOff.push("the arc");
+    if (threadNudgesOn() && threadLedger().open.length && !carries("[[focus]]")) focusOff.push("the reminders of open ends");
     // The Pura engines and Pura's trackers have tags of their own.
     if (isPuraEngine(activeEngine()) && !(carries("[[pura_late]]") && carries("[[pura_system]]"))) focusOff.push("the Pura engine's settings");
     if (meguminActiveBlocks().some(b => b && b.puraRules) && !carries("[[block_rules]]")) focusOff.push("Pura's tracker rules");

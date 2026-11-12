@@ -26,6 +26,7 @@ import { renderFocusTab } from "../vcrp/focus/ui.js";
 import { renderNotebookTab } from "../vcrp/notebook/ui.js";
 import { renderHelperTab } from "../vcrp/helper/ui.js";
 import { renderModelSetup } from "../vcrp/modelSetup/ui.js";
+import { renderPlotTab } from "../vcrp/plotUi.js";
 
 export const tabsUI = [
     { title: "Model Setup", sub: "Pick the model you play with, and use the settings tested for it.", icon: "fa-compass", render: renderModelSetup },
@@ -33,6 +34,7 @@ export const tabsUI = [
     { title: "Writing Style", sub: "Pick the prose voice the story is told in.", icon: "fa-pen-nib", render: renderStoryConfig },
     { title: "Global Toggles & Add Ons", sub: "Language, pronouns, and the gameplay systems bolted onto the story.", icon: "fa-earth-americas", render: renderGlobalAndBlocks },
     { title: "BLOCKS", sub: "What goes inside the master block, in what order, and how it looks.", icon: "fa-cubes", render: renderBlocksTab },
+    { title: "Plot", sub: "The arc the story is in, the beats you line up, and the open ends it has left hanging.", icon: "fa-route", render: renderPlotTab },
     { title: "Story Director", sub: "Direct the narrative. Shape what happens next.", icon: "fa-clapperboard", render: renderStoryPlanner },
     { title: "Dynamic Ban List", sub: "Scan and ban repetitive AI phrases.", icon: "fa-ban", render: renderBanList },
     { title: "Focus", sub: "Audit the story every few replies for drift, repeated motifs and slop.", icon: "fa-crosshairs", render: renderFocusTab },

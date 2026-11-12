@@ -28,7 +28,6 @@ export const TASK_MARKERS = {
     order: "___PS_DUMMY___",
     focus: "___PS_FOCUS___",
     helperBlocks: "___PS_HELPER_BLOCKS___",
-    aside: "___PS_ASIDE___",
 };
 
 // Story Director: the chat text being planned against.
@@ -67,11 +66,28 @@ export function setActiveBlockRepair(v) { activeBlockRepair = v; }
 export let activeHelperBlocks = null;
 export function setActiveHelperBlocks(v) { activeHelperBlocks = v; }
 
-// VCRP: a small question of the helper's own, with its whole prompt (vcrp/helper/aside.js):
-// { messages }. The continuity check and the recall pick ask theirs this way. The handler
-// sends those messages and nothing else.
-export let activeAside = null;
-export function setActiveAside(v) { activeAside = v; }
+// VCRP: a question with a prompt of its own (vcrp/helper/aside.js): the continuity check, the
+// recall pick, the arc pitches. The handler sends its messages and nothing else. Each question
+// is parked under a marker of its own, so two in flight at once (the helper's check on its
+// connection, a call on the story's) can never take each other's prompt.
+const asides = new Map();   // marker -> { messages }
+let asideSeq = 0;
+const asideLetters = n => { let s = ""; do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); } while (n > 0); return s; };
+/** Parks a question's messages; returns the marker to send as its quiet prompt. */
+export function parkAside(messages) {
+    const marker = `___PS_ASIDE_${asideLetters(asideSeq++)}___`;
+    asides.set(marker, { messages });
+    return marker;
+}
+/** Takes a parked question back out (always, once it was answered or failed). */
+export function unparkAside(marker) { asides.delete(marker); }
+/** The parked question whose marker `carries` finds in the prompt being built, or null. */
+export function asideFor(carries) {
+    for (const [marker, payload] of asides) if (carries(marker)) return payload;
+    return null;
+}
+/** How many questions are parked now (0 when nothing is being asked). */
+export const asidesParked = () => asides.size;
 
 // ── NPC reference images for the current generation ──────────────────────────
 // An array rather than a single payload: several NPCs can be attached at once.

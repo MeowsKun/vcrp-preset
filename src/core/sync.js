@@ -31,6 +31,8 @@ export const TAB_SYNC_KEYS = {
     "Dynamic Ban List": ["banList", "banListBackend", "banListCustomPromptsEnabled", "banListCustomPrompts"],
     "NPCs Bank": ["npcBank"],
     "Focus": ["focus"],
+    // plot: the open ends' reminders switch (the arc and the beats are the chat's, in chat_metadata).
+    "Plot": ["plot"],
     // notebook: the Author's Notebook's switch and numbers (its truths are the chat's, in chat_metadata).
     "Notebook": ["notebook"],
     "Memory": ["vcrpMemory"],

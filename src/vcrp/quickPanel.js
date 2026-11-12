@@ -3,7 +3,8 @@
 //
 // An entry in SillyTavern's wand menu (the magic-wand button by the chat input) opens a
 // small panel with:
-//   - a direction for the next reply only (oneShot.js);
+//   - a direction for the next reply only (oneShot.js), and the next beat waiting in the
+//     queue (beats.js), with one tap to send it with that reply;
 //   - this chat's Tone Rules, on or off;
 //   - "Existing cast only": no new characters while it is on (castLock.js);
 //   - the plot focus, on or off;
@@ -26,6 +27,7 @@ import { peekFocusState, setPlotFocus, PLOT_DEFAULTS, plotFocusRemaining } from 
 import { puraSettings, PURA_RANDOMISER_LABELS, PURA_MAX_RANDOMISERS } from "./pura/index.js";
 import { oneShot, setOneShot } from "./oneShot.js";
 import { castLockOn, setCastLock } from "./castLock.js";
+import { beatQueue, fireBeat } from "./beats.js";
 import { getContext } from "../st.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
@@ -84,6 +86,18 @@ function puraRandomisersHtml() {
     }).join("");
 }
 
+// The beat queue's part (beats.js, the Plot tab): the next beat waiting, with one tap to send it
+// with the next reply. A beat already in the box above is said there, not here.
+function beatRowHtml(open) {
+    if (!open) return "";
+    let q = { waiting: [], next: null };
+    try { q = beatQueue(); } catch (e) { return ""; }
+    const first = q.waiting[0];
+    if (!first) return q.next ? `<div class="vcrp-quick-shot-row"><span>The box holds a beat you queued (Plot tab).</span></div>` : "";
+    const more = q.waiting.length > 1 ? ` (${q.waiting.length - 1} more behind it)` : "";
+    return `<div class="vcrp-quick-shot-row" id="vcrp_quick_beat_row"><span>Next beat${more}: ${esc(first.text.slice(0, 90))}${first.text.length > 90 ? "…" : ""}</span><button type="button" class="vcrp-quick-close" id="vcrp_quick_beat" data-id="${esc(first.id)}" title="Puts it in the box above, to go with your next reply">Send it next</button></div>`;
+}
+
 /** The panel's contents, drawn from the current settings. */
 function quickHtml() {
     const open = toneChatOpen();
@@ -110,6 +124,7 @@ function quickHtml() {
         <div class="vcrp-quick-sub" style="margin-top:0;">Next reply only</div>
         <textarea id="vcrp_quick_shot" class="vcrp-quick-shot" rows="3" placeholder="e.g. She finally tells him about the ring." ${open ? "" : "disabled"}>${esc(shot.text)}</textarea>
         <div class="vcrp-quick-shot-row"><span id="vcrp_quick_shot_desc">${shotDesc}</span>${open && shot.text.trim() ? `<button type="button" class="vcrp-quick-close" id="vcrp_quick_shot_clear">Clear</button>` : ""}</div>
+        ${beatRowHtml(open)}
         ${SWITCH("vcrp_quick_tone", open && tone.enabled, "Tone Rules", toneDesc, !open)}
         ${SWITCH("vcrp_quick_cast", open && castLockOn(), "Existing cast only", open ? "No new characters: the story stays with the ones already in it (unnamed background aside), and twists that call for someone new use an existing character." : "Open a chat first.", !open)}
         ${SWITCH("vcrp_quick_plot", open && plot.active, "Plot focus", plotDesc, !open)}
@@ -135,6 +150,11 @@ function wire(card, doc) {
     // Leaving the box saves at once (before a send or a chat switch can miss it).
     on("#vcrp_quick_shot", "change", e => setOneShot(e.target.value));
     on("#vcrp_quick_shot_clear", "click", () => { setOneShot(""); redraw(); });
+    on("#vcrp_quick_beat", "click", async e => {
+        const r = await fireBeat(String(e.currentTarget.getAttribute("data-id")));
+        if (r === "held" && typeof toastr !== "undefined") toastr.info("The box already holds something, so this beat goes as soon as that is used or cleared.", "VCRP: beats");
+        redraw();
+    });
     on("#vcrp_quick_tone", "change", e => { setToneRules({ enabled: e.target.checked }); redraw(); });
     on("#vcrp_quick_cast", "change", e => { setCastLock(e.target.checked); redraw(); });
     on("#vcrp_quick_plot", "change", async e => { await setPlotFocus({ active: e.target.checked }); redraw(); });

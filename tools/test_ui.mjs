@@ -439,6 +439,91 @@ for (let k = 0; k < memCount; k++) {
     delete globalThis.__ST__.chat_metadata.vcrp_focus;
     voice.forgetVoiceReading();
 }
+// The Plot tab: an arc started by hand, reworded and ended; beats queued, fired, moved and taken
+// out; the open ends read from the chat's World States, one made a beat, one set aside.
+{
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ Plot: ${what}`); } };
+    const before = failures;
+    const tick = () => new Promise(r => setTimeout(r, 5));
+    const ARC = await imp("src/vcrp/arc.js");
+    const BT = await imp("src/vcrp/beats.js");
+    const TH = await imp("src/vcrp/threads.js");
+    const shot = await imp("src/vcrp/oneShot.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const box = $("#ps_stage_content");
+    const flat = el => el.text().replace(/\s+/g, " ");
+    const plotTab = tabsUI.findIndex(t => t.title === "Plot");
+    for (const k of ["vcrp_arc", "vcrp_beats", "vcrp_threads", "vcrp_oneshot"]) delete meta[k];
+    const chatWas = chat.slice();
+    chat.length = 0;
+    const world = threads => `<Blocks>\n<World_State>\n**📅 Time:** Day 1 | **🌤 Loc:** The pier | **🌡 Wx:** Rain\n---\n**🔥 Unresolved Threads:**\n${threads.map(t => `* ${t}`).join("\n")}\n**🌱 Planted Seeds:** the cracked locket | Mara's mother | 1 turn\n**⏳ Consequence Timers:** Bob skipped the rent | the landlord escalates | 2 turns\n**🎯 Arc Phase:** Setup\n</World_State>\n</Blocks>`;
+    for (let i = 1; i <= 22; i++) {
+        chat.push({ is_user: true, name: "Bob", mes: `(${i}) I ask.` });
+        chat.push({ is_user: false, name: "Alice", mes: `Reply ${i}.\n${world(i < 22 ? ["Who sent the unsigned letter?", "Jonah's debt to the harbourmaster"] : ["Who sent the unsigned letter?"])}` });
+    }
+    TH.forgetThreadReading();
+    switchTab(plotTab);
+    check(plotTab >= 0 && box.find("#plot_arc_panel").length === 1 && box.find("#plot_beat_panel").length === 1 && box.find("#plot_thread_panel").length === 1, "the three panels are not drawn");
+    check(/No arc is running/.test(flat(box.find("#plot_arc_panel"))) && /Nothing set/.test(box.find(".mtab-header-badge").text()), "an empty chat's arc panel");
+
+    // An arc, by hand.
+    box.find("#plot_new_genre").val("mystery").trigger("change");
+    box.find("#plot_new_tone").val("tense").trigger("input");
+    box.find("#plot_new_start").trigger("click"); await tick();
+    check(ARC.arcs().current === null, "an arc started without a premise");
+    box.find("#plot_new_premise").val("The harbour freezes over and the town turns on its smugglers.").trigger("input");
+    box.find("#plot_new_opens").val("Ice locks the boats in overnight.").trigger("input");
+    box.find("#plot_new_start").trigger("click"); await tick(); await tick();
+    let cur = ARC.arcs().current;
+    check(cur && cur.genre === "Mystery / Thriller" && cur.tone === "tense" && /^The harbour freezes over/.test(cur.premise), `the arc from the form: ${JSON.stringify(cur)}`);
+    check(shot.oneShot().text === "Ice locks the boats in overnight." && /Going with your next message: Ice locks the boats in overnight\./.test(flat(box.find("#plot_beat_panel"))), "its opening move is not in the box, or the Beats panel does not say so");
+    check(box.find("#plot_arc_current").length === 1 && box.find("#plot_arc_premise").val() === cur.premise && /Running now, for 0 replies/.test(flat(box.find("#plot_arc_current"))), "the running arc is not shown");
+    box.find("#plot_arc_title").val("The Long Freeze").trigger("change"); await tick();
+    box.find("#plot_arc_tone").val("tense, dry").trigger("change"); await tick();
+    check(ARC.arcs().current.title === "The Long Freeze" && ARC.arcs().current.tone === "tense, dry" && /The Long Freeze/.test(box.find(".mtab-header-badge").text()), "the running arc cannot be reworded");
+    check(ARC.arcBlock().includes('The story\'s current arc: "The Long Freeze".'), "the block does not carry the edit");
+    box.find("#plot_arc_end").trigger("click"); await tick();
+    check(ARC.arcs().current === null && ARC.arcs().past.length === 1 && /Earlier arcs \(1\)/.test(flat(box.find("#plot_arc_panel"))), "End this arc does not end it");
+
+    // Beats.
+    box.find(".plot-beat-drop").first().trigger("click"); await tick();
+    check(shot.oneShot().text === "" && BT.beatQueue().next === null, "the opening move cannot be taken back out");
+    box.find("#plot_beat_new").val("The landlord finds the letter.");
+    box.find("#plot_beat_add").trigger("click"); await tick();
+    box.find("#plot_beat_new").val("Jonah's boat is found empty.");
+    box.find("#plot_beat_after").val("3");
+    box.find("#plot_beat_add").trigger("click"); await tick();
+    check(BT.beatQueue().waiting.length === 2 && /Waits for a tap/.test(flat(box.find(".plot-beat").eq(0))) && /Fires by itself in 3 replies/.test(flat(box.find(".plot-beat").eq(1))), `two beats queued: ${JSON.stringify(BT.beatQueue().waiting)}`);
+    box.find(".plot-beat-down").first().trigger("click"); await tick();
+    check(BT.beatQueue().waiting[0].text === "Jonah's boat is found empty.", "a beat cannot be moved");
+    box.find(".plot-beat-text").first().val("Jonah's boat drifts in empty.").trigger("change"); await tick();
+    check(BT.beatQueue().waiting[0].text === "Jonah's boat drifts in empty.", "a beat cannot be reworded");
+    box.find(".plot-beat-fire").first().trigger("click"); await tick();
+    check(shot.oneShot().text === "Jonah's boat drifts in empty." && BT.beatQueue().next && /Going with your next message/.test(flat(box.find("#plot_beat_panel"))), "a beat is not fired into the box");
+
+    // Open ends.
+    const tp = () => box.find("#plot_thread_panel");
+    check(tp().find(".plot-thread").length === 3 && /Open threads \(1\)/.test(flat(tp())) && /Consequence timers \(1\)/.test(flat(tp())) && /Planted seeds \(1\)/.test(flat(tp())), `the open ends are not listed: ${flat(tp()).slice(0, 400)}`);
+    check(/open 21 replies/.test(flat(tp())) && /overdue by 19 replies/.test(flat(tp())) && /planted 21 replies ago/.test(flat(tp())), `their ages: ${flat(tp()).slice(300, 900)}`);
+    check(/Left the list \(1\)/.test(flat(tp())) && /Jonah's debt to the harbourmaster/.test(flat(tp().find("details"))), "the thread that left the list is not shown");
+    tp().find(".plot-thread-back").trigger("click"); await tick();
+    check(BT.beatQueue().waiting[0].text === "Pick this dropped thread back up: Jonah's debt to the harbourmaster", `a dropped thread is not made a beat: ${JSON.stringify(BT.beatQueue().waiting[0])}`);
+    tp().find(".plot-thread-beat").first().trigger("click"); await tick();
+    check(/^(Bring this open thread forward|Let this consequence land|Pay off what this set up): /.test(BT.beatQueue().waiting[0].text), "an open end is not made a beat");
+    const keyBefore = TH.threadLedger().open.filter(i => i.ignored).length;
+    tp().find(".plot-thread-ignore").first().trigger("click"); await tick();
+    check(TH.threadLedger().open.filter(i => i.ignored).length === keyBefore + 1 && /Remind again/.test(flat(tp())), "an open end cannot be set aside");
+    tp().find("#plot_thread_nudge").prop("checked", false).trigger("change");
+    check(p.plot && p.plot.threadNudges === false && TH.threadsNudge() === "", "the reminders' switch is not saved");
+    box.find("#plot_thread_nudge").prop("checked", true).trigger("change");
+    clicks += 14;
+    if (failures === before) console.log("  ✓ Plot: an arc by hand with its opening move, reworded, ended; beats queued, moved, reworded, fired; the open ends with their ages, one picked back up, one made a beat, one set aside, the switch");
+
+    chat.length = 0;
+    chat.push(...chatWas);
+    for (const k of ["vcrp_arc", "vcrp_beats", "vcrp_threads", "vcrp_oneshot"]) delete meta[k];
+    TH.forgetThreadReading();
+}
 // What's new after an update: a card on Global Settings and a dot on the gear until "Got it".
 {
     const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ What's new: ${what}`); } };

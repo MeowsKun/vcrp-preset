@@ -68,8 +68,9 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   it; otherwise on their own. Focus's drift audits check the replies against them too (tone
   drift). No preset re-import needed.
 - **VCRP Quick** (SillyTavern's wand menu, by the chat input): a small panel to switch this chat's
-  Tone Rules and plot focus on or off, and, with a Pura engine, Pura's scene randomisers (Dead
-  Dove Escalation among them, two at most), without opening the VCRP window. A SillyTavern
+  Tone Rules and plot focus on or off, send the next beat you queued (Plot tab) and, with a Pura
+  engine, pick Pura's scene randomisers (Dead Dove Escalation among them, two at most), without
+  opening the VCRP window. A SillyTavern
   without the wand menu gets a small button under VCRP's own instead.
 - **Existing cast only** (VCRP Quick, per chat): for scenes that should stay with the characters
   and threads already in the story. While on, every reply is told not to introduce anyone new
@@ -93,6 +94,12 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   and **bond milestones** kept as facts, both read from the blocks with no call; and the helper's
   **recall pick**, so an old chapter comes back when the scene returns to it in other words. Any
   engine. No preset re-import needed.
+- **The Plot tab** (10.0.0-vcrp.21; details under *The plot in your hands* below): **arcs** (a
+  genre, a tone and a premise for the stretch of the story that starts now, written by you or
+  picked from three pitches, with Story Memory closing the arc that ends), a **beat queue** (plot
+  points lined up ahead, fired on a tap or after some replies) and a **thread ledger** (the open
+  threads, seeds and timers the World State lists, with their real ages, and a reminder to the
+  model when one has waited too long). Any engine. No preset re-import needed.
 - **Characters that stay themselves** (10.0.0-vcrp.20; details under Focus below): **voice
   anchors**, each character's own earliest lines, sent for whoever is in the scene; a **drift
   meter** that counts how a character's latest lines differ from their earliest and decides
@@ -527,6 +534,79 @@ latest replies and writes the writer a short correction.
   It is a background call, so no ceiling applies to it. With the meter deciding, a story whose
   characters hold steady pays for half as many. Two failed audits in a row pause the automatic
   ones until an **Audit now** works.
+
+## The plot in your hands: arcs, beats, open ends
+
+The **Plot** tab (10.0.0-vcrp.21) is for steering where a long story goes without writing it
+yourself. Three tools; everything in them is kept with the chat.
+
+**Arc** (`src/vcrp/arc.js`): a long story is not one story. The heist ends, and what follows is
+a slow romance, or a haunting. An arc is you saying so: a name, a genre, a tone and a premise for
+the stretch that starts now.
+
+- **In the prompt:** while an arc runs, it goes with every reply as the last thing the model
+  reads (`[[plotfocus]]`, after your newest message, outside the cache; a few dozen tokens): its
+  name, genre, tone and premise, and that everything established carries over unchanged. The
+  plot focus, when on, follows it: the arc is what the story is about, the plot focus one thing
+  to revolve around inside it. An Impersonate goes without. The Story Director, when you use
+  it, is told the arc and plans within it.
+- **Starting one:** write the premise yourself, or press **Pitch three arcs**: one background
+  call that reads the story as the Story Director would (the story memory and the latest
+  messages, or its usual window without Story Memory), the Canon sheet, the open threads, the
+  cast and the arc now ending, with your genre, tone and wish, and proposes three arcs that
+  each grow out of something already in the story. It is priced beside the button; like every
+  background call it carries no ceiling, and it goes to the helper when the Story Director's
+  job does. *Start this arc* takes a pitch as it is; *Edit first* puts it in the boxes.
+- **Its opening move:** a pitch comes with the first thing that happens (yours can too). It is
+  queued as a beat and goes with your next message, in the *Next reply only* box, where you can
+  still change it or take it out.
+- **Story Memory closes the arc that ends** (the tick under the form, on by default when there
+  are chapters to fold): its chapters fold into one entry under the arc's name (one short call
+  that reads their one-line gists, never the chat), so the memory text reads arc by arc. The
+  chapters stay and are recalled as before; a pinned chapter keeps its own line. Messages not
+  summarized yet join the new arc's first chapter. A failure changes nothing and never pauses
+  the automatic summaries.
+- Starting an arc ends the one running; **End this arc** ends it without another. Earlier
+  arcs are listed.
+
+**Beats** (`src/vcrp/beats.js`): plot points you line up ahead of time ("The landlord finds the
+letter.").
+
+- A beat goes out the way a one-shot direction does, and in fact as one: firing it puts its
+  text in VCRP Quick's *Next reply only* box. It rides with one reply, after your message, is
+  never written into the chat, and stays with that reply for a swipe.
+- It fires **on a tap** (in the tab, or *Send it next* in VCRP Quick, which shows the next beat
+  waiting), or **by itself** after the number of replies you gave it. A toast says when one
+  goes into the box by itself.
+- One at a time: while the box holds something (your own direction, another beat), a beat
+  waits and goes when the box is free. A beat you write over in the box is not spent: it goes
+  back to waiting for a tap. A blank reply spends nothing.
+- Reorder, reword, remove; fired beats are listed with *Queue again*.
+
+**Open ends** (`src/vcrp/threads.js`): the World State block lists the story's Unresolved
+Threads, Planted Seeds and Consequence Timers on every reply, and the model that keeps the list
+is a poor bookkeeper: a thread sits unmoved for fifty replies, a timer's "2 turns" stays 2
+turns, an open end leaves the list without ever being settled.
+
+- **VCRP keeps the book.** It reads every reply's World State in order, with no call of its
+  own: when each line first appeared, when its wording last changed (a count ticking up is not
+  a change), when a timer falls due by its own count, when a line left the list. Two lines are
+  the same open end by the words that carry them, so a rewording does not start a new count.
+  Read from the chat each time, so a rewind or a deleted message is simply read again.
+- **The tab shows them with their real ages**, and the ones that left the list (settled, or
+  dropped: the list cannot say which). *Make it a beat* queues a beat that brings an open end
+  forward; *Pick it back up* does the same for one that was dropped.
+- **Reminders** (on by default): a thread unmoved for 20 replies, a seed unpaid for 30 and a
+  timer past its count are named to the model with one reply, then every 8 replies while they
+  wait, two at a time at most, with a line to bring one forward if the scene gives an opening
+  or settle it, and not to open something new in its place. They ride in `[[focus]]`, after the
+  chat (never cached; about 60 tokens on the replies they go out). Which reply names what is
+  decided by the reply's number alone, so a swipe gets the same reminder. *Never remind* sets
+  one open end aside.
+- **What it needs:** the World State block with those lines. The compact World State leaves
+  them out on most replies (the ledger waits for the full ones, and sends no reminder from a
+  list more than 8 replies old); with the Author's Notebook on, the seeds are the notebook's
+  unless you keep them in the World State.
 
 ## Megumin Original
 

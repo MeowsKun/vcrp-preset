@@ -477,3 +477,54 @@ itself**:
 A correction about where the story goes (your plot focus, your Tone Rules) or a long one still
 waits for your approval, as before. To make every audit wait, untick *Small corrections apply
 by themselves* in the Audit panel.
+
+---
+
+## 15. The Plot tab: arcs, beats and open ends
+
+A new tab (10.0.0-vcrp.21) for steering where the story goes without writing it yourself.
+Everything in it belongs to the chat you have open.
+
+**Arc: a new stretch of the story.** When the heist is over and you want a slow romance next, or
+a haunting, start an arc: a genre, a tone and a premise. While it runs, the model reads it last
+with every reply (a few dozen tokens), and is told that everyone stays who they are.
+
+1. Open **Plot** → *Start an arc*. Pick a genre and type a tone if you like.
+2. Either write the premise yourself, or press **Pitch three arcs**. That is one background
+   call (its price is beside the button): the model reads your story, your Canon sheet and the
+   open threads, and offers three arcs that grow out of what is already there. You can type
+   what you want from it first: *"Something with Jonah's debts. Less romance for a while."*
+3. Press **Start this arc** on the one you like (or *Edit first* to change it).
+
+A pitch comes with its opening move. It goes with your next message as a beat; VCRP Quick shows
+it in *Next reply only*, and you can still change it or clear it.
+
+If Story Memory is on, leave the tick on to **close what came before**: its chapters fold into
+one entry under the old arc's name, so the memory reads arc by arc. Nothing is lost; the
+chapters are still recalled when the scene touches them.
+
+**Beats: plot points you line up ahead.** Type one (*"The landlord finds the letter."*) and
+press **Queue**.
+
+- **With the next reply** fires it now: it lands in VCRP Quick's *Next reply only* box and goes
+  out with your next message.
+- The number beside the box makes a beat fire **by itself** after that many replies. A toast
+  tells you when one has gone into the box, so you can still hold it back.
+- **VCRP Quick** shows the next beat waiting, with *Send it next*.
+
+A beat is never written into the chat. If a reply ignores it, swipe: the swipe gets it again.
+
+**Open ends: what the story left hanging.** With the World State block on, the story lists its
+unresolved threads, planted seeds and consequence timers every reply, and then loses count. VCRP
+keeps count for it. The tab shows each one with its real age: *open 31 replies, unmoved for
+24*, *overdue by 3 replies*, *planted 40 replies ago*.
+
+- **Reminders** (on by default): when a thread has not moved for 20 replies, a seed has waited
+  30, or a timer has run out, VCRP names it to the model with one reply, and again every 8
+  replies while it waits. Old threads pay off instead of piling up.
+- **Make it a beat** queues a beat that brings one forward, when you want it now.
+- **Left the list** shows the ones the story stopped listing. If one was dropped rather than
+  settled, **Pick it back up** queues a beat for it.
+- **Never remind** sets one aside.
+
+No call of its own, no cost beyond the reminder's few dozen tokens on the replies it goes out.
