@@ -34,6 +34,8 @@ Put an earlier finding that came back under <recurring> by its number, not under
     correctionTemplate: "[FOCUS]\nAn editor audited the recent replies for drift. Apply these corrections from now on, without mentioning them:\n{{note}}{{standing}}",
     standingIntro: "Earlier audits kept finding these. Keep them out:",
 
+    voiceTemplate: "[VOICES]\nHow the characters in this scene spoke when the story began, in their own lines. Each still sounds like this (word choice, rhythm, how blunt, formal or playful they are) unless the story itself has changed them. These are samples of a voice: never repeat the lines themselves, and never mention this note.\n{{lines}}",
+
     liveTemplate: "[FOCUS: THIS REPLY]\nFrom your recent replies in this chat. Apply to this reply, without mentioning it:\n{{items}}",
     liveSwipe: "- This is a swipe: the reader turned down {{count}} of this reply, which went:\n{{versions}}\nWrite a fresh take, not a reworded copy: open another way and take the moment somewhere new, keeping to {{user}}'s message, any direction for this reply and everything above.",
     livePhrases: "- Phrases your recent replies keep reusing: {{phrases}}. Find fresh wording for them, or leave them out.",

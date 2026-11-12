@@ -124,6 +124,7 @@ import { vcrpInstallGenerationTrace, vcrpFinishOnReply } from "./src/vcrp/genera
 import { vcrpRescueOnReply } from "./src/vcrp/replyRescue.js";
 import { vcrpContinuityOnReply, drawContinuityNote, drawAllContinuityNotes } from "./src/vcrp/continuity.js";
 import { vcrpInstallSmartRecall, forgetRecallPick } from "./src/vcrp/memory/smartRecall.js";
+import { forgetVoiceReading } from "./src/vcrp/voice.js";
 import { vcrpInstallStallNotice } from "./src/vcrp/streamStall.js";
 import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
 import { vcrpOn, setVcrpOn, whenOn, drawPowerState } from "./src/vcrp/power.js";
@@ -435,6 +436,7 @@ jQuery(async () => {
                 setPendingRolls(null);
                 forgetCostPending();
                 forgetRecallPick();   // the helper's recall pick was for the last chat's turn
+                forgetVoiceReading(); // and the voices' reading of the chat was the last chat's
                 // A save debounced at 500ms would die when initProfile swaps localProfile
                 // below. Flush it under the OLD key first — settings only, because
                 // chat_metadata already belongs to the chat we are switching TO.

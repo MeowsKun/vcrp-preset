@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// The Focus tab: the plot focus, the every-reply checks, then the drift audits (settings, the
-// audit waiting for review, the correction in the prompt, and what audits have flagged so far).
+// The Focus tab: the plot focus, the every-reply checks, the voices (voiceUi.js), then the drift
+// audits (settings, an audit that applied itself or waits for review, the correction in the
+// prompt, and what audits have flagged so far).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { localProfile } from "../../core/state.js";
@@ -11,11 +12,12 @@ import { renderPromptEditor } from "../../ui/promptEditor.js";
 import { escapeHtmlAttr } from "../../utils/html.js";
 import { toneRules } from "../toneRules.js";
 import {
-    FOCUS_CHECKS, FOCUS_MIN_REPLIES, FOCUS_MAX_FAILURES, focusSettings, peekFocusState, repliesSinceAudit, focusEstimate, focusStanding,
+    FOCUS_CHECKS, FOCUS_MIN_REPLIES, FOCUS_MAX_FAILURES, focusSettings, peekFocusState, focusEstimate, focusStanding,
     focusAuditRunning, runFocusAudit, approveFocusAudit, discardFocusAudit, setFocusNote, removeFocusItem, resetFocus,
     onFocusChange, PLOT_STRENGTHS, PLOT_DEFAULTS, plotFocusActive, plotFocusRemaining, setPlotFocus,
-    FOCUS_LIVE, focusLiveBlock,
+    FOCUS_LIVE, focusLiveBlock, focusSchedule, appliedFocusAudit, undoAppliedAudit, keepAppliedAudit,
 } from "./index.js";
+import { voicePanelHtml, wireVoicePanel } from "./voiceUi.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 const when = t => (t ? new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
@@ -28,7 +30,7 @@ let listening = false;
 function ensureFocusSettings() {
     if (!localProfile.focus || typeof localProfile.focus !== "object") localProfile.focus = {};
     const s = focusSettings();
-    Object.assign(localProfile.focus, { enabled: s.enabled, every: s.every, checks: { ...s.checks }, standing: s.standing, live: { ...s.live } });
+    Object.assign(localProfile.focus, { enabled: s.enabled, every: s.every, checks: { ...s.checks }, standing: s.standing, autoApply: s.autoApply, live: { ...s.live } });
     return localProfile.focus;
 }
 
@@ -36,12 +38,13 @@ function statusLine(s, st) {
     if (focusAuditRunning()) return `<i class="fa-solid fa-spinner fa-spin"></i> An audit is running.`;
     if (st && st.pending) return `<i class="fa-solid fa-circle-pause" style="color:#f59e0b;"></i> An audit is waiting for your review below. Automatic audits hold until you approve or discard it.`;
     if (st && (st.failures || 0) >= FOCUS_MAX_FAILURES) return `<i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b;"></i> Automatic audits are paused after ${st.failures} failed audits. Use Audit now to retry.`;
-    const since = repliesSinceAudit();
-    const left = s.every - since;
     const last = st && st.lastAuditAt ? ` Last audit: ${esc(when(st.lastAuditAt))}${st.lastClean ? ", no drift found" : ""}.` : " No audit yet in this chat.";
-    return left > 0
-        ? `Next audit in <b>${left}</b> ${left === 1 ? "reply" : "replies"}.${last}`
-        : `The next audit runs after the next reply.${last}`;
+    const plan = focusSchedule(s, st);
+    const n = x => `<b>${x}</b> ${x === 1 ? "reply" : "replies"}`;
+    if (plan.due) return `The next audit runs after the next reply${plan.drifting.length ? `: the drift meter reads ${esc(plan.drifting.join(", "))} as drifting` : ""}.${last}`;
+    if (!plan.byMeter) return `Next audit in ${n(plan.left)}.${last}`;
+    if (plan.drifting.length) return `The drift meter reads ${esc(plan.drifting.join(", "))} as drifting: the next audit runs in ${n(plan.holds)} (audits keep ${Math.min(10, s.every)} replies apart).${last}`;
+    return `The drift meter decides: an audit runs when a character newly reads as drifting, and in ${n(plan.left)} at the latest.${last}`;
 }
 
 function estimateLine() {
@@ -152,6 +155,27 @@ function pendingPanel(st) {
         </div>`;
 }
 
+function appliedPanel(st) {
+    const a = appliedFocusAudit(st);
+    if (!a) return "";
+    const p = a.audit;
+    const byId = Object.fromEntries((a.before.items || []).map(i => [i.id, i]));
+    const back = (p.recurring || []).filter(id => byId[id]).map(id => `<div style="margin:3px 0;">${kindBadge(byId[id].kind)}${esc(byId[id].text)} <span style="opacity:.7;">(came back)</span></div>`).join("");
+    const found = (p.findings || []).map(x => `<div style="margin:3px 0;">${kindBadge(x.kind)}${esc(x.text)}</div>`).join("");
+    return `
+        <div class="mtab-panel" id="focus_applied_panel" style="border-color: rgba(45,212,191,0.35);">
+            <div class="mtab-panel-title gold"><i class="fa-solid fa-wand-magic-sparkles"></i> Applied by itself</div>
+            <div class="set-desc" style="margin-bottom:8px;">Audit of the last ${esc(p.replies)} replies, ${esc(when(a.at))}. Its correction was small, so it went into the prompt without waiting for you${p.note ? "" : " (it wrote no new correction: the one in the prompt stays, and its findings were recorded)"}. Undo puts the prompt and the list below back as they were, and leaves this audit waiting for your review.</div>
+            ${back ? `<div style="margin-bottom:8px;"><b style="font-size:0.78rem;">Came back after an earlier correction</b>${back}</div>` : ""}
+            ${found ? `<div style="margin-bottom:8px;"><b style="font-size:0.78rem;">New findings</b>${found}</div>` : ""}
+            ${p.note ? `<div class="set-desc" style="white-space:pre-wrap; padding:8px; border-radius:6px; background:rgba(0,0,0,0.2);">${esc(p.note)}</div>` : ""}
+            <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+                <button id="focus_applied_undo" class="ps-modern-btn secondary" style="font-size:0.75rem;"><i class="fa-solid fa-rotate-left"></i> Undo</button>
+                <button id="focus_applied_keep" class="ps-modern-btn secondary" style="font-size:0.75rem;"><i class="fa-solid fa-check"></i> Keep it</button>
+            </div>
+        </div>`;
+}
+
 export function renderFocusTab(c) {
     shown = c;
     if (!listening) {
@@ -163,7 +187,7 @@ export function renderFocusTab(c) {
     const f = ensureFocusSettings();
     const s = focusSettings();
     const st = peekFocusState();
-    const on = s.enabled || plotFocusActive(st) || Object.values(s.live).some(Boolean);
+    const on = s.enabled || plotFocusActive(st) || Object.values(s.live).some(Boolean);   // (the voices send nothing until a chat has named lines)
 
     c.append(`
         <div class="mtab-header">
@@ -175,17 +199,19 @@ export function renderFocusTab(c) {
         </div>
         ${plotPanel(st)}
         ${livePanel(s)}
+        ${voicePanelHtml()}
         <div class="mtab-callout" style="margin-bottom:14px;"><i class="fa-solid fa-book"></i><span>The Author's Notebook has a tab of its own now: <b>Notebook</b>, next to this one.</span></div>
         <div class="mtab-toggle-row ${s.enabled ? "active" : ""}" id="focus_enable" style="margin-bottom:14px;">
             <div class="toggle-info">
                 <div class="toggle-label"><i class="fa-solid fa-crosshairs" style="color:#2dd4bf;"></i> Enable drift audits</div>
-                <div class="toggle-desc">An audit runs on its own every few replies. Its correction waits here for your approval, then goes with every reply until the next one replaces it.</div>
+                <div class="toggle-desc">An audit reads the latest replies for drift, on its own. A small correction goes into the prompt by itself, with Undo here; a longer one, or one about your plot focus or Tone Rules, waits for your approval. It goes with every reply until the next one replaces it.</div>
             </div>
             <div class="ps-switch"></div>
         </div>`);
 
     wirePlotPanel(c);
     wireLivePanel(c, f);
+    wireVoicePanel(c, rerender);
     c.find("#focus_enable").on("click", () => { f.enabled = !s.enabled; saveProfileToMemory(); rerender(); });
 
     if (!s.enabled) {
@@ -219,7 +245,7 @@ export function renderFocusTab(c) {
             <div class="mtab-setting-row">
                 <div class="set-info">
                     <div class="set-label">Audit every</div>
-                    <div class="set-desc">Replies between audits. Each audit reads that many of the latest replies (and your messages between them). Fewer replies: more often, each one cheaper.</div>
+                    <div class="set-desc">Replies between audits. Each audit reads that many of the latest replies (and your messages between them). Fewer replies: more often, each one cheaper. While the drift meter decides (Voices, above), this is how many replies an audit reads, and audits with nobody drifting run every twice as many.</div>
                 </div>
                 <input type="number" id="focus_every" class="ps-modern-input" value="${s.every}" min="5" max="100" style="width:90px; text-align:center; background:rgba(0,0,0,0.2);" />
             </div>
@@ -233,6 +259,10 @@ export function renderFocusTab(c) {
                 <div class="set-info"><div class="set-label">Keep repeat offenders</div><div class="set-desc">Up to 3 findings that came back after a correction (flagged in 2 or more audits) stay in the prompt alongside every new correction, so what an earlier one fixed does not creep back when the next one leaves it out. A few dozen tokens a reply; never touches the cache.</div></div>
                 <input type="checkbox" id="focus_standing" ${s.standing ? "checked" : ""} />
             </div>
+            <div class="mtab-setting-row" style="padding-bottom:0; border:none;">
+                <div class="set-info"><div class="set-label">Small corrections apply by themselves</div><div class="set-desc">A correction about how the story is written (character drift, repeated motifs, slop), no longer than an audit is asked to write, goes into the prompt as the audit lands, and this tab keeps what was there before for one tap of Undo. A correction about where the story goes (your plot focus, your Tone Rules) or a long one still waits for your approval. Off: every audit waits.</div></div>
+                <input type="checkbox" id="focus_auto_apply" ${s.autoApply ? "checked" : ""} />
+            </div>
             <div id="focus_status" class="set-desc" style="margin-top:12px;">${statusLine(s, st)}</div>
             <div id="focus_estimate" class="set-desc" style="margin-top:4px;">${estimateLine()}</div>
             <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
@@ -240,6 +270,7 @@ export function renderFocusTab(c) {
                 <button id="focus_reset" class="ps-modern-btn secondary" style="font-size:0.72rem; color:#ef4444;"><i class="fa-solid fa-trash"></i> Reset this chat's Focus</button>
             </div>
         </div>
+        ${appliedPanel(st)}
         ${st && st.pending ? pendingPanel(st) : ""}
         <div class="mtab-panel">
             <div class="mtab-panel-title gold"><i class="fa-solid fa-bullseye"></i> Correction in the prompt</div>
@@ -272,12 +303,20 @@ export function renderFocusTab(c) {
         f.checks = next; saveProfileToMemory();
     }));
     c.find("#focus_standing").on("change", function () { f.standing = $(this).is(":checked"); saveProfileToMemory(); rerender(); });
+    c.find("#focus_auto_apply").on("change", function () { f.autoApply = $(this).is(":checked"); saveProfileToMemory(); });
+    c.find("#focus_applied_undo").on("click", async () => {
+        await undoAppliedAudit();
+        if (typeof toastr !== "undefined") toastr.info("Undone. The audit waits for your review below.", "VCRP Focus");
+        rerender();
+    });
+    c.find("#focus_applied_keep").on("click", async () => { await keepAppliedAudit(); rerender(); });
     c.find("#focus_audit_now").on("click", async function () {
         const btn = $(this);
         btn.prop("disabled", true).html(`<i class="fa-solid fa-spinner fa-spin"></i> Auditing…`);
         const r = await runFocusAudit();
         if (typeof toastr !== "undefined") {
             if (r.status === "pending") toastr.info("The audit is ready for review below.", "VCRP Focus");
+            else if (r.status === "applied") toastr.info("The audit found drift, and its correction goes out with the next reply. Undo is below.", "VCRP Focus");
             else if (r.status === "clean") toastr.success("No drift found.", "VCRP Focus");
             else if (r.status === "busy") toastr.info("Another generation is running. Try again when it finishes.", "VCRP Focus");
             else if (r.status === "idle") toastr.info(`Nothing to audit yet: ${r.reason}.`, "VCRP Focus");
@@ -330,6 +369,7 @@ function focusPromptEditor(f) {
             { key: "toneNote", label: "Audit: extra line for tone drift", hint: "Added to the note's instructions while the Tone Rules are on (through the <code>{{plotNote}}</code> token)." },
             { key: "correctionTemplate", label: "Correction in the prompt", hint: "Tokens: <code>{{note}}</code>, <code>{{standing}}</code> (the repeat offenders, when there are any)." },
             { key: "standingIntro", label: "Repeat offenders: heading", hint: "The line above the repeat offenders." },
+            { key: "voiceTemplate", label: "Voices: in the prompt", hint: "Tokens: <code>{{lines}}</code> (one line for each character in the scene, with their early lines)." },
             { key: "liveTemplate", label: "Every reply: in the prompt", hint: "Tokens: <code>{{items}}</code> (one line for each check that found something)." },
             { key: "liveSwipe", label: "Every reply: swipes", hint: "Tokens: <code>{{count}}</code> (\"an earlier version\", \"3 earlier versions\"), <code>{{versions}}</code> (how each began and ended), <code>{{user}}</code>." },
             { key: "livePhrases", label: "Every reply: reused phrases", hint: "Tokens: <code>{{phrases}}</code>." },

@@ -337,10 +337,10 @@ for (let k = 0; k < memCount; k++) {
 
     // The prompt editor, with the audits off and on; typing saves the reader's text.
     const editorBefore = failures;
-    check(box.find("#focus_prompt_editor textarea").length === 22, `the prompt editor (audits off): ${box.find("#focus_prompt_editor textarea").length} fields`);
+    check(box.find("#focus_prompt_editor textarea").length === 23, `the prompt editor (audits off): ${box.find("#focus_prompt_editor textarea").length} fields`);
     p.focus.enabled = true;
     switchTab(tabsUI.findIndex(t => t.title === "Focus"));
-    check(box.find("#focus_prompt_editor textarea").length === 22, "the prompt editor is missing with the audits on");
+    check(box.find("#focus_prompt_editor textarea").length === 23, "the prompt editor is missing with the audits on");
     box.find("#focus_prompt_editor .pe-enable-toggle").trigger("click");
     box.find('#focus_prompt_editor textarea[data-key="checkSlop"]').val("- [slop] my own check").trigger("input");
     check(p.focus.customPromptsEnabled === true && p.focus.customPrompts && p.focus.customPrompts.checkSlop === "- [slop] my own check", "an edit does not reach the profile");
@@ -348,6 +348,96 @@ for (let k = 0; k < memCount; k++) {
     check(p.focus.customPrompts === null, "Reset All Defaults does not clear the edits");
     clicks += 3;
     if (failures === editorBefore) console.log("  ✓ Focus prompts: editor drawn either way, edits saved, reset");
+
+    // Voices: nothing to read without names; with them, each character's early lines and the
+    // meter's reading; a line of the reader's own, one hidden, a character left out, a voice
+    // taken from later on; the two switches.
+    const voiceBefore = failures;
+    const voice = await imp("src/vcrp/voice.js");
+    const focusTab = tabsUI.findIndex(t => t.title === "Focus");
+    const flat = el => el.text().replace(/\s+/g, " ");
+    const addonsWere = [...(p.addons || [])];
+    p.addons = addonsWere.filter(a => a !== "color");
+    switchTab(focusTab);
+    check(box.find("#focus_voice_panel").length === 1 && /Dialogue Colors add-on puts on every spoken line .* It is off/.test(flat(box.find("#focus_voice_panel"))), `with the add-on off the panel does not say what it reads: ${flat(box.find("#focus_voice_panel")).slice(0, 300)}`);
+    check(/Nothing right now/.test(box.find("#focus_voice_preview").text()), "the preview with nothing to send");
+    p.addons.push("color");
+    const chatWas = chat.slice();
+    chat.length = 0;
+    // Forty-five lines, each about another thing (a line that differs only by a number is the same line).
+    const THINGS = "anvil barrel candle dagger ember flask gauntlet hammer inkwell jar kettle lantern mallet needle oar pulley quill rope saddle tankard urn vial wagon xylophone yoke zither apron bell chisel drum easel fiddle goblet harp idol jug kiln ladle mug net oven pan quiver rake spade".split(" ");
+    for (let i = 0; i < 45; i++) {
+        chat.push({ is_user: true, name: "Bob", mes: `(${i}) I ask.` });
+        chat.push({ is_user: false, name: "Alice", mes: `Narration ${i}. <font color="#a855f7" title="Mara">"${i < 25 ? `Tch. Do not waste my time with that ${THINGS[i]}, kid.` : `Oh, I am so sorry, please, take all the time you need with the ${THINGS[i]} and then some more of it, okay...`}"</font>` });
+    }
+    p.focus.checks = { drift: true, motifs: true, slop: true };   // the checks above left only one on
+    voice.forgetVoiceReading();
+    switchTab(focusTab);
+    const row = () => box.find("#focus_voice_panel .focus-voice-char");
+    check(row().length === 1 && /Mara/.test(row().find("summary").text()) && /45 lines/.test(flat(row().find("summary"))), `a character with named lines is not listed: ${flat(row().find("summary"))}`);
+    check(/drifting \d+/.test(flat(row().find("summary"))) && /Since their earliest lines: .*lines run longer/.test(flat(row())), `the meter's reading is not shown: ${flat(row()).slice(0, 260)}`);
+    check(row().find(".focus-voice-drop").length === 4 && /"Tch\. Do not waste my time with that anvil, kid\."/.test(flat(row())), "her four earliest lines are not listed");
+    check(/\[VOICES\][\s\S]*- Mara: "Tch\. Do not waste my time with that anvil, kid\." \| "Tch\. Do not waste my time with that barrel, kid\."/.test(box.find("#focus_voice_preview").text()), `the preview: ${box.find("#focus_voice_preview").text().slice(0, 300)}`);
+    row().attr("open", "");   // the reader has her card open
+    row().find(".focus-voice-line").val("Move, or be moved.");
+    row().find(".focus-voice-add").trigger("click"); await tick();
+    let mara = voice.voiceCharacters()[0];
+    check(mara.anchors[0].own && mara.anchors[0].text === "Move, or be moved." && mara.anchors.length === 4 && row().attr("open") !== undefined, `a line of the reader's own goes first, and her card stays open: ${JSON.stringify(mara.anchors.map(a => a.text))}`);
+    row().find(".focus-voice-drop[data-own='0']").first().trigger("click"); await tick();
+    mara = voice.voiceCharacters()[0];
+    check(mara.hidden === 1 && !mara.anchors.some(a => /anvil/.test(a.text)) && mara.anchors.some(a => /dagger/.test(a.text)) && /Show 1 hidden line/.test(flat(row())), `a hidden line gives way to the next: ${JSON.stringify(mara.anchors.map(a => a.text))}`);
+    row().find(".focus-voice-unhide").trigger("click"); await tick();
+    check(voice.voiceCharacters()[0].hidden === 0, "hidden lines do not come back");
+    row().find(".focus-voice-off").trigger("click"); await tick();
+    check(voice.voiceCharacters()[0].off === true && /Nothing right now/.test(box.find("#focus_voice_preview").text()) && /Send their lines again/.test(flat(row())), "a character left out is still sent");
+    row().find(".focus-voice-off").trigger("click"); await tick();
+    row().find(".focus-voice-now").trigger("click"); await tick();
+    check(voice.voiceCharacters()[0].since === true && /voice taken from later in the story/.test(flat(row())) && row().find(".focus-voice-first").length === 1, "This is their voice now does not move her voice");
+    check(!voice.voiceCharacters()[0].anchors.some(a => !a.own && /Tch/.test(a.text)), "her anchors still come from her first lines");
+    row().find(".focus-voice-first").trigger("click"); await tick();
+    check(voice.voiceCharacters()[0].since === false, "Back to their first lines does not go back");
+    box.find("#focus_voice_new_name").val("Jonah");
+    box.find("#focus_voice_new_line").val("Boats don't lie to you, people do.");
+    box.find("#focus_voice_new_add").trigger("click"); await tick();
+    check(voice.voiceCharacters().some(c => c.name === "Jonah" && c.total === 0 && c.anchors[0].own), "a character with no lines yet cannot be given one");
+    box.find("#focus_voice_anchors").prop("checked", false).trigger("change");
+    check(p.focus.voice && p.focus.voice.anchors === false && voice.voiceAnchorLines() === "", "the anchors switch is not saved");
+    box.find("#focus_voice_meter").prop("checked", false).trigger("change");
+    check(p.focus.voice.meter === false && p.focus.voice.anchors === false, "the meter switch is not saved");
+    box.find("#focus_voice_anchors").prop("checked", true).trigger("change");
+    box.find("#focus_voice_meter").prop("checked", true).trigger("change");
+    check(/The next audit runs after the next reply: the drift meter reads Mara as drifting/.test(flat(box.find("#focus_status"))), `the status does not say what the meter decided: ${flat(box.find("#focus_status"))}`);
+    clicks += 11;
+    if (failures === voiceBefore) console.log("  ✓ Voices: what it reads, early lines and the meter, a line of your own, hide, leave out, a voice from later, the switches, the audit's schedule");
+
+    // An audit that applied itself: shown with what it found, Undo puts everything back and
+    // leaves it waiting for review; the switch.
+    const appliedBefore = failures;
+    delete globalThis.__ST__.chat_metadata.vcrp_focus;
+    Object.assign(focus.focusState(), {
+        note: "Stop the purple prose.", noteAt: 5, nextId: 2, items: [{ id: "F1", kind: "slop", text: "purple prose", times: 1, last: 5 }],
+        applied: { at: 5, before: { note: "Old note.", noteAt: 1, items: [], nextId: 1 }, audit: { recurring: [], findings: [{ kind: "slop", text: "purple prose" }], note: "Stop the purple prose.", at: 5, replies: 20 } },
+    });
+    switchTab(focusTab);
+    check(box.find("#focus_applied_panel").length === 1 && /Applied by itself/.test(flat(box.find("#focus_applied_panel"))) && /Stop the purple prose\./.test(flat(box.find("#focus_applied_panel"))) && !box.find("#focus_approve").length, "an audit that applied itself is not shown");
+    box.find("#focus_applied_undo").trigger("click"); await tick();
+    const undone = focus.peekFocusState();
+    check(undone.note === "Old note." && undone.items.length === 0 && undone.pending && undone.pending.note === "Stop the purple prose." && !undone.applied, `Undo: ${JSON.stringify(undone)}`);
+    check(!box.find("#focus_applied_panel").length && box.find("#focus_pending_note").val() === "Stop the purple prose.", "after Undo the audit is not waiting for review");
+    box.find("#focus_discard").trigger("click"); await tick();
+    check(box.find("#focus_auto_apply").is(":checked"), "applying by itself is not on by default");
+    box.find("#focus_auto_apply").prop("checked", false).trigger("change");
+    check(p.focus.autoApply === false && focus.focusSettings().autoApply === false, "the switch is not saved");
+    box.find("#focus_auto_apply").prop("checked", true).trigger("change");
+    clicks += 3;
+    if (failures === appliedBefore) console.log("  ✓ Focus: an audit that applied itself is shown, Undo puts it back to waiting, the switch");
+
+    chat.length = 0;
+    chat.push(...chatWas);
+    p.addons = addonsWere;
+    delete globalThis.__ST__.chat_metadata.vcrp_voice;
+    delete globalThis.__ST__.chat_metadata.vcrp_focus;
+    voice.forgetVoiceReading();
 }
 // What's new after an update: a card on Global Settings and a dot on the gear until "Got it".
 {

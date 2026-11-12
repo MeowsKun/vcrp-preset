@@ -53,6 +53,11 @@ BUDGET_MODULE.BUDGET_DEFAULTS.targetCost = 0.30;
 // Likewise review: the groups below test the review queue with every chapter waiting for the
 // reader, as it was before chapters their own check finds accurate approved themselves.
 BUDGET_MODULE.BUDGET_DEFAULTS.autoApprove = false;
+// And Focus: the groups below test an audit waiting for the reader's approval, as every audit
+// did before a small correction applied itself (group 78 tests that, with the real default).
+const FOCUS_MODULE = await imp("src/vcrp/focus/index.js");
+const REAL_FOCUS_DEFAULTS = { ...FOCUS_MODULE.FOCUS_DEFAULTS };
+FOCUS_MODULE.FOCUS_DEFAULTS.autoApply = false;
 const p = state.localProfile;
 assert(p && extension_settings.VCRP, "profile should live under extension_settings.VCRP");
 Object.assign(p, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
@@ -6949,5 +6954,257 @@ console.log("76 ok the cost batch (the product's defaults: a $0.20 goal, a $0.50
     ctx.mainApi = keep.api;
 }
 console.log("77 ok facts and memory (the Canon sheet: kept per chat, offered from the ledger, sent once before the chat, after it on a preset without the slot; chapters dated from their World State and bonds that crossed a mark kept as facts, with no call; the helper's recall pick: asked once a turn, brought back first, never without a helper, given up on at its deadline even while it waits behind another of the helper's jobs; the continuity check: the reply read against the sheet and the scene before, the finding kept and shown, nothing found or failed leaving no mark)");
+
+// 78. Characters that stay themselves (10.0.0-vcrp.20). Voice anchors: each character's own
+//     earliest lines, read from the speaker names on the dialogue, sent for whoever is in the
+//     scene. The drift meter: their latest lines counted against their earliest, deciding when
+//     an audit runs. Audits whose correction is small apply themselves, with Undo.
+{
+    const q = state.localProfile;
+    const focus = await imp("src/vcrp/focus/index.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const V = await imp("src/vcrp/voice.js");
+    const DC = await imp("src/vcrp/dialogueColors.js");
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { focus: JSON.stringify(q.focus || null), addons: [...(q.addons || [])], mode: q.mode, model: q.model, cot: q.cotEnabled, name1: ctx.name1, cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+    const toastrWas = globalThis.toastr;
+    globalThis.toastr = { info() {}, warning() {}, success() {}, error() {} };
+    FOCUS_MODULE.FOCUS_DEFAULTS.autoApply = REAL_FOCUS_DEFAULTS.autoApply;
+    const UNIVERSAL = "VCRP V10 Universal.json";
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
+    ctx.name1 = "Bob";
+    for (const k of ["vcrp_focus", "vcrp_voice", "vcrp_colors"]) delete meta[k];
+    const textOf = x => (typeof x.content === "string" ? x.content : x.content.map(part => part.text).join(""));
+    const THINGS = ("anvil barrel candle dagger ember flask gauntlet hammer inkwell jar kettle lantern mallet needle oar pulley quill rope saddle tankard "
+        + "urn vial wagon xylophone yoke zither apron bell chisel drum easel fiddle goblet harp idol jug kiln ladle mug net oven pan quiver rake spade "
+        + "trowel urchin vase whistle yarn zipper arrow basket comb dice eel fan gong hinge ivory jewel knot lute mask nail orb pearl").split(" ");
+    const said = (who, color, line) => `<font color="${color}" title="${who}">"${line}"</font>`;
+    const CURT = i => `Tch. Do not waste my time with that ${THINGS[i % THINGS.length]}, kid.`;
+    const SOFT = i => `Oh, I am so sorry, please, take all the time you need with the ${THINGS[i % THINGS.length]} and then some more of it, okay...`;
+    // A chat of `n` exchanges; Mara speaks once in each reply, as `line(i)` has her.
+    const story = (n, line, extra = () => "") => {
+        chat.length = 0;
+        for (let i = 0; i < n; i++) {
+            chat.push({ is_user: true, name: "Bob", send_date: `v${2 * i}`, mes: `(${i}) I ask about the ${THINGS[i % THINGS.length]}.` });
+            chat.push({ is_user: false, name: "Alice", send_date: `v${2 * i + 1}`, mes: `The room is quiet around reply ${i}, and the lamps burn low over the counter. ${said("Mara", "#a855f7", line(i))} ${extra(i)}`.trim() });
+        }
+        V.forgetVoiceReading();
+    };
+
+    // ── Who says what ──
+    const names = { mara: { name: "Mara", color: "#a855f7" }, jun: { name: "Jun", color: "#38bdf8" } };
+    const reply = `<think>She would say <font color="#a855f7" title="Mara">"not this"</font></think>\nMara leans in. <font color="#a855f7" title="Mara Reyes">"You're *late*, kid."</font> Jun shrugs. <font color="#38bdf8">"Traffic."</font>\n<font color="#ffffff" title="Mara and Jun">"Sit."</font> <font color='#10b981' title="Old Guard (gruffly)">"Papers, now."< /font> <font color="#123456">"Nobody's line."</font>\n<Blocks><World_State><font color="#a855f7" title="Mara">"in a block"</font></World_State></Blocks>`;
+    assert.deepEqual(DC.speakerLines(reply, names), [{ key: "mara", name: "Mara", text: "You're late, kid." }, { key: "jun", name: "Jun", text: "Traffic." }, { key: "old guard", name: "Old Guard", text: "Papers, now." }],
+        `each spoken line with its speaker: a name matched as the colors are, one with no name by its color, never thinking, a block, a line for two, or a color nobody owns: ${JSON.stringify(DC.speakerLines(reply, names))}`);
+    assert.deepEqual(DC.speakerLines('<think>plan <font title="Mara">"x"</font>', names), [], "a reply that is all thinking has no lines");
+    assert.deepEqual(DC.speakerLines("No dialogue tags here.", names), []);
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "hi" }, { is_user: false, mes: `${said("Mara", "#a855f7", "One.")} ${said("Bob", "#fff", "Mine.")}` }, { is_user: false, mes: said("Mara Reyes", "#a855f7", "Two.") }, { is_user: false, is_system: true, mes: said("Mara", "#a855f7", "Hidden.") });
+    const by = V.linesBySpeaker(chat, { user: "Bob", names: {} });
+    assert(by.size === 1 && by.get("mara").lines.map(l => `${l.text}@${l.at}`).join() === "One.@1,Two.@2", `the chat's lines by speaker, the reader's own character left out, "Mara Reyes" with Mara: ${JSON.stringify([...by])}`);
+
+    // ── Voice anchors ──
+    assert.deepEqual(V.earliestLines([{ text: "Fine.", at: 1 }, { text: CURT(0), at: 3 }, { text: CURT(0).toUpperCase(), at: 5 }, { text: CURT(1), at: 7 }, { text: `${"very ".repeat(45)}long`, at: 9 }, { text: CURT(2), at: 11 }], { hidden: ["tch do not waste my time with that barrel kid"], limit: 4 }).map(l => l.at), [3, 11],
+        "the earliest lines of some length: not a word or two, not a speech, none twice, none the reader hid");
+    story(12, CURT, i => (i === 0 ? said("Mara", "#a855f7", "Fine.") : "") + (i < 3 ? said("Jun", "#38bdf8", `Easy now, the ${THINGS[i]} can wait until morning, friend.`) : ""));
+    q.focus = { enabled: false, every: 10, checks: { drift: true, motifs: true, slop: true } };
+    let people = V.voiceCharacters();
+    assert(people.map(c => `${c.name}:${c.total}:${c.anchors.length}`).join() === "Mara:13:4,Jun:3:3" && people[0].anchors[0].text === CURT(0) && people[0].anchors[0].at === 1, `every character with lines, their earliest first: ${JSON.stringify(people.map(c => [c.name, c.total, c.anchors.map(a => a.at)]))}`);
+    // In the prompt: whoever spoke lately (no scene list here), two lines each, only lines that lie well back.
+    let msgs = await run(UNIVERSAL);
+    let at = msgs.findIndex(m => textOf(m).includes("[VOICES]"));
+    const lastReply = msgs.map(m => m.role).lastIndexOf("assistant", msgs.length - 2);
+    assert(at > lastReply && textOf(msgs[at]).includes(`- Mara: "${CURT(0)}" | "${CURT(1)}"`) && !textOf(msgs[at]).includes("Jun:") && !textOf(msgs[at]).includes(CURT(2)),
+        `the anchors ride after the chat, for who is in the scene, two lines each: ${at} / ${at >= 0 ? textOf(msgs[at]).slice(textOf(msgs[at]).indexOf("[VOICES]"), textOf(msgs[at]).indexOf("[VOICES]") + 420) : ""}`);
+    assert.deepEqual(leftovers(msgs), [], "nothing left over");
+    assert(!text(await run(UNIVERSAL, "impersonate")).includes("[VOICES]"), "never for the reader's own turn");
+    // The scene list names who is there: its order, someone Remote too.
+    chat[chat.length - 1].mes += "\n<Blocks>\n<Scene>\nHere: Jun\nRemote: Mara Reyes\n</Scene>\n</Blocks>";
+    V.forgetVoiceReading();
+    assert.deepEqual(V.anchorsInScene().map(c => c.name), ["Jun", "Mara"], "with a scene list, the characters it names, in its order");
+    // A short chat: every line is still in plain sight, so nothing is sent.
+    story(6, CURT);
+    assert(V.voiceCharacters()[0].anchors.length === 4 && V.voiceAnchorLines() === "" && !text(await run(UNIVERSAL)).includes("[VOICES]"), "lines the model can still see are not sent back to it");
+    // The reader's part: a line of their own (sent at once, first), a line hidden, a character left out, the switch.
+    story(12, CURT);
+    assert(await V.addOwnLine("mara", '  "Move, or be moved."  ') && !(await V.addOwnLine("mara", "move, or be moved")), "a line of the reader's own, once");
+    assert(V.voiceAnchorLines() === `- Mara: "Move, or be moved." | "${CURT(0)}"`, `the reader's line goes first: ${V.voiceAnchorLines()}`);
+    await V.hideLine("mara", CURT(0));
+    assert(V.voiceAnchorLines() === `- Mara: "Move, or be moved." | "${CURT(1)}"` && V.voiceCharacters()[0].hidden === 1, "a hidden line gives way to the next");
+    await V.setVoiceOff("mara", true);
+    assert(V.voiceAnchorLines() === "" && V.voiceCharacters()[0].off, "a character left out is not sent");
+    await V.setVoiceOff("mara", false);
+    await V.showHiddenLines("mara");
+    await V.removeOwnLine("mara", "Move, or be moved.");
+    assert(V.voiceAnchorLines() === `- Mara: "${CURT(0)}" | "${CURT(1)}"`, "and all of it can be taken back");
+    q.focus.voice = { anchors: false };
+    assert(V.voiceAnchorLines() === "" && !text(await run(UNIVERSAL)).includes("[VOICES]"), "the switch");
+    delete q.focus.voice;
+    // The Megumin mirror's engines carry the module too.
+    Object.assign(q, { mode: "v10-ukiyo-megumin", model: "cot-meg-ukiyo-english" });
+    assert(text(await run("VCRP V10 Megumin Original.json")).includes(`[VOICES]`), "on a Megumin Original engine as well");
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english" });
+
+    // ── The drift meter ──
+    assert.deepEqual(V.lineMeasures("Oh... I am so sorry, okay?"), { words: 6, question: 1, exclaim: 0, hesitant: 1, contracted: 0, uncontracted: 1, soft: 2, harsh: 0, edges: ["oh", "okay"] }, `a line in numbers: ${JSON.stringify(V.lineMeasures("Oh... I am so sorry, okay?"))}`);
+    assert(V.lineMeasures("Don't you dare, you damn fool!").contracted === 1 && V.lineMeasures("Don't you dare, you damn fool!").harsh === 2 && V.lineMeasures("Don't you dare, you damn fool!").exclaim === 1);
+    assert(V.welchT([1, 2, 3, 4], [1, 2, 3, 4]) === 0 && V.welchT([1, 1, 1], [1, 1, 1]) === 0 && V.welchT([1], [5, 6]) === 0 && V.welchT([1, 2, 1, 2], [8, 9, 8, 9]) > 10 && V.welchT([0, 0, 0], [1, 1, 1]) > 10 && V.welchT([1, 1, 1], [0, 0, 0]) < -10,
+        "Welch's t: nothing for the same sample or too small a one, large for samples apart, and for two that never vary but differ");
+    assert.equal(V.meterSamples(new Array(39).fill({ text: "x" })), null, "too few lines to read");
+    const sam = V.meterSamples(Array.from({ length: 100 }, (_, i) => ({ text: String(i) })));
+    assert(sam.base.length === 30 && sam.recent.length === 30 && sam.base[29].text === "29" && sam.recent[0].text === "70", "the earliest thirty against the latest thirty");
+    const few = V.meterSamples(Array.from({ length: 44 }, (_, i) => ({ text: String(i) })));
+    assert(few.base.length === 22 && few.recent.length === 22, "never overlapping");
+    // The same voice all along: nothing moved. A changed one: said in words, the most moved first.
+    const same = V.voiceDrift(V.voiceProfile(Array.from({ length: 30 }, (_, i) => CURT(i))), V.voiceProfile(Array.from({ length: 30 }, (_, i) => CURT(i + 30))));
+    assert(same.score === 0 && same.parts.length === 0, `the same voice reads 0: ${JSON.stringify(same)}`);
+    const moved = V.voiceDrift(V.voiceProfile(Array.from({ length: 30 }, (_, i) => CURT(i))), V.voiceProfile(Array.from({ length: 30 }, (_, i) => SOFT(i + 30))), ["Mara"]);
+    assert(moved.score >= V.DRIFT_MARK && moved.parts.some(x => x.key === "length" && /lines run longer \(about 10 words to 2\d\)/.test(x.text)) && moved.parts.some(x => x.key === "soft" && /^softer words/.test(x.text))
+        && moved.parts.some(x => x.key === "hesitant" && /more trailing off/.test(x.text)) && moved.parts.some(x => x.key === "habits" && /no longer opens or closes a line on "(tch|kid)"/.test(x.text)),
+        `a changed voice, in words: ${JSON.stringify(moved)}`);
+    assert.equal(V.driftLevel(0), "steady");
+    assert.equal(V.driftLevel(V.DRIFT_SHIFTING), "shifting");
+    assert.equal(V.driftLevel(V.DRIFT_MARK), "drifting");
+    // A habit lost by chance is not a finding: a word that opened three lines of thirty.
+    const habit = n => V.voiceDrift(V.voiceProfile(Array.from({ length: 30 }, (_, i) => (i < n ? `Aye, bring me the ${THINGS[i]} and be quick about it.` : `Bring me the ${THINGS[i]} and be quick about it now.`))), V.voiceProfile(Array.from({ length: 30 }, (_, i) => `Bring me the ${THINGS[i + 30]} and be quick about it now.`)));
+    assert(!habit(3).parts.some(x => x.key === "habits") && habit(9).parts.some(x => x.key === "habits" && /"aye"/.test(x.text)), "a word that opened three lines and stopped is chance; nine is a habit lost");
+    // On the chat: read for a character with enough lines.
+    story(39, CURT);
+    assert.deepEqual(V.driftReadings(), [], "thirty-nine lines: no reading yet");
+    story(60, i => (i < 30 ? CURT(i) : SOFT(i)));
+    let reading = V.driftReadings();
+    assert(reading.length === 1 && reading[0].name === "Mara" && reading[0].level === "drifting" && reading[0].lines === 60 && /lines run longer/.test(reading[0].says.join("; ")) && V.driftingNow().length === 1, `the meter's reading: ${JSON.stringify(reading)}`);
+
+    // ── When an audit runs ──
+    const since = n => { const st = focus.focusState(); const all = chat.filter(m => !m.is_system); st.anchor = memory.anchorOf(all, all.length - 1 - 2 * n); return st; };
+    q.focus = { enabled: true, every: 10, checks: { drift: true, motifs: true, slop: true } };
+    // Nobody to read (no named lines): every ten replies, as before.
+    chat.length = 0;
+    for (let i = 0; i < 60; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `p${i}`, mes: `Plain line ${i}, with nobody's name on it, long enough to be read by an audit.` });
+    V.forgetVoiceReading();
+    since(9);
+    let plan = focus.focusSchedule();
+    assert(!plan.byMeter && !plan.due && plan.left === 1 && plan.since === 9, `without readings, the plain schedule: ${JSON.stringify(plan)}`);
+    since(10);
+    assert(focus.focusSchedule().due, "due at ten");
+    // A steady character: half as often.
+    story(60, CURT);
+    since(15);
+    plan = focus.focusSchedule();
+    assert(plan.byMeter && !plan.due && plan.left === 5 && plan.drifting.length === 0, `nobody drifting: no audit at fifteen, where the plain schedule had one at ten: ${JSON.stringify(plan)}`);
+    assert.equal(await focus.focusAuditIfDue(), null, "so none runs");
+    since(20);
+    assert(focus.focusSchedule().due, "and one at twenty at the latest: motifs and slop are not the meter's to find");
+    // A drifting character calls one, not within ten replies of the last.
+    story(60, i => (i < 30 ? CURT(i) : SOFT(i)));
+    since(5);
+    plan = focus.focusSchedule();
+    assert(plan.byMeter && !plan.due && plan.drifting.join() === "Mara" && plan.holds === 5, `drifting, but an audit ran five replies ago: ${JSON.stringify(plan)}`);
+    since(10);
+    assert(focus.focusSchedule().due && focus.focusSchedule().drifting.join() === "Mara", "ten replies on, the meter calls it");
+    // Once an audit has looked at that reading, the same reading does not call the next one.
+    let st = since(12);
+    st.meter = { mara: reading[0].score };
+    plan = focus.focusSchedule();
+    assert(!plan.due && plan.drifting.length === 0 && plan.left === 8, `a character an audit already looked at does not call another by the same reading: ${JSON.stringify(plan)}`);
+    st.meter = { mara: V.DRIFT_MARK - 1 };
+    assert(focus.focusSchedule().due, "one who was below the mark then, and is past it now, does");
+    st.meter = { mara: reading[0].score };
+    q.focus.checks.drift = false;
+    since(10);
+    assert(!focus.focusSchedule().byMeter && focus.focusSchedule().due, "with the drift check off the meter decides nothing");
+    q.focus.checks.drift = true;
+    q.focus.voice = { meter: false };
+    assert(!focus.focusSchedule().byMeter && V.driftingNow().length === 0, "nor with its switch off");
+    delete q.focus.voice;
+
+    // ── What the audit is shown ──
+    delete meta.vcrp_focus;
+    let input = focus.focusAuditInput();
+    assert(/^<early_voices>\nHow these characters spoke when the story began/.test(input.voice) && input.voice.includes(`- Mara: "${CURT(0)}" | "${CURT(1)}" | "${CURT(2)}"`) && /Counted since \(a pointer, not a finding\): .*lines run longer/.test(input.voice) && input.voice.endsWith("</early_voices>"),
+        `the audit reads their early lines and what the meter counted: ${input.voice}`);
+    const auditMsgs = focus.buildFocusAuditMessages(input);
+    assert(auditMsgs[1].content.indexOf("<early_voices>") > auditMsgs[1].content.indexOf("</character_card>") && auditMsgs[1].content.indexOf("<early_voices>") < auditMsgs[1].content.indexOf("<earlier_findings>"), "after the card, before the findings");
+    q.focus.checks.drift = false;
+    assert.equal(focus.focusAuditInput().voice, "", "not with the drift check off");
+    q.focus.checks.drift = true;
+
+    // ── Audits that apply themselves ──
+    const sent = [];
+    const answer = body => async params => { const asked = (params && (params.quietPrompt ?? params.prompt)) || ""; const m = [{ role: "system", content: "main preset" }, { role: "user", content: asked }]; vcrpSetGenerationType("quiet", {}, false); await handlePromptInjection({ chat: m, dryRun: false }); sent.push(m); return body; };
+    const AUDIT = "<recurring>none</recurring>\n<findings>\n- [drift] Mara has gone soft and apologetic\n</findings>\n<note>\nMara is curt again: short lines, no apologies, no trailing off.\n</note>";
+    assert(focus.focusSettings().autoApply, "on by default");
+    quietImpl = answer(AUDIT);
+    let r = await focus.focusAuditIfDue();
+    assert.equal(r && r.status, "applied", JSON.stringify(r));
+    assert(text(sent[0]).includes("<early_voices>") && text(sent[0]).includes(CURT(0)), "the audit was sent the early lines");
+    st = focus.peekFocusState();
+    assert(st.note === "Mara is curt again: short lines, no apologies, no trailing off." && !st.pending && st.items.length === 1 && st.items[0].kind === "drift" && focus.appliedFocusAudit().audit.note === st.note && st.meter.mara === reading[0].score,
+        `a small correction is live as the audit lands, what it replaced kept, the meter's reading kept: ${JSON.stringify(st)}`);
+    msgs = await run(UNIVERSAL);
+    assert(text(msgs).includes("[FOCUS]") && text(msgs).includes("Mara is curt again"), "and goes out with the next reply");
+    assert.equal(await focus.focusAuditIfDue(), null, "the replies count as audited");
+    // Undo: everything as it was, the audit waiting for the reader.
+    assert(await focus.undoAppliedAudit());
+    st = focus.peekFocusState();
+    assert(st.note === "" && st.items.length === 0 && st.nextId === 1 && st.pending && st.pending.note.startsWith("Mara is curt again") && !focus.appliedFocusAudit() && !(await focus.undoAppliedAudit()), `undone: ${JSON.stringify(st)}`);
+    assert(!text(await run(UNIVERSAL)).includes("[FOCUS]"), "and out of the prompt");
+    await focus.approveFocusAudit();
+    assert(focus.peekFocusState().note.startsWith("Mara is curt again") && !focus.appliedFocusAudit(), "approved by hand, there is nothing to undo");
+    // Over a correction already there: Undo brings the old one back.
+    quietImpl = answer("<recurring>F1</recurring>\n<findings>\n- [slop] apologies pile up\n</findings>\n<note>Second correction.</note>");
+    r = await focus.runFocusAudit();
+    st = focus.peekFocusState();
+    assert(r.status === "applied" && st.note === "Second correction." && st.items.find(i => i.id === "F1").times === 2 && st.items.length === 2, JSON.stringify(st));
+    await focus.undoAppliedAudit();
+    st = focus.peekFocusState();
+    assert(st.note.startsWith("Mara is curt again") && st.items.length === 1 && st.items[0].times === 1 && st.pending.note === "Second correction.", `the correction and the list it replaced are back: ${JSON.stringify(st)}`);
+    await focus.discardFocusAudit();
+    await focus.keepAppliedAudit();
+    // What waits for the reader: a long correction, one about the plot focus or the tone, any with the switch off.
+    const p78 = (note, findings = [], recurring = []) => ({ note, findings, recurring });
+    assert(focus.auditAppliesItself(p78("Short.", [{ kind: "motif", text: "x" }]), st) && !focus.auditAppliesItself(p78("word ".repeat(161)), st) && focus.auditAppliesItself(p78("word ".repeat(160)), st), "a correction longer than an audit is asked for waits");
+    assert(!focus.auditAppliesItself(p78("Short.", [{ kind: "plot", text: "x" }]), st) && !focus.auditAppliesItself(p78("Short.", [{ kind: "tone", text: "x" }]), st)
+        && !focus.auditAppliesItself(p78("Short.", [], ["F9"]), { items: [{ id: "F9", kind: "plot", text: "x", times: 1 }] }) && focus.auditAppliesItself(p78("", [], ["F1"]), st) && !focus.auditAppliesItself(null, st),
+        "one about where the story goes (the plot focus, the Tone Rules) waits, as a new finding or one that came back");
+    await focus.setPlotFocus({ active: true, text: "The brass ring" });
+    quietImpl = answer("<recurring>none</recurring>\n<findings>\n- [plot] the ring has not come up in ten replies\n</findings>\n<note>Bring the ring back.</note>");
+    r = await focus.runFocusAudit();
+    assert(r.status === "pending" && focus.peekFocusState().note.startsWith("Mara is curt again") && !focus.appliedFocusAudit(), `a correction about the plot focus waits for the reader: ${JSON.stringify(r)}`);
+    await focus.discardFocusAudit();
+    await focus.setPlotFocus({ active: false });
+    q.focus.autoApply = false;
+    quietImpl = answer(AUDIT);
+    r = await focus.runFocusAudit();
+    assert(r.status === "pending" && !focus.focusSettings().autoApply, "with the switch off every audit waits");
+    await focus.discardFocusAudit();
+    delete q.focus.autoApply;
+    quietImpl = answer("<recurring>none</recurring><findings>none</findings><note>none</note>");
+    r = await focus.runFocusAudit();
+    assert(r.status === "clean" && !focus.appliedFocusAudit(), "an audit that finds nothing applies nothing");
+    quietImpl = null;
+
+    // ── "This is their voice now" ──
+    assert(await V.acceptVoiceNow("mara"));
+    people = V.voiceCharacters();
+    assert(people[0].since && people[0].anchors.length === 4 && people[0].anchors.every(a => a.text.startsWith("Oh, I am so sorry")) && people[0].anchors[0].text === SOFT(48), `her voice is taken from her last dozen lines on: ${JSON.stringify(people[0].anchors.map(a => a.at))}`);
+    assert(V.driftReadings().length === 0 && !focus.focusSchedule().byMeter, "and the meter reads her again once she has spoken enough since");
+    assert(await V.resetVoiceStart("mara") && !V.voiceCharacters()[0].since && V.voiceCharacters()[0].anchors[0].text === CURT(0) && V.driftReadings().length === 1, "back to her first lines");
+
+    globalThis.toastr = toastrWas;
+    FOCUS_MODULE.FOCUS_DEFAULTS.autoApply = false;
+    chat.length = 0;
+    for (const k of ["vcrp_focus", "vcrp_voice", "vcrp_colors"]) delete meta[k];
+    V.forgetVoiceReading();
+    q.focus = JSON.parse(keep.focus) || undefined;
+    if (q.focus === undefined) delete q.focus;
+    q.addons = keep.addons;
+    Object.assign(q, { mode: keep.mode, model: keep.model, cotEnabled: keep.cot });
+    ctx.name1 = keep.name1;
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+}
+console.log("78 ok characters that stay themselves (who says what, read from the names on the dialogue; voice anchors: the earliest lines, sent after the chat for who is in the scene once they lie well back, the reader's own lines, hide, leave out, the switch, on a Megumin Original engine; the drift meter: a line in numbers, Welch's t, the same voice 0 and a changed one said in words, a habit lost by chance left out; the audit's schedule by the meter: half as often with nobody drifting, called by a character newly drifting, not twice by one reading; the audit shown the early lines; a small correction applying itself with Undo, one about the plot or the tone or a long one waiting; a voice taken from later on)");
 
 console.log("\nALL FORK CHECKS PASSED");

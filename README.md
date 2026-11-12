@@ -93,6 +93,12 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   and **bond milestones** kept as facts, both read from the blocks with no call; and the helper's
   **recall pick**, so an old chapter comes back when the scene returns to it in other words. Any
   engine. No preset re-import needed.
+- **Characters that stay themselves** (10.0.0-vcrp.20; details under Focus below): **voice
+  anchors**, each character's own earliest lines, sent for whoever is in the scene; a **drift
+  meter** that counts how a character's latest lines differ from their earliest and decides
+  when a drift audit runs; and audits whose **small corrections apply by themselves**, with Undo
+  in the Focus tab. Read from the speaker names Dialogue Colors puts on the dialogue: no call
+  of its own. Any engine. No preset re-import needed.
 - **Tense** in Story Config: present or past. Left on default it sends nothing and each engine
   keeps its own (Megumin's Story Config has no tense, so the Megumin Original engines only get one
   if you pick it).
@@ -403,7 +409,7 @@ outside the ceiling like every other.
 
 ## Keeping long stories on track: Focus
 
-The **Focus** tab has three tools, each with its own switches.
+The **Focus** tab has four tools, each with its own switches.
 
 **Plot focus:** write what the story should revolve around ("the ring Mara pawned, and the
 people who want it back") and pick how hard it steers: a background thread, central, or
@@ -438,9 +444,52 @@ is sent; when it does, the note is a couple of hundred tokens at most.
 Fresh replies only: a Continue, an Impersonate and background calls go without. The wording is
 in Advanced: Edit Prompts.
 
+**Voices** (10.0.0-vcrp.20; `src/vcrp/voice.js`; on by default, no call of its own): the card
+says who a character is; it does not say how this story has been writing them. Their own lines
+do. Dialogue Colors puts the speaker's name on every spoken line, so the chat already holds each
+character's lines in order, and VCRP reads them there.
+
+- **Voice anchors:** each character's earliest lines of some length (five to forty words; four
+  kept, two sent), in their own words. For the characters in the scene (the scene list; without
+  one, whoever spoke in the last three replies; four at most) they go with each reply in
+  `[[focus]]`, after the chat, never cached: about 30 tokens a line. A line is sent once it lies
+  16 messages back; nearer than that the model can still see it. In the tab you can write a
+  character's lines yourself (sent at once, first), hide a line (the next of their early lines
+  takes its place) or leave a character out. Never for an Impersonate.
+- **The drift meter:** a character's latest 30 lines counted against their earliest 30: how long
+  the lines run, contractions, questions and exclamations, trailing off, reassuring and harsh
+  words, and the words they open and close a line on. Each measure is weighed against how much
+  that character's own lines differ among themselves (Welch's t), and counts only past what
+  chance explains, so someone whose lines always varied needs a large change to register. It
+  reads 0 to 100: steady, shifting from 35, drifting from 55. It needs 40 named lines for a
+  character. It counts and does not read, so it cannot tell a character who has grown from one
+  who has worn down: it decides nothing by itself, only when the audit looks (below).
+  Measured on real chats with `tools/voice_calibrate.mjs` (numbers only, no text): the same
+  lines split at random read "drifting" about once in a hundred times, one speaker's lines
+  against another's four times in five, and a speaker's earliest lines against their latest a
+  third of the time. Two stretches side by side early in a story read it one time in seven: a
+  scene unlike the one before it is a change too, which is one more reason the meter only
+  calls the audit and the audit decides.
+- **"This is their voice now":** when the story has changed a character for good, their first
+  lines would pull them back. One tap takes that character's voice from their last dozen lines
+  on, for their anchors and for the meter, which reads them again once they have spoken forty
+  lines since. *Back to their first lines* undoes it.
+- **Without names on the lines** (Dialogue Colors off, or a model that leaves the names out)
+  there is nothing to read, and both stay quiet; a line you write yourself still goes out. A
+  line with a color and no name is its speaker's when exactly one character has that color
+  (replies from before the add-on asked for names).
+
 **Drift audits:** long roleplays drift: characters lose their edges and start to sound alike,
-the same smirk or scent comes back every reply, stock phrasing piles up. An audit runs every few
-replies (20 by default) and writes the writer a short correction.
+the same smirk or scent comes back every reply, stock phrasing piles up. An audit reads the
+latest replies and writes the writer a short correction.
+
+- **When it runs:** every few replies (20 by default). While the drift meter has someone to
+  read, the meter decides instead: an audit runs when a character newly reads as drifting (never
+  within 10 replies of the last one), and otherwise half as often (every 40), because repeated
+  motifs and slop are not the meter's to find. A character an audit has already looked at does
+  not call the next one by the same reading, so someone the story changed for good does not call
+  an audit every few replies. The tab says which it is and when the next one is due. Switch:
+  Focus → Voices → *The drift meter decides when to audit*.
 
 - **What it checks** (each can be switched off): character drift against the character card and
   how they have been written, repeated motifs (images, gestures, metaphors, scene endings), and slop.
@@ -448,12 +497,22 @@ replies (20 by default) and writes the writer a short correction.
   softening or straying from the rules).
 - **What it reads:** the replies since the last audit and your messages between them, the card,
   and the list of what earlier audits flagged. Each audit says which of those came back, so a
-  motif that survives a correction is counted and named more firmly the next time.
-- **Review first:** the audit's findings and correction wait in the Focus tab. Edit the correction
-  if you like, then **Approve and use**, or **Discard**. Automatic audits hold while one waits.
-- **Where it goes:** the approved correction rides with every reply in the per-turn rules
+  motif that survives a correction is counted and named more firmly the next time. For character
+  drift it also reads how each character first spoke (their voice anchors) and what the meter
+  counted since, marked as a pointer and not a finding.
+- **Small corrections apply by themselves** (on by default): a correction about how the story
+  is written (character drift, repeated motifs, slop), no longer than an audit is asked to
+  write, goes into the prompt as the audit lands. The tab shows it under *Applied by itself*
+  with what it found: **Undo** puts the prompt's correction and the flagged list back as they
+  were and leaves the audit waiting for your review; **Keep it** dismisses the card. One level
+  of Undo, for the last audit that applied itself.
+- **What still waits for you:** a correction about where the story goes (a finding about your
+  plot focus or your Tone Rules, new or come back), a long one, and every audit with the switch
+  off. Its findings and correction wait in the Focus tab: edit the correction if you like, then
+  **Approve and use**, or **Discard**. Automatic audits hold while one waits.
+- **Where it goes:** the correction in use rides with every reply in the per-turn rules
   (`[[focus]]` in Output RULES, both presets), after the chat history, so it never touches the
-  cache. It stays until the next approved audit replaces it; edit or remove it in the tab. An
+  cache. It stays until the next correction replaces it; edit or remove it in the tab. An
   Impersonate (the AI writing your turn) goes without it: it corrects the replies, not your voice.
 - **Edit the wording:** Focus → Advanced: Edit Prompts, like the Story Director's: the auditor,
   each check, the correction's and the plot focus's text, and what each plot strength says.
@@ -465,7 +524,9 @@ replies (20 by default) and writes the writer a short correction.
   out of the prompt takes them out too; forgetting a finding drops it from the list.
 - **Cost:** each audit is a call of its own to your model, never cached, priced beside **Audit
   now** and counted in the spend estimate: about $0.15 to $0.30 on Claude Opus at 20 replies.
-  Two failed audits in a row pause the automatic ones until an **Audit now** works.
+  It is a background call, so no ceiling applies to it. With the meter deciding, a story whose
+  characters hold steady pays for half as many. Two failed audits in a row pause the automatic
+  ones until an **Audit now** works.
 
 ## Megumin Original
 

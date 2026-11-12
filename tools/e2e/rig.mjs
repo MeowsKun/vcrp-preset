@@ -21,7 +21,9 @@
 // s_stall (a stream gone quiet, Stop), s_real (an engine with blocks and Gemini JB), s_cost (the
 // target, the ceiling, background calls), s_facts (the Canon sheet, the helper's continuity
 // check and recall pick on a connection profile of its own; a scenario scripts the helper's
-// answers with rig.mock.aside).
+// answers with rig.mock.aside), s_voices (a story in progress put straight into the chat: the
+// voice anchors in the request, the drift meter calling the audit, its correction applying
+// itself, the Focus tab and Undo).
 import { spawn } from "node:child_process";
 import http from "node:http";
 import fs from "node:fs";

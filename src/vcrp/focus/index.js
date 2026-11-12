@@ -4,9 +4,15 @@
 // Every N replies an audit reads those replies against the character card and what
 // earlier audits flagged, and looks for three kinds of drift: characters slipping from
 // who they are, motifs coming back again and again, and slop piling up. It writes a
-// short correction for the writer. The correction waits in the Focus tab until it is
-// approved, then rides in the per-turn rules ([[focus]], after the chat history, so the
-// cache never sees it) until the next approved audit replaces it.
+// short correction for the writer. A small correction goes into the prompt as the audit
+// lands, with Undo in the Focus tab; one about where the story goes (the plot focus, the
+// Tone Rules) or a long one waits there until it is approved. In use, it rides in the
+// per-turn rules ([[focus]], after the chat history, so the cache never sees it) until the
+// next correction replaces it.
+//
+// The voices (vcrp/voice.js) ride in [[focus]] too: for the characters in the scene, their
+// own earliest lines. Its drift meter decides when an audit runs, while it has anyone to
+// read (focusSchedule), and each audit is shown those early lines.
 //
 // What approved audits flagged is kept as a numbered list. Each audit is shown it and
 // says which items came back, so a motif that survives one correction is counted and
@@ -46,6 +52,7 @@ import { focusLiveFindings } from "./live.js";
 import { registerRecallQuery } from "../memory/index.js";
 import { DEFAULT_PROMPTS } from "../../prompts/index.js";
 import { toneRules } from "../toneRules.js";
+import { voiceAnchorLines, voiceForAudit, voiceSettings, driftReadings, driftingNow, DRIFT_MARK } from "../voice.js";
 
 const META = "vcrp_focus";
 const MIN_REPLIES = 3;        // fewer than this is not enough to call anything a pattern
@@ -53,6 +60,10 @@ const MAX_ITEMS = 30;         // flagged items kept; the least repeated, oldest 
 const MAX_FAILURES = 2;       // failed audits in a row before automatic audits pause
 const AUDIT_FIXED = 1500;     // the audit's own instructions, roughly
 const STANDING = 3;           // repeat offenders kept in the prompt across corrections
+const AUTO_NOTE_WORDS = 160;  // a correction longer than this waits for the reader (an audit is asked for 120 at most)
+const METER_MIN_GAP = 10;     // replies between audits the drift meter may call, at least
+const METER_SLOWER = 2;       // with the meter deciding, the plain schedule runs this many times slower
+const METER_RISE = 15;        // a character read as drifting at the last audit calls another only this much further on
 
 export const FOCUS_CHECKS = {
     drift: { label: "Character drift", desc: "Voice, personality and speech slipping from the card and from how they have been written." },
@@ -67,6 +78,9 @@ export const FOCUS_LIVE = {
     user: { label: "Writing for you", desc: "When the last reply spoke, acted or thought for your character, the lines are quoted back with a reminder that your character is yours. Pattern matching, so it can miss one or flag one wrongly. Off on engines meant to write for you (Co-writer, Pura set to write for {{user}})." },
 };
 
+/** What a profile that never set the switch gets (the test suite pins its own for its older groups). */
+export const FOCUS_DEFAULTS = { autoApply: true };
+
 export function focusSettings() {
     const f = (localProfile && localProfile.focus) || {};
     const every = Math.round(Number(f.every));
@@ -75,6 +89,8 @@ export function focusSettings() {
         every: Number.isFinite(every) && every >= 5 ? Math.min(every, 100) : 20,
         checks: { drift: true, motifs: true, slop: true, ...(f.checks || {}) },
         standing: f.standing !== false,
+        // A small correction goes into the prompt without waiting for the reader (undone in the tab).
+        autoApply: typeof f.autoApply === "boolean" ? f.autoApply : FOCUS_DEFAULTS.autoApply,
         live: { swipes: true, repeats: true, user: true, ...(f.live || {}) },
     };
 }
@@ -137,6 +153,9 @@ export function focusAuditInput() {
         plot: plotFocusActive(st) ? { text: st.plot.text.trim(), strength: plotStrength(st.plot).label } : null,
         // The chat's Tone Rules (vcrp/toneRules.js), while they are on: checked like the plot focus.
         tone: (() => { const t = toneRules(); return t.enabled && t.text.trim() ? t.text.trim() : null; })(),
+        // How the characters first spoke, and what the drift meter counted (vcrp/voice.js): the
+        // card says who a character is, their own early lines say how this story writes them.
+        voice: s.checks.drift ? voiceForAudit() : "",
     };
 }
 
@@ -146,7 +165,7 @@ export function focusEstimate() {
     if (!input) return null;
     const items = input.items.map(i => i.text).join("\n");
     // With the lorebook entries an audit gets (lore.js), as large as the last background call's.
-    return backgroundEstimate(estimateTokens(input.text + input.card + items + (input.plot ? input.plot.text : "") + (input.tone || "") + lastLoreText()) + AUDIT_FIXED);
+    return backgroundEstimate(estimateTokens(input.text + input.card + items + (input.plot ? input.plot.text : "") + (input.tone || "") + (input.voice || "") + lastLoreText()) + AUDIT_FIXED);
 }
 
 // ── The audit prompt ─────────────────────────────────────────────────────────
@@ -188,7 +207,7 @@ export function buildFocusAuditMessages(input) {
     });
     return [
         { role: "system", content: focusPrompt("auditSystem") },
-        { role: "user", content: `<character_card>\n${input.card || "No character card."}\n</character_card>\n\n${input.lore ? `${input.lore}\n\n` : ""}${input.plot ? `<plot_focus>\n${input.plot.text}\n</plot_focus>\n\n` : ""}${input.tone ? `<tone_rules>\n${input.tone}\n</tone_rules>\n\n` : ""}<earlier_findings>\n${flagged}\n</earlier_findings>\n\n<replies>\n${input.text}\n</replies>` },
+        { role: "user", content: `<character_card>\n${input.card || "No character card."}\n</character_card>\n\n${input.voice ? `${input.voice}\n\n` : ""}${input.lore ? `${input.lore}\n\n` : ""}${input.plot ? `<plot_focus>\n${input.plot.text}\n</plot_focus>\n\n` : ""}${input.tone ? `<tone_rules>\n${input.tone}\n</tone_rules>\n\n` : ""}<earlier_findings>\n${flagged}\n</earlier_findings>\n\n<replies>\n${input.text}\n</replies>` },
         { role: "user", content: task },
     ];
 }
@@ -237,8 +256,9 @@ export function onFocusChange(fn) { changeListeners.add(fn); return () => change
 const changed = () => changeListeners.forEach(fn => { try { fn(); } catch (e) { console.warn("[VCRP] Focus redraw failed:", e); } });
 
 /**
- * Runs one audit. Returns { status: "pending" | "clean" | "idle" | "busy" | "failed" | "aborted", reason? }.
- * The result waits in `pending` for review; nothing reaches the prompt until it is approved.
+ * Runs one audit. Returns { status: "pending" | "applied" | "clean" | "idle" | "busy" | "failed" | "aborted", reason? }.
+ * A small correction applies by itself when that is on ("applied", auditAppliesItself); any
+ * other waits in `pending` for review, and nothing of it reaches the prompt until it is approved.
  */
 export async function runFocusAudit() {
     if (busy()) return { status: "busy" };
@@ -280,22 +300,24 @@ export async function runFocusAudit() {
     st.anchor = mark;
     st.audits = (st.audits || 0) + 1;
     st.lastAuditAt = now();
+    // What the drift meter read as this audit looked: a character it read as drifting does not
+    // call the next audit by the same reading (focusSchedule).
+    try { st.meter = Object.fromEntries(driftReadings().map(r => [r.key, r.score])); } catch (e) { st.meter = {}; }
     const found = !!(parsed.note || parsed.findings.length || parsed.recurring.length);
     st.lastClean = !found;
     st.pending = found ? { ...parsed, at: now(), replies: input.replies } : null;
+    const applied = found && focusSettings().autoApply && auditAppliesItself(st.pending, st) && applyByItself(st);
     await save(); changed();
-    return { status: found ? "pending" : "clean" };
+    return { status: found ? (applied ? "applied" : "pending") : "clean" };
 }
 
 // ── Review ───────────────────────────────────────────────────────────────────
 
 const sameText = (a, b) => String(a).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === String(b).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-/** Approves the waiting audit: its note goes live (edited, if `note` is given; an empty one keeps the current note) and its findings are kept. */
-export async function approveFocusAudit(note) {
-    const st = focusState();
-    const p = st && st.pending;
-    if (!p) return false;
+// The waiting audit into the chat's state: its findings counted, its note live.
+function applyPending(st, note) {
+    const p = st.pending;
     const at = now();
     for (const id of p.recurring || []) {
         const item = st.items.find(i => i.id === id);
@@ -315,8 +337,71 @@ export async function approveFocusAudit(note) {
     const next = String(note !== undefined ? note : p.note || "").trim();
     if (next) { st.note = next; st.noteAt = at; }
     st.pending = null;
+}
+
+/** Approves the waiting audit: its note goes live (edited, if `note` is given; an empty one keeps the current note) and its findings are kept. */
+export async function approveFocusAudit(note) {
+    const st = focusState();
+    if (!st || !st.pending) return false;
+    applyPending(st, note);
+    st.applied = null;   // the reader's own decision: nothing left to undo
     await save(); changed();
     return true;
+}
+
+// ── Audits that apply themselves ─────────────────────────────────────────────
+// A correction that waits for approval does nothing until the Focus tab is opened, and on a
+// phone, mid-story, it seldom is. So a small one goes into the prompt as it lands, and the tab
+// keeps what was there before for one tap of Undo. Small: about how the story is written
+// (drift, motifs, slop), and no longer than an audit is asked to write. A correction about
+// where the story goes (the plot focus, the Tone Rules) is the reader's to approve, and so is
+// a long one.
+
+/** True when this audit's correction is small enough to apply without the reader (pure). */
+export function auditAppliesItself(p, st) {
+    if (!p) return false;
+    const steers = k => k === "plot" || k === "tone";
+    if ((p.findings || []).some(x => steers(x.kind))) return false;
+    const byId = new Map(((st && st.items) || []).map(i => [i.id, i]));
+    if ((p.recurring || []).some(id => byId.has(id) && steers(byId.get(id).kind))) return false;
+    return String(p.note || "").trim().split(/\s+/).filter(Boolean).length <= AUTO_NOTE_WORDS;
+}
+
+// Applies the waiting audit and keeps what it replaced, for Undo.
+function applyByItself(st) {
+    const before = { note: st.note || "", noteAt: st.noteAt || 0, items: JSON.parse(JSON.stringify(st.items || [])), nextId: st.nextId || 1 };
+    const audit = { ...st.pending };
+    applyPending(st);
+    st.applied = { at: now(), before, audit };
+    return true;
+}
+
+/** The audit that applied itself last, while it can still be undone: { at, before, audit } or null. */
+export function appliedFocusAudit(st = peekFocusState()) {
+    return st && st.applied && st.applied.audit ? st.applied : null;
+}
+
+/** Undo: the prompt's correction and the flagged list as they were, and the audit back to waiting for review. */
+export async function undoAppliedAudit() {
+    const st = focusState();
+    const a = appliedFocusAudit(st);
+    if (!a) return false;
+    st.note = a.before.note;
+    st.noteAt = a.before.noteAt;
+    st.items = a.before.items;
+    st.nextId = a.before.nextId;
+    st.pending = a.audit;
+    st.applied = null;
+    await save(); changed();
+    return true;
+}
+
+/** "Keep it": the applied audit stays, and its Undo goes. */
+export async function keepAppliedAudit() {
+    const st = focusState();
+    if (!st || !st.applied) return;
+    st.applied = null;
+    await save(); changed();
 }
 
 /** Drops the waiting audit. Its replies count as audited; nothing it found is kept. */
@@ -377,6 +462,9 @@ export function vcrpFocusBlock() {
         const keep = standing.length ? `\n${focusPrompt("standingIntro")}\n${standing.map(i => `- ${i.text}`).join("\n")}` : "";
         parts.push(fill(focusPrompt("correctionTemplate"), { note, standing: keep }));
     }
+    // How the characters in the scene first spoke (vcrp/voice.js); with the audits on or off.
+    const voices = voiceAnchorLines();
+    if (voices) parts.push(fill(focusPrompt("voiceTemplate"), { lines: voices }));
     const live = focusLiveBlock({ live: s.live });
     if (live) parts.push(live);
     return parts.join("\n\n");
@@ -410,16 +498,43 @@ export function focusLiveBlock({ live = focusSettings().live, gen = vcrpGenerati
 // ── After a reply ────────────────────────────────────────────────────────────
 
 /**
- * Runs an audit if one is due: Focus on, enough replies since the last audit, none waiting
- * for review, not paused after failures. null when none is due; { status: "busy" } when one
- * is due but another generation is running.
+ * When the next audit runs: { byMeter, since, due, left, drifting: [name], holds }.
+ * Without the drift meter (switched off, the drift check off, or nobody with enough tagged
+ * lines to read), every `every` replies, as always. With it, the meter decides: an audit when
+ * a character newly reads as drifting (not within METER_MIN_GAP replies of the last one), and
+ * otherwise half as often, because repeated motifs and slop are not the meter's to find.
+ * "Newly": a character who read as drifting when the last audit looked calls another only once
+ * the reading has risen well past that one, so someone the story has changed for good does not
+ * call an audit every few replies. `holds`: replies before a drifting character may call one.
+ */
+export function focusSchedule(s = focusSettings(), st = peekFocusState()) {
+    const since = repliesSinceAudit();
+    let readings = [];
+    if (s.checks.drift && voiceSettings().meter) { try { readings = driftReadings(); } catch (e) { readings = []; } }
+    if (!readings.length) return { byMeter: false, since, due: since >= s.every, left: Math.max(0, s.every - since), drifting: [], holds: 0 };
+    const seen = (st && st.meter) || {};
+    const drifting = driftingNow().filter(r => !(seen[r.key] >= DRIFT_MARK) || r.score >= seen[r.key] + METER_RISE);
+    const gap = Math.min(METER_MIN_GAP, s.every);
+    const latest = s.every * METER_SLOWER;
+    return {
+        byMeter: true, since, drifting: drifting.map(r => r.name),
+        due: (drifting.length > 0 && since >= gap) || since >= latest,
+        left: Math.max(0, latest - since),
+        holds: drifting.length ? Math.max(0, gap - since) : 0,
+    };
+}
+
+/**
+ * Runs an audit if one is due (focusSchedule): Focus on, none waiting for review, not paused
+ * after failures. null when none is due; { status: "busy" } when one is due but another
+ * generation is running.
  */
 export async function focusAuditIfDue({ onStart } = {}) {
     const s = focusSettings();
     if (!s.enabled) return null;
     const st = peekFocusState();
     if (st && (st.pending || (st.failures || 0) >= MAX_FAILURES)) return null;
-    if (repliesSinceAudit() < s.every) return null;
+    if (!focusSchedule(s, st).due) return null;
     if (busy()) return { status: "busy" };
     if (onStart) onStart();
     return runFocusAudit();
@@ -448,6 +563,7 @@ export function vcrpFocusAfterReply(_messageId, type) {
         }
         if (typeof toastr === "undefined") return;
         if (r.status === "pending") toastr.info("A Focus audit is ready for review in the Focus tab.", "VCRP Focus");
+        else if (r.status === "applied") toastr.info("A Focus audit found drift and its correction goes out with the next reply. The Focus tab shows it, with Undo.", "VCRP Focus");
         else if (r.status === "clean") toastr.success("Focus audit: no drift found.", "VCRP Focus");
         else if (r.status === "failed") toastr.warning(r.paused
             ? `Focus audit failed again (${r.reason}). Automatic audits are paused; use Audit now in the Focus tab to retry.`

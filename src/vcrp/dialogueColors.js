@@ -263,6 +263,47 @@ export function lockReplyColors(text, names, { background = DARK_BG, readable = 
     return { text: head + out, changed };
 }
 
+/**
+ * The spoken lines of one reply, with who speaks each: [{ key, name, text }], in order. A
+ * line's speaker is the name in its tag's title, matched to the known characters the way the
+ * colors are ("Mara Reyes" is the Mara already known); a line with no title is its speaker's
+ * when its color is exactly one known character's (replies from before the add-on asked for
+ * names). Thinking and blocks are left out, and so is a line given to several characters at
+ * once. Read only: nothing is learned or changed. The voice anchors and the drift meter
+ * (voice.js) read the chat through this.
+ */
+export function speakerLines(text, names = lockedColors()) {
+    const s = String(text || "");
+    if (!/<font\b/i.test(s)) return [];
+    if (/<think(?:ing)?\b[^>]*>/i.test(s) && !/<\/think(?:ing)?\s*>/i.test(s)) return [];
+    let split = 0, m;
+    const re = /<\/think(?:ing)?\s*>/gi;
+    while ((m = re.exec(s)) !== null) split = m.index + m[0].length;
+    const body = s.slice(split).replace(/<Blocks\b[^>]*>[\s\S]*?(?:<\/Blocks\s*>|$)/gi, "");
+    const byColor = new Map();
+    for (const [k, v] of Object.entries(names || {})) {
+        const c = String((v && v.color) || "").toLowerCase();
+        if (c) byColor.set(c, byColor.has(c) ? null : k);   // two characters in one color: nobody's
+    }
+    const out = [];
+    for (const f of body.matchAll(/<font\b([^>]*)>([\s\S]*?)<\s*\\?\/\s*font\s*>/gi)) {
+        const spoken = f[2].replace(/<[^>]+>/g, " ").replace(/[*_~`]+/g, "").replace(/\s+/g, " ").trim().replace(/^["“„«「『]+|["”“»」』]+$/g, "").trim();
+        if (!spoken) continue;
+        const name = speakerName(attr(f[1], "title"));
+        if (name) {
+            const who = knownKey(names || {}, name);
+            if (who.several) continue;
+            const k = who.key || key(name);
+            out.push({ key: k, name: (names && names[k] && names[k].name) || name, text: spoken });
+            continue;
+        }
+        const hex = asHex(styleColor(f[1]) || attr(f[1], "color")).toLowerCase();
+        const k = hex ? byColor.get(hex) : null;
+        if (k) out.push({ key: k, name: String((names[k] && names[k].name) || k), text: spoken });
+    }
+    return out;
+}
+
 // ── Tags that stay on the dialogue ───────────────────────────────────────────
 // Some models (GLM above all) leave a <font> open, close it after the narration that follows
 // the line, or wrap a whole paragraph from its first quote to its last. A browser then colors

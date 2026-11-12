@@ -22,6 +22,7 @@ import { kbAlwaysOnStats, presetCarriesAlwaysSlot } from "./knowledgebase.js";
 import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "./cacheCheck.js";
 import { replyCapTokens, ceilingActive, ceilingCost, reasoningAllowance } from "./replyLength.js";
 import { focusSettings, peekFocusState } from "./focus/index.js";
+import { voiceSettings } from "./voice.js";
 import { isPuraEngine, isV11Engine } from "../core/engines.js";
 import { notebookOn } from "./notebook/index.js";
 import { vcrpOn } from "./power.js";
@@ -192,6 +193,7 @@ export function vcrpHealthCheck() {
     const carries = tag => (cc.prompts || []).some(p => p && typeof p.content === "string" && p.content.includes(tag));
     if (focusSettings().enabled && !carries("[[focus]]")) focusOff.push("the drift audits' correction");
     if (Object.values(focusSettings().live).some(Boolean) && !carries("[[focus]]")) focusOff.push("Focus's every-reply checks");
+    if (voiceSettings().anchors && !carries("[[focus]]")) focusOff.push("the voice anchors");
     // The Author's Notebook: its fixed rules in [[notebook]] (V11's preset) or [[block_rules]].
     if (notebookOn() && !carries("[[notebook]]") && !carries("[[block_rules]]")) focusOff.push("the Author's Notebook's rules");
     // V11 Тайна reads best on its own preset: its final check, Content section and USER note,

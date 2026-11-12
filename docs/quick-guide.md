@@ -426,3 +426,54 @@ the helper looks at the one-line summaries of your old chapters before each repl
 to three the reply will need, so *"the thing you promised my sister"* finds the chapter about
 Mara and the ring. It waits four seconds at most; if the helper is slow or busy, the old word
 matching is used and the reply goes out as usual. Switch: Helper tab → *Recall picks*.
+
+---
+
+## 14. Characters that stay themselves: voices, the drift meter, audits that fix themselves
+
+Three additions to the **Focus** tab (10.0.0-vcrp.20). They need **Dialogue Colors** on (Global
+Toggles & Add Ons): it puts each speaker's name on their lines, and that is what VCRP reads.
+Nothing here makes a call of its own.
+
+**Voices: each character's own early lines.** In a long story the blunt one softens, the formal
+one loosens, and everyone ends up sounding alike. So for the characters in the scene, VCRP sends
+two of their earliest lines with each reply, under a note that this is how they sound. Open
+Focus → **Voices** to see each character's lines:
+
+- **✕** hides a line you don't think sounds like them; the next of their early lines takes its
+  place.
+- **Write a line in their voice** adds one of your own. Yours go first, and go out at once.
+- **Leave them out of the prompt** stops sending a character's lines.
+
+A line is only sent once it is 16 messages back; before that the model can still see it. It
+costs about 30 tokens a line, after the chat, so the cache is never touched.
+
+**The drift meter.** Beside each character is a small bar: *steady*, *shifting* or *drifting*.
+It counts how their latest 30 lines differ from their earliest 30 (how long the lines run,
+contractions, questions, trailing off, soft and harsh words, the words they start and end on)
+and says what moved: *lines run longer (about 9 words to 22); more trailing off*. It needs 40
+named lines for a character. It only counts, so it can't tell a character who grew from one who
+wore down. That is the audit's job.
+
+**If the story really did change them,** open their card and press **This is their voice now**.
+Their voice is then taken from their latest lines, and the meter starts over from there.
+
+**The meter decides when to audit.** With the drift audits on (same tab), an audit used to run
+every 20 replies whether anything had drifted or not. Now it runs when the meter reads a
+character as newly drifting, and otherwise half as often. Fewer audits when everyone holds
+steady, and a quicker one when someone slips. Each audit is still one background call, priced
+beside **Audit now**; no ceiling applies to it.
+
+**Small corrections apply by themselves.** An audit's correction used to wait in the Focus tab
+until you approved it, which on a phone mid-story meant it mostly waited. Now a short correction
+about how the story is written (character drift, repeated motifs, slop) goes into the prompt as
+soon as the audit lands. A toast tells you, and the Focus tab shows it under **Applied by
+itself**:
+
+- **Undo** takes it back out and leaves the audit waiting for your review, where you can edit
+  it.
+- **Keep it** dismisses the card.
+
+A correction about where the story goes (your plot focus, your Tone Rules) or a long one still
+waits for your approval, as before. To make every audit wait, untick *Small corrections apply
+by themselves* in the Audit panel.
