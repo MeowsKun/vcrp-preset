@@ -76,7 +76,8 @@ const WHY = {
 };
 const LIMIT_BY = {
     cap: "VCRP's Safety cap (Memory → Reply length)",
-    hold: "VCRP's Hold each reply to the target (Memory → Reply length)",
+    ceiling: "VCRP's ceiling per reply (Memory → Reply length)",
+    hold: "VCRP's Hold each reply to the target (as it was before 10.0.0-vcrp.18)",
     "": "SillyTavern's Max Response Length (AI Response Configuration)",
 };
 const n = v => Number(v).toLocaleString("en-US");
@@ -107,7 +108,8 @@ export function explainBlankReply(kind, stamp, { own = true } = {}) {
         const by = LIMIT_BY[f.limitBy] || LIMIT_BY[""];
         const wrote = f.usage && f.usage.out ? ` It wrote ${n(f.usage.out)} tokens${f.usage.reasoning ? `, ${n(f.usage.reasoning)} of them reasoning,` : ""} and the story never came.` : "";
         const advice = f.limitBy === "cap" ? "Raise the Safety cap, or set it to 0 (off)."
-            : f.limitBy === "hold" ? "Swipe for another; if it happens often, raise the target."
+            : f.limitBy === "ceiling" ? "Its prompt left little room under the ceiling: cut the prompt down (Memory → Summarize now, Cut now), or raise the ceiling."
+                : f.limitBy === "hold" ? "Swipe for another. (Since 10.0.0-vcrp.18 the target no longer limits a reply.)"
                 : "Raise Max Response Length in AI Response Configuration.";
         return { cause: `The request's output limit stopped it${took}: ${f.limit ? `${n(f.limit)} tokens, set by ${by}` : by}.${wrote} On a model that reasons before it writes, that reasoning counts against the limit.`, advice };
     }

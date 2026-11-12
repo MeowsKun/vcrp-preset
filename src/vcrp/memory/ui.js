@@ -8,7 +8,7 @@
 // "Update the prompt now" does exactly that, on purpose.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { extension_settings, saveSettingsDebounced, saveMetadata } from "../../st.js";
+import { extension_settings, saveSettingsDebounced, saveMetadata, getContext } from "../../st.js";
 import { extensionName } from "../../core/constants.js";
 import { localProfile } from "../../core/state.js";
 import { saveProfileToMemory } from "../../core/profile.js";
@@ -27,8 +27,9 @@ import { activeEngine } from "../../engine/meguminOriginal.js";
 import { isPuraEngine, puraVariant } from "../../core/engines.js";
 import { isThinkingCap } from "../../../data/cot/index.js";
 import { puraSettings } from "../pura/index.js";
-import { costBadgesOn, setCostBadges } from "../replyCost.js";
-import { replyBudget, holdTargetActive, lastReplyRoom, BACKGROUND_OUTPUT } from "../replyLength.js";
+import { costBadgesOn, setCostBadges, costReportLines } from "../replyCost.js";
+import { copyText } from "../health.js";
+import { replyBudget, ceilingCost, lastReplyRoom } from "../replyLength.js";
 
 const esc = s => escapeHtmlAttr(s == null ? "" : s);
 
@@ -74,26 +75,23 @@ async function runCatchUp($c, max) {
         catchingUp = false;
     }
     if (typeof toastr !== "undefined") {
-        if (r.done) toastr.success(`${r.done} chapter${r.done > 1 ? "s" : ""} written${memoryBudgetSettings().review ? ", waiting for review" : ""}.`, "VCRP Memory");
+        const waiting = ((memoryState() || {}).pending || []).length;
+        if (r.done) toastr.success(`${r.done} chapter${r.done > 1 ? "s" : ""} written${waiting ? `; ${waiting} wait${waiting > 1 ? "" : "s"} for your review (the rest were approved by their own check)` : memoryBudgetSettings().review ? ", each approved by its own check" : ""}.`, "VCRP Memory");
         else toastr.warning(`Nothing written${r.last && r.last.reason ? `: ${r.last.reason}` : ""}.`, "VCRP Memory");
     }
     if ($c.closest("body").length) renderVcrpMemoryPanel($c);
 }
 
-// What holding replies to the target did with the latest reply, or why it is not working.
-function holdStatus(s, on, budget) {
-    if (s.holdTarget === false) return "";
+// What the ceiling made of the latest reply's request, or why it cannot be worked out.
+function ceilingStatus(budget) {
+    if (!ceilingCost()) return "";
     const note = t => `<br><span style="opacity:.85;">${t}</span>`;
-    if (!on) return note("Story Memory is off, so replies are not held: only the safety cap applies.");
-    if (!budget) return note("The model's price is not known, so replies are not held: set a custom price below.");
+    if (!budget) return note("The model's price is not known, so the ceiling cannot be worked out: set a custom price below. Until then no reply is limited by cost.");
     const r = lastReplyRoom();
-    if (!r || !holdTargetActive()) return "";
-    const how = `Last reply: its prompt cost about ${money(r.input)} (cache ${r.cold ? "cold" : "warm"}), leaving room for about ${k(r.tokens)} tokens of output.`;
-    // A model that reasons out of sight: the room is shown, never put on the request.
-    if (r.hidden) return note(`${how} This model reasons before it writes, that reasoning is paid for in the request's limit and VCRP cannot see its size, so the room is not put on the request: a reply here is limited only by the safety cap${r.limit ? ` (the request allows ${k(r.limit)} tokens: the cap, plus room for the reasoning)` : " (off)"} and SillyTavern's Max Response Length.`);
-    // The request's limit is never below a whole reply, so one that runs over its room finishes.
-    const over = r.limit > r.tokens ? ` The model was told that room; the request allowed ${k(r.limit)}, a whole reply, so one that runs over still finishes its blocks.` : "";
-    return note(r.held ? how + over : `${how} Its prompt alone was near the target, so it got the minimum room and may have gone a little over.${over}`);
+    if (!r) return "";
+    const how = `Last reply: its prompt cost about ${money(r.input)} (cache ${r.cold ? "cold" : "warm"}).`;
+    if (r.blocked) return note(`${how} That left no room for a usual reply under the ceiling, so it was not sent.`);
+    return note(`${how} The ceiling left room for about ${k(Math.max(0, r.tokens))} tokens of output${r.limit && r.limit < r.tokens ? `; the safety cap allowed ${k(r.limit)}` : ""}.`);
 }
 
 // ── Reply length ──
@@ -126,7 +124,14 @@ function renderReplyLength($c, s, budget, st, rerender) {
                 ${[["flexible", "Flexible"], ["short", "Short (3-5 paragraphs)"], ["medium", "Medium (8-13 paragraphs)"], ["long", "Long (13+ paragraphs)"]].map(([v, l]) => `<option value="${v}" ${ps.length === v ? "selected" : ""}>${l}</option>`).join("")}
             </select></div>`
         : null;
-    $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title blue"><i class="fa-solid fa-ruler-horizontal"></i> Reply length</div>
+    // What this chat's replies came to, read back from the cost kept with each (replyCost.js).
+    const goal = Number(s.targetCost) || 0;
+    let chatNow = [];
+    try { chatNow = ((getContext() || {}).chat) || []; } catch (e) { chatNow = []; }
+    const report = costReportLines(chatNow, { goal, ceiling: ceilingCost(), model: budget ? budget.price.label : "" });
+    const reportHtml = report.length ? `<div class="vcrp-cost-report" style="font-size:0.75rem; line-height:1.55; margin-bottom:10px; padding:8px 10px; border:1px solid rgba(16,185,129,0.3); border-radius:6px;"><b>This chat's replies, by what they cost</b><br>${report.map(esc).join("<br>")}<div style="margin-top:6px;"><button id="vmem_cost_copy" class="ps-modern-btn secondary" style="font-size:0.7rem;" title="The same lines as text, to paste"><i class="fa-solid fa-copy"></i> Copy cost report</button></div></div>` : "";
+    $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title blue"><i class="fa-solid fa-ruler-horizontal"></i> Reply length and cost</div>
+        ${reportHtml}
         <div style="font-size:0.75rem; line-height:1.55; margin-bottom:6px;">${measured
             ? `Your ${measuredCount ? `last ${measuredCount}` : "recent"} replies averaged about <b>${k(measured)} output tokens</b>${avgCost !== null ? ` (about ${money(avgCost)} each in output alone)` : ""}.${on ? " Story Memory's budget plans for that." : ""}`
             : (on ? `<span style="opacity:.75;">After a few replies, their measured length shows here, and Story Memory's budget plans for it.</span>` : `<span style="opacity:.75;">With Story Memory on, your replies' measured length shows here.</span>`)}
@@ -150,12 +155,13 @@ function renderReplyLength($c, s, budget, st, rerender) {
             })()}</div></div>
             <input id="vmem_cap_reply" type="number" min="0" max="64000" step="500" class="ps-modern-input" style="width:90px;" value="${cap}"></div>
         ${cap && measured && cap < measured * 1.3 ? `<div style="font-size:0.72rem; color:#f59e0b; margin-top:4px;"><i class="fa-solid fa-triangle-exclamation"></i> The cap is close to your average reply: many replies will be cut off.</div>` : ""}
-        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Hold each reply to the target</div><div class="set-desc">Input and output together stay within your ${money(Number(s.targetCost) || 0.3)} target. Each reply's prompt is priced as it goes out, and what is left of the target is the most the reply can write. During play that is plenty; right after a break, when the whole prompt is written to the cache again, it is about a reply and a quarter, and the model is told so it finishes inside it. Needs Story Memory on and the model's price. VCRP's own background calls (summaries, audits, the Story Director, NPC scans) can write at most ${BACKGROUND_OUTPUT.toLocaleString("en-US")} tokens each.${holdStatus(s, on, budget)}</div></div>
-            <input type="checkbox" id="vmem_hold" ${s.holdTarget !== false ? "checked" : ""} /></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Ceiling per reply ($)</div><div class="set-desc">The one hard stop on a regular reply. Your ${money(Number(s.targetCost) || 0.2)} target is a goal: it sizes the prompt a break leaves, and a reply that comes to more than it is never cut off or stopped. No reply can pass the ceiling: each reply's prompt is priced as it goes out, what the ceiling leaves after it is the most the reply can write, and a prompt that leaves no room for a usual reply is not sent (a note says what to do). Summaries, audits, the Story Director, NPC scans and every other background call are never limited. Needs the model's price. 0 = no ceiling.${ceilingStatus(budget)}</div></div>
+            <input id="vmem_ceiling" type="number" min="0" max="20" step="0.05" class="ps-modern-input" style="width:90px;" value="${Number(s.ceilingCost) > 0 ? Number(s.ceilingCost) : 0}"></div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Show each reply's cost</div><div class="set-desc">A small estimate under each reply's avatar (green: the cache was warm; amber: cold, the prompt written in full). Tap it for the breakdown: read from the cache, written to it, sent fresh, written by the model. Works with Story Memory on or off.</div></div>
             <input type="checkbox" id="vmem_cost_badges" ${costBadgesOn() ? "checked" : ""} /></div>
         </div>`);
     $c.find("#vmem_cost_badges").on("change", function () { setCostBadges(this.checked); saveSettingsDebounced(); });
+    $c.find("#vmem_cost_copy").on("click", () => copyText(["VCRP cost report", ...report].join("\n"), "This chat's cost report", "Copied."));
     $c.find("#vmem_len").on("change", function () {
         if (!localProfile.storyConfig) localProfile.storyConfig = {};
         localProfile.storyConfig.length = String($(this).val());
@@ -170,7 +176,11 @@ function renderReplyLength($c, s, budget, st, rerender) {
         localProfile.thinkEffort = String($(this).val());
         saveProfileToMemory();
     });
-    $c.find("#vmem_hold").on("change", function () { saveSetting("holdTarget", this.checked); rerender(); });
+    $c.find("#vmem_ceiling").on("change", function () {
+        const v = Number($(this).val());
+        saveSetting("ceilingCost", Number.isFinite(v) && v > 0 ? Math.min(20, v) : 0);
+        rerender();
+    });
     $c.find("#vmem_cap_reply").on("change", function () {
         const v = Math.round(Number($(this).val()));
         saveSetting("replyCap", Number.isFinite(v) && v > 0 ? Math.min(64000, v) : 0);
@@ -216,7 +226,7 @@ export function renderVcrpMemoryPanel($c) {
         if (!b || backlog <= b.coldTokens) return;
         const est = catchUpEstimate(backlog, b);
         const review = memoryBudgetSettings().review;
-        if (!confirm(`This chat has about ${k(backlog)} tokens nobody has summarized. Until they are, the first request after a break can't be cut and costs far more than your target.\n\nCatch up now? About ${est.chapters} chapter${est.chapters > 1 ? "s" : ""}, roughly ${money(est.cost)}, around ${est.minutes} minute${est.minutes > 1 ? "s" : ""} in the background. Please don't send messages until it finishes.${review ? "\n\nReview is on: the chapters will wait for your approval, and only approved chapters can be cut, so approve them before your next break (there's an Approve all button). Switch review off first if you'd rather they save directly." : ""}`)) return;
+        if (!confirm(`This chat has about ${k(backlog)} tokens nobody has summarized. Until they are, the first request after a break can't be cut and costs far more than your target.\n\nCatch up now? About ${est.chapters} chapter${est.chapters > 1 ? "s" : ""}, roughly ${money(est.cost)}, around ${est.minutes} minute${est.minutes > 1 ? "s" : ""} in the background. Please don't send messages until it finishes. It is a one-off and is not limited by your target or your ceiling.${review ? (memoryBudgetSettings().autoApprove === false ? "\n\nReview is on: the chapters will wait for your approval, and only approved chapters can be cut, so approve them before your next break (there's an Approve all button)." : "\n\nA chapter its own check finds accurate is approved by itself; one the check had to correct waits for you, with the chapters after it.") : ""}`)) return;
         await runCatchUp($c, Infinity);
     });
     if (!on) {
@@ -266,9 +276,15 @@ export function renderVcrpMemoryPanel($c) {
         if (backlog > budget.coldTokens) {
             const missCost = costEstimate(budget, (st.fixedTokens || 12000) + backlog + budget.minVerbatim).cold;
             const est = catchUpEstimate(backlog, budget);
-            meter += `<div style="color:#f59e0b;"><i class="fa-solid fa-triangle-exclamation"></i> About ${k(backlog)} tokens of this chat aren't summarized yet. Until they are, a request after a break can't be cut and would cost about ${money(missCost)}. <b>Summarize now</b> catches up in small standalone calls: about ${est.chapters} chapter${est.chapters > 1 ? "s" : ""}, roughly ${money(est.cost)}, 10 per click.</div>`;
+            meter += `<div style="color:#f59e0b;"><i class="fa-solid fa-triangle-exclamation"></i> About ${k(backlog)} tokens of this chat aren't summarized yet. Until they are, a request after a break can't be cut and would cost about ${money(missCost)}. <b>Summarize now</b> catches up on all of it in one go, in small standalone calls: about ${est.chapters} chapter${est.chapters > 1 ? "s" : ""}, roughly ${money(est.cost)}. It is a one-off and is not limited by your target or your ceiling.</div>`;
         }
-        if (plan && plan.behind) meter += `<div style="color:#f59e0b;"><i class="fa-solid fa-triangle-exclamation"></i> The last cut could not reach the budget (${esc(plan.limit)}).${plan.limit === "summaries" ? " Approve waiting chapters, or use Summarize now." : " The recent text kept word for word is more than this budget allows; raise the target or lower the floor."}</div>`;
+        if (plan && plan.behind) {
+            // What the reviews still waiting cost: the prompt a break leaves is this much over the budget.
+            const over = plan.limit === "summaries" && pending.length && plan.promptTokens > budget.coldTokens ? (plan.promptTokens - budget.coldTokens) * budget.write / 1e6 : 0;
+            meter += `<div style="color:#f59e0b;"><i class="fa-solid fa-triangle-exclamation"></i> The last cut could not reach the budget (${esc(plan.limit)}).${plan.limit === "summaries"
+                ? (pending.length ? ` <b>${pending.length} chapter${pending.length > 1 ? "s" : ""} waiting for your review hold${pending.length > 1 ? "" : "s"} it there</b>${over > 0 ? `: about ${money(over)} more on every request after a break` : ""}. Approve ${pending.length > 1 ? "them" : "it"} below.` : " Use Summarize now.")
+                : " The recent text kept word for word is more than this budget allows; raise the target or lower the floor."}</div>`;
+        }
     }
     $c.append(`<div class="mtab-panel" style="margin-bottom:14px;"><div class="mtab-panel-title green"><i class="fa-solid fa-gauge"></i> What a request costs</div>
         <div style="font-size:0.78rem; line-height:1.55; display:flex; flex-direction:column; gap:4px;">${meter}</div>
@@ -293,7 +309,8 @@ export function renderVcrpMemoryPanel($c) {
         if (!budget) { if (typeof toastr !== "undefined") toastr.warning("Story Memory needs this model's price to plan the chapters. Set a custom price in this tab (Gemini, GLM and other non-Claude models), or connect a Claude model.", "VCRP Memory"); return; }
         const span = stNow && nextSpan(storyChat(), stNow, budget, { catchUp: true });
         if (!span) { if (typeof toastr !== "undefined") toastr.info("Nothing to summarize yet: the recent messages stay word for word.", "VCRP Memory"); return; }
-        await runCatchUp($c, 10);
+        // The whole backlog in one go: a one-off the reader asked for, limited by nothing.
+        await runCatchUp($c, Infinity);
     });
     $c.find("#vmem_refresh_shown").on("click", async () => {
         const stNow = memoryState();
@@ -432,6 +449,8 @@ export function renderVcrpMemoryPanel($c) {
             <input id="vmem_markcache" type="checkbox" ${s.markCache ? "checked" : ""}></div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Review chapters before they count</div><div class="set-desc">New chapters and fact changes wait for your approval. Until approved, nothing new can be cut.</div></div>
             <input id="vmem_review" type="checkbox" ${s.review ? "checked" : ""}></div>
+        <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Approve accurate chapters by themselves</div><div class="set-desc">Every new chapter is checked against the messages it covers by a second call. One the check finds accurate is approved as written, so the prompt can be cut without waiting for you. One the check had to correct or could not read, or one that changes a pinned fact, still waits for your review. Off: every chapter waits.</div></div>
+            <input id="vmem_autoapprove" type="checkbox" ${s.autoApprove !== false ? "checked" : ""} ${s.review ? "" : "disabled"}></div>
         <div class="mtab-setting-row"><div class="set-info"><div class="set-label">Custom price ($ per million tokens)</div><div class="set-desc">For a model VCRP doesn't know, saved for that model only: ${priceForModel(model) ? `<b>${esc(model || "this model")}</b> has its own price, so this is not used.` : `<b>${esc(model || "the current model")}</b> (needed for it).`} Switch models and each keeps its own. Input, output, cached read (left empty: a tenth of the input price).</div></div>
             <div style="display:flex; gap:4px;">
                 <input id="vmem_price_in" type="text" inputmode="decimal" class="ps-modern-input" style="width:64px;" placeholder="in" value="${cp.input ?? ""}">
@@ -448,6 +467,7 @@ export function renderVcrpMemoryPanel($c) {
     $c.find("#vmem_cap").on("change", () => { saveSetting("memoryCap", num("#vmem_cap", 1, BUDGET_DEFAULTS.memoryCap)); rerender(); });
     $c.find("#vmem_markcache").on("change", () => { saveSetting("markCache", $c.find("#vmem_markcache").is(":checked")); rerender(); });
     $c.find("#vmem_review").on("change", () => { saveSetting("review", $c.find("#vmem_review").is(":checked")); rerender(); });
+    $c.find("#vmem_autoapprove").on("change", () => { saveSetting("autoApprove", $c.find("#vmem_autoapprove").is(":checked")); rerender(); });
     // The three price boxes are saved together. One filled in while the next is still empty is
     // left as typed: redrawing the tab then would wipe it, and the next box could never be
     // reached. All three cleared, the price goes. A comma counts as a decimal point (phone

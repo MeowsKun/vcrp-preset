@@ -193,14 +193,18 @@ export async function summarizeNext({ catchUp = false } = {}) {
             checked: verdict.verdict, created: memoryNow(),
         };
         st.summaryFailures = 0;
-        if (memoryBudgetSettings().review) {
+        // Review on: the chapter waits for the reader, unless its own check found it accurate and
+        // nothing waits before it (chapters follow on from one another): then it is approved as
+        // written. One the check corrected, or could not read, always waits.
+        const review = !!memoryBudgetSettings().review;
+        if (review && !((st.pending || []).length === 0 && checkedAccurate(st, entry))) {
             st.pending = [...(st.pending || []), entry];
             await saveMetadata();
             return { status: "pending" };
         }
-        commitChapter(st, chat, entry);
+        commitChapter(st, chat, review ? { ...entry, auto: true } : entry);
         await saveMetadata();
-        return { status: "saved" };
+        return { status: "saved", auto: review };
     } catch (e) {
         console.error("[VCRP] memory summary failed", e);
         return noteFailure(st, e && e.message ? e.message : String(e));
@@ -241,6 +245,18 @@ async function foldNext(st) {
     }
 }
 
+/**
+ * A chapter that may be approved without the reader: auto-approve is on, its own check found it
+ * accurate ("ok": not corrected, not unreadable), and it leaves every pinned fact as it is (a
+ * pinned fact is the reader's to change).
+ */
+export function checkedAccurate(st, entry) {
+    if (memoryBudgetSettings().autoApprove === false) return false;
+    if (!entry || entry.checked !== "ok") return false;
+    const pinned = new Set(((st && st.ledger) || []).filter(f => f.pinned).map(f => f.id));
+    return !(entry.ops || []).some(o => o.op !== "+" && pinned.has(o.id));
+}
+
 /** Saves a chapter: facts applied, gist added, the oldest gists folded if asked, coverage moved on. */
 export function commitChapter(st, chat, entry) {
     const id = `C${(st.chapterSeq || 0) + 1}`;
@@ -257,6 +273,7 @@ export function commitChapter(st, chat, entry) {
     st.chapters = [...(st.chapters || []), {
         id, gist: entry.gist, chapter: entry.chapter, start: entry.start, end: entry.end,
         from: entry.from, to: entry.to, checked: entry.checked, created: entry.created, undo,
+        ...(entry.auto ? { auto: true } : {}),
     }];
     // A fold asked for while this chapter waited for review may have been done since.
     const foldIds = entry.foldIds || [];
@@ -277,7 +294,15 @@ export function approvePending(st, chat, edits = {}) {
     if (typeof edits.chapter === "string") edited.chapter = edits.chapter.trim();
     if (typeof edits.changes === "string") edited.ops = parseFactChanges(edits.changes).ops;
     st.pending = st.pending.slice(1);
-    return commitChapter(st, chat, edited);
+    const r = commitChapter(st, chat, edited);
+    // The chapters queued behind it that their own check found accurate follow by themselves;
+    // the next one the check corrected (or could not read) waits for the reader again.
+    while ((st.pending || []).length && checkedAccurate(st, st.pending[0])) {
+        const next = st.pending[0];
+        st.pending = st.pending.slice(1);
+        commitChapter(st, chat, { ...next, auto: true });
+    }
+    return r;
 }
 
 /** Review: throw away a waiting chapter and everything queued after it (they follow on from it). */
@@ -338,7 +363,7 @@ export function vcrpMemoryAfterReply() {
         if (autoSummaryHold(st)) return;
         const r = await summarizeNext();
         if (typeof toastr === "undefined") return;
-        if (r.status === "pending") toastr.info("A new chapter is ready for review in the Memory tab.", "VCRP Memory");
+        if (r.status === "pending") toastr.info(memoryBudgetSettings().autoApprove === false ? "A new chapter is ready for review in the Memory tab." : "A new chapter waits for your review in the Memory tab: its check corrected it, or another waits before it. Nothing past it can be cut from the prompt until then.", "VCRP Memory");
         else if (r.status === "failed") {
             toastr.warning(r.paused
                 ? `Summary failed again (${r.reason}). Automatic summaries are paused; use Summarize now in the Memory tab to retry.`

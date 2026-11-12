@@ -198,12 +198,13 @@ for (let k = 0; k < memCount; k++) {
     check(/At 9,000: the story about \d+ words(, the thinking about \d+ words)?, the blocks about \d+ tokens\./.test(box.text()) && !/about 0 words/.test(box.text()), "the cap's split (story, thinking, blocks) is not shown");
     box.find("#vmem_cap_reply").val("0").trigger("change");
     check(!/At [\d,]+: the story about/.test(box.text()), "the split is shown with no cap");
-    // Holding replies to the target: on by default, says why it does nothing with Story Memory off, saved.
-    check(box.find("#vmem_hold").is(":checked") && /Story Memory is off, so replies are not held/.test(box.text()), "the hold switch, or its note with Story Memory off, is missing");
-    box.find("#vmem_hold").prop("checked", false).trigger("change");
-    check((((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).holdTarget === false, "switching the hold off is not saved");
-    $("#ps_stage_content").find("#vmem_hold").prop("checked", true).trigger("change");
-    check((((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).holdTarget === true, "switching the hold back on is not saved");
+    // The ceiling: $0.50 by default, drawn with Story Memory off too, says the target limits no reply and background calls are never limited, saved.
+    check(!box.find("#vmem_hold").length && Number(box.find("#vmem_ceiling").val()) === 0.5 && /never cut off or stopped/.test(box.text()) && /every other background call are never limited/.test(box.text()), "the ceiling's field, or what it says about the target and background calls, is missing");
+    box.find("#vmem_ceiling").val("0.75").trigger("change");
+    check((((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).ceilingCost === 0.75, "a changed ceiling is not saved");
+    $("#ps_stage_content").find("#vmem_ceiling").val("0").trigger("change");
+    check((((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).ceilingCost === 0, "a ceiling of 0 (off) is not saved");
+    delete extension_settings.VCRP.globalSettings.memoryBudget.ceilingCost;
     clicks += 5;
     console.log("  ✓ Reply length (Story Memory off): drawn, and each control reaches its setting");
 }

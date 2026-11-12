@@ -8,42 +8,37 @@
 // (VCRP's visible thinking, in words). The Memory tab gathers both, and adds a safety cap
 // here, meant to sit well above a normal reply, so only a runaway one is stopped.
 //
-// Holding each reply to the target (Memory tab, on by default with Story Memory): the
-// prompt is priced as it goes out (read from the cache, written to it, sent fresh), and what
-// is left of Story Memory's per-request target becomes the reply's room in output tokens.
-// The model is told that room, and it goes on the request as its limit, so input and output
-// together stay within the target. During play the room is wide; right after a break, when
-// the whole prompt is written to the cache again, it is about a reply and a quarter.
-//
-// The room is what the model is told; the request's own limit is never below a whole reply
-// (half again the chat's usual one). Right after a break the room can be the minimum, and a
-// model that ran past it was stopped in its blocks, the last thing it writes: the trackers
-// lost for the turn, a Continue to pay for. A reply that runs over its room now finishes, a
-// few cents over the target at most; only the safety cap, set by the reader, still stops it.
+// The target and the ceiling (Memory tab). Story Memory's target ($0.20 a reply by default)
+// is a goal: it sizes the prompt a break leaves, and nothing else. A reply is never cut off,
+// shortened or stopped because it would come to more than the target: one that costs $0.25
+// passes. The one hard stop on a regular reply is the ceiling ($0.50 by default): the prompt
+// is priced as it goes out (read from the cache, written to it, sent fresh), and what the
+// ceiling leaves after it, in output tokens, is the request's limit. A prompt that leaves no
+// room for a usual reply is not sent at all, and the reader is told what to do (summarise,
+// cut, or raise the ceiling): sending it would pay for most of the ceiling and get a reply cut
+// short or, on a model that reasons out of sight, nothing at all.
 //
 // The limits go on the request itself (SillyTavern's CHAT_COMPLETION_SETTINGS_READY), only
-// for prompts built from the VCRP preset. VCRP's own background calls (a summary, an audit,
-// the Story Director, an NPC scan) get a limit of their own, well above what they write, so
-// none can run away; other background calls are left alone.
+// for prompts built from the VCRP preset, and only for a regular reply. Everything that is
+// not one is left alone: a summary or its check, an audit, the Story Director, an NPC scan,
+// the call for missing blocks, another extension's request. A one-off that summarises a long
+// chat in progress may cost a couple of dollars; that is the reader's to spend.
 //
 // On a model that reasons out of sight (Gemini, DeepSeek, GLM; Claude with a reasoning effort
-// set: generation.js, vcrpModelReasonsHidden), what it thinks is paid for in that same limit,
-// and the reply's measured size never holds it. A limit set from the measure, even half again
-// a reply, is then used up by the thinking on a hard turn and the reply comes back with
-// nothing in it. So on such a model the room under the target is worked out and shown, but
-// not put on the request: only the safety cap lowers it, and the cap goes on the request with
-// room for the reasoning on top (capRequestLimit). VCRP's background calls are not limited
-// there either. The cost of the one thing that goes unenforced, a reply over its room after a
-// break, is a few cents; the cost of a reply with nothing in it was the whole turn.
+// set: generation.js, vcrpModelReasonsHidden), what it thinks is paid for in the request's
+// limit, and the reply's measured size never holds it. So the safety cap, a limit on the reply
+// the reader sees, goes on the request with room for that reasoning on top (capRequestLimit).
+// The ceiling is in billed tokens either way, reasoning included.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getContext } from "../st.js";
 import { localProfile } from "../core/state.js";
 import {
     memoryBudgetSettings, estimateTokens, currentMemoryBudget, memoryState, memoryNow, promptSpendSplit,
-    vcrpMemoryEnabled, memoryTaskActive, measuredOutputTokens,
+    measuredOutputTokens,
 } from "./memory/index.js";
 import { requestCost } from "./memory/budget.js";
+import { costClock } from "./replyCost.js";
 import { isCold } from "./memory/window.js";
 import { vcrpGenerationKind, vcrpWithoutSwipedReply, vcrpModelReasonsHidden } from "./generation.js";
 import { meguminActiveBlocks } from "../features/blocks/registry.js";
@@ -51,18 +46,13 @@ import { notebookCurrentPhase, notebookLiveCap } from "./notebook/index.js";
 import { activeEngine } from "../engine/meguminOriginal.js";
 import { isPuraEngine } from "../core/engines.js";
 import { isThinkingCap } from "../../data/cot/index.js";
-import {
-    activeStoryPlanRequest, activeBanListChat, activeNpcScanRequest, activeNpcUpdateRequest, activeGenerationOrder, activeFocusAudit, activeBlockRepair,
-} from "../core/activeRequests.js";
 
-const MIN_ROOM = 1500;            // the least room a reply is given, even when its prompt alone nears the target
-const WHOLE_REPLY = 1.5;          // the request's limit is at least this many usual replies, so a reply over its room still finishes
-const BACKGROUND_OUTPUT = 8000;   // VCRP's background calls: far above what they write (a summary is ~1,500)
+const MIN_ROOM = 1500;            // a prompt that leaves less room than this under the ceiling is not sent, however short the usual reply
 const NEW_TOKENS = 4500;          // a warm prompt's part written to the cache, before the prompt is known
 
 let vcrpPrompt = false;   // the prompt about to go out was built from the VCRP preset
 let nextRoom = null;      // the limit worked out for the request about to go out
-let lastRoom = null;      // { tokens, limit, input, cold, held } of the latest reply request, for the Memory tab
+let lastRoom = null;      // { tokens, limit, input, cold, ceiling, goal, blocked, hidden } of the latest reply request, for the Memory tab
 
 /** Called with every prompt that goes out: was it one VCRP filled in? */
 export function vcrpNotePrompt(isVcrp) {
@@ -124,29 +114,42 @@ export function replyLimitTokens() {
     return limits.length ? Math.min(...limits) : 0;
 }
 
-// ── Holding each reply to the target ─────────────────────────────────────────
+// ── The ceiling: the one hard stop on a regular reply ────────────────────────
 
-/** Replies are held to the target: switched on, Story Memory on, the model's price known. */
-export function holdTargetActive() {
-    return memoryBudgetSettings().holdTarget !== false && vcrpMemoryEnabled() && !!currentMemoryBudget();
+/** The ceiling in dollars: no regular reply's request may cost more. 0 when off. */
+export function ceilingCost() {
+    const n = Number(memoryBudgetSettings().ceilingCost);
+    return n > 0 ? n : 0;
+}
+
+/** The ceiling is in force: set, and the model's price known (Story Memory on or not). */
+export function ceilingActive() {
+    return ceilingCost() > 0 && !!currentMemoryBudget();
 }
 
 /**
- * The output room under the target for a prompt whose input costs `input` dollars: what is
- * left of the target, in output tokens. May be below MIN_ROOM (or below 0) when the prompt
- * alone nears the target; a reply is never given less than MIN_ROOM.
+ * What the ceiling leaves for output, in tokens, after a prompt whose input costs `input`
+ * dollars. Zero or less when the prompt alone reaches the ceiling. The target plays no part.
  */
-export function roomFor(input, budget = currentMemoryBudget()) {
-    if (!budget) return 0;
-    const s = memoryBudgetSettings();
+export function roomUnderCeiling(input, budget = currentMemoryBudget()) {
+    const ceiling = ceilingCost();
+    if (!budget || !ceiling) return 0;
     // The input is estimated by length; the same margin Story Memory sizes its cuts with.
-    const left = s.targetCost - input / (s.safety || 0.92);
+    const left = ceiling - input / (memoryBudgetSettings().safety || 0.92);
     return Math.floor(left / budget.price.output * 1e6);
 }
 
+// What a reply usually takes: the chat's measured average (as billed, reasoning counted, when
+// the answers were read), or Story Memory's default guess.
+const typicalReply = () => measuredOutputTokens() || Number(memoryBudgetSettings().outputTokens) || 2500;
+
+/** The least room a prompt must leave under the ceiling to be sent: a usual reply. */
+const neededRoom = () => Math.max(MIN_ROOM, typicalReply());
+
 /**
- * The room a reply will have, while its prompt is still being built: from Story Memory's plan
- * for this request (its size, a warm or a cold cache). Exact once the prompt is done.
+ * The room a reply will have under the ceiling, while its prompt is still being built: from
+ * Story Memory's plan for this request (its size, a warm or a cold cache). Exact once the
+ * prompt is done.
  */
 function plannedRoom() {
     const budget = currentMemoryBudget();
@@ -155,19 +158,19 @@ function plannedRoom() {
     if (!budget || !plan || !(plan.promptTokens > 0)) return lastRoom ? lastRoom.tokens : 0;
     const p = plan.promptTokens;
     const input = plan.cold ? requestCost(budget, { write: p }) : requestCost(budget, { read: Math.max(0, p - NEW_TOKENS), write: Math.min(p, NEW_TOKENS) });
-    return Math.max(MIN_ROOM, roomFor(input, budget));
+    return Math.max(MIN_ROOM, roomUnderCeiling(input, budget));
 }
 
-/**
- * The limit the reply being built is planned to have: the safety cap, or its room under the
- * target (not on a model whose reasoning is out of sight: there the room is never enforced).
- */
+/** The limit the reply being built is planned to have: the safety cap, or its room under the ceiling. */
 function plannedLimit() {
-    const limits = [replyCapTokens(), holdTargetActive() && !vcrpModelReasonsHidden() ? plannedRoom() : 0].filter(n => n > 0);
+    const limits = [replyCapTokens(), ceilingActive() ? plannedRoom() : 0].filter(n => n > 0);
     return limits.length ? Math.min(...limits) : 0;
 }
 
-/** The latest reply request's room: { tokens, input, cold, held } (held: within the target), or null. */
+/**
+ * The latest reply request, priced: { tokens (its room under the ceiling), limit (what went on
+ * the request), input ($), cold, ceiling ($), goal ($), blocked, hidden }, or null.
+ */
 export const lastReplyRoom = () => lastRoom;
 
 // ── The budget line ──────────────────────────────────────────────────────────
@@ -226,13 +229,10 @@ export function replyBudget(limit = plannedLimit()) {
     return { cap, thinkingWords: thinking.words, thinkingSet: thinking.set, blocks, storyWords };
 }
 
-// What a reply usually takes: the chat's measured average, or Story Memory's default guess.
-const typicalReply = () => measuredOutputTokens() || Number(memoryBudgetSettings().outputTokens) || 2500;
-
 /**
  * The model is told its room when it matters: always under the safety cap, and under the
- * target when the room is tight (right after a break). A wide room is only the request's
- * limit: told "keep the story to about 6,000 words", the model would write more, not less.
+ * ceiling when the room it leaves is tight. A wide room is only the request's limit: told
+ * "keep the story to about 6,000 words", the model would write more, not less.
  */
 const tellsRoom = limit => limit > 0 && (replyCapTokens() > 0 || limit < typicalReply() * TIGHT);
 
@@ -249,44 +249,48 @@ const LINE_RE = new RegExp(`${LINE_HEAD}\\n[^\\n]*?${LINE_TAIL.replace(/[.*+?^${
 const LINE_GAP_RE = new RegExp(`(?:\\n\\n)?${LINE_RE.source}`);
 
 /**
- * After the prompt is built (injection.js), before the cache clock is stamped: the reply's
- * room, priced from the prompt as it will go out, and the length line set to it.
+ * After the prompt is built (injection.js), before the cache clock is stamped: the prompt is
+ * priced as it will go out, the ceiling's room for the reply worked out, and the length line
+ * set to it. Returns null when there is no ceiling to hold (off, the price unknown, a
+ * background call), else { blocked, input, room, needed, ceiling, cold }: `blocked` when the
+ * prompt leaves no room for a usual reply under the ceiling, and must not be sent.
  */
 export function vcrpReplyRoom(messages, dryRun) {
     if (!dryRun) nextRoom = null;
     const gen = vcrpGenerationKind();
-    if (gen === "quiet" || !Array.isArray(messages) || !holdTargetActive()) return;
+    if (gen === "quiet" || !Array.isArray(messages) || !ceilingActive()) return null;
     const budget = currentMemoryBudget();
     const st = memoryState();
-    const cold = isCold({ lastRequestAt: st && st.lastRequestAt }, memoryNow(), budget);
+    // Warm or cold by the newest clock there is: Story Memory's when it is on, the cost badge's
+    // either way (with Story Memory off the first never moves, and every prompt would look cold).
+    const sentAt = Math.max((st && Number(st.lastRequestAt)) || 0, costClock());
+    const cold = isCold({ lastRequestAt: sentAt }, memoryNow(), budget);
     const { read, write, plain } = promptSpendSplit(messages, cold);
     const input = requestCost(budget, { read, write, plain });
-    const room = roomFor(input, budget);
-    const cap = replyCapTokens() || Infinity;
-    const limit = Math.min(Math.max(MIN_ROOM, room), cap);
-    // A model whose reasoning is out of sight is held by the safety cap alone: its room is
-    // worked out (the Memory tab shows it) but neither told nor put on the request.
-    const hidden = vcrpModelReasonsHidden();
-    const enforced = hidden ? replyCapTokens() : limit;
-    // The model is told the room it really has (or, when it turned out wide, nothing).
-    const line = replyBudgetText(gen, enforced);
+    const room = roomUnderCeiling(input, budget);
+    const needed = neededRoom();
+    const blocked = room < needed;
+    const cap = replyCapTokens();
+    // The model is told the room it really has: under the safety cap as ever, and under the
+    // ceiling only when that room is tight (when it turned out wide, nothing).
+    const told = blocked ? 0 : Math.min(room, cap || Infinity);
+    const line = replyBudgetText(gen, told);
     for (const m of messages) {
         if (typeof m.content !== "string" || !LINE_RE.test(m.content)) continue;
         m.content = line ? m.content.replace(LINE_RE, () => line) : m.content.replace(LINE_GAP_RE, "");
         break;
     }
-    if (dryRun) return;
-    // The request's own limit: the room, or a whole reply when the room is less. On a model
-    // that reasons out of sight: the safety cap alone, with room for that reasoning.
-    const hard = hidden ? capRequestLimit() : Math.min(Math.max(limit, Math.round(typicalReply() * WHOLE_REPLY)), cap);
-    nextRoom = hard;
-    lastRoom = { tokens: limit, limit: hard, input, cold, held: limit <= room, hidden };
-}
-
-/** A background call of VCRP's own is being sent: a summary or its check, an audit, the Director, an NPC scan. */
-function vcrpBackgroundCall() {
-    return !!(memoryTaskActive() || activeStoryPlanRequest || activeBanListChat || activeNpcScanRequest
-        || activeNpcUpdateRequest || activeGenerationOrder || activeFocusAudit || activeBlockRepair);
+    const verdict = { blocked, input, room, needed, ceiling: ceilingCost(), cold };
+    if (dryRun) return verdict;
+    // The request's own limit: what the ceiling leaves (the safety cap, when lower, is put on
+    // beside it in vcrpApplyReplyCap, with its room for reasoning out of sight).
+    nextRoom = blocked ? null : room;
+    const capLimit = capRequestLimit();
+    lastRoom = {
+        tokens: room, limit: blocked ? 0 : Math.min(room, capLimit || Infinity), input, cold,
+        ceiling: verdict.ceiling, goal: Number(memoryBudgetSettings().targetCost) || 0, blocked, hidden: vcrpModelReasonsHidden(),
+    };
+    return verdict;
 }
 
 /** Lowers the request's own output limit to `limit` (never raises it). */
@@ -301,9 +305,11 @@ function lowerLimit(data, limit) {
 }
 
 /**
- * CHAT_COMPLETION_SETTINGS_READY: lower the request's max_tokens to the reply's limit (the
- * safety cap, or its room under the target), or a background call's to its own. Never raises
- * it: SillyTavern's own Max Response Length still wins when it is lower.
+ * CHAT_COMPLETION_SETTINGS_READY: lower a regular reply's max_tokens to its limit (the safety
+ * cap, or the room the ceiling leaves). Never raises it: SillyTavern's own Max Response Length
+ * still wins when it is lower. A background call (a summary, an audit, the Story Director, an
+ * NPC scan, the call for missing blocks, another extension's) is not touched: only a regular
+ * reply is limited.
  */
 export function vcrpApplyReplyCap(data) {
     const ours = vcrpPrompt;
@@ -311,12 +317,7 @@ export function vcrpApplyReplyCap(data) {
     const room = nextRoom;
     nextRoom = null;
     if (!data || typeof data !== "object") return;
-    if (vcrpGenerationKind() === "quiet") {
-        // Not on a model that reasons out of sight: its reasoning is paid for in this limit
-        // too, and a summary or an audit starved by it comes back with nothing in it.
-        if (vcrpBackgroundCall() && !vcrpModelReasonsHidden()) lowerLimit(data, BACKGROUND_OUTPUT);
-        return;
-    }
+    if (vcrpGenerationKind() === "quiet") return;
     const capLimit = capRequestLimit();
     const limits = ours ? [capLimit, room || 0].filter(n => n > 0) : [];
     const before = Number(data.max_tokens ?? data.max_completion_tokens) || 0;
@@ -324,9 +325,9 @@ export function vcrpApplyReplyCap(data) {
     if (limits.length) {
         const lim = Math.min(...limits);
         lowerLimit(data, lim);
-        // Who set the limit that went out: the safety cap, the room under the target, or
-        // neither (SillyTavern's own was lower, or the request carried none to lower).
-        if (!before || lim < before) sentBy = lim === capLimit ? "cap" : "hold";
+        // Who set the limit that went out: the safety cap, the ceiling, or neither
+        // (SillyTavern's own was lower, or the request carried none to lower).
+        if (!before || lim < before) sentBy = lim === capLimit ? "cap" : "ceiling";
     }
     // The limit this reply really went out with, whichever preset built it: what a reply that
     // stops mid-sentence is measured against (replyCut.js).
@@ -340,7 +341,11 @@ export function sentReplyLimit() {
     return sentLimit;
 }
 
-/** Who set that limit: "cap" (the safety cap), "hold" (the room under the target), or "" (SillyTavern's own). */
+/**
+ * Who set that limit: "cap" (the safety cap), "ceiling" (the room the ceiling leaves), or ""
+ * (SillyTavern's own). A reply stamped before 10.0.0-vcrp.18 may say "hold": the room under
+ * the target, which no longer limits a reply.
+ */
 export function sentReplyLimitBy() {
     return sentBy;
 }
@@ -353,4 +358,22 @@ export function forgetReplyRoom() {
     sentBy = "";
 }
 
-export { BACKGROUND_OUTPUT, MIN_ROOM };
+/**
+ * What to tell the reader when a prompt is not sent for leaving no room under the ceiling
+ * (pure): the numbers, and the way forward.
+ */
+export function ceilingBlockText({ input, room, needed, ceiling, cold }, { memoryOn = true, waiting = 0 } = {}) {
+    const usd = n => `$${Number(n).toFixed(2)}`;
+    const alone = room <= 0
+        ? `its prompt alone would cost about ${usd(input)}`
+        : `its prompt would cost about ${usd(input)}, leaving room for about ${Math.max(0, room).toLocaleString("en-US")} tokens where a usual reply here takes ${needed.toLocaleString("en-US")}`;
+    const why = cold ? " (the cache is cold, so the whole prompt is paid for in full)" : "";
+    const fix = !memoryOn
+        ? "Turn on Story Memory (Memory tab) and press Summarize now: summarising is never limited, and afterwards the prompt is cut to fit."
+        : waiting > 0
+            ? `Approve the ${waiting} chapter${waiting > 1 ? "s" : ""} waiting in the Memory tab (or press Summarize now), then Cut now: the prompt is cut to fit.`
+            : "In the Memory tab press Summarize now, then Cut now: summarising is never limited, and the prompt is cut to fit.";
+    return `Not sent: ${alone}${why}, which would take this reply over your ${usd(ceiling)} ceiling. ${fix} Or raise the ceiling (Memory → Reply length).`;
+}
+
+export { MIN_ROOM };

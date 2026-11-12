@@ -70,18 +70,22 @@ puts the cap on the request with room for the reasoning on top, so the reasoning
 use the cap up and leave you an empty reply; a reply can run a little over the cap when the model
 reasons less. Setup Check shows the number the request allows.
 
-**One budget for the whole request.** With Story Memory on, each reply is held to its target
-(e.g. $0.30), input and output together. You don't need to set anything: *Hold each reply to the
-target* in Memory → Reply length is on by default.
+**A goal and a ceiling.** Your target ($0.20 a reply by default, Memory tab) is a goal: Story
+Memory sizes the prompt to it, and a reply that comes to more is never cut off or stopped. The
+one hard stop is the **ceiling** ($0.50 by default, Memory → Reply length and cost).
 
-- **How it works:** VCRP prices the prompt as it goes out, and what's left of the target is the
-  most the reply can write.
-- **During play** that's plenty: the cache makes the prompt cheap.
-- **Right after a break** the whole prompt is written to the cache again, so the room is
-  smaller, about a reply and a quarter. The model is told its room then, so it finishes inside it.
-- **The panel** shows what the last reply's prompt cost and how much room it had.
-- **Background calls:** VCRP's own (summaries, audits, the Story Director, NPC scans) are each
-  kept to 8,000 output tokens, so none can run away.
+- **How the ceiling works:** VCRP prices the prompt as it goes out, and what the ceiling leaves
+  is the most the reply can write. Usually that is more than SillyTavern's own limit.
+- **A prompt too big for the ceiling is not sent.** A note says why and what to do: Summarize now
+  and Cut now in the Memory tab, or raise the ceiling.
+- **Background calls are never limited:** summaries, audits, the Story Director, NPC scans.
+  Summarize now catches up on a whole chat in one run; on a long one that can cost a couple of
+  dollars, once.
+- **What a reply really cost:** the badge by each reply uses the API's own token counts when it
+  has them, and the panel reads the chat back: the average, how many replies went over your
+  target, how often the cache helped. *Copy cost report* gives it as text.
+- **Chapters approve themselves** when their own check finds them accurate, so cuts don't wait
+  for you; one the check had to correct waits for your review.
 
 **Tips:** Grounded Prose (Pura panel) is the biggest per-reply extra (~900 tokens); turn it off if
 you want to save. The BLOCKS tab shows what each Pura tracker costs per reply.
@@ -254,18 +258,18 @@ Switch it off in Global Settings → Behaviour → *Lore for background calls*.
   request as it passes and keeps the provider's stop reason, what the reply cost in output tokens
   (its hidden reasoning counted) and the limit the request went out with. A reply that comes back
   empty, all reasoning, or only blocks gets a toast that says what really happened: the output
-  limit (and whether the Safety cap, *Hold each reply to the target* or SillyTavern's Max Response
-  Length set it), the provider's filter (with its own word, such as Gemini's `PROHIBITED_CONTENT`),
-  or an error. Such a reply is not counted as a normal one, and the *Next reply only* steer you
+  limit (and whether the Safety cap, the ceiling or SillyTavern's Max Response Length set it), a
+  content-policy stop named in the API's answer (in its own words, such as Gemini's
+  `PROHIBITED_CONTENT`), or an error. Such a reply is not counted as a normal one, and the *Next reply only* steer you
   wrote stays for the swipe. **Setup Check** lists how your last five replies ended; look there
   first when replies come back empty.
 - **Empty replies on Gemini after a break: fixed.** The model's hidden reasoning is paid for in
   the request's output limit, and VCRP could not see its size, so the limit it set from your
   replies' measured size (tightest on the first reply after a break in a long chat) was used up by
   the reasoning on a hard turn, and the reply came back with nothing in it. On a model that
-  reasons out of sight, VCRP no longer lowers the request's limit on its own: *Hold each reply to
-  the target* still shows the room but leaves the limit to your Safety cap and SillyTavern. Each
-  reply's cost badge now shows the output as the API billed it, reasoning included.
+  reasons out of sight, VCRP stopped lowering the request's limit from the target; since
+  10.0.0-vcrp.18 the target limits no reply on any model (see *A goal and a ceiling* above). Each
+  reply's cost badge shows the output as the API billed it, reasoning included.
 - **Safety cap and reasoning models.** On Gemini, DeepSeek, GLM, or Claude with a reasoning effort
   set, the model's hidden reasoning is paid for in the request's limit. The Safety cap now stands
   for the reply you see: the request allows the cap plus room for the reasoning, so it cannot be

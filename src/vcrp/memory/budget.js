@@ -26,15 +26,16 @@ export const MODEL_PRICES = [
 ];
 
 export const BUDGET_DEFAULTS = {
-    targetCost: 0.30,       // $ per request, worst case
+    targetCost: 0.20,       // $ per reply: a goal. It sizes the prompt a break leaves; no reply is limited by it (replyLength.js)
+    ceilingCost: 0.50,      // $ per reply: the one hard stop on a regular reply (0 = off). Background calls are never limited
     ttl: "1h",              // must match SillyTavern's claude.extendedTTL (1h) or not (5m)
     outputTokens: 2500,     // reply + visible CoT + hidden thinking, per request; the chat's measured average replaces it (index.js)
     replyCap: 0,            // safety cap on a reply's tokens, thinking included (0 = off): replyLength.js
-    holdTarget: true,       // each reply held to targetCost, input and output together: replyLength.js
     warmCeiling: 100000,    // the most the prompt may carry while the cache is warm
     minVerbatim: 10000,     // recent messages always kept word for word, whatever the budget
     customPrice: null,      // { input, output, read } for a model the table does not know
-    review: true,           // new chapters wait for the reader's approval before they count
+    review: true,           // new chapters wait for the reader's approval before they count...
+    autoApprove: true,      // ...unless their own check found them accurate: those are approved as written (summarize.js)
     recallTokens: 1000,     // old chapters brought back per request when the scene touches them (0 = off)
     memoryCap: 3000,        // the most the always-carried memory text may take; older facts move to recall
     markCache: true,        // VCRP puts the cache markers on (OpenRouter + Claude), on the last two replies: see cache.js

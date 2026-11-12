@@ -58,18 +58,15 @@ export function memoryBudgetSettings() {
     return { ...BUDGET_DEFAULTS, ...(g.memoryBudget || {}) };
 }
 
-export const HOLD_MARGIN = 1.25;   // holding replies to the target: a reply this much longer than the average fits after a break
-
 /** The budget for the connected model, or null when its price is unknown (set a custom one). */
 export function currentMemoryBudget() {
     const s = memoryBudgetSettings();
     // What this chat's replies really come to, once a few are measured: a budget that plans
     // for 2,500 output tokens while replies run to 5,000 would cut too little.
     let output = measuredOutputTokens() || s.outputTokens;
-    // Holding replies to the target (replyLength.js): what a cut leaves of the target is the
-    // next reply's room, so plan for a reply a little longer than usual, and the room after a
-    // break is not tight. Never more than the safety cap, which no reply can pass anyway.
-    if (s.holdTarget !== false) output = Math.min(Number(s.replyCap) > 0 ? Number(s.replyCap) : Infinity, Math.round(output * HOLD_MARGIN));
+    // Never more than the safety cap, which no reply can pass anyway. The target is a goal: a
+    // reply longer than the average simply costs a little more (replyLength.js).
+    if (Number(s.replyCap) > 0) output = Math.min(Number(s.replyCap), output);
     return computeBudget(priceForModel(vcrpActiveModel().model, s.customPrice), { ...s, outputTokens: output });
 }
 

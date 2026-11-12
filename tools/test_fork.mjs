@@ -44,6 +44,15 @@ const { runMeguminTask } = await imp("src/engine/tasks.js");
 quietHook = msgs => handlePromptInjection({ chat: msgs, dryRun: false });
 
 initProfile();
+// The product's own budget defaults, kept for the checks that are about them (group 76). The
+// groups below were written while the target's default was $0.30 a request, and their
+// arithmetic (where a cut lands, what a prompt may carry) keeps that as the suite's baseline.
+const BUDGET_MODULE = await imp("src/vcrp/memory/budget.js");
+const REAL_BUDGET_DEFAULTS = { ...BUDGET_MODULE.BUDGET_DEFAULTS };
+BUDGET_MODULE.BUDGET_DEFAULTS.targetCost = 0.30;
+// Likewise review: the groups below test the review queue with every chapter waiting for the
+// reader, as it was before chapters their own check finds accurate approved themselves.
+BUDGET_MODULE.BUDGET_DEFAULTS.autoApprove = false;
 const p = state.localProfile;
 assert(p && extension_settings.VCRP, "profile should live under extension_settings.VCRP");
 Object.assign(p, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
@@ -465,7 +474,7 @@ console.log("16 ok cache safety: per-turn tags sit after the chat history");
     }
     const b = computeBudget(priceForModel("claude-opus-5-5"), { ttl: "1h", targetCost: 0.27 });
     assert.equal(b.coldTokens, 25300, "($0.27 - 2500 output tokens at $20/M) / $8/M written, with the 0.92 safety margin");
-    assert.equal(computeBudget(priceForModel("claude-opus-5-5"), { ttl: "5m" }).coldTokens, 46000, "default $0.30; a 5-minute miss writes at 1.25x");
+    assert.equal(computeBudget(priceForModel("claude-opus-5-5"), { ttl: "5m" }).coldTokens, 46000, "the suite's baseline of $0.30; a 5-minute miss writes at 1.25x");
 
     // 60 messages of 1000 tokens, user/assistant alternating, user first.
     const msgs = Array.from({ length: 60 }, (_, i) => ({ tokens: 1000, isUser: i % 2 === 0 }));
@@ -1874,7 +1883,7 @@ console.log("33 ok blocks kept out of the history (cache-stable), last turn's bl
     chat.length = 0;
     chat.push({ is_user: false, mes: "" });
     assert.equal(memory.measuredOutputTokens(), null, "nothing measured yet");
-    assert.equal(memory.currentMemoryBudget().outputTokens, 2500 * memory.HOLD_MARGIN, "the default until then (a quarter more while replies are held to the target)");
+    assert.equal(memory.currentMemoryBudget().outputTokens, 2500, "the default until then");
     for (const words of [3500, 3500, 3500]) {   // 5,000 tokens each
         vcrpSetGenerationType("normal", {}, false);
         memory.vcrpMemoryAfterPrompt(prompt, false);
@@ -1885,11 +1894,11 @@ console.log("33 ok blocks kept out of the history (cache-stable), last turn's bl
     const b = memory.currentMemoryBudget();
     const { computeBudget, priceForModel } = await imp("src/vcrp/memory/budget.js");
     const plain = computeBudget(priceForModel("claude-opus-4-6"), {});
-    assert(b.outputTokens === 5000 * memory.HOLD_MARGIN && plain.outputTokens === 2500 && b.coldTokens < plain.coldTokens, `the budget plans for the real size: a smaller cold-start prompt (${b.coldTokens} vs ${plain.coldTokens})`);
+    assert(b.outputTokens === 5000 && plain.outputTokens === 2500 && b.coldTokens < plain.coldTokens, `the budget plans for the real size: a smaller cold-start prompt (${b.coldTokens} vs ${plain.coldTokens})`);
     extension_settings.VCRP.globalSettings.memoryBudget = { holdTarget: false };
-    assert.equal(memory.currentMemoryBudget().outputTokens, 5000, "not held to the target: the average itself");
-    extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 5500 };
-    assert.equal(memory.currentMemoryBudget().outputTokens, 5500, "never more than the safety cap");
+    assert.equal(memory.currentMemoryBudget().outputTokens, 5000, "a hold switch left over from before 10.0.0-vcrp.18 changes nothing: the target limits no reply");
+    extension_settings.VCRP.globalSettings.memoryBudget = { replyCap: 4000 };
+    assert.equal(memory.currentMemoryBudget().outputTokens, 4000, "never more than the safety cap");
     delete extension_settings.VCRP.globalSettings.memoryBudget;
     vcrpSetGenerationType("continue", {}, false);
     memory.vcrpMemoryAfterPrompt(prompt, false);
@@ -3611,9 +3620,11 @@ console.log("51 ok graceful hard cap (the room told in words after thinking and 
 }
 console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reused phrases, openings, hand-off endings and the not-X-but-Y shape named; lines written for {{user}} quoted back, echoes and Pura's write-for-you left alone; after the chat, fresh replies only; switches; the correction first)");
 
-// 53. Each reply held to the target, input and output together: the prompt priced as it goes
-//     out, the rest of the target its output limit, told to the model when tight; VCRP's own
-//     background calls capped; other calls left alone.
+// 53. The target and the ceiling. The target is a goal: a reply that comes to more than it is
+//     never limited for it. The ceiling is the one hard stop on a regular reply: the prompt
+//     priced as it goes out, what the ceiling leaves its output limit (told to the model when
+//     tight), and a prompt that leaves no room for a usual reply not sent at all. Background
+//     calls are never limited.
 {
     const memory = await imp("src/vcrp/memory/index.js");
     const rl = await imp("src/vcrp/replyLength.js");
@@ -3625,11 +3636,13 @@ console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reu
     q.vcrpMemory.enabled = true;
     Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-4-6" });
     delete globalThis.__ST__.chat_metadata.vcrp_memory;
+    delete globalThis.__ST__.chat_metadata.vcrp_cost;
     let now = Date.UTC(2026, 9, 13, 20);
     memory.setMemoryClock(() => now);
     chat.length = 0;
     chat.push({ is_user: true, mes: "go" });
-    const OUT = 25 / 1e6, TARGET = 0.30;
+    const OUT = 25 / 1e6, TARGET = 0.30, CEILING = 0.50;
+    assert.equal(rl.ceilingCost(), CEILING, "the ceiling's default");
     // A reply request as SillyTavern sends it: the prompt (with `filler` tokens of older story), then its settings.
     const send = async (filler = 0, type = "normal") => {
         vcrpSetGenerationType(type, {}, false);
@@ -3638,51 +3651,73 @@ console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reu
         await handlePromptInjection({ chat: msgs, dryRun: false });
         const data = { max_tokens: 20000 };
         rl.vcrpApplyReplyCap(data);
-        return { msgs, data, room: rl.lastReplyRoom() };
+        return { msgs, data, room: rl.lastReplyRoom(), by: rl.sentReplyLimitBy() };
     };
     const told = msgs => (text(msgs).match(/has room for about ([\d,]+) tokens/) || [])[1];
 
-    // A cold cache (first request): the whole prompt written. Input and output together within the target.
+    // A cold cache (first request): the whole prompt written. The request's limit is what the
+    // ceiling leaves, far past the target: the target limits nothing.
     let r = await send();
-    assert(r.room && r.room.cold && r.data.max_tokens === r.room.tokens, `cold: the room is the request's limit (${JSON.stringify(r.room)}, ${r.data.max_tokens})`);
-    assert(r.room.input + r.room.tokens * OUT <= TARGET + 1e-9, `input $${r.room.input.toFixed(3)} + room ${r.room.tokens} within $0.30`);
+    assert(r.room && r.room.cold && !r.room.blocked && r.data.max_tokens === r.room.tokens && r.by === "ceiling", `cold: what the ceiling leaves is the request's limit (${JSON.stringify(r.room)}, ${r.data.max_tokens}, ${r.by})`);
+    assert(r.room.input + r.room.tokens * OUT <= CEILING + 1e-9, `input $${r.room.input.toFixed(3)} + room ${r.room.tokens} within the $0.50 ceiling`);
+    assert(r.room.input + r.room.tokens * OUT > TARGET + 0.1, "and well past the target: a reply that comes to more than it is not limited for it");
+    assert(!told(r.msgs), "a wide room is not told to the model");
     const base = r.room.input;
-    // Warm (a minute later): mostly read from the cache, so the room is wide, and not told (it would ask for more).
+    const coldRoom = r.room.tokens;
+    // The target plays no part in a reply's limit: a five-cent target leaves the same room.
+    g.memoryBudget = { targetCost: 0.05 };
+    now += 3 * 3600000;
+    r = await send();
+    assert(r.room.cold && r.room.tokens === coldRoom && r.data.max_tokens === coldRoom && r.room.goal === 0.05, `a five-cent target limits no reply (${r.room.tokens} vs ${coldRoom})`);
+    delete g.memoryBudget;
+    // Warm (a minute later): mostly read from the cache, so the room is wider still.
     now += 60000;
     r = await send();
-    assert(!r.room.cold && r.room.tokens > 6000 && r.data.max_tokens === r.room.tokens, `warm: a wide room (${r.room.tokens})`);
-    assert(!told(r.msgs), "a wide room is not told to the model");
-    // A cold start with a long prompt: a tight room, told to the model in tokens, on the request.
+    assert(!r.room.cold && r.room.tokens > coldRoom && !told(r.msgs), `warm: a wider room (${r.room.tokens})`);
+    // A cold start with a long prompt: the ceiling leaves a tight room (over a usual reply, under
+    // one and a half). It is told to the model in tokens, and is the request's limit.
     const tokensPerDollar = 1 / (10 / 1e6);   // cold: written at twice the input price
-    const filler = Math.max(0, Math.round((TARGET - 3000 * OUT) * 0.92 * tokensPerDollar - base * tokensPerDollar));
+    const filler = Math.max(0, Math.round((CEILING - 3000 * OUT) * 0.92 * tokensPerDollar - base * tokensPerDollar));
     memory.memoryState().lastPlan = { promptTokens: Math.round(base * tokensPerDollar) + filler, cold: true };
     now += 3 * 3600000;
     r = await send(filler);
-    assert(r.room.cold && r.room.held && r.room.tokens < 3750 && r.room.tokens >= rl.MIN_ROOM, `cold and long: a tight room (${r.room.tokens})`);
+    assert(r.room.cold && !r.room.blocked && r.room.tokens < 3750 && r.room.tokens >= 2500, `cold and long: a tight room under the ceiling (${r.room.tokens})`);
     assert.equal(Number(String(told(r.msgs)).replace(/,/g, "")), r.room.tokens, "the model is told the room it really has");
-    assert(r.room.input + r.room.tokens * OUT <= TARGET + 1e-9, "the room it is told keeps it within the target");
-    // The request itself never stops a reply short of a whole one (half again the usual 2,500):
-    // a reply that ran over its room was cut off in its blocks.
-    assert(r.data.max_tokens === 3750 && r.room.limit === 3750, `the request allows a whole reply (${r.data.max_tokens})`);
-    // So long the prompt alone is near the target: the minimum room, said not to be held.
+    assert(r.data.max_tokens === r.room.tokens && r.room.input + r.room.tokens * OUT <= CEILING + 1e-9, "and the request cannot pass the ceiling");
+    // So long that the ceiling leaves no room for a usual reply: not sent at all, and nothing
+    // counts as sent (the cache clock is where it was).
+    const clock = memory.memoryState().lastRequestAt;
     now += 3 * 3600000;
     r = await send(filler + 6000);
-    assert(r.room.tokens === rl.MIN_ROOM && !r.room.held, `the prompt alone near the target: the minimum (${JSON.stringify(r.room)})`);
-    assert(r.data.max_tokens === 3750, "still a whole reply on the request");
+    assert(r.msgs.length === 0 && r.room.blocked && r.room.tokens < 2500 && r.room.limit === 0, `no room for a usual reply under the ceiling: the prompt is not sent (${JSON.stringify(r.room)})`);
+    assert.equal(memory.memoryState().lastRequestAt, clock, "a prompt that was not sent warmed no cache");
+    assert.equal(r.data.max_tokens, 20000, "and puts no limit on anything");
+    const why = rl.ceilingBlockText({ input: 0.47, room: 400, needed: 2500, ceiling: 0.5, cold: true }, { memoryOn: true, waiting: 2 });
+    assert(/^Not sent: its prompt would cost about \$0\.47, leaving room for about 400 tokens where a usual reply here takes 2,500/.test(why) && /cache is cold/.test(why) && /over your \$0\.50 ceiling/.test(why) && /Approve the 2 chapters waiting/.test(why) && /raise the ceiling/.test(why), `the reader is told the numbers and the way forward: ${why}`);
+    assert(/its prompt alone would cost about \$0\.62/.test(rl.ceilingBlockText({ input: 0.62, room: -4800, needed: 2500, ceiling: 0.5, cold: true }, { memoryOn: false })) && /Turn on Story Memory/.test(rl.ceilingBlockText({ input: 0.62, room: -4800, needed: 2500, ceiling: 0.5, cold: true }, { memoryOn: false })) && /Summarize now, then Cut now/.test(rl.ceilingBlockText({ input: 0.62, room: -1, needed: 2500, ceiling: 0.5, cold: false })), "by what stands in the way");
     // A safety cap below the room wins, and is told.
     g.memoryBudget = { replyCap: 2000 };
     now += 60000;
     r = await send();
-    assert(r.data.max_tokens === 2000 && told(r.msgs) === "2,000", `the safety cap below the room (${r.data.max_tokens})`);
-    // Switched off, Story Memory off, or another preset: not held.
+    assert(r.data.max_tokens === 2000 && told(r.msgs) === "2,000" && r.by === "cap", `the safety cap below the room (${r.data.max_tokens})`);
+    // No ceiling set: SillyTavern's own limit. A hold switch left from before changes nothing.
+    g.memoryBudget = { ceilingCost: 0 };
+    now += 60000;
+    r = await send();
+    assert(r.data.max_tokens === 20000 && !told(r.msgs) && r.by === "", "no ceiling: SillyTavern's limit");
     g.memoryBudget = { holdTarget: false };
     now += 60000;
     r = await send();
-    assert(r.data.max_tokens === 20000 && !told(r.msgs), "switched off: SillyTavern's limit");
+    assert(r.data.max_tokens < 20000 && r.by === "ceiling", "the old hold switch, off, does not take the ceiling away");
     delete g.memoryBudget;
+    // Story Memory off: the ceiling holds all the same (it needs only the model's price).
     q.vcrpMemory.enabled = false;
+    now += 3 * 3600000;
     r = await send();
-    assert(r.data.max_tokens === 20000, "Story Memory off: not held");
+    assert(r.data.max_tokens < 20000 && r.by === "ceiling" && r.room.cold, `Story Memory off: the ceiling still holds (${r.data.max_tokens})`);
+    now += 60000;
+    r = await send();
+    assert(!r.room.cold, "and a reply a minute later is priced with the cache warm, by the cost badge's own clock");
     q.vcrpMemory.enabled = true;
     rl.vcrpNotePrompt(false);
     const other = { max_tokens: 20000 };
@@ -3690,7 +3725,7 @@ console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reu
     assert.equal(other.max_tokens, 20000, "another preset's request: left alone");
     assert.equal(rl.replyBudgetText("continue", 2000), "", "the line is for replies only");
 
-    // Background calls: VCRP's own get their limit; anyone else's are left alone.
+    // Background calls are never limited: VCRP's own, or anyone else's.
     vcrpSetGenerationType("quiet", {}, false);
     memory.setMemoryTaskActive(true);
     const summary = { max_tokens: 20000 };
@@ -3700,18 +3735,15 @@ console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reu
     const audit = { max_completion_tokens: 30000 };
     rl.vcrpApplyReplyCap(audit);
     setActiveFocusAudit(null);
-    const small = { max_tokens: 1200 };
-    memory.setMemoryTaskActive(true);
-    rl.vcrpApplyReplyCap(small);
-    memory.setMemoryTaskActive(false);
     const theirs = { max_tokens: 20000 };
     rl.vcrpApplyReplyCap(theirs);
-    assert(summary.max_tokens === rl.BACKGROUND_OUTPUT && audit.max_completion_tokens === rl.BACKGROUND_OUTPUT && !("max_tokens" in audit), "a summary and an audit: capped, on the limit they carry");
-    assert(small.max_tokens === 1200 && theirs.max_tokens === 20000, "never raised; another extension's background call left alone");
+    assert(summary.max_tokens === 20000 && audit.max_completion_tokens === 30000 && !("max_tokens" in audit) && theirs.max_tokens === 20000, "a summary, an audit, another extension's call: no limit of VCRP's on any of them");
+    assert.equal(typeof rl.BACKGROUND_OUTPUT, "undefined", "the old limit on background calls is gone");
     vcrpSetGenerationType("normal", {}, false);
 
     memory.setMemoryClock(null);
     delete globalThis.__ST__.chat_metadata.vcrp_memory;
+    delete globalThis.__ST__.chat_metadata.vcrp_cost;
     chat.length = 0;
     g.memoryBudget = JSON.parse(keep.budget) || undefined;
     if (!g.memoryBudget) delete g.memoryBudget;
@@ -3719,7 +3751,7 @@ console.log("52 ok Focus every reply (a swipe sees the versions it replaces; reu
     q.mode = keep.mode;
     Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
 }
-console.log("53 ok each reply held to the target (priced as it goes out, the rest its limit, told when tight, the minimum when the prompt alone nears it, never cut short of a whole reply, the cap wins below it; off, memory off, another preset: not held; VCRP's background calls capped, never raised, others left alone)");
+console.log("53 ok the target and the ceiling (the target a goal that limits no reply; the prompt priced as it goes out and what the ceiling leaves the request's limit, told when tight; a prompt with no room for a usual reply not sent, the reader told why and what to do; the safety cap wins below it; no ceiling, Story Memory off, another preset; background calls never limited)");
 
 // 54. One chat's story stays in that chat: the Director's plan (and where it was made), the NPC
 //     Bank, Story Memory and Focus; a new chat of the same card starts clean; what a chat's
@@ -5436,7 +5468,9 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
     const r3 = trace.readGenerationBody('data: {"choices":[{"delta":{"content":"a"},"finish_reason":null}]}\ndata: {"error":{"message":"Provider returned error","code":502}}');
     assert(r3.reason === "error" && r3.error === "Provider returned error", "an error chunk mid-stream");
     const r4 = trace.readGenerationBody('event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":50,"cache_read_input_tokens":40,"output_tokens":1}}}\n\nevent: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":3000}}');
-    assert(r4.reason === "length" && r4.native === "max_tokens" && r4.usage.out === 3000 && r4.usage.cached === 40 && r4.usage.input === 50, "Anthropic's stream: the delta that ends it, the counts from both ends");
+    assert(r4.reason === "length" && r4.native === "max_tokens" && r4.usage.out === 3000 && r4.usage.cached === 40 && r4.usage.input === 90, "Anthropic's stream: the delta that ends it, the counts from both ends; its input_tokens leaves the cached part out, so the whole prompt is the two added up");
+    const r4b = trace.readGenerationBody('{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}],"usage":{"prompt_tokens":61000,"completion_tokens":900,"prompt_tokens_details":{"cached_tokens":52000,"cache_write_tokens":7000}}}');
+    assert(r4b.usage.input === 61000 && r4b.usage.cached === 52000 && r4b.usage.written === 7000, "OpenRouter's count of the prompt: all of it, what was read from the cache and what was written to it");
     const r5 = trace.readGenerationBody('data: {"candidates":[{"content":{"parts":[{"text":""}]},"finishReason":"SAFETY"}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":0,"thoughtsTokenCount":1200}}');
     assert(r5.reason === "filter" && r5.native === "SAFETY" && r5.usage.out === 1200 && r5.usage.reasoning === 1200, "Google's own shape: the thoughts counted in the output");
     assert(trace.readGenerationBody("").reason === "" && trace.readGenerationBody("not json at all").reason === "" && trace.readGenerationBody("{broken").reason === "", "nothing read: nothing claimed");
@@ -5540,7 +5574,7 @@ console.log("68 ok the Notebook tab as Megumin Suite V11 has it (Add a truth: he
     vcrpCostOnReply(1, "normal");
     const c = chat[1].extra.vcrp_cost;
     assert(c && c.billed && c.output === 6100 && c.reasoning === 5800 && Math.abs(c.pieces.output - 0.061) < 1e-6, `the badge counts the output as billed: ${JSON.stringify(c)}`);
-    assert(/\(5\.8k of them its reasoning\)/.test(costBadgeText(c).detail) && /API's own count/.test(costBadgeText(c).detail), "and says so");
+    assert(/\(5\.8k of them its reasoning\)/.test(costBadgeText(c).detail) && /From the API's own token counts for this reply/.test(costBadgeText(c).detail) && c.billedIn && c.tokens.plain === 1000 && c.tokens.read === 0 && !/^≈/.test(costBadgeText(c).short), `and says so; the prompt is priced from the API's count too when the answer gave it: ${JSON.stringify(c)}`);
     const st = memory.memoryState();
     st.spend = { since: 0, replies: 1, replyCost: 0, tasks: 0, taskCost: 0, last: { cost: 0, output: 0 }, recentOut: [] };
     memory.vcrpMemoryCountReply(1, "normal");
@@ -6457,5 +6491,149 @@ console.log("74 ok from the sweep (a background call that never answers is given
     for (const [k, v] of [["powerUserSettings", keep.pu], ["updateMessageBlock", keep.umb], ["stopGeneration", keep.stop], ["swipe", keep.swipe]]) { if (v === undefined) delete ctx[k]; else ctx[k] = v; }
 }
 console.log("75 ok empty replies with nothing wrong at the provider (a reply SillyTavern's Reasoning Auto-Parse left in the Thinking box put back: closed another way, never closed, told from one that closed with nothing after by what the model sent; the answer read as it arrives: what arrived, when, how the stream ended; a stream gone quiet said, a tap stops it and sends again; the reader's own Stop theirs; only a content-policy word called one; the line under a reply and Setup Check for each)");
+
+// 76. 10.0.0-vcrp.18's cost batch. The product's own defaults (a $0.20 target that is a goal,
+//     a $0.50 ceiling, chapters their check finds accurate approved by themselves); a chapter
+//     approving itself, and when it may not; a whole backlog summarised in one go; each reply
+//     priced from the API's own count of its prompt, and the chat's costs read back.
+{
+    const memory = await imp("src/vcrp/memory/index.js");
+    const S = await imp("src/vcrp/memory/summarize.js");
+    const RC = await imp("src/vcrp/replyCost.js");
+    const H = await imp("src/vcrp/health.js");
+    const q = state.localProfile;
+    const g = extension_settings.VCRP.globalSettings;
+    const metaAll = globalThis.__ST__.chat_metadata;
+    const keep = { budget: JSON.stringify(g.memoryBudget || null), mem: q.vcrpMemory.enabled, cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+
+    // The defaults the product ships with (the suite above pins its own baseline over them).
+    assert(REAL_BUDGET_DEFAULTS.targetCost === 0.20 && REAL_BUDGET_DEFAULTS.ceilingCost === 0.50 && REAL_BUDGET_DEFAULTS.autoApprove === true && REAL_BUDGET_DEFAULTS.review === true && !("holdTarget" in REAL_BUDGET_DEFAULTS),
+        `a $0.20 target, a $0.50 ceiling, review with accurate chapters approving themselves, and no hold switch: ${JSON.stringify(REAL_BUDGET_DEFAULTS)}`);
+
+    // ── A chapter approves itself ──
+    q.vcrpMemory.enabled = true;
+    Object.assign(chatCompletionSettings, { chat_completion_source: "claude", claude_model: "claude-opus-5-5" });
+    g.memoryBudget = { autoApprove: true, minVerbatim: 2000 };
+    chat.length = 0;
+    for (let i = 0; i < 200; i++) chat.push({ is_user: i % 2 === 0, name: i % 2 ? "Alice" : "Bob", send_date: `t${i}`, mes: `(${i}) ` + "She set the glass down and looked at the door. ".repeat(22) });
+    delete metaAll.vcrp_memory;
+    const meta = memory.memoryState();
+    Object.assign(meta, { cut: null, summarized: null, shown: "", chapters: [], arcs: [], ledger: [], retired: [], pending: [], nextFactId: 1, chapterSeq: 0, fixedTokens: 12000, lastRequestAt: 0 });
+    const summary = (n, changes = "+ person | Mara Voss runs the Lantern") => `<chapter_gist>Chapter ${n}: Bob and Mara talk.</chapter_gist>\n<chapter>\nBob and Mara talk at the Lantern, part ${n}.\n</chapter>\n<fact_changes>\n${changes}\n</fact_changes>`;
+    let n = 0, check = "OK", changes;
+    quietImpl = async ({ quietPrompt: prompt }) => (prompt.includes("MEMORY TASK CHECK") ? check : summary(++n, changes));
+    // Its own check found it accurate, and nothing waits before it: approved as written.
+    let r = await S.summarizeNext({ catchUp: true });
+    assert(r.status === "saved" && r.auto === true && meta.chapters.length === 1 && meta.chapters[0].auto === true && meta.chapters[0].checked === "ok" && meta.pending.length === 0 && meta.ledger.length === 1 && meta.summarized,
+        `a chapter its own check finds accurate is approved by itself, facts and all: ${JSON.stringify(r)}`);
+    // The check had to correct it: it waits for the reader.
+    check = summary("corrected");
+    r = await S.summarizeNext({ catchUp: true });
+    assert(r.status === "pending" && meta.pending.length === 1 && meta.pending[0].checked === "corrected" && meta.chapters.length === 1, `one the check corrected waits: ${JSON.stringify(r)}`);
+    // An accurate one behind it waits too (chapters follow on from one another)...
+    check = "OK";
+    r = await S.summarizeNext({ catchUp: true });
+    assert(r.status === "pending" && meta.pending.length === 2 && meta.pending[1].checked === "ok", "an accurate chapter behind a waiting one waits its turn");
+    // ...and follows by itself once the reader has dealt with the one in front.
+    S.approvePending(meta, S.storyChat());
+    assert(meta.pending.length === 0 && meta.chapters.length === 3 && !meta.chapters[1].auto && meta.chapters[2].auto === true, `approving the corrected one lets the accurate one behind it follow: ${meta.chapters.map(c => `${c.id}${c.auto ? " (by itself)" : ""}`).join(", ")}`);
+    // A chapter that changes a pinned fact is the reader's to approve, accurate or not.
+    meta.ledger[0].pinned = true;
+    changes = `~ ${meta.ledger[0].id} | Mara Voss sold the Lantern`;
+    r = await S.summarizeNext({ catchUp: true });
+    assert(r.status === "pending" && meta.pending.length === 1 && meta.pending[0].checked === "ok", "one that rewords a pinned fact waits, whatever its check said");
+    assert(!S.checkedAccurate(meta, meta.pending[0]) && S.checkedAccurate(meta, { checked: "ok", ops: [{ op: "+", cat: "place", text: "x" }] }) && !S.checkedAccurate(meta, { checked: "unreadable", ops: [] }) && !S.checkedAccurate(meta, null), "accurate: its check said so, and no pinned fact is touched");
+    S.discardPending(meta, 0);
+    changes = undefined;
+    // Auto-approve off: every chapter waits, as before.
+    g.memoryBudget = { autoApprove: false, minVerbatim: 2000 };
+    r = await S.summarizeNext({ catchUp: true });
+    assert(r.status === "pending" && meta.pending.length === 1, "switched off: every chapter waits for the reader");
+    assert(!S.checkedAccurate(meta, { checked: "ok", ops: [] }), "and nothing counts as approving itself");
+    S.discardPending(meta, 0);
+    // Review off altogether: saved directly, and not marked as approved by itself.
+    g.memoryBudget = { review: false, minVerbatim: 2000 };
+    r = await S.summarizeNext({ catchUp: true });
+    assert(r.status === "saved" && r.auto === false && !meta.chapters.at(-1).auto, "review off: saved directly, as ever");
+
+    // ── A whole backlog in one go: nothing limits a one-off the reader asked for ──
+    g.memoryBudget = { autoApprove: true, minVerbatim: 2000 };
+    const before = meta.chapters.length;
+    const left = S.unsummarizedTokens(S.storyChat(), meta, memory.currentMemoryBudget());
+    const all = await S.catchUp();
+    assert(all.done >= 2 && meta.chapters.length === before + all.done && meta.pending.length === 0 && S.nextSpan(S.storyChat(), meta, memory.currentMemoryBudget(), { catchUp: true }) === null,
+        `Summarize now works through everything left (${left} tokens) in one run: ${all.done} chapters, none waiting, nothing left over`);
+    quietImpl = null;
+
+    // ── Each reply priced from the API's own count of its prompt ──
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+    for (const k of ["claude_model"]) delete chatCompletionSettings[k];
+    g.memoryBudget = { customPrice: { "google/gemini-4-argon": { input: 2, output: 10, read: 0.1 } } };
+    q.vcrpMemory.enabled = false;
+    delete metaAll.vcrp_cost;
+    chat.length = 0;
+    chat.push({ is_user: true, mes: "go" });
+    const prompt = [{ role: "system", content: "a".repeat(4000) }, { role: "user", content: "go" }];
+    const close = (a, b) => Math.abs(a - b) < 1e-9;
+    const reply = (usage, type = "normal") => {
+        vcrpSetGenerationType(type === "swipe" ? "swipe" : "normal", {}, false);
+        if (type !== "swipe") chat.push({ is_user: true, mes: "next" });
+        RC.vcrpCostAfterPrompt(prompt, false);
+        if (type === "swipe") chat.at(-1).extra = { vcrp_finish: usage ? { done: true, reason: "stop", usage } : undefined };
+        else chat.push({ is_user: false, mes: "A story line. " + "More. ".repeat(30), extra: usage ? { vcrp_finish: { done: true, reason: "stop", usage } } : {} });
+        RC.vcrpCostOnReply(chat.length - 1, type);
+        return chat.at(-1).extra.vcrp_cost;
+    };
+    // Mostly read from the cache: 52k of 60k, the rest sent fresh.
+    let c = reply({ out: 3000, reasoning: 1200, input: 60000, cached: 52000 });
+    assert(c.billed && c.billedIn && !c.cold && c.tokens.read === 52000 && c.tokens.plain === 8000 && c.tokens.write === 0 && close(c.pieces.read, 0.0052) && close(c.pieces.plain, 0.016) && close(c.pieces.output, 0.03) && close(c.total, 0.0512),
+        `the prompt as billed: what came from the cache at its price, the rest fresh (${JSON.stringify(c)})`);
+    assert(RC.costBadgeText(c).short === "$0.051" && /most of the prompt was read from the cache/.test(RC.costBadgeText(c).detail) && /From the API's own token counts/.test(RC.costBadgeText(c).detail), "the badge drops its 'about' when the whole figure is from the bill");
+    // Nothing from the cache (a turn after the provider's cache had lapsed): all of it at full price.
+    c = reply({ out: 3000, reasoning: 1200, input: 60000, cached: 0 });
+    assert(c.cold && c.tokens.plain === 60000 && close(c.total, 0.15) && /paid for in full/.test(RC.costBadgeText(c).detail), `no cache hit by the API's own count: cold, whatever VCRP's clock guessed (${c.total})`);
+    // Over the target and under the ceiling: it simply cost that.
+    c = reply({ out: 9000, reasoning: 6000, input: 80000, cached: 0 });
+    assert(close(c.total, 0.25) && c.cold, "a reply that came to $0.25");
+    // The answer gave no count of the prompt: VCRP's own estimate, said as one.
+    c = reply({ out: 2000 });
+    assert(c.billed && !c.billedIn && /^≈/.test(RC.costBadgeText(c).short) && /the prompt's share is VCRP's estimate/.test(RC.costBadgeText(c).detail), "without the API's count of the prompt: an estimate, marked as one");
+    // Claude through OpenRouter: what was written to the cache is billed at the write price.
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "anthropic/claude-opus-4.6" });
+    const opus = reply({ out: 2000, input: 30000, cached: 25000, written: 4000 });
+    assert(opus.tokens.read === 25000 && opus.tokens.write === 4000 && opus.tokens.plain === 1000 && close(opus.pieces.read, 0.0125) && close(opus.pieces.write, 0.04) && close(opus.pieces.plain, 0.005) && close(opus.pieces.output, 0.05) && close(opus.total, 0.1075),
+        `Claude: read, written (at the 1-hour write price) and fresh, each at its own (${JSON.stringify(opus.pieces)})`);
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" });
+
+    // The chat's costs read back.
+    const rep = RC.costReport(chat, { goal: 0.20, ceiling: 0.50 });
+    assert(rep.replies === 5 && rep.overGoal === 1 && rep.overCeiling === 0 && rep.billed === 4 && rep.hits === 2 && rep.warm + rep.cold === 5 && close(rep.max, 0.25) && rep.reasoning > 0 && rep.cachedShare > 0.3 && rep.cachedShare < 0.4,
+        `the report: ${JSON.stringify(rep)}`);
+    const lines = RC.costReportLines(chat, { goal: 0.20, ceiling: 0.50, model: "Custom price" });
+    assert(/^5 replies priced on Custom price: \$/.test(lines[0]) && /a reply on average/.test(lines[0]) && lines.some(l => /^1 reply came to more than your \$0\.20 target, none over the \$0\.50 ceiling\.$/.test(l)) && lines.some(l => /^With the cache \(\d replies?\): \$[\d.]+ each\. Without it \(\d replies?\): \$[\d.]+ each\.$/.test(l)) && lines.some(l => /By the API's own counts \(4 replies\): the prompt was mostly read from the cache on 2 of them \(50%\)/.test(l)) && lines.some(l => /A reply's output averages [\d.]+k tokens, [\d.]+k of them reasoning you do not see\./.test(l)),
+        `in sentences, for the Memory tab and to copy:\n${lines.join("\n")}`);
+    assert.deepEqual(RC.costReportLines([{ is_user: false, mes: "x" }], { goal: 0.2 }), [], "a chat with no priced reply: nothing to report");
+    assert(/None came to more than your \$0\.50 target/.test(RC.costReportLines(chat, { goal: 0.5 }).join(" ")), "nothing over the target is said too");
+
+    // Setup Check says the rule in one line.
+    ctx.mainApi = "openai";
+    const v11 = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
+    Object.assign(chatCompletionSettings, { prompts: v11.prompts, prompt_order: v11.prompt_order });
+    const item = H.vcrpHealthCheck().items.find(i => /never cut for going over your/.test(i.title));
+    assert(item && item.level === "ok" && /over your \$0\.30 target; it cannot pass the \$0\.50 ceiling/.test(item.title) && /every other background call are not limited/.test(item.detail), `Setup Check: ${item && item.title}`);
+    g.memoryBudget = { customPrice: { "google/gemini-4-argon": { input: 2, output: 10, read: 0.1 } }, ceilingCost: 0 };
+    assert(!H.vcrpHealthCheck().items.some(i => /cannot pass the/.test(i.title)), "with no ceiling set there is nothing to say");
+
+    chat.length = 0;
+    delete metaAll.vcrp_memory;
+    delete metaAll.vcrp_cost;
+    g.memoryBudget = JSON.parse(keep.budget) || undefined;
+    if (!g.memoryBudget) delete g.memoryBudget;
+    q.vcrpMemory.enabled = keep.mem;
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+}
+console.log("76 ok the cost batch (the product's defaults: a $0.20 goal, a $0.50 ceiling, accurate chapters approving themselves; a chapter approved by its own check, one the check corrected waiting with those behind it, a pinned fact kept for the reader, the switch; a whole backlog summarised in one run; each reply priced from the API's own count of its prompt, cache reads and writes at their prices; the chat's costs read back; Setup Check)");
 
 console.log("\nALL FORK CHECKS PASSED");

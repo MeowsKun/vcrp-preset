@@ -126,13 +126,24 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
 
 ## Long chats: Story Memory (Claude, Gemini and others)
 
-Story Memory (the **Memory** tab) keeps every request under a dollar target, however long the
-chat runs. While you play nothing is dropped, so every turn reads the prompt from cache. After
-a break the cache has expired anyway, and that is when older messages leave the prompt in one
-cut, covered by chapters (one-line gists plus full text, recalled when the scene touches them)
-and a fact ledger. A cut always lands where a chapter ends, so every message it hides is told
-by a chapter in the memory text. New chapters wait for your review by default. Summaries are
-read however the model dresses them up (Gemini's bold labels, numbered fact lines, "**OK**").
+Story Memory (the **Memory** tab) sizes every request to a dollar target ($0.20 a reply by
+default), however long the chat runs. While you play nothing is dropped, so every turn reads the
+prompt from cache. After a break the cache has expired anyway, and that is when older messages
+leave the prompt in one cut, covered by chapters (one-line gists plus full text, recalled when the
+scene touches them) and a fact ledger. A cut always lands where a chapter ends, so every message
+it hides is told by a chapter in the memory text. Summaries are read however the model dresses
+them up (Gemini's bold labels, numbered fact lines, "**OK**").
+
+**Chapters approve themselves when their check passes.** Every chapter is checked against the
+messages it covers by a second call. One the check finds accurate is approved as written, so the
+prompt can be cut without waiting for you. One the check had to correct or could not read, or one
+that changes a pinned fact, waits for your review in the Memory tab, and so do the chapters
+behind it (they follow on from one another); approving it lets the accurate ones behind it follow
+by themselves. While reviews wait, nothing past them can be cut, and the Memory tab says what
+that costs on each request after a break. Switches: *Review chapters before they count*, and
+*Approve accurate chapters by themselves* (both on by default). **Summarize now** works through
+everything not yet summarized in one run, however much there is: a one-off catch-up on a long
+chat in progress may cost a couple of dollars, and nothing limits it.
 
 It needs the model's price: Claude's is built in; for any other model (Gemini, DeepSeek, GLM)
 enter it under Custom price in the Memory tab, once per model. Without a price nothing is
@@ -183,30 +194,34 @@ never less than 6,000). A request limited to the cap itself was used up by the r
 a hard turn, and the reply came back with nothing in it. A reply can run a little over the cap
 when the model reasons less than the room it was given; Setup Check shows the number.
 
-**Hold each reply to the target** (on by default, with Story Memory): input and output together
-stay within the per-request target.
-- **How:** each reply's prompt is priced as it goes out (read from the cache, written to it,
-  sent fresh), and what is left of the target, in output tokens, becomes the request's limit.
-- **During play** the room is wide; it goes on the request but is not told to the model, since a
-  large number would only invite longer replies.
-- **Right after a break**, when the whole prompt is written to the cache again, the room is about
-  a reply and a quarter (Story Memory's cuts leave that much). The model is told it, with the
-  story's share in words.
-- **Never cut short of a whole reply:** the request's own limit is at least half again your usual
-  reply, even when the room is less. A reply stopped at its room used to be stopped in its blocks,
-  the last thing it writes; one that runs over now finishes, a few cents over the target at most.
-- **The safety cap**, when lower, still wins: it is the one limit that stops a reply.
-- **A prompt that alone nears the target** gets a minimum room of 1,500 tokens, and the panel
-  says so.
-- **On a model that reasons out of sight** (Gemini, DeepSeek, GLM, Kimi, Qwen; Claude with a
-  reasoning effort set), the room is worked out and shown but never put on the request. The
-  model's thinking is paid for in that same limit and VCRP cannot see its size, so a limit set
-  from the reply's measured size, even half again a reply, was used up by the thinking on a hard
-  turn (the first reply after a break in a long chat most of all, where the room is tightest) and
-  the reply came back with nothing in it. There, only the safety cap (with its room for the
-  reasoning, above) and SillyTavern's Max Response Length limit a reply, and VCRP's own
-  background calls keep SillyTavern's limit too. Setup Check warns when Max Response Length
-  itself is under 8,000 on such a model.
+**The target is a goal; the ceiling is the one hard stop** (Memory → Reply length and cost):
+- **The target** ($0.20 a reply by default) sizes the prompt a break leaves, and nothing else. A
+  reply that comes to more than it, $0.25 say, is never cut off, shortened or stopped for it.
+  (Until 10.0.0-vcrp.18 *Hold each reply to the target* made what was left of the target the
+  request's limit. It is gone.)
+- **The ceiling** ($0.50 by default; 0 = none): no regular reply's request can cost more. Each
+  reply's prompt is priced as it goes out (read from the cache, written to it, sent fresh), and
+  what the ceiling leaves after it, in output tokens, is the request's limit. That is usually far
+  more than SillyTavern's own Max Response Length, which then stands. When the room is tight the
+  model is told it, with the story's share in words.
+- **A prompt that leaves no room for a usual reply under the ceiling is not sent.** Sending it
+  would pay for most of the ceiling and get a reply cut short (or, on a model that reasons out of
+  sight, nothing at all). A note gives the numbers and the way forward: Summarize now and Cut
+  now in the Memory tab, the chapters waiting for review, or a higher ceiling.
+- **The safety cap**, when lower, still wins, with its room for reasoning out of sight (above).
+- **Background calls are never limited:** a summary or its check, an audit, the Story Director,
+  an NPC scan or update, the ban list, the call for missing blocks, another extension's request.
+  The 8,000-token limit VCRP used to put on its own is gone.
+- **It needs the model's price** (Story Memory itself may be off). Without one no reply is limited
+  by cost, and Setup Check says so. Setup Check also warns when SillyTavern's Max Response Length
+  is under 8,000 on a model that reasons out of sight.
+- **What a reply really cost** (`src/vcrp/replyCost.js`): the badge by each reply prices the
+  prompt from the API's own token counts when the answer carried them (what was read from the
+  cache, written to it, sent fresh) as well as the output with its reasoning, and then shows the
+  figure without its "≈": green when most of the prompt came from the cache, amber when it did
+  not. The panel reads the whole chat back: the average a reply, how many came to more than the
+  target, how often the cache helped, how much of the output is reasoning you never see, and
+  **Copy cost report** for the same lines as text.
 - **How each reply ended** (`src/vcrp/generationTrace.js`): VCRP reads the answer to each of
   SillyTavern's chat-completion requests as it passes (a copy of the response, read alongside;
   the request and what SillyTavern reads are untouched) and stamps the reply with the provider's
@@ -286,9 +301,9 @@ stay within the per-request target.
   reply is not measured as a reply (it would shrink the room every reply is given), the one-shot
   direction stays for the swipe, no rolls note is added to it and no blocks are asked for.
 - **VCRP's own background calls** (summaries and their checks, audits, the Story Director, NPC
-  scans and updates, the ban list, style generators) are each limited to 8,000 output tokens,
-  well above what they write, so none can run away (not on a model that reasons out of sight:
-  its reasoning is paid for in that limit too). Other extensions' calls are left alone.
+  scans and updates, the ban list, style generators) carry no limit of VCRP's since
+  10.0.0-vcrp.18: only a regular reply is limited (above). One that never answers is still given
+  up on after six minutes. Other extensions' calls are left alone.
 - **A background job's prompt is its own, and only its own** (`src/core/activeRequests.js`,
   `TASK_MARKERS`): each job sends its marker as its quiet prompt, SillyTavern puts that text in
   the prompt it builds for the job, and VCRP swaps a job's prompt in only for the prompt that

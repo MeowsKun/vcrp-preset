@@ -20,7 +20,7 @@ import { autoSummaryHold } from "./memory/summarize.js";
 import { meguminOriginalActive } from "../engine/meguminOriginal.js";
 import { kbAlwaysOnStats, presetCarriesAlwaysSlot } from "./knowledgebase.js";
 import { vcrpCacheCheckReport, vcrpCacheCheckSummary } from "./cacheCheck.js";
-import { replyCapTokens, holdTargetActive, reasoningAllowance } from "./replyLength.js";
+import { replyCapTokens, ceilingActive, ceilingCost, reasoningAllowance } from "./replyLength.js";
 import { focusSettings, peekFocusState } from "./focus/index.js";
 import { isPuraEngine, isV11Engine } from "../core/engines.js";
 import { notebookOn } from "./notebook/index.js";
@@ -136,9 +136,16 @@ export function vcrpHealthCheck() {
         const room = reasoningAllowance();
         add("info", `Safety cap (${cap.toLocaleString()} tokens): the request allows ${(cap + room).toLocaleString()}, with room for the model's reasoning`,
             `Gemini, DeepSeek, GLM, Kimi and Qwen think before the reply (Claude too, with a reasoning effort set). That thinking is paid for in the request's output limit without being part of the reply, so a request limited to the cap itself was used up by it on a hard turn, and the reply came back with nothing in it. The cap now stands for the reply you see: the request's limit is the cap plus ${room.toLocaleString()} tokens for the reasoning (half again the most this chat's recent replies used, by the API's own count, and never less than 6,000). A reply can run a little over the cap when the model reasons less than that.`);
-    } else if (reasons && holdTargetActive()) {
-        add("ok", "Hold each reply to the target leaves the request's limit alone on this model",
-            "The model reasons before it writes, that reasoning is paid for in the request's output limit, and VCRP cannot see its size. So the room under the target is worked out and shown in the Memory tab, but not put on the request: a limit set from the reply's measured size was used up by the reasoning on a hard turn, and the reply came back with nothing in it. Only a Safety cap you set, and SillyTavern's Max Response Length, limit a reply here.");
+    }
+    // The target is a goal and the ceiling the one hard stop (replyLength.js).
+    if (ceilingActive()) {
+        const b = currentMemoryBudget();
+        const goal = Number(memoryBudgetSettings().targetCost) || 0;
+        add("ok", `A reply is never cut for going over your $${goal.toFixed(2)} target; it cannot pass the $${ceilingCost().toFixed(2)} ceiling`,
+            `The target sizes the prompt a break leaves and nothing else: a reply that comes to more passes. The ceiling is the one hard stop on a regular reply: the request's output limit is what the ceiling leaves after the prompt (priced on ${b && b.price ? b.price.label : "the selected model"}), and a prompt that leaves no room for a usual reply is not sent, with a note on what to do. Summaries, audits, the Story Director, NPC scans and every other background call are not limited. Change either number in the Memory tab.`);
+    } else if (ceilingCost() && !currentMemoryBudget()) {
+        add("info", "The ceiling per reply cannot be worked out: this model's price is not known",
+            "Enter the model's price under Custom price in the Memory tab (once per model). Until then no reply is limited by cost.");
     }
     // Gemini 4 reasons on its own; Megumin Suite's Gemini Pro loadout keeps custom thinking off there.
     if (/gemini-4/.test(String(model || "")) && localProfile && localProfile.cotEnabled !== false) {
@@ -212,7 +219,7 @@ export function vcrpHealthCheck() {
     if (toneRulesText("reply") && !carries("[[pura_late]]")) focusOff.push("your Tone Rules");
     if (oneShot().text.trim() && !carries("[[pura_late]]")) focusOff.push("your one-shot direction");
     if (castLockOn() && !carries("[[pura_late]]")) focusOff.push("Existing cast only");
-    if ((replyCapTokens() || holdTargetActive()) && !carries("[[pura_late]]")) focusOff.push("the length limit's line to the model");
+    if ((replyCapTokens() || ceilingActive()) && !carries("[[pura_late]]")) focusOff.push("the length limit's line to the model");
     if (focusOff.length) {
         add("warn", `Re-import the preset: ${focusOff.join(" and ")} cannot reach the model`,
             `The active preset was imported before this version and has no place for it. Import "VCRP V10 Universal" (or "VCRP V10 Megumin Original") again from the extension's Presets folder and select it. Re-importing replaces your own edits to that preset.`);
@@ -376,7 +383,7 @@ function helperChecks(add) {
         `${tested ? "Tested." : "Press Test in the Helper tab once, to check it answers."} It does: ${jobs}. Its calls go straight to that profile and are not counted in Story Memory's spend.`);
 }
 
-const LIMIT_BY = { cap: "VCRP's Safety cap", hold: "VCRP's Hold each reply to the target", "": "SillyTavern's Max Response Length" };
+const LIMIT_BY = { cap: "VCRP's Safety cap", ceiling: "VCRP's ceiling per reply", hold: "VCRP's Hold each reply to the target", "": "SillyTavern's Max Response Length" };
 const kTok = n => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(Math.round(n)));
 
 // ── SillyTavern's Reasoning Auto-Parse beside VCRP's Chain of Thought ────────
@@ -612,8 +619,8 @@ export function buildHealthCard(rerender) {
 
 // Copies text to the clipboard; where that is not allowed (an http page on a phone), shows it in
 // a dialog to copy by hand.
-function copyText(text, title) {
-    const done = () => { if (typeof toastr !== "undefined") toastr.success("Copied. Paste it where you ask about the empty replies.", "VCRP"); };
+export function copyText(text, title, copied = "Copied. Paste it where you ask about the empty replies.") {
+    const done = () => { if (typeof toastr !== "undefined") toastr.success(copied, "VCRP"); };
     const show = () => {
         if (typeof document === "undefined") return;
         const dlg = document.createElement("dialog");

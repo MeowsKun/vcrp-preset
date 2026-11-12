@@ -17,7 +17,7 @@ import { getContext } from "../st.js";
 import { blankKindOf, blankReplyWhy, spell, apiWords, HOW_TO_CHECK, QUIET_MS } from "./blankReply.js";
 
 const NOTE = "vcrp-finish-note";
-const LIMIT_BY = { cap: "VCRP's Safety cap", hold: "VCRP's Hold each reply to the target", "": "SillyTavern's Max Response Length" };
+const LIMIT_BY = { cap: "VCRP's Safety cap", ceiling: "VCRP's ceiling per reply", hold: "VCRP's Hold each reply to the target", "": "SillyTavern's Max Response Length" };
 const k = n => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(Math.round(n)));
 const ENDED = { closed: "the stream closed with no stop reason and no end marker", abort: "stopped on this side", error: "the connection broke" };
 

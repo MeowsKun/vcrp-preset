@@ -461,10 +461,9 @@ for (let t = 1; t <= 4; t++) {
         ok(JSON.stringify(b.contents.slice(0, kept.length)) === JSON.stringify(kept), `Gemini, turn ${t}: the prompt opens like last turn's, up to the reply before last`, firstDiff(kept, b.contents));
     }
 }
-// The request's output limit on Gemini: its reasoning is paid for in that limit and never shows
-// in a reply's size, so the room under the target is worked out but not put on the request
-// (a limit set from the measure was used up by the reasoning, and the reply came back empty);
-// a safety cap, the reader's own, still is.
+// The request's output limit on Gemini: the target limits no reply (a five-cent one included);
+// the ceiling leaves far more room than SillyTavern's own limit here, so that one stands; a
+// safety cap, the reader's own, still lowers it, with room for the reasoning out of sight.
 {
     const RL = await imp("src/vcrp/replyLength.js");
     const gs = extension_settings.VCRP.globalSettings;
@@ -474,7 +473,7 @@ for (let t = 1; t <= 4; t++) {
     let data = { max_tokens: 20000 };
     RL.vcrpApplyReplyCap(data);
     const room = RL.lastReplyRoom();
-    ok(room && room.hidden && room.tokens < 20000 && data.max_tokens === 20000, `Gemini: the room under the target (${room && room.tokens} tokens) is not put on the request, which keeps SillyTavern's 20,000`);
+    ok(room && room.hidden && !room.blocked && room.tokens > 20000 && room.goal === 0.05 && data.max_tokens === 20000, `Gemini: a five-cent target puts no limit on the request (the ceiling leaves ${room && room.tokens} tokens, past SillyTavern's 20,000)`);
     ok(RL.sentReplyLimit() === 20000 && RL.sentReplyLimitBy() === "", "the limit that went out is SillyTavern's own");
     gs.memoryBudget.replyCap = 3000;
     await send("swipe");

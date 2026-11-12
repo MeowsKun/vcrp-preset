@@ -129,11 +129,19 @@ function readObject(obj, out) {
             if (num(u.output_tokens) !== null) out.usage.out = u.output_tokens;   // Anthropic (message_delta carries the final count)
             const det = u.completion_tokens_details;
             if (det && num(det.reasoning_tokens) !== null) out.usage.reasoning = det.reasoning_tokens;
+            // The whole prompt as billed, with what of it was read from the cache and what was
+            // written to it. OpenAI-shaped answers count the cached part inside prompt_tokens;
+            // Anthropic's own count input_tokens beside it, so the three are added up here.
             if (num(u.prompt_tokens) !== null) out.usage.input = u.prompt_tokens;
-            if (num(u.input_tokens) !== null) out.usage.input = u.input_tokens;
             const pdet = u.prompt_tokens_details;
             if (pdet && num(pdet.cached_tokens) !== null) out.usage.cached = pdet.cached_tokens;
-            if (num(u.cache_read_input_tokens) !== null) out.usage.cached = u.cache_read_input_tokens;
+            if (pdet && num(pdet.cache_write_tokens) !== null) out.usage.written = pdet.cache_write_tokens;
+            if (num(u.input_tokens) !== null) {
+                const read = num(u.cache_read_input_tokens), made = num(u.cache_creation_input_tokens);
+                out.usage.input = u.input_tokens + (read || 0) + (made || 0);
+                if (read !== null) out.usage.cached = read;
+                if (made !== null) out.usage.written = made;
+            }
         }
     }
     // Anthropic: a whole message, or the streamed delta that ends it.

@@ -26,12 +26,12 @@ import { meguminAllSlotTriggers } from "../../data/slots.js";
 import { vcrpApplyGenerationToDict, vcrpFinalizeMessages, vcrpRouteNeedsAlternation, vcrpJoinSameRole } from "../vcrp/generation.js";
 import { buildFocusAuditMessages, plotFocusForDirector } from "../vcrp/focus/index.js";
 import { vcrpCostAfterPrompt, vcrpCostRequestCancelled } from "../vcrp/replyCost.js";
-import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, vcrpCountBackgroundPrompt, setMemoryPromptScope, memoryPromptIsStandalone } from "../vcrp/memory/index.js";
+import { vcrpMemoryAfterPrompt, vcrpMemoryShapeTask, vcrpMemoryMarkCache, vcrpMemoryRequestCancelled, vcrpCountBackgroundPrompt, setMemoryPromptScope, memoryPromptIsStandalone, memoryState, vcrpMemoryEnabled } from "../vcrp/memory/index.js";
 import { vcrpOn, blankVcrpTags } from "../vcrp/power.js";
 import { loreForChat, loreForNames, loreBlock } from "../vcrp/lore.js";
 import { vcrpCacheCheckRecord } from "../vcrp/cacheCheck.js";
 import { stripHistoryBlocks } from "../vcrp/blockHistory.js";
-import { vcrpNotePrompt, vcrpReplyRoom } from "../vcrp/replyLength.js";
+import { vcrpNotePrompt, vcrpReplyRoom, ceilingBlockText } from "../vcrp/replyLength.js";
 import { buildTokenBreakdown } from "../vcrp/tokenBreakdown.js";
 
 // Throttles the prompt-preview popup so token counting and rapid ST background
@@ -354,10 +354,30 @@ export async function handlePromptInjection(data, type) {
         stripHistoryBlocks(messages);
         vcrpFinalizeMessages(messages, vcrpGen, s => (typeof substituteParams === 'function' ? substituteParams(s) : s));
         vcrpMemoryShapeTask(messages);
-        // VCRP: the reply's room under the target, priced before the cache clock is stamped.
-        vcrpReplyRoom(messages, data?.dryRun === true);
+        // VCRP: the prompt priced, and the room the ceiling leaves for the reply, before the
+        // cache clock is stamped.
+        const priced = vcrpReplyRoom(messages, data?.dryRun === true);
         vcrpMemoryAfterPrompt(messages, data?.dryRun === true);
         vcrpCostAfterPrompt(messages, data?.dryRun === true);   // VCRP: each reply's cost badge
+        // VCRP: the one hard stop. A prompt that leaves no room for a usual reply under the
+        // ceiling is not sent: it would pay for most of the ceiling and get a reply cut short.
+        // The reader is told the numbers and the way forward. (The target never stops a reply.)
+        if (priced && priced.blocked && data?.dryRun !== true) {
+            messages.length = 0;
+            vcrpMemoryRequestCancelled();   // nothing went out, so no cache was warmed
+            vcrpCostRequestCancelled();
+            let waiting = 0;
+            try { waiting = ((memoryState() || {}).pending || []).length; } catch (e) { waiting = 0; }
+            const text = ceilingBlockText(priced, { memoryOn: vcrpMemoryEnabled(), waiting });
+            console.warn(`[${extensionName}] ${text}`);
+            if (typeof toastr !== "undefined") toastr.warning(text, "VCRP: over the ceiling, not sent", { timeOut: 30000, extendedTimeOut: 15000, closeButton: true });
+            try {
+                const ctxStop = typeof getContext === "function" ? getContext().stopGeneration : null;
+                if (typeof ctxStop === "function") ctxStop();
+            } catch (e) { /* fall through to the button */ }
+            setTimeout(() => { $("#mes_stop").trigger("click"); }, 10);
+            return;
+        }
     }
 
     // --- INJECT NPC PORTRAITS AS MULTIMODAL IMAGES ---
