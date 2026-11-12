@@ -524,6 +524,85 @@ for (let k = 0; k < memCount; k++) {
     for (const k of ["vcrp_arc", "vcrp_beats", "vcrp_threads", "vcrp_oneshot"]) delete meta[k];
     TH.forgetThreadReading();
 }
+// The dock under its headings, the all-tabs menu, and the blocks editor (its pencil on a card,
+// its button in the BLOCKS tab, a character taken out of the scene, the edit saved).
+{
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ Layout and editor: ${what}`); } };
+    const before = failures;
+    const tick = () => new Promise(r => setTimeout(r, 5));
+    const tabsMod = await imp("src/ui/tabs.js");
+    const BE = await imp("src/vcrp/blocksEditor.js");
+    const { buildBlocksCard, extractBlocks } = await imp("src/blocks/render.js");
+    const { meguminRenderRegistry } = await imp("src/features/blocks/registry.js");
+    const box = $("#ps_stage_content");
+    const dock = $("#ps_dynamic_dots");
+
+    // The dock: every tab a dot, in the layout's order, three headings between them.
+    switchTab(tabsUI.findIndex(t => t.title === "Focus"));
+    const order = dock.children(".sidebar-step").map(function () { return $(this).attr("title"); }).get();
+    check(dock.children(".dock-group-label").length === 3 && dock.children(".dock-group-label").map(function () { return $(this).text().trim(); }).get().join() === "Story,Long stories,Helpers", `the headings: ${dock.children(".dock-group-label").text()}`);
+    check(order.length === tabsUI.length && order[0] === "Model Setup" && order.at(-1) === "Global Settings" && order.indexOf("Memory") < order.indexOf("Helper") && order.indexOf("BLOCKS") < order.indexOf("Memory"), `the dots, grouped: ${order}`);
+    check(dock.find(".sidebar-step.active").attr("title") === "Focus" && dock.find(".sidebar-step.active span").text() === "Focus", "the open tab is not the lit one");
+    check(dock.find('.sidebar-step[title="PRESETS & COT"] span').text() === "Presets & CoT" && dock.find('.sidebar-step[title="NPCs Bank"] span').text() === "NPC Bank", "a dot does not show its label");
+    // (The click on a dot is index.js's handler, which goes by the dot's id: its tab's place in the list.)
+    check(tabsUI.every((t, i) => dock.find(`#dot_${i}`).attr("title") === t.title), "a dot's id is not its tab's place in the list");
+    // The all-tabs menu: a dialog with every tab under its heading; a tap opens the tab.
+    check(dock.children("#ps_dock_menu").length === 1 && !dock.children("#ps_dock_menu").hasClass("sidebar-step"), "the all-tabs button is missing, or counts as a tab");
+    dock.children("#ps_dock_menu").trigger("click");
+    let menu = document.getElementById("vcrp_tab_menu");
+    check(menu && menu.tagName === "DIALOG" && menu.hasAttribute("open") && menu.querySelectorAll(".vcrp-tab-menu-item").length === tabsUI.length, `the menu: ${menu && menu.querySelectorAll(".vcrp-tab-menu-item").length} of ${tabsUI.length} tabs`);
+    check(menu && /Story[\s\S]*Presets & CoT[\s\S]*Long stories[\s\S]*Memory[\s\S]*Helpers[\s\S]*Helper[\s\S]*Global Settings/.test(menu.textContent), "the menu is not grouped under the headings");
+    [...menu.querySelectorAll(".vcrp-tab-menu-item")].find(b => /Memory/.test(b.textContent)).click();
+    check(!document.getElementById("vcrp_tab_menu") && box.find("#vmem_enable").length === 1 && dock.find(".sidebar-step.active").attr("title") === "Memory", "a tap in the menu does not open that tab and close the menu");
+    tabsMod.openTabMenu();
+    document.querySelector("#vcrp_tab_menu .vcrp-tab-menu-close").click();
+    check(!document.getElementById("vcrp_tab_menu"), "the menu does not close");
+
+    // The pencil on a blocks card.
+    const ENV = "<Blocks>\n<Scene>\nHere: Mara, +Old Martin\nRemote: Jonah\n</Scene>\n<World_State>\n**📅 Time:** Day 2, dusk | **🌤 Loc:** The pier | **🌡 Wx:** Rain\n\n---\n**👥 NPCs Present:**\n**Mara Voss:**\n* *Outfit:* an oilskin\n* *Mood:* wary\n\n---\n**📡 Off-Screen:**\n* Jonah: mending nets\n</World_State>\n<Bonds>\nMara Voss: Affection: 48/100 (=)\n</Bonds>\n</Blocks>";
+    let opened = 0;
+    const card = buildBlocksCard(extractBlocks(`Prose.\n\n${ENV}`, meguminRenderRegistry()), { onEdit: () => { opened++; } });
+    check(card.querySelector(".meg-blocks-edit") && card.querySelector(".meg-blocks-tabs").lastElementChild.classList.contains("meg-blocks-collapse"), "the pencil is not on the card, beside the fold control");
+    card.querySelector(".meg-blocks-edit").click();
+    check(opened === 1, "the pencil does not open the editor");
+    check(!buildBlocksCard(extractBlocks(`Prose.\n\n${ENV}`, meguminRenderRegistry()), { preview: true, onEdit: () => {} }).querySelector(".meg-blocks-edit") && !buildBlocksCard(extractBlocks(`Prose.\n\n${ENV}`, meguminRenderRegistry()), {}).querySelector(".meg-blocks-edit"), "a preview, or a card with nothing to open, has a pencil");
+
+    // The editor: nothing to edit; then a reply with blocks. (The pass that clicks every button
+    // in every tab pressed the BLOCKS tab's Edit, on the suite's own chat: that one goes first.)
+    document.getElementById("vcrp_blocks_editor")?.remove();
+    const chatWas = chat.slice();
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", mes: "hello" }, { is_user: false, name: "Alice", mes: "No blocks yet." });
+    check(BE.openBlocksEditor() === false && !document.getElementById("vcrp_blocks_editor"), "the editor opens on a chat with no blocks");
+    chat.push({ is_user: true, name: "Bob", mes: "I ask." }, { is_user: false, name: "Alice", mes: `Mara looks away.\n\n${ENV}`, swipes: [`Mara looks away.\n\n${ENV}`], swipe_id: 0 });
+    switchTab(tabsUI.findIndex(t => t.title === "BLOCKS"));
+    check(box.find("#blk_edit_state").length === 1, "the BLOCKS tab has no Edit button");
+    box.find("#blk_edit_state").trigger("click");
+    let ed = document.getElementById("vcrp_blocks_editor");
+    check(ed && ed.tagName === "DIALOG" && ed.hasAttribute("open") && ed.querySelectorAll("textarea.vcrp-be-area").length === 3, `the editor: ${ed && ed.querySelectorAll("textarea.vcrp-be-area").length} boxes`);
+    check(ed && /In the scene/.test(ed.textContent) && [...ed.querySelectorAll(".vcrp-be-remove")].map(b => b.getAttribute("data-name")).join() === "Mara,Old Martin,Jonah" && /World State/.test(ed.textContent) && /Bonds/.test(ed.textContent), `who is in the scene, and each block by its name: ${ed && ed.textContent.replace(/\s+/g, " ").slice(0, 200)}`);
+    check(ed.querySelectorAll("textarea.vcrp-be-area")[0].value === "Here: Mara, +Old Martin\nRemote: Jonah" && /^\*\*📅 Time:\*\* Day 2, dusk/.test(ed.querySelectorAll("textarea.vcrp-be-area")[1].value), "a box does not hold its block's text");
+    // The reader's own edit, then a tap on Remove: both are kept.
+    ed.querySelectorAll("textarea.vcrp-be-area")[2].value = "Mara Voss: Affection: 55/100 (=)";
+    ed.querySelector('.vcrp-be-remove[data-name="Mara"]').click();
+    ed = document.getElementById("vcrp_blocks_editor");
+    check(ed.querySelectorAll("textarea.vcrp-be-area")[0].value === "Here: +Old Martin\nRemote: Jonah" && !/Mara Voss:\*\*/.test(ed.querySelectorAll("textarea.vcrp-be-area")[1].value) && /\* Mara: left the scene/.test(ed.querySelectorAll("textarea.vcrp-be-area")[1].value)
+        && ed.querySelectorAll("textarea.vcrp-be-area")[2].value === "Mara Voss: Affection: 55/100 (=)" && ![...ed.querySelectorAll(".vcrp-be-remove")].some(b => b.getAttribute("data-name") === "Mara"), "Remove does not take her out of the scene, or loses what was typed");
+    ed.querySelector(".vcrp-be-add-name").value = "Ren";
+    ed.querySelector(".vcrp-be-add").click();
+    ed = document.getElementById("vcrp_blocks_editor");
+    check(ed.querySelectorAll("textarea.vcrp-be-area")[0].value === "Here: +Old Martin, Ren\nRemote: Jonah", "someone cannot be brought in");
+    check(chat[3].mes === `Mara looks away.\n\n${ENV}`, "the reply changed before Save");
+    ed.querySelector(".vcrp-be-save").click(); await tick(); await tick();
+    check(!document.getElementById("vcrp_blocks_editor") && /Here: \+Old Martin, Ren/.test(chat[3].mes) && /Affection: 55\/100/.test(chat[3].mes) && /\* Mara: left the scene/.test(chat[3].mes) && chat[3].mes.startsWith("Mara looks away.\n\n<Blocks>") && chat[3].swipes[0] === chat[3].mes, `Save does not write the blocks under the reply: ${chat[3].mes.slice(0, 160)}`);
+    BE.openBlocksEditor();
+    document.querySelector("#vcrp_blocks_editor .vcrp-be-close").click();
+    check(!document.getElementById("vcrp_blocks_editor"), "Cancel does not close the editor");
+    clicks += 12;
+    if (failures === before) console.log("  ✓ Layout and editor: the dock under three headings, labels, the all-tabs menu; the pencil on a card, the BLOCKS tab's button, the editor's boxes, a character taken out and one brought in, Save and Cancel");
+    chat.length = 0;
+    chat.push(...chatWas);
+}
 // What's new after an update: a card on Global Settings and a dot on the gear until "Got it".
 {
     const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ What's new: ${what}`); } };

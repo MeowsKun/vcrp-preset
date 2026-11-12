@@ -632,6 +632,7 @@ export function copyText(text, title, copied = "Copied. Paste it where you ask a
         if (typeof document === "undefined") return;
         const dlg = document.createElement("dialog");
         dlg.className = "vcrp-text-dialog";
+        dlg.style.cssText = "padding:14px; border:1px solid #27272a; border-radius:14px; background:#18181b; color:#f4f4f5; max-width:94vw; box-sizing:border-box;";
         dlg.innerHTML = `<div style="display:flex; flex-direction:column; gap:8px; max-width:min(92vw, 640px);">
             <b>${escapeHtmlAttr(title)}</b>
             <textarea readonly style="width:100%; min-height:40vh; font-size:0.72rem; font-family:monospace;"></textarea>

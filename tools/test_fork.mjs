@@ -7486,4 +7486,126 @@ console.log("78 ok characters that stay themselves (who says what, read from the
 }
 console.log("79 ok the plot in the reader's hands (the thread ledger: one World State's open ends, the compact form and the template told apart; read across the chat with first, moved, closed and due; the stale ones named when their turn comes, after the chat, never twice running, never for a list out of date, the reader's ignore and the switch; the beat queue: queued, moved, reworded, fired through the one-shot box, spent by the reply, the next due one taking the box, one the reader wrote over waiting again, a blank reply spending nothing; arcs: started, named, sent last with the plot focus after it, told to the Director, ended by the next; three pitches: the call's own prompt and what it reads, parsed however dressed, kept with the chat; Story Memory closing an arc: its chapters folded under its name, pinned ones kept, a failure changing nothing)");
 
+// 80. The story's state by hand, and a tidier window (10.0.0-vcrp.22). The blocks editor: the
+//     blocks as they stand taken apart, a character taken out of the scene or brought in, the
+//     edit written under the latest reply so the next prompt carries it. The dock: the same
+//     tabs under three headings, their titles (the keys their settings go by) untouched.
+{
+    const q = state.localProfile;
+    const BE = await imp("src/vcrp/blocksEditor.js");
+    const BH = await imp("src/vcrp/blockHistory.js");
+    const tabs = await imp("src/ui/tabs.js");
+    const sync = await imp("src/core/sync.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const keep = { mode: q.mode, model: q.model, cot: q.cotEnabled, order: JSON.stringify(q.blockStack.order), scene: JSON.stringify(q.sceneList || null), cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+    const UNIVERSAL = "VCRP V10 Universal.json";
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
+    q.blockStack.order = ["world", "bonds"]; meguminSyncLegacyBlockIds();
+    vcrpSetGenerationType("normal", {}, false);
+    const SCENE = "<Scene>\nHere: Mara, +Old Martin\nRemote: Jonah\n</Scene>";
+    const WORLD = "<World_State>\n**📅 Time:** Day 2, dusk | **🌤 Loc:** The pier | Saltmere | **🌡 Wx:** Rain\n\n---\n\n**🧍 Bob:**\n* *Outfit:* a wet coat\n* *Position:* at the rail\n\n---\n\n**👥 NPCs Present:**\n**Mara Voss:**\n* *Outfit:* an oilskin\n* *Mood:* wary\n* *Agenda:* to keep the letter hidden\n**Old Martin:**\n* *Outfit:* a patched jersey\n* *Position:* on a crate\n\n---\n**📡 Off-Screen:**\n* Jonah: mending nets at the harbour\n\n---\n**🔥 Unresolved Threads:**\n* Who sent the letter?\n**🎯 Arc Phase:** Setup\n</World_State>";
+    const BONDS = "<Bonds>\nMara Voss: Affection: 48/100 (+2 she laughed) | Trust: 30/100 (=)\nOld Martin: Affection: 10/100 (=) | Trust: 12/100 (=)\n</Bonds>";
+    const ENV = `<Blocks>\n${SCENE}\n${WORLD}\n${BONDS}\n</Blocks>`;
+
+    // ── The envelope, apart and back ──
+    const env = BE.envelopeParts(ENV);
+    assert(env && env.parts.map(p => p.tag).join() === "Scene,World_State,Bonds" && env.parts[0].body.trim() === "Here: Mara, +Old Martin\nRemote: Jonah" && env.open === "<Blocks>" && env.close === "</Blocks>", `the envelope's children, in order: ${env && env.parts.map(p => p.tag)}`);
+    assert.equal(BE.envelopeText(env), ENV, "put back as it was");
+    const named = BE.envelopeParts('<Blocks>\n<New_NPC name="Old Martin">\nA fisherman.\n</New_NPC>\n<New_NPC name="Ren">\nA clerk.\n</New_NPC>\n</Blocks>');
+    assert(named.parts.length === 2 && named.parts[1].openTag === '<New_NPC name="Ren">' && named.parts[1].body.trim() === "A clerk.", "a block that repeats keeps each copy and its name");
+    assert(BE.envelopeParts("No blocks here.") === null && BE.envelopeParts("<Blocks>\n<World_State>cut off") === null, "what is not a whole envelope is not taken for one");
+    // A reply's own blocks, and a reply given new ones.
+    const REPLY = `<think>Draft: <Blocks><Bonds>x</Bonds></Blocks></think>\nMara looks away.\n\n${ENV}`;
+    assert.equal(BE.ownEnvelope(REPLY), ENV, "a reply's own blocks: the last whole ones after its thinking");
+    assert.equal(BE.ownEnvelope("<think>only <Blocks><Bonds>x</Bonds></Blocks>"), "", "blocks drafted in thinking that never closed are nobody's");
+    const NEW = "<Blocks>\n<Bonds>\nMara Voss: Affection: 50/100 (=)\n</Bonds>\n</Blocks>";
+    assert.equal(BE.withBlocks(REPLY, NEW), `<think>Draft: <Blocks><Bonds>x</Bonds></Blocks></think>\nMara looks away.\n\n${NEW}`, "in place of the reply's own, the thinking left alone");
+    assert.equal(BE.withBlocks("Mara looks away.\n\n<Blocks>\n<World_State>\n**📅 Time:** Day 2 | cut he", NEW), `Mara looks away.\n\n${NEW}`, "in place of blocks the reply was cut off inside");
+    assert.equal(BE.withBlocks("Mara looks away.  \n", NEW), `Mara looks away.\n\n${NEW}`, "added at the end of a reply that wrote none");
+
+    // ── Who is in the scene ──
+    assert(BE.sameCharacter("Mara", "Mara Voss") && BE.sameCharacter("old martin", "Old Martin") && !BE.sameCharacter("Mara", "Martin") && !BE.sameCharacter("", "Mara"), "the same character by name");
+    assert.deepEqual(BE.sceneCast(ENV), [{ name: "Mara", where: "here" }, { name: "Old Martin", where: "here" }, { name: "Jonah", where: "remote" }], `the scene list first; the World State adds nobody it already names: ${JSON.stringify(BE.sceneCast(ENV))}`);
+    assert.deepEqual(BE.sceneCast(`<Blocks>\n${WORLD}\n</Blocks>`).map(c => c.name), ["Mara Voss", "Old Martin"], "without a scene list, the World State's cast (never the reader's own character)");
+    // Taken out: off the scene list, out of the World State's cast and noted off-screen; the bonds stay.
+    let r = BE.removeFromScene(ENV, "Mara");
+    let out = BE.envelopeParts(r.envelope);
+    assert.deepEqual(r.changed, ["the scene list", "World State"]);
+    assert(out.parts[0].body.trim() === "Here: +Old Martin\nRemote: Jonah", `off the scene list: ${out.parts[0].body}`);
+    assert(!/Mara Voss:\*\*/.test(out.parts[1].body) && !/oilskin|wary|keep the letter hidden/.test(out.parts[1].body) && /\*\*Old Martin:\*\*\n\* \*Outfit:\* a patched jersey/.test(out.parts[1].body) && /\*\*🧍 Bob:\*\*\n\* \*Outfit:\* a wet coat/.test(out.parts[1].body),
+        `her entry and the lines under it are gone, everyone else's stay: ${out.parts[1].body}`);
+    assert(/\*\*📡 Off-Screen:\*\*\n\* Mara: left the scene\n\* Jonah: mending nets at the harbour/.test(out.parts[1].body) && /\* Who sent the letter\?/.test(out.parts[1].body), "she is noted off-screen, and the rest of the block is as it was");
+    assert.equal(out.parts[2].body, env.parts[2].body, "her Bonds line stays: feelings do not leave with her");
+    r = BE.removeFromScene(r.envelope, "Old Martin");
+    out = BE.envelopeParts(r.envelope);
+    assert(out.parts[0].body.trim() === "Here: nobody\nRemote: Jonah" && !/Old Martin:\*\*/.test(out.parts[1].body) && /\* Old Martin: left the scene/.test(out.parts[1].body), `the last one out leaves nobody here: ${out.parts[0].body}`);
+    r = BE.removeFromScene(ENV, "Jonah");
+    assert(BE.envelopeParts(r.envelope).parts[0].body.trim() === "Here: Mara, +Old Martin\nRemote:" && r.changed.join() === "the scene list" && (BE.envelopeParts(r.envelope).parts[1].body.match(/Jonah/g) || []).length === 1, "someone remote leaves the list; their off-screen line is not doubled");
+    assert.deepEqual(BE.removeFromScene(ENV, "Nobody Such").changed, [], "a name that is not there changes nothing");
+    assert.equal(BE.removeFromScene(ENV, "Nobody Such").envelope, ENV);
+    const COMPACT = "<Blocks>\n<World_State>\n**Time & Loc:** Dusk at the pier\n**PC:** coat | at the rail\n**NPCs Present:**\n* Mara: oilskin | leaning on the rail\n* Old Martin: jersey | on a crate\n</World_State>\n</Blocks>";
+    r = BE.removeFromScene(COMPACT, "Mara");
+    assert(r.changed.join() === "World State" && !/Mara/.test(r.envelope) && /\* Old Martin: jersey \| on a crate/.test(r.envelope) && /\*\*PC:\*\* coat/.test(r.envelope), `the compact World State: her one line: ${r.envelope}`);
+    // Brought in: onto the scene list, nothing else (what they wear is the story's to write).
+    r = BE.addToScene(ENV, " Ren ");
+    assert(r.changed && BE.envelopeParts(r.envelope).parts[0].body.trim() === "Here: Mara, +Old Martin, Ren\nRemote: Jonah" && BE.envelopeParts(r.envelope).parts[1].body === env.parts[1].body, "someone brought in joins the scene list");
+    assert(!BE.addToScene(ENV, "mara").changed && !BE.addToScene(ENV, "  ").changed && !BE.addToScene(`<Blocks>\n${WORLD}\n</Blocks>`, "Ren").changed, "someone already there, nobody, or no scene list: nothing changes");
+    assert(BE.envelopeParts(BE.addToScene("<Blocks>\n<Scene>\nHere: nobody\nRemote:\n</Scene>\n</Blocks>", "Ren").envelope).parts[0].body.trim() === "Here: Ren\nRemote:", "into an empty scene");
+
+    // ── The blocks as they stand, and where the edit goes ──
+    chat.length = 0;
+    assert.equal(BE.blocksAsTheyStand(), null, "no reply, no blocks");
+    chat.push({ is_user: true, name: "Bob", send_date: "e0", mes: "I wait." }, { is_user: false, name: "Alice", send_date: "e1", mes: "Rain.", swipes: ["Rain."], swipe_id: 0 });
+    assert.equal(BE.blocksAsTheyStand(), null, "a chat whose replies have no blocks has nothing to edit");
+    chat.push({ is_user: true, name: "Bob", send_date: "e2", mes: "I ask." }, { is_user: false, name: "Alice", send_date: "e3", mes: `Mara looks away.\n\n${ENV}`, swipes: [`Mara looks away.\n\n${ENV}`], swipe_id: 0 });
+    let stand = BE.blocksAsTheyStand();
+    assert(stand && stand.index === 3 && stand.envelope === ENV && stand.back === 0 && stand.filled.length === 0, `the latest reply's own blocks: ${JSON.stringify(stand && [stand.index, stand.back, stand.filled])}`);
+    // A newer reply that left the Bonds out: they come from where they were last whole, and saving puts them under the newer reply.
+    const NEWER = `<Blocks>\n${SCENE}\n${WORLD.replace("Day 2, dusk", "Day 2, night")}\n</Blocks>`;
+    chat.push({ is_user: true, name: "Bob", send_date: "e4", mes: "And then?" }, { is_user: false, name: "Alice", send_date: "e5", mes: `Night falls.\n\n${NEWER}`, swipes: [`Night falls.\n\n${NEWER}`], swipe_id: 0 });
+    stand = BE.blocksAsTheyStand();
+    assert(stand.index === 5 && BE.envelopeParts(stand.envelope).parts.map(p => p.tag).join() === "Scene,World_State,Bonds" && /Day 2, night/.test(stand.envelope) && /Affection: 48\/100/.test(stand.envelope) && stand.filled.join() === "Bonds",
+        `a block the latest reply left out is shown from where it was last written whole: ${JSON.stringify(stand.filled)}`);
+    // A reply the limit cut off before its blocks: the ones before it stand.
+    chat.push({ is_user: true, name: "Bob", send_date: "e6", mes: "Go on." }, { is_user: false, name: "Alice", send_date: "e7", mes: "The tide turns.", swipes: ["The tide turns."], swipe_id: 0 });
+    stand = BE.blocksAsTheyStand();
+    assert(stand.index === 7 && stand.back === 1 && /Day 2, night/.test(stand.envelope), `a reply with no blocks: the earlier ones, to be saved under it: ${JSON.stringify([stand.index, stand.back])}`);
+    // Saved: under the latest reply, in its swipe too; and it is what the next reply is handed.
+    const edited = BE.removeFromScene(stand.envelope, "Mara").envelope.replace("Day 2, night", "Day 3, dawn");
+    const was = chat[7].mes;
+    assert(await BE.saveBlocksAsTheyStand(7, edited, was), "saved");
+    assert(chat[7].mes === `The tide turns.\n\n${edited}` && chat[7].swipes[0] === chat[7].mes, "written under the latest reply, and into its swipe");
+    assert(BH.lastBlocksState().includes("Day 3, dawn") && !/Mara Voss:\*\*/.test(BH.lastBlocksState()) && BH.lastBlocksInfo().back === 0, "the blocks as they stand are the edited ones now");
+    chat.push({ is_user: true, name: "Bob", send_date: "e8", mes: "I look around." });
+    const msgs = await run(UNIVERSAL);
+    const whole = text(msgs);
+    assert(whole.includes("The blocks as they stood at the end of your last reply.") && whole.includes("Day 3, dawn") && whole.includes("* Mara: left the scene") && !whole.includes("**Mara Voss:**\n* *Outfit:* an oilskin"), "and the next prompt hands the model the edited state");
+    chat.pop();
+    assert(!(await BE.saveBlocksAsTheyStand(7, edited, was)) && !(await BE.saveBlocksAsTheyStand(6, edited)) && !(await BE.saveBlocksAsTheyStand(7, "not an envelope")), "a reply that changed meanwhile, the reader's own message, or text that is no envelope: nothing is saved");
+
+    // ── The dock ──
+    const layout = tabs.dockLayout();
+    const dots = layout.filter(e => e.tab).map(e => e.tab.title);
+    assert.deepEqual(layout.filter(e => e.heading).map(e => e.heading), ["Story", "Long stories", "Helpers"], "three headings");
+    assert(dots.length === tabs.tabsUI.length && new Set(dots).size === dots.length && dots[0] === "Model Setup" && dots.at(-1) === "Global Settings" && layout.at(-2).spacer === true && tabs.tabsUI.at(-1).title === "Global Settings",
+        `every tab once, Model Setup first, Global Settings pinned under the spacer and last in the list: ${dots}`);
+    const under = h => { const at = layout.findIndex(e => e.heading === h); const next = layout.findIndex((e, i) => i > at && (e.heading || e.spacer)); return layout.slice(at + 1, next).map(e => tabs.tabLabel(e.tab)); };
+    assert.deepEqual(under("Story"), ["Presets & CoT", "Writing Style", "Toggles & Add-ons", "Blocks", "Notebook"]);
+    assert.deepEqual(under("Long stories"), ["Memory", "Knowledgebase", "Focus", "Plot"]);
+    assert.deepEqual(under("Helpers"), ["Helper", "NPC Bank", "Ban List", "Story Director"]);
+    // Layout only: every title a setting goes by is still a tab's title, and each index still finds its tab.
+    const titles = new Set(tabs.tabsUI.map(t => t.title));
+    assert([...Object.keys(sync.TAB_SYNC_KEYS), ...sync.TABS_ALREADY_GLOBAL].every(t => titles.has(t)), `no tab was renamed: ${[...Object.keys(sync.TAB_SYNC_KEYS), ...sync.TABS_ALREADY_GLOBAL].filter(t => !titles.has(t))}`);
+    assert(layout.filter(e => e.tab).every(e => tabs.tabsUI[e.index] === e.tab) && tabs.tabsUI.every(t => typeof t.render === "function" && t.icon && t.sub), "each dot's index is its tab's place in the list, and every tab still has its page");
+    assert(tabs.tabLabel(tabs.tabsUI.find(t => t.title === "BLOCKS")) === "Blocks" && tabs.tabLabel(tabs.tabsUI.find(t => t.title === "Focus")) === "Focus" && tabs.tabLabel(null) === "", "a label where the title shouts, the title otherwise");
+
+    chat.length = 0;
+    q.blockStack.order = JSON.parse(keep.order); meguminSyncLegacyBlockIds();
+    Object.assign(q, { mode: keep.mode, model: keep.model, cotEnabled: keep.cot });
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+}
+console.log("80 ok the story's state by hand, and a tidier window (the blocks editor: an envelope apart and back, a repeating block, a reply given new blocks in place of its own, of cut-off ones or at its end; who is in the scene; a character taken out of the scene list and the World State's cast, noted off-screen, their bonds kept, the compact form; someone brought in; the blocks as they stand from the latest reply, a block it left out, a reply that wrote none; the edit saved under the latest reply and handed to the next prompt, nothing saved for a reply that changed; the dock: three headings, every tab once, no title renamed)");
+
 console.log("\nALL FORK CHECKS PASSED");

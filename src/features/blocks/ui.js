@@ -27,6 +27,7 @@ import { meguminSlotByTrigger } from "../../../data/slots.js";
 import { hasSharedFragment } from "../../core/sharedFragments.js";
 import { castMemoryOn } from "../../vcrp/castMemory.js";
 import { blockRepairOn, setBlockRepairOn } from "../../vcrp/blockRepair.js";
+import { openBlocksEditor } from "../../vcrp/blocksEditor.js";
 import { notebookOn } from "../../vcrp/notebook/index.js";
 
 // Mirrors customBadge() in ui/tabs/globalAndBlocks.js: a block whose text was
@@ -107,6 +108,20 @@ export function renderBlocksTab(c) {
         </div>`);
     repair.find("#blk_repair_toggle").on("click", () => { setBlockRepairOn(!blockRepairOn()); saveProfileToMemory(); renderBlocksTab(c); });
     left.append(repair);
+    // VCRP: the story's state by hand (vcrp/blocksEditor.js): the same editor the pencil on a
+    // reply's blocks card opens.
+    const editor = $(`
+        <div class="blk-sub" style="margin-bottom:10px;">
+            <div class="blk-sub-row">
+                <div>
+                    <div class="blk-sub-label">Edit the blocks as they stand</div>
+                    <div class="blk-sub-desc">The blocks under your latest reply are the state the next reply is handed, so a mistake in them is copied forward. Fix it here: each block in a box of its own, and one tap to take a character out of the scene. Saved under your latest reply. The pencil on a reply's blocks card opens the same editor.</div>
+                </div>
+                <button type="button" class="ps-modern-btn secondary" id="blk_edit_state" style="font-size:0.72rem; flex-shrink:0;"><i class="fa-solid fa-pen-to-square"></i> Edit</button>
+            </div>
+        </div>`);
+    editor.find("#blk_edit_state").on("click", () => { openBlocksEditor(); });
+    left.append(editor);
     // VCRP: the scene list (Megumin Suite V11's 04/11 update, vcrp/scene.js).
     const sceneOn = sceneListOn();
     const scene = $(`

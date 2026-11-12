@@ -25,7 +25,9 @@
 // voice anchors in the request, the drift meter calling the audit, its correction applying
 // itself, the Focus tab and Undo), s_plot (the reminder of a stale thread, an arc with its
 // opening move, a beat firing by itself, three pitches from the Plot tab, VCRP Quick, Story
-// Memory closing an arc).
+// Memory closing an arc), s_layout (the blocks editor from the pencil on a reply's card, and
+// the settings window as a phone's bar with its all-tabs menu and as a desktop rail; give it a
+// folder to get screenshots).
 import { spawn } from "node:child_process";
 import http from "node:http";
 import fs from "node:fs";

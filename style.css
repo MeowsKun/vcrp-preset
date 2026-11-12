@@ -4324,3 +4324,93 @@
     cursor: pointer;
 }
 .vcrp-finish-note.cut { border-left-color: #94a3b8; color: #cbd5e1; background: rgba(148, 163, 184, 0.08); }
+
+
+/* ── VCRP: the dock grouped under headings (10.0.0-vcrp.22) ──────────────────
+   Layout only: the same tabs, under "Story", "Long stories" and "Helpers"
+   (after Megumin Suite's 1 Nov dock). The headings' essential look is also set
+   on the elements themselves (ui/tabs.js), for a browser that kept an older
+   copy of this file; what is here is the part that needs :hover and media. */
+
+/* A heading in the rail: a hairline while the rail is shut, its word once it opens. */
+.dock-group-label { display: flex; align-items: center; position: relative; }
+.dock-group-label::before {
+  content: ""; position: absolute; left: 16px; right: 16px; top: 50%; height: 1px;
+  background: rgba(255, 255, 255, 0.1); transition: opacity 0.2s;
+}
+.dock-group-label span { opacity: 0; transition: opacity 0.2s; position: relative; }
+.dock:hover .dock-group-label span { opacity: 1; transition-delay: 0.1s; }
+.dock:hover .dock-group-label::before { opacity: 0; }
+
+/* The all-tabs button belongs to the phone's bar. */
+.dock-menu { display: none; }
+
+/* Fifteen tabs and three headings: shorter rows, and the rail scrolls (no bar
+   shown) when the window is shorter still, instead of cutting the last tabs off. */
+@media (min-width: 769px) {
+  .dock { overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
+  .dock::-webkit-scrollbar { width: 0; height: 0; }
+  .dock-icon { height: 42px; margin-bottom: 3px; flex-shrink: 0; }
+}
+
+@media (max-width: 768px) {
+  /* First in the bar: every tab at once, under its heading. */
+  .dock-menu {
+    display: flex !important;
+    color: var(--text-main, #e8e8e8) !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+  }
+  /* The headings are not drawn in the bar; a wider gap says where a group starts. */
+  .dock-group-label + .dock-icon { margin-left: 10px !important; }
+}
+
+/* The rail on a laptop-sized window: tighter rows, so fifteen tabs and three
+   headings fit a 768px-high screen without scrolling. */
+@media (min-width: 769px) {
+  .dock-icon { height: 40px; margin-bottom: 2px; }
+  /* Global Settings stays in sight at the foot of the rail even when the rest scrolls. */
+  .dock > .sidebar-step:last-child {
+    position: sticky; bottom: 0; z-index: 1;
+    margin-bottom: 8px !important;
+    background: rgba(18, 18, 20, 0.96);
+  }
+}
+@media (min-width: 769px) and (max-height: 860px) {
+  .dock { padding-top: 10px; }
+  .dock-icon { height: 31px; margin-bottom: 2px; font-size: 0.82rem; }
+  .dock-icon i { font-size: 1rem; }
+  .dock-group-label { height: 12px !important; margin: 4px 0 2px !important; }
+}
+
+/* ── VCRP: a button with no variant named ─────────────────────────────────
+   .ps-modern-btn sets a shape and nothing else; "primary" and "secondary" give
+   it its colours. One written with neither fell back to the browser's own
+   button (white, with the page's pale text on it: unreadable). It gets the
+   amber "do this" look. */
+.ps-modern-btn:not(.primary):not(.secondary) {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.ps-modern-btn:not(.primary):not(.secondary):hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.24);
+  border-color: rgba(245, 158, 11, 0.6);
+}
+
+/* ── VCRP: description and label text, wherever a panel puts them ──────────
+   They were only styled inside a settings row. Everywhere else (most of the
+   Memory, Focus, Plot, Notebook and Helper panels) they came out as large
+   white body text, which made a phone's screen of settings mostly small print
+   shouted. One look for both, in a row or out of it. */
+.ps-modern-modal .set-desc { font-size: 0.74rem; line-height: 1.5; color: var(--text-muted); }
+.ps-modern-modal .set-label { font-size: 0.85rem; font-weight: 600; color: var(--text-main); }
+
+/* ── VCRP: a tab's header on a phone ───────────────────────────────────────
+   The title block and the badge shared one row at every width, so a long badge
+   ("Same for every character") squeezed the tab's own description into a
+   column a few words wide. On a narrow screen the badge drops under the title
+   when the two do not fit side by side. */
+@media (max-width: 768px) {
+  .mtab-header { flex-wrap: wrap; gap: 10px; }
+  .mtab-header-left { flex: 1 1 240px; min-width: 0; }
+}

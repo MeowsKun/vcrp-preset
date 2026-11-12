@@ -94,6 +94,28 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   and **bond milestones** kept as facts, both read from the blocks with no call; and the helper's
   **recall pick**, so an old chapter comes back when the scene returns to it in other words. Any
   engine. No preset re-import needed.
+- **The blocks editor** (10.0.0-vcrp.22; `src/vcrp/blocksEditor.js`): the blocks under your latest
+  reply are the state the next reply is handed, so a mistake in them is copied forward (someone
+  still listed who left an hour ago, a number that jumped). The pencil on a reply's blocks card,
+  or *Edit the blocks as they stand* in the BLOCKS tab, opens them for editing: each block in a
+  box of its own (World State, Bonds, the sheets, the scene list, your custom blocks), one tap to
+  **take a character out of the scene** (off the scene list, out of the World State's cast and
+  noted off-screen there; their Bonds line stays) and a box to bring one in. Saving writes them
+  under your latest reply, and the next prompt carries them. What opens is the blocks as they
+  stand: a block the latest reply left out is shown from where it was last written whole, and
+  when the latest reply wrote none, the ones before it. No model call. Megumin Suite keeps a
+  state store with a journal for this; VCRP reads the chat, so the chat is where the edit goes.
+- **A tidier settings window** (10.0.0-vcrp.22; layout only, nothing moved between tabs and no
+  setting renamed): the tabs sit under three headings, after Megumin Suite's 1 Nov dock:
+  **Story** (Presets & CoT, Writing Style, Toggles & Add-ons, Blocks, Notebook), **Long stories**
+  (Memory, Knowledgebase, Focus, Plot) and **Helpers** (Helper, NPC Bank, Ban List, Story
+  Director), with Model Setup first and Global Settings pinned last. On a phone the bar of pills
+  starts with **All tabs**: every tab under its heading in one list, and the bar scrolls to the
+  tab you open. On a desktop the rail fits a 768-pixel-high window and scrolls if it must, with
+  Global Settings always in sight. Also: description text is small and muted in every panel (it
+  was only styled inside a settings row, and came out as large white text everywhere else), a
+  tab's badge drops under its title on a narrow screen instead of squeezing it, and a button
+  with no variant named is no longer drawn as the browser's own white button.
 - **The Plot tab** (10.0.0-vcrp.21; details under *The plot in your hands* below): **arcs** (a
   genre, a tone and a premise for the stretch of the story that starts now, written by you or
   picked from three pitches, with Story Memory closing the arc that ends), a **beat queue** (plot
@@ -128,9 +150,10 @@ KazumaONIISAN**, used under [CC BY-NC 4.0](https://creativecommons.org/licenses/
   Room** (each with its thinking and a Thinking Cap) with V11's Author's Notebook, **Adapted**
   versions of both (VCRP's writing rules on V11), and the two **Pura Director** engines (below).
 - **Presets:** VCRP V10 Universal, VCRP V10 Megumin Original, VCRP V11 Megumin Original.
-- **Tabs:** Presets & CoT (with Story Config), Writing Style (+ Anime Mode), Global Toggles & Add-ons,
-  Blocks, Story Director, Dynamic Ban List, Focus, NPCs Bank, Memory (Story Memory), Knowledgebase,
-  Global Settings, plus Dev Mode.
+- **Tabs:** Model Setup; under *Story*: Presets & CoT (with Story Config), Writing Style (+ Anime
+  Mode), Global Toggles & Add-ons, Blocks, Notebook; under *Long stories*: Memory (Story Memory),
+  Knowledgebase, Focus, Plot; under *Helpers*: Helper, NPCs Bank, Dynamic Ban List, Story
+  Director; Global Settings; plus Dev Mode.
 - **Add-ons:** Bold NPCs, Immersive HTML, Dialogue Colors, Dialogue & Narration tags, Gemini JB
   (Megumin Suite V11's, for Gemini's content filter).
 

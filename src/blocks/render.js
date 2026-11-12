@@ -443,6 +443,21 @@ export function buildBlocksCard(blocks, opts = {}) {
         // Shuts everything, the resting block included.
         select(current === null ? restingKey : null);
     });
+    // VCRP: the story's state by hand (vcrp/blocksEditor.js). A pencil beside the fold control
+    // opens the editor on the blocks as they stand. Its look is set here, not in style.css: a
+    // phone that kept an older cached stylesheet after an update would draw it unstyled.
+    if (typeof opts.onEdit === "function" && !opts.preview) {
+        const edit = doc.createElement("button");
+        edit.type = "button";
+        edit.className = "meg-blocks-edit";
+        edit.title = "Edit the blocks as they stand (what the next reply is handed)";
+        edit.setAttribute("aria-label", edit.title);
+        edit.style.cssText = "margin-left:auto; padding:9px 13px; cursor:pointer; background:transparent; border:0; border-left:1px solid var(--border-color, rgba(255,255,255,.1)); color:var(--text-muted, #9aa0a6); font-size:.7rem; width:auto;";
+        edit.innerHTML = `<i class="fa-solid fa-pen"></i>`;
+        edit.addEventListener("click", e => { e.stopPropagation(); opts.onEdit(); });
+        tabs.appendChild(edit);
+        chev.style.marginLeft = "0";
+    }
     tabs.appendChild(chev);
 
     card.appendChild(tabs);

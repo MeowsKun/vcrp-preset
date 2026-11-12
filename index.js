@@ -127,6 +127,7 @@ import { vcrpInstallSmartRecall, forgetRecallPick } from "./src/vcrp/memory/smar
 import { forgetVoiceReading } from "./src/vcrp/voice.js";
 import { forgetThreadReading } from "./src/vcrp/threads.js";
 import { vcrpBeatsOnReply } from "./src/vcrp/beats.js";
+import { onBlocksEdited } from "./src/vcrp/blocksEditor.js";
 import { vcrpInstallStallNotice } from "./src/vcrp/streamStall.js";
 import { vcrpCacheCheckReset } from "./src/vcrp/cacheCheck.js";
 import { vcrpOn, setVcrpOn, whenOn, drawPowerState } from "./src/vcrp/power.js";
@@ -733,6 +734,8 @@ jQuery(async () => {
         ].forEach(evt => {
             if (evt) eventSource.on(evt, () => meguminScheduleBlocksRefresh(120));
         });
+        // VCRP: blocks edited by hand (vcrp/blocksEditor.js) redraw their message, card and all.
+        onBlocksEdited(() => meguminScheduleBlocksRefresh(60));
 
         // ── FLUSH PENDING SAVES ON TAB HIDE / PAGE CLOSE ──
         // visibilitychange fires reliably on tab switch AND on close (before pagehide).

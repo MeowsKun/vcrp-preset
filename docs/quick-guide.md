@@ -528,3 +528,34 @@ keeps count for it. The tab shows each one with its real age: *open 31 replies, 
 - **Never remind** sets one aside.
 
 No call of its own, no cost beyond the reminder's few dozen tokens on the replies it goes out.
+
+---
+
+## 16. Fixing the story's state by hand, and a tidier window
+
+**The blocks editor** (10.0.0-vcrp.22). The blocks under your latest reply (World State, Bonds,
+the sheets, the scene list) are what the next reply starts from. When one of them is wrong, the
+mistake is copied forward: someone still "in the scene" an hour after they left, a meter that
+jumped, an outfit that never changed back. Now you can fix it in a few taps.
+
+1. Tap the **pencil** at the right end of the blocks card under a reply. (Or VCRP → **Blocks** →
+   *Edit the blocks as they stand*.)
+2. Each block is in a box of its own. Change what is wrong.
+3. **In the scene** lists who is there. **Remove** takes someone off the scene list and out of
+   the World State's cast, and notes them as off-screen. Their Bonds line stays: feelings don't
+   leave with them. *Bring someone in* adds a name to the scene list.
+4. **Save**. The blocks are written under your latest reply, and the next reply starts from
+   them.
+
+Nothing is sent to the model for this. If your latest reply came without blocks, the editor shows
+the ones from the reply before it and saves them under the latest.
+
+**A tidier settings window.** Nothing moved from one tab to another; the tabs are just grouped:
+
+- **Story:** Presets & CoT, Writing Style, Toggles & Add-ons, Blocks, Notebook.
+- **Long stories:** Memory, Knowledgebase, Focus, Plot.
+- **Helpers:** Helper, NPC Bank, Ban List, Story Director.
+
+On a phone, the bar at the bottom starts with **All tabs**: one list of every tab under its
+heading, so you don't have to swipe through fifteen pills. The small print under each setting is
+small and grey again on every tab, so more fits on a screen.

@@ -83,7 +83,7 @@ function arcPanel() {
                     <div class="set-label" style="margin:8px 0 4px;">Let the model pitch it</div>
                     <textarea id="plot_new_wish" class="ps-modern-input" rows="2" style="width:100%; background:rgba(0,0,0,0.2); font-size:0.78rem;" placeholder="Optional: what you want from it. &quot;Something with Jonah's debts. Less romance for a while.&quot;">${esc(form.wish)}</textarea>
                     <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">
-                        <button id="plot_pitch" class="ps-modern-btn" style="font-size:0.75rem;" ${arcPitchRunning() ? "disabled" : ""}><i class="fa-solid fa-lightbulb"></i> ${a.pitches.length ? "Pitch three more" : "Pitch three arcs"}</button>
+                        <button id="plot_pitch" class="ps-modern-btn secondary" style="font-size:0.75rem; color:#fbbf24; border-color:rgba(245,158,11,0.45);" ${arcPitchRunning() ? "disabled" : ""}><i class="fa-solid fa-lightbulb"></i> ${a.pitches.length ? "Pitch three more" : "Pitch three arcs"}</button>
                         <span id="plot_pitch_cost" class="set-desc">${esc(estimate)} A one-off background call: no ceiling applies to it.</span>
                     </div>
                     <div id="plot_pitches">${pitches}${a.pitches.length ? `<div style="margin-top:6px;"><button id="plot_pitch_clear" class="ps-modern-btn secondary" style="font-size:0.7rem;">Throw these away</button></div>` : ""}</div>
@@ -115,7 +115,7 @@ function beatPanel() {
             <input class="ps-modern-input plot-beat-text" data-id="${esc(b.id)}" value="${esc(b.text)}" style="width:100%; font-size:0.78rem;">
             <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:4px;">
                 <span class="set-desc" style="flex:1; min-width:120px;">${b.in === null ? "Waits for a tap" : b.in === 0 ? "Due: goes with your next message once the box is free" : `Fires by itself in ${count(b.in, "reply")}`}</span>
-                <button class="ps-modern-btn plot-beat-fire" data-id="${esc(b.id)}" style="font-size:0.7rem;" title="Puts it in VCRP Quick's Next reply only box"><i class="fa-solid fa-play"></i> With the next reply</button>
+                <button class="ps-modern-btn secondary plot-beat-fire" data-id="${esc(b.id)}" style="font-size:0.7rem; color:#fbbf24; border-color:rgba(245,158,11,0.45);" title="Puts it in VCRP Quick's Next reply only box"><i class="fa-solid fa-play"></i> With the next reply</button>
                 <button class="ps-modern-btn secondary plot-beat-up" data-id="${esc(b.id)}" style="padding:2px 8px;" ${i === 0 ? "disabled" : ""} title="Earlier"><i class="fa-solid fa-arrow-up"></i></button>
                 <button class="ps-modern-btn secondary plot-beat-down" data-id="${esc(b.id)}" style="padding:2px 8px;" ${i === q.waiting.length - 1 ? "disabled" : ""} title="Later"><i class="fa-solid fa-arrow-down"></i></button>
                 <button class="ps-modern-btn secondary plot-beat-drop" data-id="${esc(b.id)}" style="padding:2px 8px; color:#ef4444;" title="Take it out of the queue"><i class="fa-solid fa-xmark"></i></button>
@@ -129,7 +129,7 @@ function beatPanel() {
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
                 <input id="plot_beat_new" class="ps-modern-input" placeholder="e.g. The landlord finds the letter." style="flex:1; min-width:160px; font-size:0.78rem;">
                 <input id="plot_beat_after" type="number" class="ps-modern-input" value="0" min="0" max="500" title="Replies from now until it fires by itself. 0: only on a tap." style="width:70px; text-align:center; font-size:0.78rem;">
-                <button id="plot_beat_add" class="ps-modern-btn" style="font-size:0.72rem;"><i class="fa-solid fa-plus"></i> Queue</button>
+                <button id="plot_beat_add" class="ps-modern-btn secondary" style="font-size:0.72rem;"><i class="fa-solid fa-plus"></i> Queue</button>
             </div>
             <div class="set-desc" style="margin:4px 0 8px;">The number: replies from now until it fires by itself. 0 keeps it for a tap.</div>
             <div id="plot_beat_list">${rows || `<div class="set-desc">Nothing queued.</div>`}</div>

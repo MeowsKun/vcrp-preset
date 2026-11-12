@@ -15,6 +15,7 @@ import { meguminRenderRegistry, meguminStatFieldMap } from "./registry.js";
 // nothing under features/npc/ imports the block card.
 import { npcDecorateUpdatePane } from "../npc/updateCard.js";
 import { notebookChangesAt } from "../../vcrp/notebook/index.js";
+import { openBlocksEditor } from "../../vcrp/blocksEditor.js";
 import { renderNotebookApplied } from "../../vcrp/notebook/card.js";
 
 // ── Clicking a choice ────────────────────────────────────────────────────────
@@ -127,6 +128,8 @@ export function meguminDecorateMessageBody(bodyEl, mesText, msgIndex) {
     try {
         applyBlocksToMessage(bodyEl, mesText, meguminRenderRegistry(), {
             onChoice: meguminApplyChoice,
+            // VCRP: the pencil on the card opens the editor on the blocks as they stand.
+            onEdit: () => openBlocksEditor(),
             shouldAnimate: meguminAnimateGate(msgIndex),
             statFields: meguminStatFieldMap(),
             debug: Boolean(window.MEGUMIN_BLOCKS_DEBUG)

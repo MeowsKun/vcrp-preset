@@ -149,12 +149,14 @@ function openFindings(id, doc) {
     const last = id === chat.length - 1;
     const dlg = doc.createElement("dialog");
     dlg.className = "vcrp-text-dialog vcrp-continuity-dialog";
+    // Its own look, set here: a dialog is drawn outside the page, and an older cached style.css knows nothing of it.
+    dlg.style.cssText = "padding:14px; border:1px solid #27272a; border-radius:14px; background:#18181b; color:#f4f4f5; max-width:94vw; box-sizing:border-box;";
     dlg.innerHTML = `<div style="display:flex; flex-direction:column; gap:10px; max-width:min(92vw, 560px);">
         <b>This reply may contradict the story</b>
         <div style="font-size:0.8rem; line-height:1.5;">${note.findings.map(f => `<div style="margin-bottom:8px;">The reply: <i>"${escape(f.quote)}"</i><br>Established: ${escape(f.fact)}</div>`).join("")}</div>
         <div style="font-size:0.72rem; opacity:.75;">Found by the helper model reading the reply against the Canon sheet and the scene before it. It can be wrong.</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
-            ${last ? `<button type="button" class="ps-modern-btn vcrp-cont-fix" title="Swipes this reply, with the established facts as that swipe's direction">Swipe with the correction</button>` : ""}
+            ${last ? `<button type="button" class="ps-modern-btn primary vcrp-cont-fix" title="Swipes this reply, with the established facts as that swipe's direction">Swipe with the correction</button>` : ""}
             <button type="button" class="ps-modern-btn secondary vcrp-cont-fine" title="Takes the line away; the reply stays as it is">It is fine</button>
             <button type="button" class="ps-modern-btn secondary vcrp-cont-close">Close</button>
         </div></div>`;

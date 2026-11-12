@@ -39,7 +39,7 @@ export function renderCanonPanel($c, rerender) {
         </div>
         <div style="display:flex; gap:6px; margin-top:8px;">
             <input id="vcanon_new" class="ps-modern-input" placeholder="A fact that never changes: Mara is Bob's older sister" style="flex:1; min-width:0; font-size:0.76rem;">
-            <button id="vcanon_add" class="ps-modern-btn" style="font-size:0.72rem;"><i class="fa-solid fa-plus"></i> Add</button>
+            <button id="vcanon_add" class="ps-modern-btn secondary" style="font-size:0.72rem;"><i class="fa-solid fa-plus"></i> Add</button>
         </div>
         ${offers.length ? `<div style="font-size:0.72rem; opacity:.8; margin:10px 0 4px;">From this chat's facts (the pinned ones and those that have stood longest). Added lines are pinned in the fact ledger too, so no summary rewords them without your review.</div>
         <div style="display:flex; flex-direction:column; gap:4px;">
