@@ -114,12 +114,22 @@ const storyMessages = () => (((getContext() || {}).chat) || []).filter(m => !m.i
 const now = () => Date.now();
 const save = async () => { try { await saveMetadata(); } catch (e) { console.warn("[VCRP] Focus: could not save the chat's state:", e); } };
 
-/** Replies written since the last audit (all of them if there has been none). */
+/**
+ * Replies written since the last audit (all of them if there has been none). The audit marks
+ * the newest reply it read, and a reply is written again all the time: a swipe, a regenerate
+ * or a Continue gives it another text or another time, and the mark no longer finds it. The
+ * message that reply answered still marks the place then (`anchorBefore`), and the reply after
+ * it counts as read: without it every swipe of that reply called another audit.
+ */
 export function repliesSinceAudit() {
     const msgs = storyMessages();
     const st = peekFocusState();
+    const replies = list => list.filter(m => !m.is_user).length;
     const at = st && st.anchor ? resolveAnchor(msgs, st.anchor) : -1;
-    return msgs.slice(at + 1).filter(m => !m.is_user).length;
+    if (at >= 0) return replies(msgs.slice(at + 1));
+    const before = st && st.anchor && st.anchorBefore ? resolveAnchor(msgs, st.anchorBefore) : -1;
+    if (before >= 0) return Math.max(0, replies(msgs.slice(before + 1)) - 1);
+    return replies(msgs);
 }
 
 // ── What an audit reads ──────────────────────────────────────────────────────
@@ -267,6 +277,11 @@ export async function runFocusAudit() {
     const identity = meguminActiveDataIdentity();
     const msgs = storyMessages();
     const mark = anchorOf(msgs, msgs.length - 1);
+    // The reader's message before the newest reply: where the audit ended, however often that
+    // reply is written again (repliesSinceAudit).
+    let lastUser = msgs.length - 1;
+    while (lastUser > 0 && !msgs[lastUser].is_user) lastUser--;
+    const markBefore = lastUser > 0 && msgs[lastUser].is_user && msgs.slice(lastUser + 1).filter(m => !m.is_user).length === 1 ? anchorOf(msgs, lastUser) : null;
     auditing = true;
     let raw = "";
     try {
@@ -298,6 +313,7 @@ export async function runFocusAudit() {
     }
     st.failures = 0;
     st.anchor = mark;
+    if (markBefore) st.anchorBefore = markBefore; else delete st.anchorBefore;
     st.audits = (st.audits || 0) + 1;
     st.lastAuditAt = now();
     // What the drift meter read as this audit looked: a character it read as drifting does not

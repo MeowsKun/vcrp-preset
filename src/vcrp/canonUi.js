@@ -58,8 +58,13 @@ export function renderCanonPanel($c, rerender) {
         await changed();
     });
     $c.find("#vcanon_new").on("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $c.find("#vcanon_add").trigger("click"); } });
+    // A line reworded is saved where it stands: redrawing the tab here would empty the box the
+    // reader has just moved on to (the next line, the new one) and close the phone's keyboard.
+    // Only a line emptied, which takes it off the sheet, redraws.
     $c.find(".vcanon-line").on("change", async function () {
-        if (editCanon(String($(this).data("id")), String($(this).val() || ""))) await changed();
+        const text = String($(this).val() || "");
+        if (!editCanon(String($(this).attr("data-id")), text)) return;
+        if (text.trim()) await save(); else await changed();
     });
     $c.find(".vcanon-remove").on("click", async function () {
         if (removeCanon(String($(this).data("id")))) await changed();

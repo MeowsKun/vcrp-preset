@@ -15,6 +15,7 @@ import { extensionName } from "../core/constants.js";
 import { currentMemoryBudget, promptSpendSplit, estimateTokens, memoryNow } from "./memory/index.js";
 import { isCold } from "./memory/window.js";
 import { vcrpGenerationKind, vcrpGenerationRaw } from "./generation.js";
+import { isStoryReply } from "./storyReplies.js";
 
 const META = "vcrp_cost";        // { lastRequestAt }: this chat's cache clock, for warm or cold
 const BADGE = "vcrp-cost-badge";
@@ -189,7 +190,8 @@ const median = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x
  * @returns {null | {replies, total, mean, median, max, overGoal, overCeiling, billed, hits, cachedShare, output, reasoning, warmMean, coldMean}}
  */
 export function costReport(chat, { goal = 0, ceiling = 0 } = {}) {
-    const rows = (Array.isArray(chat) ? chat : []).map(m => (m && !m.is_user && !m.is_system && m.extra && m.extra.vcrp_cost) || null)
+    // A reply the reader has hidden since was paid for like any other: it stays in the count.
+    const rows = (Array.isArray(chat) ? chat : []).map(m => (isStoryReply(m) && m.extra && m.extra.vcrp_cost) || null)
         .filter(c => c && typeof c.total === "number");
     if (!rows.length) return null;
     const sum = (list, f) => list.reduce((n, x) => n + (f(x) || 0), 0);

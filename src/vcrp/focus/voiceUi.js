@@ -108,10 +108,12 @@ export function wireVoicePanel(c, rerender) {
     // A redraw closes every <details>: the ones the reader had open are opened again.
     const open = () => c.find(".focus-voice-char[open]").map(function () { return String($(this).attr("data-key")); }).get();
     const redraw = keep => { rerender(); keep.forEach(k => c.find(".focus-voice-char").filter(function () { return String($(this).attr("data-key")) === k; }).attr("open", "")); };
+    // `fn` answers false when it changed nothing (a box left empty): then nothing is redrawn,
+    // and what the reader had typed so far stays in its box.
     const act = fn => async function (e) {
         if (e && e.preventDefault) e.preventDefault();
         const keep = open();
-        await fn($(this));
+        if ((await fn($(this))) === false) return;
         redraw(keep);
     };
     c.find("#focus_voice_anchors").on("change", function () { setting("anchors", $(this).is(":checked")); });
@@ -123,21 +125,25 @@ export function wireVoicePanel(c, rerender) {
     const addFor = async key => {
         const $in = c.find(".focus-voice-line").filter(function () { return String($(this).attr("data-key")) === key; });
         const text = String($in.val() || "");
-        if (text.trim()) await addOwnLine(key, text, String($in.attr("data-name") || ""));
+        if (!text.trim()) return false;
+        await addOwnLine(key, text, String($in.attr("data-name") || ""));
+        return true;
     };
     c.find(".focus-voice-add").on("click", act(async $b => addFor(String($b.attr("data-key")))));
     c.find(".focus-voice-line").on("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); act(async $i => addFor(String($i.attr("data-key")))).call(this, e); } });
     c.find(".focus-voice-off").on("click", act(async $b => setVoiceOff(String($b.attr("data-key")), $b.attr("data-off") === "1", String($b.attr("data-name") || ""))));
     c.find(".focus-voice-now").on("click", act(async $b => {
-        if (!confirm("Take this character's voice from their latest lines on?\n\nUse it when the story has changed them for good: their anchors and the drift meter then start from how they speak now, not from their first lines. You can go back.")) return;
+        if (!confirm("Take this character's voice from their latest lines on?\n\nUse it when the story has changed them for good: their anchors and the drift meter then start from how they speak now, not from their first lines. You can go back.")) return false;
         await acceptVoiceNow(String($b.attr("data-key")));
+        return true;
     }));
     c.find(".focus-voice-first").on("click", act(async $b => resetVoiceStart(String($b.attr("data-key")))));
     c.find(".focus-voice-unhide").on("click", act(async $b => showHiddenLines(String($b.attr("data-key")))));
     c.find("#focus_voice_new_add").on("click", act(async () => {
         const name = String(c.find("#focus_voice_new_name").val() || "").trim();
         const line = String(c.find("#focus_voice_new_line").val() || "").trim();
-        if (!name || !line) { if (typeof toastr !== "undefined") toastr.info("Give a name and a line.", "VCRP Focus"); return; }
+        if (!name || !line) { if (typeof toastr !== "undefined") toastr.info("Give a name and a line.", "VCRP Focus"); return false; }
         await addOwnLine("", line, name);
+        return true;
     }));
 }

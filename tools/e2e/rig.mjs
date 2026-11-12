@@ -121,7 +121,8 @@ export function startMock() {
                     if (b.stream && !task && state.queue.length) { entry.story = true; entry.played = state.queue.shift(); return await play(entry.played, res); }
                     if (b.stream) return await play(script({ content: "OK." }), res);
                     let content = "OK.";
-                    try { if (typeof state.aside === "function") content = String(state.aside(b) ?? "OK."); } catch (e) { content = "OK."; }
+                    // (awaited: a scenario may answer late, as a model that takes its time does)
+                    try { if (typeof state.aside === "function") content = String((await state.aside(b)) ?? "OK."); } catch (e) { content = "OK."; }
                     entry.answered = content;
                     return json(res, { id: `gen-e2e-${++genSeq}`, provider: "Google AI Studio", model: MODEL.id, choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop", native_finish_reason: "STOP" }], usage: { prompt_tokens: 100, completion_tokens: 2, total_tokens: 102 } });
                 }

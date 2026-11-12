@@ -205,8 +205,25 @@ for (let k = 0; k < memCount; k++) {
     $("#ps_stage_content").find("#vmem_ceiling").val("0").trigger("change");
     check((((extension_settings.VCRP || {}).globalSettings || {}).memoryBudget || {}).ceilingCost === 0, "a ceiling of 0 (off) is not saved");
     delete extension_settings.VCRP.globalSettings.memoryBudget.ceilingCost;
+    // The Canon sheet (drawn with Story Memory off too): a line added, reworded where it stands
+    // (what is half typed in the box for a new one stays), emptied to take it off.
+    {
+        const canon = await imp("src/vcrp/canon.js");
+        const tick = () => new Promise(r => setTimeout(r, 5));
+        const panel = () => $("#ps_stage_content").find(".vcrp-canon");
+        check(panel().length === 1 && /Canon sheet \(0\)/.test(panel().text()), "the Canon sheet is not drawn");
+        panel().find("#vcanon_new").val("Mara is Bob's older sister.");
+        panel().find("#vcanon_add").trigger("click"); await tick();
+        check(canon.canonItems().length === 1 && panel().find(".vcanon-line").length === 1 && /Canon sheet \(1\)/.test(panel().text()), "a line cannot be added to the sheet");
+        panel().find("#vcanon_new").val("Half typed");
+        panel().find(".vcanon-line").first().val("Mara is Bob's elder sister.").trigger("change"); await tick();
+        check(canon.canonItems()[0].text === "Mara is Bob's elder sister." && panel().find("#vcanon_new").val() === "Half typed", "rewording a line does not save it, or wipes the box for a new one");
+        panel().find(".vcanon-line").first().val("").trigger("change"); await tick();
+        check(canon.canonItems().length === 0 && panel().find(".vcanon-line").length === 0, "a line emptied is not taken off the sheet");
+        clicks += 4;
+    }
     clicks += 5;
-    console.log("  ✓ Reply length (Story Memory off): drawn, and each control reaches its setting");
+    console.log("  ✓ Reply length (Story Memory off): drawn, and each control reaches its setting; the Canon sheet: a line added, reworded in place, emptied");
 }
 // A custom price typed box by box, the way a phone does it: the first box keeps what was typed
 // while the next is empty; with input and output both in, it is saved for this model only, a
@@ -396,7 +413,10 @@ for (let k = 0; k < memCount; k++) {
     check(!voice.voiceCharacters()[0].anchors.some(a => !a.own && /Tch/.test(a.text)), "her anchors still come from her first lines");
     row().find(".focus-voice-first").trigger("click"); await tick();
     check(voice.voiceCharacters()[0].since === false, "Back to their first lines does not go back");
+    // Add with the line still to write: said, and the name typed so far stays in its box.
     box.find("#focus_voice_new_name").val("Jonah");
+    box.find("#focus_voice_new_add").trigger("click"); await tick();
+    check(box.find("#focus_voice_new_name").val() === "Jonah" && !voice.voiceCharacters().some(c => c.name === "Jonah"), "Add with one box empty wipes what was typed in the other");
     box.find("#focus_voice_new_line").val("Boats don't lie to you, people do.");
     box.find("#focus_voice_new_add").trigger("click"); await tick();
     check(voice.voiceCharacters().some(c => c.name === "Jonah" && c.total === 0 && c.anchors[0].own), "a character with no lines yet cannot be given one");
@@ -496,8 +516,12 @@ for (let k = 0; k < memCount; k++) {
     check(BT.beatQueue().waiting.length === 2 && /Waits for a tap/.test(flat(box.find(".plot-beat").eq(0))) && /Fires by itself in 3 replies/.test(flat(box.find(".plot-beat").eq(1))), `two beats queued: ${JSON.stringify(BT.beatQueue().waiting)}`);
     box.find(".plot-beat-down").first().trigger("click"); await tick();
     check(BT.beatQueue().waiting[0].text === "Jonah's boat is found empty.", "a beat cannot be moved");
+    // Rewording a beat saves it where it stands: what is half typed in the box for a new one stays.
+    box.find("#plot_beat_new").val("Half typed, not queued yet");
     box.find(".plot-beat-text").first().val("Jonah's boat drifts in empty.").trigger("change"); await tick();
     check(BT.beatQueue().waiting[0].text === "Jonah's boat drifts in empty.", "a beat cannot be reworded");
+    check(box.find("#plot_beat_new").val() === "Half typed, not queued yet", "rewording a beat wipes the box for a new one");
+    box.find("#plot_beat_new").val("");
     box.find(".plot-beat-fire").first().trigger("click"); await tick();
     check(shot.oneShot().text === "Jonah's boat drifts in empty." && BT.beatQueue().next && /Going with your next message/.test(flat(box.find("#plot_beat_panel"))), "a beat is not fired into the box");
 

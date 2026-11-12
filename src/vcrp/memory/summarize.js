@@ -192,6 +192,9 @@ export async function summarizeNext({ catchUp = false } = {}) {
             gist: result.gist, chapter: result.chapter, ops: result.ops, skipped: result.skipped,
             arc: fold.length ? result.arc : "", foldIds: fold.length && result.arc ? fold.map(c => c.id) : [],
             checked: verdict.verdict, created: memoryNow(),
+            // Read from the chapter's own messages now, while their places are known: a chapter may
+            // wait for review, and by then messages before it may be deleted or hidden.
+            when: storyWhenAt(chat, span.end - 1), bonds: bondReadings(chat, span.start, span.end - 1),
         };
         st.summaryFailures = 0;
         // Review on: the chapter waits for the reader, unless its own check found it accurate and
@@ -316,14 +319,16 @@ function bondReadings(chat, from, to) {
     return [has(before) ? before : null, has(after) ? after : null];
 }
 
-function noteBondMilestones(st, chat, entry, chapterId, undo) {
-    const [before, after] = bondReadings(chat, entry.from, entry.to);
+// `when`: the chapter's date and place, as commitChapter settled it. The readings are the ones
+// taken when the chapter was written (entry.bonds); a chapter from before they were kept is
+// read now, by its places.
+function noteBondMilestones(st, chat, entry, chapterId, undo, when) {
+    const [before, after] = Array.isArray(entry.bonds) && entry.bonds.length === 2 ? entry.bonds : bondReadings(chat, entry.from, entry.to);
     if (!before || !after) return;
     const crossings = bondCrossings(before, after);
     if (!crossings.length) return;
     let user = "";
     try { user = String((getContext() || {}).name1 || ""); } catch (e) { user = ""; }
-    const when = storyWhenAt(chat, entry.to);
     st.ledger = st.ledger || [];
     // The furthest mark each meter ended past: one line per character and meter.
     const latest = new Map();
@@ -363,8 +368,8 @@ export function commitChapter(st, chat, entry) {
     // Read from the blocks the chapter's replies carry, with no call of its own (storyTime.js):
     // where the story's clock and place stood as the chapter ended, and the bonds that crossed a
     // quarter, half or three quarters of their scale over it, kept as facts.
-    const when = storyWhenAt(chat, entry.to);
-    noteBondMilestones(st, chat, entry, id, undo);
+    const when = typeof entry.when === "string" ? entry.when : storyWhenAt(chat, entry.to);
+    noteBondMilestones(st, chat, entry, id, undo, when);
     st.chapters = [...(st.chapters || []), {
         id, gist: entry.gist, chapter: entry.chapter, start: entry.start, end: entry.end,
         from: entry.from, to: entry.to, checked: entry.checked, created: entry.created, undo,
@@ -393,12 +398,28 @@ export function approvePending(st, chat, edits = {}) {
     const r = commitChapter(st, chat, edited);
     // The chapters queued behind it that their own check found accurate follow by themselves;
     // the next one the check corrected (or could not read) waits for the reader again.
+    approveAccuratePending(st, chat);
+    return r;
+}
+
+/**
+ * Approves the chapters at the head of the waiting line that their own check found accurate,
+ * as written, up to the first one that has to wait for the reader. Returns how many. A chat
+ * may come with such a line already: chapters written before chapters approved themselves
+ * (10.0.0-vcrp.18), all waiting, and every new one queued behind them for good.
+ */
+export function approveAccuratePending(st, chat) {
+    if (!st) return 0;
+    let n = 0;
     while ((st.pending || []).length && checkedAccurate(st, st.pending[0])) {
         const next = st.pending[0];
+        // A chapter whose messages are gone (a rewind since) is the reader's to look at.
+        if (resolveAnchor(chat, next.end) < 0 || (next.start && resolveAnchor(chat, next.start) < 0)) break;
         st.pending = st.pending.slice(1);
         commitChapter(st, chat, { ...next, auto: true });
+        n++;
     }
-    return r;
+    return n;
 }
 
 /** Review: throw away a waiting chapter and everything queued after it (they follow on from it). */
@@ -456,6 +477,15 @@ export function vcrpMemoryAfterReply() {
             return;
         }
         const st = memoryState();
+        // Chapters already waiting whose check had passed (a line from before chapters approved
+        // themselves) are approved now: left there, they hold every later chapter behind them and
+        // nothing past them can be cut from the prompt.
+        const caught = approveAccuratePending(st, storyChat());
+        if (caught) {
+            await saveMetadata();
+            if (meguminActiveDataIdentity() !== identity) return;
+            if (typeof toastr !== "undefined") toastr.info(`${caught} waiting chapter${caught > 1 ? "s were" : " was"} approved as written: ${caught > 1 ? "their" : "its"} own check had found ${caught > 1 ? "them" : "it"} accurate.${(st.pending || []).length ? ` ${st.pending.length} still wait${st.pending.length > 1 ? "" : "s"} for your review in the Memory tab.` : ""}`, "VCRP Memory");
+        }
         if (autoSummaryHold(st)) return;
         const r = await summarizeNext();
         if (typeof toastr === "undefined") return;

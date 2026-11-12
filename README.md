@@ -174,7 +174,10 @@ default), however long the chat runs. While you play nothing is dropped, so ever
 prompt from cache. After a break the cache has expired anyway, and that is when older messages
 leave the prompt in one cut, covered by chapters (one-line gists plus full text, recalled when the
 scene touches them) and a fact ledger. A cut always lands where a chapter ends, so every message
-it hides is told by a chapter in the memory text. Summaries are read however the model dresses
+it hides is told by a chapter in the memory text. Messages you hide yourself (SillyTavern's
+`/hide`) are not taken for a rewind: the chapters that cover them stay, and a chapter whose
+messages are all hidden has its line in the memory text from the next request on. (You no longer
+need to hide old messages to keep the prompt small: the cut does that.) Summaries are read however the model dresses
 them up (Gemini's bold labels, numbered fact lines, "**OK**").
 
 **Chapters approve themselves when their check passes.** Every chapter is checked against the
@@ -182,7 +185,9 @@ messages it covers by a second call. One the check finds accurate is approved as
 prompt can be cut without waiting for you. One the check had to correct or could not read, or one
 that changes a pinned fact, waits for your review in the Memory tab, and so do the chapters
 behind it (they follow on from one another); approving it lets the accurate ones behind it follow
-by themselves. While reviews wait, nothing past them can be cut, and the Memory tab says what
+by themselves. A chat that came with such chapters already waiting (written before this, each
+passed by its check) has them approved after its next reply, and a note says how many. While
+reviews wait, nothing past them can be cut, and the Memory tab says what
 that costs on each request after a break. Switches: *Review chapters before they count*, and
 *Approve accurate chapters by themselves* (both on by default). **Summarize now** works through
 everything not yet summarized in one run, however much there is: a one-off catch-up on a long
@@ -412,9 +417,11 @@ outside the ceiling like every other.
   cannot both be true: a change the reply itself shows happening is not a contradiction, and
   neither is something the facts do not mention. A reply it finds one in gets a line under it.
   A tap shows the quote and the fact, with **Swipe with the correction** (the facts go to that
-  one swipe as its direction, the one-shot VCRP Quick's *Next reply only* shows), **It is fine**
+  one swipe as its direction, beside any direction or beat the reply was written with; whatever
+  waits in VCRP Quick's *Next reply only* box stays there for your next message), **It is fine**
   (takes the line away) and Close. The check runs after the reply is on screen and holds nothing
-  up; one that fails says nothing; with an empty sheet and no World State before the reply there
+  up, and it reads the story only: the reply's blocks may be written while it waits its turn (the
+  helper does one job at a time) and its finding stands. One that fails says nothing; with an empty sheet and no World State before the reply there
   is nothing to read against, and nothing is asked. It costs a few thousand tokens in and a line
   or two out on every reply, which is why only the helper does it: without a helper no check
   runs, and the story model is never asked by itself. The helper can be wrong, and the dialog
@@ -490,7 +497,9 @@ character's lines in order, and VCRP reads them there.
   `[[focus]]`, after the chat, never cached: about 30 tokens a line. A line is sent once it lies
   16 messages back; nearer than that the model can still see it. In the tab you can write a
   character's lines yourself (sent at once, first), hide a line (the next of their early lines
-  takes its place) or leave a character out. Never for an Impersonate.
+  takes its place) or leave a character out. Never for an Impersonate. Replies you have hidden
+  since (SillyTavern's `/hide`) are read too: in a long chat the hidden part is where a
+  character's first lines are.
 - **The drift meter:** a character's latest 30 lines counted against their earliest 30: how long
   the lines run, contractions, questions and exclamations, trailing off, reassuring and harsh
   words, and the words they open and close a line on. Each measure is weighed against how much
@@ -524,7 +533,8 @@ latest replies and writes the writer a short correction.
   motifs and slop are not the meter's to find. A character an audit has already looked at does
   not call the next one by the same reading, so someone the story changed for good does not call
   an audit every few replies. The tab says which it is and when the next one is due. Switch:
-  Focus → Voices → *The drift meter decides when to audit*.
+  Focus → Voices → *The drift meter decides when to audit*. A swipe, a regenerate or a Continue
+  of the reply an audit ended on calls no second audit: the reply counts as read.
 
 - **What it checks** (each can be switched off): character drift against the character card and
   how they have been written, repeated motifs (images, gestures, metaphors, scene endings), and slop.
@@ -605,7 +615,8 @@ letter.").
   never written into the chat, and stays with that reply for a swipe.
 - It fires **on a tap** (in the tab, or *Send it next* in VCRP Quick, which shows the next beat
   waiting), or **by itself** after the number of replies you gave it. A toast says when one
-  goes into the box by itself.
+  goes into the box by itself. The count goes by every reply the story has had, hidden ones
+  included, so hiding old messages does not push a beat off.
 - One at a time: while the box holds something (your own direction, another beat), a beat
   waits and goes when the box is free. A beat you write over in the box is not spent: it goes
   back to waiting for a tap. A blank reply spends nothing.
@@ -619,8 +630,13 @@ turns, an open end leaves the list without ever being settled.
 - **VCRP keeps the book.** It reads every reply's World State in order, with no call of its
   own: when each line first appeared, when its wording last changed (a count ticking up is not
   a change), when a timer falls due by its own count, when a line left the list. Two lines are
-  the same open end by the words that carry them, so a rewording does not start a new count.
-  Read from the chat each time, so a rewind or a deleted message is simply read again.
+  the same open end by the words that carry them, so a rewording does not start a new count: a
+  near copy first, then, for what is left, a line that shares at least two of its words with one
+  from the reply before (models rewrite their list as the scene moves; measured on real replies).
+  Two lines that share only a name are two open ends.
+  Read from the chat each time, so a rewind or a deleted message is simply read again. Replies
+  you have hidden since (SillyTavern's `/hide`) are read too: they are the story's past, and a
+  thread's age counts from where it really first appeared.
 - **The tab shows them with their real ages**, and the ones that left the list (settled, or
   dropped: the list cannot say which). *Make it a beat* queues a beat that brings an open end
   forward; *Pick it back up* does the same for one that was dropped.

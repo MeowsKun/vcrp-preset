@@ -7048,9 +7048,14 @@ console.log("77 ok facts and memory (the Canon sheet: kept per chat, offered fro
     assert.deepEqual(DC.speakerLines('<think>plan <font title="Mara">"x"</font>', names), [], "a reply that is all thinking has no lines");
     assert.deepEqual(DC.speakerLines("No dialogue tags here.", names), []);
     chat.length = 0;
-    chat.push({ is_user: true, mes: "hi" }, { is_user: false, mes: `${said("Mara", "#a855f7", "One.")} ${said("Bob", "#fff", "Mine.")}` }, { is_user: false, mes: said("Mara Reyes", "#a855f7", "Two.") }, { is_user: false, is_system: true, mes: said("Mara", "#a855f7", "Hidden.") });
+    // A reply the reader has hidden since (SillyTavern's /hide sets is_system and nothing else) is
+    // still the story's past, and in a long chat it is where a character's first lines are. A real
+    // system message (a comment) says what it is, and is never read.
+    chat.push({ is_user: true, mes: "hi" }, { is_user: false, mes: `${said("Mara", "#a855f7", "One.")} ${said("Bob", "#fff", "Mine.")}` }, { is_user: false, mes: said("Mara Reyes", "#a855f7", "Two.") },
+        { is_user: false, is_system: true, mes: said("Mara", "#a855f7", "Hidden since.") }, { is_user: false, is_system: true, extra: { type: "comment" }, mes: said("Mara", "#a855f7", "A note.") },
+        { is_user: true, is_system: true, mes: said("Mara", "#a855f7", "The reader's, hidden.") });
     const by = V.linesBySpeaker(chat, { user: "Bob", names: {} });
-    assert(by.size === 1 && by.get("mara").lines.map(l => `${l.text}@${l.at}`).join() === "One.@1,Two.@2", `the chat's lines by speaker, the reader's own character left out, "Mara Reyes" with Mara: ${JSON.stringify([...by])}`);
+    assert(by.size === 1 && by.get("mara").lines.map(l => `${l.text}@${l.at}`).join() === "One.@1,Two.@2,Hidden since.@3", `the chat's lines by speaker, the reader's own character left out, "Mara Reyes" with Mara, a hidden reply read and a comment not: ${JSON.stringify([...by])}`);
 
     // ── Voice anchors ──
     assert.deepEqual(V.earliestLines([{ text: "Fine.", at: 1 }, { text: CURT(0), at: 3 }, { text: CURT(0).toUpperCase(), at: 5 }, { text: CURT(1), at: 7 }, { text: `${"very ".repeat(45)}long`, at: 9 }, { text: CURT(2), at: 11 }], { hidden: ["tch do not waste my time with that barrel kid"], limit: 4 }).map(l => l.at), [3, 11],
@@ -7645,5 +7650,290 @@ console.log("79 ok the plot in the reader's hands (the thread ledger: one World 
     ctx.mainApi = keep.api;
 }
 console.log("80 ok the story's state by hand, and a tidier window (the blocks editor: an envelope apart and back, a repeating block, a reply given new blocks in place of its own, of cut-off ones or at its end; who is in the scene; a character taken out of the scene list and the World State's cast, noted off-screen, their bonds kept, the compact form; someone brought in; the blocks as they stand from the latest reply, a block it left out, a reply that wrote none; the edit saved under the latest reply and handed to the next prompt, nothing saved for a reply that changed; the dock: three headings, every tab once, no title renamed)");
+
+// 81. The sweep before a first run (10.0.0-vcrp.24). What a real long chat does that the
+//     fixtures did not: replies hidden since still count (a thread's age, a beat's wait; a
+//     character's first lines, group 78); a thread the model reworded is the same thread; a
+//     swipe is reminded of what its reply was; the continuity check keeps its finding when the
+//     reply's blocks are written while it reads, and its corrected swipe keeps the reply's own
+//     direction and leaves the Next reply only box alone; chapters already waiting with their
+//     check passed are approved; the ceiling's note does not advise a summary that would change
+//     nothing; a swipe of the reply a Focus audit ended on calls no second audit; the cost
+//     report keeps a reply hidden since; messages Story Memory has summarised and the reader
+//     then hides are not a rewind (the chapters stay, and their lines reach the memory text);
+//     chat data of any shape never stops a prompt.
+{
+    const q = state.localProfile;
+    const SR = await imp("src/vcrp/storyReplies.js");
+    const TH = await imp("src/vcrp/threads.js");
+    const BT = await imp("src/vcrp/beats.js");
+    const ARC = await imp("src/vcrp/arc.js");
+    const shot = await imp("src/vcrp/oneShot.js");
+    const CT = await imp("src/vcrp/continuity.js");
+    const C = await imp("src/vcrp/canon.js");
+    const HS = await imp("src/vcrp/helper/settings.js");
+    const S = await imp("src/vcrp/memory/summarize.js");
+    const memory = await imp("src/vcrp/memory/index.js");
+    const rl = await imp("src/vcrp/replyLength.js");
+    const RC = await imp("src/vcrp/replyCost.js");
+    const focus = await imp("src/vcrp/focus/index.js");
+    const g = extension_settings.VCRP.globalSettings;
+    const meta = globalThis.__ST__.chat_metadata;
+    const keep = { focus: JSON.stringify(q.focus || null), plot: JSON.stringify(q.plot || null), mode: q.mode, model: q.model, cot: q.cotEnabled, mem: q.vcrpMemory.enabled,
+        budget: JSON.stringify(g.memoryBudget || null), helper: JSON.stringify(g.helper || null), cm: extension_settings.connectionManager, svc: ctx.ConnectionManagerRequestService, cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+    const toastrWas = globalThis.toastr;
+    globalThis.toastr = { info() {}, warning() {}, success() {}, error() {} };
+    const UNIVERSAL = "VCRP V10 Universal.json";
+    const KEYS = ["vcrp_threads", "vcrp_beats", "vcrp_arc", "vcrp_oneshot", "vcrp_focus", "vcrp_memory", "vcrp_canon", "vcrp_voice"];
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
+    q.focus = { enabled: false, live: { swipes: false, repeats: false, user: false }, voice: { anchors: false, meter: false } };
+    q.vcrpMemory.enabled = false;
+    for (const k of KEYS) delete meta[k];
+    vcrpSetGenerationType("normal", {}, false);
+    const world = (threads = []) => `<Blocks>\n<World_State>\n**📅 Time:** Day 1, dusk | **🌤 Loc:** The pier | Saltmere | **🌡 Wx:** Rain\n\n---\n**🔥 Unresolved Threads:**\n${threads.map(t => `* ${t}`).join("\n")}\n**🎯 Arc Phase:** Setup\n</World_State>\n</Blocks>`;
+    const story = at => {
+        chat.length = 0;
+        let i = 0;
+        for (;;) {
+            const blocks = at(++i);
+            if (blocks === undefined) break;
+            chat.push({ is_user: true, name: "Bob", send_date: `t${2 * i}`, mes: `(${i}) I ask.` });
+            chat.push({ is_user: false, name: "Alice", send_date: `t${2 * i + 1}`, mes: `Prose of reply ${i}, long enough to read.\n\n${blocks}` });
+        }
+        TH.forgetThreadReading();
+    };
+    const A = "Who sent the unsigned letter to Mara?";
+
+    // ── Replies hidden since are the story's past ──
+    assert(SR.isStoryReply({ is_user: false, mes: "a" }) && SR.isStoryReply({ is_user: false, is_system: true, mes: "a" }) && !SR.isStoryReply({ is_user: false, is_system: true, extra: { type: "comment" }, mes: "a" })
+        && !SR.isStoryReply({ is_user: true, mes: "a" }) && !SR.isStoryReply({ is_user: true, is_system: true, mes: "a" }) && !SR.isStoryReply(null) && !SR.isStoryReply({ is_user: false }),
+    "a reply is the story's whether it is hidden or not; a comment, the reader's own message and a message with no text are not");
+    story(i => (i <= 6 ? world([A]) : undefined));
+    const queued = await BT.addBeat("The landlord finds the letter.", { after: 2 });
+    await ARC.startArc({ title: "The Long Freeze", premise: "The harbour freezes over." });
+    assert(queued.dueAt === 8 && BT.beatQueue().waiting[0].in === 2 && ARC.arcs().current.replies === 0, "six replies in: a beat for two replies on, an arc starting now");
+    // The reader hides the first four exchanges (SillyTavern's /hide: is_system, and nothing else).
+    for (const m of chat.slice(0, 8)) m.is_system = true;
+    chat.splice(8, 0, { is_user: false, is_system: true, name: "Note", extra: { type: "comment" }, send_date: "n", mes: "A comment of the reader's." });
+    TH.forgetThreadReading();
+    assert(BT.replyCount() === 6 && BT.beatQueue().waiting[0].in === 2 && ARC.arcs().current.replies === 0, `hiding the old part of a chat pushes no beat off and makes no arc younger (replies ${BT.replyCount()})`);
+    let read = TH.readThreads(chat);
+    assert(read.replies === 6 && read.items.length === 1 && read.items[0].first === 1 && TH.threadLedger().open[0].age === 5, `a thread's age counts from where it really first appeared: ${JSON.stringify(read.items)}`);
+    await ARC.endArc();
+    for (const k of KEYS) delete meta[k];
+
+    // ── The same thread, in other words ──
+    story(i => [world([A, "Mara's debt to the landlord"]), world(["The unsigned letter's sender is still unknown", "Mara suspects Jonah of lying"])][i - 1]);
+    read = TH.readThreads(chat);
+    const letters = read.items.filter(i => /letter/.test(i.text));
+    assert(letters.length === 1 && letters[0].first === 1 && letters[0].moved === 2 && letters[0].closed === null && /sender/.test(letters[0].text),
+        `a thread the model reworded (two words in common, not the six in ten of a near copy) is the same thread, moved: ${JSON.stringify(read.items.map(i => [i.text, i.first, i.moved, i.closed]))}`);
+    assert(read.items.length === 3 && read.items.find(i => /debt/.test(i.text)).closed === 2 && read.items.find(i => /suspects/.test(i.text)).first === 2, "two threads that share only a name are two threads");
+    assert(TH.alike(A, "The unsigned letter's sender is still unknown") === 0.5, "(that pair is half alike: under the sure rule's mark)");
+
+    // ── A swipe is reminded of what its reply was ──
+    story(i => (i <= TH.STALE_AFTER + 1 ? world([A]) : undefined));
+    chat.push({ is_user: true, name: "Bob", send_date: "s1", mes: "I wait." });
+    TH.forgetThreadReading();
+    const reminded = TH.threadsNudge("reply");
+    assert(/An open thread that has not moved in 20 replies/.test(reminded), `the reply is reminded of the stale thread: ${reminded}`);
+    chat.push({ is_user: false, name: "Alice", send_date: "s2", mes: `The reply that came.\n\n${world([A])}`, swipes: [""], swipe_id: 0 });
+    TH.forgetThreadReading();
+    vcrpSetGenerationType("swipe", {}, false);
+    assert.equal(TH.threadsNudge("reply"), reminded, "a swipe of that reply is reminded of the same: the reply it replaces is not counted");
+    vcrpSetGenerationType("normal", {}, false);
+    chat.push({ is_user: true, name: "Bob", send_date: "s3", mes: "I wait some more." });
+    assert.equal(TH.threadsNudge("reply"), "", "the reply after it is not");
+
+    // ── The continuity check: its finding survives the reply's blocks being written ──
+    for (const k of KEYS) delete meta[k];
+    extension_settings.connectionManager = { profiles: [{ id: "p1", name: "Helper", mode: "cc" }] };
+    let answer = async () => ({ content: "OK" });
+    ctx.ConnectionManagerRequestService = { sendRequest: async (profileId, messages, maxTokens, opts) => answer(messages, opts) };
+    HS.helperSettings();
+    Object.assign(g.helper, { enabled: true, profileId: "p1", jobs: {} });
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", send_date: "k0", mes: "hi" }, { is_user: false, name: "Alice", send_date: "k1", mes: `Mara pours.\n\n${world([A])}` },
+        { is_user: true, name: "Bob", send_date: "k2", mes: "I look at her." }, { is_user: false, name: "Alice", send_date: "k3", mes: 'Her "brown eyes" narrow.', swipes: ['Her "brown eyes" narrow.'], swipe_id: 0, swipe_info: [{}], extra: {} });
+    C.addCanon("Mara Voss has green eyes.");
+    assert(CT.continuityOn(), "the helper is there for the check");
+    const FOUND = 'CONTRADICTION: "brown eyes" | Mara Voss has green eyes.';
+    // While the helper reads, the reply's blocks arrive (the helper's own, a call for missing ones).
+    answer = async () => { chat[3].mes += `\n\n${world([A])}`; chat[3].swipes[0] = chat[3].mes; return { content: FOUND }; };
+    assert.equal(await CT.checkContinuity(3), "found", "blocks written under the reply while it was read: the finding is kept");
+    assert(chat[3].extra.vcrp_continuity.findings[0].quote === "brown eyes" && CT.continuityNoteFor(chat[3]), "and shown under the reply");
+    chat[3].extra = {};
+    answer = async () => { chat[3].mes = `Her green eyes narrow.\n\n${world([A])}`; return { content: FOUND }; };
+    assert(await CT.checkContinuity(3) === "skipped" && !chat[3].extra.vcrp_continuity, "the story itself changed while it was read: what was read is not what is there");
+
+    // ── The corrected swipe: beside the reply's own direction, the box left alone ──
+    for (const k of KEYS) delete meta[k];
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", send_date: "d0", mes: "I knock." });
+    shot.setOneShot("The landlord finds the letter.");
+    vcrpSetGenerationType("normal", {}, false);
+    let sent = shot.oneShotText("reply", { record: true });
+    chat.push({ is_user: false, name: "Alice", send_date: "d1", mes: "The landlord holds the letter up. Her brown eyes narrow.", swipes: [""], swipe_id: 0 });
+    shot.vcrpOneShotOnReply(1, "normal");
+    assert(sent.includes("The landlord finds the letter.") && shot.oneShot().text === "" && shot.oneShot().used.text === "The landlord finds the letter.", "a reply written with a direction");
+    shot.setOneShot("Jonah arrives at dawn.");   // waiting for the next message: the reader's own, or a beat
+    const FIX = CT.correctionText([{ quote: "brown eyes", fact: "Mara Voss has green eyes." }]);
+    shot.setSwipeDirection(1, FIX);
+    assert.equal(shot.oneShot().text, "Jonah arrives at dawn.", "the correction is not put in the box");
+    vcrpSetGenerationType("swipe", {}, false);
+    sent = shot.oneShotText("reply", { record: true });
+    assert(sent.includes("The landlord finds the letter.") && sent.includes("Established: Mara Voss has green eyes.") && !sent.includes("Jonah arrives"),
+        `the swipe gets the reply's own direction and the correction, not what waits for the next message: ${sent}`);
+    shot.vcrpOneShotOnReply(1, "swipe");
+    assert(shot.oneShot().text === "Jonah arrives at dawn." && shot.oneShot().used.text.includes("The landlord finds") && shot.oneShot().used.text.includes("green eyes"), "the box is as it was, and the swipe keeps both");
+    shot.setOneShot("");
+    sent = shot.oneShotText("reply", { record: true });
+    assert(sent.split("Established: Mara Voss has green eyes.").length === 2 && sent.includes("The landlord finds the letter."), "another swipe of it: both again, the correction once");
+    shot.vcrpOneShotOnReply(1, "swipe");
+    // A new message never takes a swipe-only direction; nor does another reply in that place.
+    shot.setSwipeDirection(1, "For that swipe alone.");
+    vcrpSetGenerationType("normal", {}, false);
+    chat.push({ is_user: true, name: "Bob", send_date: "d2", mes: "I leave." });
+    assert.equal(shot.oneShotText("reply", { record: true }), "", "a new message does not take a correction meant for a swipe");
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", send_date: "another day", mes: "Another message altogether." });
+    vcrpSetGenerationType("regenerate", {}, false);
+    assert.equal(shot.oneShotText("reply", { record: true }), "", "messages deleted, another reply in that place: it does not take it either");
+    shot.setSwipeDirection(1, "");
+    assert(!meta.vcrp_oneshot.once, "taken back");
+    vcrpSetGenerationType("normal", {}, false);
+
+    // ── Chapters already waiting, their check passed ──
+    for (const k of KEYS) delete meta[k];
+    q.vcrpMemory.enabled = true;
+    g.memoryBudget = { ...(g.memoryBudget || {}), review: true, autoApprove: true };
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", send_date: "m0", mes: "hi" }, { is_user: false, name: "Alice", send_date: "m1", mes: "Hello." });
+    const st = memory.memoryState();
+    const entry = (gist, checked, extra = {}) => ({ start: null, end: null, from: 0, to: 1, gist, chapter: `${gist} In full.`, ops: [], checked, created: 1, ...extra });
+    Object.assign(st, { chapters: [], ledger: [], pending: [entry("One.", "ok"), entry("Two.", "ok"), entry("Three.", "corrected"), entry("Four.", "ok")] });
+    assert.equal(S.approveAccuratePending(st, chat), 2, "the chapters at the head of the line that their check passed are approved");
+    assert(st.chapters.map(c => c.gist).join() === "One.,Two." && st.chapters.every(c => c.auto) && st.pending.map(p => p.gist).join() === "Three.,Four.", "as written, up to the first one the check corrected: that one waits, with those behind it");
+    assert.equal(S.approveAccuratePending(st, chat), 0, "nothing more by itself");
+    g.memoryBudget.autoApprove = false;
+    st.pending = [entry("Five.", "ok")];
+    assert.equal(S.approveAccuratePending(st, chat), 0, "the switch off: every chapter waits");
+    g.memoryBudget.autoApprove = true;
+    st.pending = [entry("Six.", "ok", { end: { index: 9, fp: "a|a day long gone|Six" } })];
+    assert(S.approveAccuratePending(st, chat) === 0 && st.pending.length === 1, "a chapter whose messages are gone is left for the reader");
+    // A chapter that waited keeps the date and the bonds read when it was written: by the time
+    // it is approved, the places it was read from may be other messages (deleted or hidden since).
+    st.pending = [];
+    S.commitChapter(st, chat, entry("Seven.", "ok", { when: "Day 9 · the pier", bonds: [{ Mara: { Trust: { value: 22, max: 100 } } }, { Mara: { Trust: { value: 30, max: 100 } } }] }));
+    assert(st.chapters.at(-1).when === "Day 9 · the pier" && st.ledger.some(f => f.bond === "Mara|Trust" && /rose past 25% \(22 to 30 of 100\), Day 9 · the pier\./.test(f.text)),
+        `the chapter's date and its bond milestone come from what was read when it was written: ${JSON.stringify(st.ledger.map(f => f.text))}`);
+
+    // ── Messages Story Memory has summarised, hidden by the reader: not a rewind ──
+    for (const k of KEYS) delete meta[k];
+    const v10 = JSON.parse(readFileSync(join(REPO, "Presets", UNIVERSAL), "utf8"));
+    ctx.mainApi = "openai";
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon", prompts: v10.prompts, prompt_order: v10.prompt_order });
+    g.memoryBudget = { ...(g.memoryBudget || {}), customPrice: { "google/gemini-4-argon": { input: 2, output: 10, read: 0.1 } } };
+    chat.length = 0;
+    for (let i = 0; i < 12; i++) chat.push({ is_user: true, name: "Bob", send_date: `hu${i}`, mes: `(${i}) I ask.` }, { is_user: false, name: "Alice", send_date: `hr${i}`, mes: `Reply ${i} of the story.` });
+    const hs = memory.memoryState();
+    Object.assign(hs, {
+        ledger: [{ id: "F1", cat: "person", text: "Mara keeps the Lantern.", since: "C1", updated: "C1" }], pending: [], arcs: [], chapterSeq: 2, nextFactId: 2, lastRequestAt: Date.now(),
+        chapters: [
+            { id: "C1", gist: "Mara hid the letter.", chapter: "Mara hid the unsigned letter.", from: 0, to: 7, start: null, end: memory.anchorOf(chat, 8), undo: { added: ["F1"] } },
+            { id: "C2", gist: "The town asked who sent it.", chapter: "The whole pier asked about it.", from: 8, to: 15, start: memory.anchorOf(chat, 8), end: memory.anchorOf(chat, 16), undo: {} },
+        ],
+        summarized: memory.anchorOf(chat, 16), cut: memory.anchorOf(chat, 8),
+    });
+    memory.refreshShownMemory(hs, chat, 8);
+    assert(hs.shown.includes("- Mara hid the letter.") && !hs.shown.includes("The town asked"), "the chapter before the cut is in the memory text, the one after it is not");
+    // The reader hides the first twelve messages (/hide sets is_system): all of C1's, half of C2's.
+    // What SillyTavern hands Story Memory from then on is the chat without them.
+    for (const m of chat.slice(0, 12)) m.is_system = true;
+    let seen = chat.filter(m => !m.is_system);
+    assert(memory.resolveAnchor(seen, hs.chapters[0].end) === 0 && memory.resolveAnchor(seen, hs.cut) === 0 && memory.resolveAnchor(seen, hs.chapters[1].end) === 4,
+        `a hidden message's place is where the next one that is not hidden stands: ${[hs.chapters[0].end, hs.cut, hs.chapters[1].end].map(a => memory.resolveAnchor(seen, a))}`);
+    assert(memory.repairMemory(seen, hs) === false && hs.chapters.length === 2 && hs.ledger.length === 1, "hiding is not a rewind: the chapters and their facts stay");
+    memory.refreshShownMemory(hs, seen, 0);
+    assert(hs.shown.includes("- Mara hid the letter.") && !hs.shown.includes("The town asked"), "a chapter whose messages are all hidden is out of the prompt, so it is in the memory text wherever the cut is; one still partly there is not");
+    // The rest of C2 is hidden too: its line goes into the memory text with the next request.
+    for (const m of chat.slice(12, 16)) m.is_system = true;
+    seen = chat.filter(m => !m.is_system).map(m => ({ ...m }));
+    vcrpSetGenerationType("normal", {}, false);
+    await memory.vcrpMemoryIntercept(seen, "normal");
+    assert(hs.chapters.length === 2 && hs.shown.includes("- Mara hid the letter.") && hs.shown.includes("- The town asked who sent it."), `the next request's memory text carries the chapter hidden since: ${hs.shown}`);
+    // Shown again, every place is where it was. Deleted, it is a rewind as before: the chapters go, their facts undone.
+    for (const m of chat) delete m.is_system;
+    assert(memory.resolveAnchor(chat, hs.chapters[0].end) === 8 && memory.resolveAnchor(chat, hs.chapters[1].end) === 16, "unhidden: the places as they were");
+    chat.splice(6);
+    assert(memory.repairMemory(chat, hs) === true && hs.chapters.length === 0 && hs.ledger.length === 0, "messages deleted: a rewind, the chapters taken back out");
+    q.vcrpMemory.enabled = false;
+
+    // ── The ceiling's note, when there is nothing left to cut ──
+    const priced = { input: 0.47, room: 400, needed: 2500, ceiling: 0.5, cold: true };
+    const floor = rl.ceilingBlockText(priced, { memoryOn: true, waiting: 0, atFloor: true });
+    assert(/already cut this prompt as far as it goes/.test(floor) && /Always kept word for word/.test(floor) && /Raise the ceiling/.test(floor) && !/Summarize now/.test(floor), `no advice to summarise what is already summarised: ${floor}`);
+    assert(/Approve the 2 chapters waiting/.test(rl.ceilingBlockText(priced, { memoryOn: true, waiting: 2, atFloor: true })) && /Turn on Story Memory/.test(rl.ceilingBlockText(priced, { memoryOn: false, atFloor: true }))
+        && /Summarize now, then Cut now/.test(rl.ceilingBlockText(priced, { memoryOn: true })), "chapters waiting, Story Memory off, and the usual case keep their own advice");
+
+    // ── An audit is not called again by a swipe of the reply it read ──
+    for (const k of KEYS) delete meta[k];
+    g.helper.enabled = false;
+    q.focus = { enabled: true, every: 5, checks: { drift: true, motifs: true, slop: true }, live: { swipes: false, repeats: false, user: false }, voice: { anchors: false, meter: false } };
+    chat.length = 0;
+    for (let i = 0; i < 6; i++) chat.push({ is_user: true, name: "Bob", send_date: `u${i}`, mes: `(${i}) I ask.` }, { is_user: false, name: "Alice", send_date: `r${i}`, mes: `Reply ${i}. ${"More of the scene. ".repeat(20)}` });
+    quietImpl = async () => "<recurring>none</recurring>\n<findings>none</findings>\n<note>none</note>";
+    assert(focus.repliesSinceAudit() === 6 && focus.focusSchedule().due, "six replies in, an audit every five: one is due");
+    assert.equal((await focus.runFocusAudit()).status, "clean");
+    assert(focus.repliesSinceAudit() === 0 && !focus.focusSchedule().due, "the audit read them: none is due");
+    // That newest reply is written again: another text, another time (a swipe, a regenerate, a Continue).
+    Object.assign(chat[chat.length - 1], { mes: "Another version of the reply altogether.", send_date: "r5 again" });
+    assert(focus.repliesSinceAudit() === 0 && !focus.focusSchedule().due, `a swipe of the reply the audit ended on calls no audit (${focus.repliesSinceAudit()} since)`);
+    chat.push({ is_user: true, name: "Bob", send_date: "u6", mes: "(6) I ask." }, { is_user: false, name: "Alice", send_date: "r6", mes: "Reply 6." });
+    assert.equal(focus.repliesSinceAudit(), 1, "the reply after it is the first since");
+    // A rewind past where the audit ended: what is left counts again, as it always did.
+    chat.splice(chat.length - 4, 4);
+    assert.equal(focus.repliesSinceAudit(), 5, "the chat rewound past the audit's place: the replies left are due again");
+    quietImpl = null;
+
+    // ── The cost report counts a reply hidden since ──
+    const costed = (total, extra = {}) => ({ is_user: false, mes: "A reply.", ...extra, extra: { ...(extra.extra || {}), vcrp_cost: { total, output: 100, tokens: { read: 0, write: 0, plain: 1000 }, pieces: {}, cold: true } } });
+    const report = RC.costReport([costed(0.1), costed(0.3, { is_system: true }), costed(9, { is_system: true, extra: { type: "comment" } })], { goal: 0.2, ceiling: 0.5 });
+    assert(report.replies === 2 && Math.abs(report.total - 0.4) < 1e-9 && report.overGoal === 1, `a hidden reply was paid for like any other, a comment was not a reply: ${JSON.stringify(report)}`);
+
+    // ── Chat data of any shape never stops a prompt ──
+    for (const k of KEYS) delete meta[k];
+    Object.assign(meta, { vcrp_canon: 7, vcrp_arc: "junk", vcrp_voice: [], vcrp_beats: { items: "x" }, vcrp_threads: 3, vcrp_oneshot: "text", vcrp_focus: null });
+    q.focus = { enabled: true, live: { swipes: true, repeats: true, user: true } };
+    chat.length = 0;
+    chat.push({ is_user: true, name: "Bob", send_date: "j0", mes: "hi" }, { is_user: false, name: "Alice", send_date: "j1", mes: `<font color="#fff" title="">"…"</font> <font>"x"</font>\n\n<Blocks>\n<World_State>\n**🔥 Unresolved Threads:**\n*\n* ;;;\n**🌱 Planted Seeds:** |||\n**⏳ Consequence Timers:** | | 99999999999999999999 turns\n</World_State>` },
+        { is_user: false, name: "Alice", send_date: "j2", mes: "" }, { is_user: true, name: "Bob", send_date: "j3", mes: "go on" });
+    TH.forgetThreadReading();
+    assert(ARC.arcs().current === null && ARC.arcBlock() === "" && BT.beatQueue().waiting.length === 0 && C.canonBlock() === "", "states that are not states read as empty");
+    const msgs = await run(UNIVERSAL);
+    assert(msgs.length > 2 && !/\[\[[A-Za-z_ ]+\]\]/.test(text(msgs)), `the prompt is built whole, no tag left in it: ${(text(msgs).match(/\[\[[A-Za-z_ ]+\]\]/g) || []).join()}`);
+    assert(await ARC.startArc({ premise: "A premise." }) && ARC.arcs().current.title === "A premise", "and a state is made new where one was not");
+
+    globalThis.toastr = toastrWas;
+    chat.length = 0;
+    for (const k of KEYS) delete meta[k];
+    g.memoryBudget = JSON.parse(keep.budget) || undefined;
+    if (!g.memoryBudget) delete g.memoryBudget;
+    g.helper = JSON.parse(keep.helper) || undefined;
+    if (g.helper === undefined) delete g.helper;
+    extension_settings.connectionManager = keep.cm;
+    if (keep.svc === undefined) delete ctx.ConnectionManagerRequestService; else ctx.ConnectionManagerRequestService = keep.svc;
+    q.focus = JSON.parse(keep.focus) || undefined;
+    q.plot = JSON.parse(keep.plot) || undefined;
+    Object.assign(q, { mode: keep.mode, model: keep.model, cotEnabled: keep.cot });
+    q.vcrpMemory.enabled = keep.mem;
+    for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k];
+    Object.assign(chatCompletionSettings, keep.cc);
+    ctx.mainApi = keep.api;
+    TH.forgetThreadReading();
+    vcrpSetGenerationType("normal", {}, false);
+}
+console.log("81 ok the sweep before a first run (replies hidden since still count for a thread's age, a beat's wait, an arc's length and the cost report; a reworded thread is the same thread, two that share a name are not; a swipe is reminded of what its reply was; the continuity check keeps its finding when the reply's blocks are written meanwhile, and its corrected swipe carries the reply's own direction and leaves the box alone; waiting chapters their check passed are approved, a chapter keeping the date and bonds read when it was written; summarised messages hidden by the reader are not a rewind, and their chapters reach the memory text; the ceiling's note when nothing is left to cut; a swipe of the reply an audit ended on calls no audit; chat data of any shape never stops a prompt)");
 
 console.log("\nALL FORK CHECKS PASSED");

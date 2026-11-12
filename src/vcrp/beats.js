@@ -11,8 +11,9 @@
 // another beat), a beat waits its turn. Kept with the chat.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getContext, chat_metadata, saveMetadata } from "../st.js";
+import { getContext, chat_metadata, saveMetadata, debounce } from "../st.js";
 import { oneShot, setOneShot } from "./oneShot.js";
+import { storyReplyCount } from "./storyReplies.js";
 
 const META = "vcrp_beats";   // chat_metadata: { items: [{ id, text, dueAt, state, firedAt }], seq }
 const MAX_TEXT = 600;
@@ -20,6 +21,10 @@ const FIRED_KEPT = 12;
 
 const tidy = s => String(s || "").replace(/\s+/g, " ").trim().slice(0, MAX_TEXT);
 const save = async () => { try { await saveMetadata(); } catch (e) { console.warn("[VCRP] Beats: could not save the chat's data", e); } };
+// For what changes as a reply lands: SillyTavern saves the chat itself right then (this chat's
+// data with it), and a second save on its heels can fail (Windows cannot replace a file that is
+// still being copied to its backup). So this one comes a moment later, once.
+const saveSoon = typeof debounce === "function" ? debounce(save, 1500) : save;
 
 function state(create = false) {
     if (!chat_metadata) return null;
@@ -28,11 +33,15 @@ function state(create = false) {
     return st && Array.isArray(st.items) ? st : null;
 }
 
-/** The story's replies so far (the count a beat's "after N replies" runs on). */
+/**
+ * The story's replies so far (the count a beat's "after N replies" runs on). Replies the reader
+ * has hidden since are counted too (storyReplies.js): hiding the old part of a chat must not
+ * push a waiting beat further off.
+ */
 export function replyCount() {
     let chat = [];
     try { chat = ((getContext() || {}).chat) || []; } catch (e) { chat = []; }
-    return chat.filter(m => m && !m.is_user && !m.is_system).length;
+    return storyReplyCount(chat);
 }
 
 /**
@@ -157,12 +166,12 @@ export function vcrpBeatsOnReply(messageId, type) {
         const due = st.items.find(x => x.state === "waiting" && x.dueAt > 0 && now >= x.dueAt);
         if (due) {
             due.state = "next";
-            setOneShot(due.text);
+            setOneShot(due.text, { soon: true });   // saved a moment later, for the same reason as below
             fired = { ...due };
             changed = true;
             if (typeof toastr !== "undefined") toastr.info(`A beat you queued goes with your next message: "${due.text.slice(0, 120)}${due.text.length > 120 ? "…" : ""}". VCRP Quick → Next reply only shows it; clear it there to hold it back.`, "VCRP: beats", { timeOut: 9000 });
         }
     }
-    if (changed) save();
+    if (changed) saveSoon();
     return fired;
 }

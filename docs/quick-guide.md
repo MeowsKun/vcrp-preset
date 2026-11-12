@@ -86,6 +86,9 @@ one hard stop is the **ceiling** ($0.50 by default, Memory → Reply length and 
   target, how often the cache helped. *Copy cost report* gives it as text.
 - **Chapters approve themselves** when their own check finds them accurate, so cuts don't wait
   for you; one the check had to correct waits for your review.
+- **You don't need to hide old messages any more:** the cut keeps the prompt small. If you do
+  hide some (`/hide`), nothing is lost: their chapters stay, and the counts VCRP keeps (how old
+  an open thread is, when a beat fires, a character's first lines) don't move.
 
 **Tips:** Grounded Prose (Pura panel) is the biggest per-reply extra (~900 tokens); turn it off if
 you want to save. The BLOCKS tab shows what each Pura tracker costs per reply.
@@ -404,7 +407,9 @@ it stood before the reply, and reports only what can't both be true. When it fin
 the reply gets a line under it: *⚠ May contradict the story: "her brown eyes" against "Mara has
 green eyes."* Tap the line:
 
-- **Swipe with the correction** swipes the reply and tells that one swipe the facts it got wrong.
+- **Swipe with the correction** swipes the reply and tells that one swipe the facts it got wrong
+  (beside any direction or beat the reply was written with; what waits in *Next reply only* stays
+  for your next message).
 - **It is fine** takes the line away (the helper can be wrong).
 
 It runs after the reply is on screen, so it never slows a reply down. It costs one small helper
@@ -517,7 +522,8 @@ A beat is never written into the chat. If a reply ignores it, swipe: the swipe g
 **Open ends: what the story left hanging.** With the World State block on, the story lists its
 unresolved threads, planted seeds and consequence timers every reply, and then loses count. VCRP
 keeps count for it. The tab shows each one with its real age: *open 31 replies, unmoved for
-24*, *overdue by 3 replies*, *planted 40 replies ago*.
+24*, *overdue by 3 replies*, *planted 40 replies ago*. A thread the model rewords is still the
+same thread, as long as it keeps a couple of its words.
 
 - **Reminders** (on by default): when a thread has not moved for 20 replies, a seed has waited
   30, or a timer has run out, VCRP names it to the model with one reply, and again every 8

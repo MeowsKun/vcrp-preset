@@ -15,11 +15,11 @@
 // to report only what cannot both be true, and that a change the reply itself shows is none.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getContext, saveChat } from "../st.js";
+import { getContext, saveChat, debounce } from "../st.js";
 import { canonItems } from "./canon.js";
 import { worldStateOf } from "./storyTime.js";
 import { blankReplyKind, swipeLastReply } from "./blankReply.js";
-import { setOneShot } from "./oneShot.js";
+import { setSwipeDirection } from "./oneShot.js";
 import { askHelper, helperAnswers } from "./helper/aside.js";
 
 const NOTE = "vcrp-continuity-note";
@@ -84,6 +84,12 @@ export function correctionText(findings) {
     return `Keep to what the story has established:\n${lines.join("\n")}\nWrite the reply so that it agrees with ${findings.length === 1 ? "this" : "these"}, changing nothing else about where the scene was going.`;
 }
 
+// The finding is saved with the chat a moment later, not at once: the check often answers right
+// after the helper has saved the same reply's blocks, and two saves of one chat file on each
+// other's heels can fail (on Windows the second cannot replace a file still being copied).
+const saveNow = () => { try { const r = saveChat(); if (r && typeof r.catch === "function") r.catch(() => {}); } catch (e) { /* SillyTavern saves it with the next message anyway */ } };
+const saveSoon = typeof debounce === "function" ? debounce(saveNow, 1500) : saveNow;
+
 // What the check found, kept with the reply (and its swipe).
 function keep(msg, value) {
     msg.extra = { ...(msg.extra || {}), vcrp_continuity: value };
@@ -103,18 +109,20 @@ export async function checkContinuity(id) {
     if (!continuityOn()) return "skipped";
     const canon = canonItems().map(i => i.text);
     const scene = sceneBefore(chat, id);
-    const reply = storyOf(msg.mes).slice(0, REPLY_CHARS);
+    const story = storyOf(msg.mes);
+    const reply = story.slice(0, REPLY_CHARS);
     if ((!canon.length && !scene) || !reply) return "skipped";
-    const text = msg.mes;
     const answer = await askHelper("continuity", continuityMessages({ canon, scene, reply }), { quietFail: true });
     if (answer === null) return "failed";
-    // The reply was swiped, edited or deleted meanwhile: what was read is not what is there.
+    // The reply was swiped, edited or deleted meanwhile: what was read is not what is there. By
+    // its story alone: its blocks may well have been written since (the helper's own, a second
+    // call for missing ones, the reader's edit), and they were never part of what was read.
     const now = ((getContext() || {}).chat || [])[id];
-    if (now !== msg || msg.mes !== text) return "skipped";
+    if (now !== msg || storyOf(msg.mes) !== story) return "skipped";
     const r = parseContinuity(answer);
     keep(msg, r.ok ? { ok: true, at: Date.now() } : { findings: r.findings, at: Date.now() });
     drawContinuityNote(id);
-    try { await saveChat(); } catch (e) { /* SillyTavern saves it with the next message anyway */ }
+    saveSoon();
     return r.ok ? "ok" : "found";
 }
 
@@ -122,7 +130,13 @@ export async function checkContinuity(id) {
 export function vcrpContinuityOnReply(messageId, type) {
     if (type === "first_message" || !continuityOn()) return;
     const id = Number(messageId);
-    setTimeout(() => { checkContinuity(id).catch(e => console.warn("[VCRP] Continuity check failed", e)); }, WAIT_MS);
+    const chatOf = () => String((getContext() || {}).chatId || "");
+    const asked = chatOf();
+    setTimeout(() => {
+        // Another chat opened meanwhile: the message at that place there is not this reply.
+        if (chatOf() !== asked) return;
+        checkContinuity(id).catch(e => console.warn("[VCRP] Continuity check failed", e));
+    }, WAIT_MS);
 }
 
 // ── The line under a reply ───────────────────────────────────────────────────
@@ -166,16 +180,18 @@ function openFindings(id, doc) {
         keep(msg, { ok: true, waved: true, at: Date.now() });
         drawContinuityNote(id, doc);
         close();
-        try { await saveChat(); } catch (e) { /* saved with the next message */ }
+        saveSoon();
     });
     const fix = dlg.querySelector(".vcrp-cont-fix");
     if (fix) fix.addEventListener("click", async () => {
-        setOneShot(correctionText(note.findings));
+        // For this reply's swipe alone (oneShot.js): beside the direction the reply was written
+        // with, and leaving whatever waits in the Next reply only box for the next message.
+        setSwipeDirection(id, correctionText(note.findings));
         close();
         const started = await swipeLastReply(id);
         if (typeof toastr !== "undefined") {
-            if (started) toastr.info("Swiping, with the established facts as this swipe's direction (VCRP Quick → Next reply only shows it).", "VCRP: continuity");
-            else toastr.warning("VCRP could not swipe by itself here. The correction is waiting in VCRP Quick → Next reply only: swipe, and it goes with it.", "VCRP: continuity");
+            if (started) toastr.info("Swiping, with the established facts as this swipe's direction.", "VCRP: continuity");
+            else toastr.warning("VCRP could not swipe by itself here. Swipe this reply yourself: the correction goes with that swipe.", "VCRP: continuity");
         }
     });
     doc.body.appendChild(dlg);

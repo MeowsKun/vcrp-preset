@@ -380,9 +380,16 @@ export async function handlePromptInjection(data, type) {
             messages.length = 0;
             vcrpMemoryRequestCancelled();   // nothing went out, so no cache was warmed
             vcrpCostRequestCancelled();
-            let waiting = 0;
-            try { waiting = ((memoryState() || {}).pending || []).length; } catch (e) { waiting = 0; }
-            const text = ceilingBlockText(priced, { memoryOn: vcrpMemoryEnabled(), waiting });
+            let waiting = 0, atFloor = false;
+            try {
+                const ms = memoryState() || {};
+                waiting = (ms.pending || []).length;
+                // Story Memory's plan for this very request: cut to its budget, or stopped by the
+                // recent text it always keeps. Either way there is nothing more for it to cut.
+                const plan = ms.lastPlan;
+                atFloor = !!plan && plan.promptTokens > 0 && (plan.behind ? plan.limit === "verbatim floor" : true);
+            } catch (e) { waiting = 0; atFloor = false; }
+            const text = ceilingBlockText(priced, { memoryOn: vcrpMemoryEnabled(), waiting, atFloor });
             console.warn(`[${extensionName}] ${text}`);
             if (typeof toastr !== "undefined") toastr.warning(text, "VCRP: over the ceiling, not sent", { timeOut: 30000, extendedTimeOut: 15000, closeButton: true });
             try {

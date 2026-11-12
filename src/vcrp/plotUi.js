@@ -213,7 +213,20 @@ export function renderPlotTab(c) {
     keep("#plot_new_premise", "premise"); keep("#plot_new_opens", "opens"); keep("#plot_new_close", "close"); keep("#plot_new_close_name", "closeName");
     c.find("#plot_new_genre").on("change", function () { form.genre = String($(this).val() || ""); c.find("#plot_new_custom").toggle(form.genre === CUSTOM); });
     const genreNow = () => (form.genre === CUSTOM ? form.custom.trim() : (SD_GENRES[form.genre] ? SD_GENRES[form.genre].label : ""));
-    c.find("#plot_arc_title").on("change", async function () { await editArc({ title: $(this).val() }); rerender(); });
+    // An edit to a text box is saved where it stands. Redrawing the tab on it would empty the box
+    // the reader has just moved on to and close the phone's keyboard; only what the edit itself
+    // changes on screen is put right (a name left empty takes the premise's first words).
+    c.find("#plot_arc_title").on("change", async function () {
+        const $t = $(this);
+        await editArc({ title: $t.val() });
+        const cur = arcs().current;
+        if (!cur) return;
+        if (!String($t.val() || "").trim()) $t.val(cur.title);
+        // The tab's badge names the arc: its text is set as text, in place.
+        try {
+            c.find(".mtab-header-badge").first().contents().filter(function () { return this.nodeType === 3; }).last().each(function () { this.nodeValue = ` ${String(cur.title).slice(0, 28)}`; });
+        } catch (e) { /* drawn again with the tab */ }
+    });
     c.find("#plot_arc_genre").on("change", async function () { await editArc({ genre: $(this).val() }); });
     c.find("#plot_arc_tone").on("change", async function () { await editArc({ tone: $(this).val() }); });
     c.find("#plot_arc_premise").on("change", async function () { await editArc({ premise: $(this).val() }); if (!String($(this).val() || "").trim()) rerender(); });
@@ -266,7 +279,11 @@ export function renderPlotTab(c) {
     };
     c.find("#plot_beat_add").on("click", addNew);
     c.find("#plot_beat_new").on("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addNew(); } });
-    c.find(".plot-beat-text").on("change", async function () { await editBeat(String($(this).attr("data-id")), { text: String($(this).val() || "") }); rerender(); });
+    c.find(".plot-beat-text").on("change", async function () {
+        const text = String($(this).val() || "");
+        await editBeat(String($(this).attr("data-id")), { text });
+        if (!text.trim()) rerender();   // emptied: the beat is gone from the queue
+    });
     c.find(".plot-beat-fire").on("click", async function () {
         const r = await fireBeat(String($(this).attr("data-id")));
         if (r === "next") say("success", "It goes with your next message. VCRP Quick → Next reply only shows it.");

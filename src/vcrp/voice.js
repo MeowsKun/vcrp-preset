@@ -28,6 +28,7 @@ import { localProfile } from "../core/state.js";
 import { speakerLines, lockedColors } from "./dialogueColors.js";
 import { sceneNames } from "./scene.js";
 import { anchorOf, resolveAnchor } from "./memory/index.js";
+import { isStoryReply } from "./storyReplies.js";
 
 const META = "vcrp_voice";        // chat_metadata: { chars: { key: { name, own: [text], hidden: [text], off, from } } }
 
@@ -61,7 +62,9 @@ const sameLine = s => wordsOf(s).join(" ");
 /**
  * Every tagged line in `chat`, by speaker, oldest first: Map key → { name, lines: [{ text, at }] }.
  * `user` (the reader's character) is left out: their lines are the reader's. A name is matched
- * to the speakers already met the way the colors are, so "Mara Reyes" joins "Mara".
+ * to the speakers already met the way the colors are, so "Mara Reyes" joins "Mara". Replies
+ * the reader has hidden since are read too (storyReplies.js): in a long chat the hidden part
+ * is where a character's first lines are.
  */
 export function linesBySpeaker(chat, { user = "", names = lockedColors() } = {}) {
     const known = {};
@@ -70,7 +73,7 @@ export function linesBySpeaker(chat, { user = "", names = lockedColors() } = {})
     const isUser = name => { const w = wordsOf(name); return w.length > 0 && w.every(x => mine.has(x)); };
     const out = new Map();
     (Array.isArray(chat) ? chat : []).forEach((m, at) => {
-        if (!m || m.is_user || m.is_system || typeof m.mes !== "string" || !m.mes.includes("<font")) return;
+        if (!isStoryReply(m) || !m.mes.includes("<font")) return;
         for (const l of speakerLines(m.mes, known)) {
             if (isUser(l.name)) continue;
             if (!known[l.key]) known[l.key] = { name: l.name, color: "" };

@@ -46,6 +46,17 @@ import { vcrpGenerationKind, vcrpIsDryRun } from "../vcrp/generation.js";
 import { threadsNudge } from "../vcrp/threads.js";
 import { arcBlock } from "../vcrp/arc.js";
 
+// VCRP: one part of the prompt that is read from the chat (the Canon sheet, the voices, the open
+// ends, the arc). Whatever goes wrong reading it, the reply goes out without that part: thrown
+// from here, the error would stop the whole prompt being filled in, and the request would go
+// out as raw tags.
+function vcrpPart(what, build) {
+    try { return String(build() || ""); } catch (e) {
+        console.error(`[VCRP] ${what} could not be read for this prompt; the reply goes on without it.`, e);
+        return "";
+    }
+}
+
 // VCRP: whether the loaded preset has a place for a tag (one imported before the tag has none).
 function presetCarries(tag) {
     try {
@@ -282,7 +293,7 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     dict["[[knowledgebase_always]]"] = vcrpKb.alwaysBlock;   // before the chat: cached
     // VCRP: the Canon sheet (canon.js) rides with the always-on entries, in the cached part of
     // the prompt; on a preset from before that slot, after the chat with the rest, every turn.
-    const vcrpCanon = canonBlock();
+    const vcrpCanon = vcrpPart("the Canon sheet", () => canonBlock());
     if (vcrpCanon) {
         if (presetCarriesAlwaysSlot()) dict["[[knowledgebase_always]]"] = [dict["[[knowledgebase_always]]"], vcrpCanon].filter(Boolean).join("\n\n");
         else dict["[[knowledgebase]]"] = [vcrpCanon, dict["[[knowledgebase]]"]].filter(Boolean).join("\n\n");
@@ -380,10 +391,10 @@ export function buildBaseDict(isTokenCount = false, { dryRun = false } = {}) {
     // VCRP Focus: the correction in use, the voices and the every-reply findings, in the per-turn
     // rules (after the chat, so the cache never sees it); then the thread ledger's reminder of
     // open ends the story has left hanging, on the replies it falls due (vcrp/threads.js).
-    dict["[[focus]]"] = [vcrpFocusBlock(), threadsNudge(measure ? "reply" : vcrpGenerationKind())].filter(Boolean).join("\n\n");
+    dict["[[focus]]"] = [vcrpPart("Focus and the voices", () => vcrpFocusBlock()), vcrpPart("the open ends' reminder", () => threadsNudge(measure ? "reply" : vcrpGenerationKind()))].filter(Boolean).join("\n\n");
     // Last in the prompt (after the newest message, outside the cache): the running arc
     // (vcrp/arc.js), then the plot focus, the one thing to revolve around inside it.
-    dict["[[plotfocus]]"] = arcBlock() + vcrpPlotFocusBlock();
+    dict["[[plotfocus]]"] = vcrpPart("the arc", () => arcBlock()) + vcrpPart("the plot focus", () => vcrpPlotFocusBlock());
 
     if (dict["[[cyoa]]"]) dict["[[cyoa2]]"] = "[CYOA block here]"; else dict["[[cyoa2]]"] = "";
     if (dict["[[infoblock]]"]) dict["[[infoblock2]]"] = "[World state block here]"; else dict["[[infoblock2]]"] = "";

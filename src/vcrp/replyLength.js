@@ -362,18 +362,24 @@ export function forgetReplyRoom() {
  * What to tell the reader when a prompt is not sent for leaving no room under the ceiling
  * (pure): the numbers, and the way forward.
  */
-export function ceilingBlockText({ input, room, needed, ceiling, cold }, { memoryOn = true, waiting = 0 } = {}) {
+export function ceilingBlockText({ input, room, needed, ceiling, cold }, { memoryOn = true, waiting = 0, atFloor = false } = {}) {
     const usd = n => `$${Number(n).toFixed(2)}`;
     const alone = room <= 0
         ? `its prompt alone would cost about ${usd(input)}`
         : `its prompt would cost about ${usd(input)}, leaving room for about ${Math.max(0, room).toLocaleString("en-US")} tokens where a usual reply here takes ${needed.toLocaleString("en-US")}`;
     const why = cold ? " (the cache is cold, so the whole prompt is paid for in full)" : "";
+    const head = `Not sent: ${alone}${why}, which would take this reply over your ${usd(ceiling)} ceiling.`;
+    // `atFloor`: Story Memory has cut all it may. Summarising again would change nothing, so
+    // the advice is not to: what is left is sent with every reply.
+    if (memoryOn && atFloor && !waiting) {
+        return `${head} Story Memory has already cut this prompt as far as it goes: what is left is sent with every reply (the preset, the character, your lore and Canon sheet, and the latest messages kept word for word). Raise the ceiling (Memory → Reply length), or lower "Always kept word for word" (Memory tab).`;
+    }
     const fix = !memoryOn
         ? "Turn on Story Memory (Memory tab) and press Summarize now: summarising is never limited, and afterwards the prompt is cut to fit."
         : waiting > 0
             ? `Approve the ${waiting} chapter${waiting > 1 ? "s" : ""} waiting in the Memory tab (or press Summarize now), then Cut now: the prompt is cut to fit.`
             : "In the Memory tab press Summarize now, then Cut now: summarising is never limited, and the prompt is cut to fit.";
-    return `Not sent: ${alone}${why}, which would take this reply over your ${usd(ceiling)} ceiling. ${fix} Or raise the ceiling (Memory → Reply length).`;
+    return `${head} ${fix} Or raise the ceiling (Memory → Reply length).`;
 }
 
 export { MIN_ROOM };

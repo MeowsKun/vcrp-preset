@@ -38,10 +38,14 @@ const save = async () => { try { await saveMetadata(); } catch (e) { console.war
 function state(create = false) {
     if (!chat_metadata) return null;
     let st = chat_metadata[META];
-    if ((!st || typeof st !== "object") && create) st = chat_metadata[META] = { current: null, past: [], seq: 0, pitches: [] };
-    if (st && !Array.isArray(st.past)) st.past = [];
-    if (st && !Array.isArray(st.pitches)) st.pitches = [];
-    return st && typeof st === "object" ? st : null;
+    // Anything but an object there is not a state (and a property cannot be set on it).
+    if (!st || typeof st !== "object") {
+        if (!create) return null;
+        st = chat_metadata[META] = { current: null, past: [], seq: 0, pitches: [] };
+    }
+    if (!Array.isArray(st.past)) st.past = [];
+    if (!Array.isArray(st.pitches)) st.pitches = [];
+    return st;
 }
 
 /** This chat's arcs: { current, past (newest first), pitches, asked }. `current.replies`: how long it has run. */

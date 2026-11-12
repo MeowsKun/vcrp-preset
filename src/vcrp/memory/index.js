@@ -126,8 +126,35 @@ export function resolveAnchor(chat, anchor) {
     const exact = nearest(m => fingerprint(m) === anchor.fp);
     if (exact >= 0) return exact;
     const [who, when] = anchor.fp.split("|");
-    if (!when) return -1;
-    return nearest(m => fingerprint(m).startsWith(`${who}|${when}|`));
+    const loose = when ? nearest(m => fingerprint(m).startsWith(`${who}|${when}|`)) : -1;
+    return loose >= 0 ? loose : hiddenPlace(chat, anchor);
+}
+
+// A message the reader has hidden (SillyTavern's /hide sets is_system on it) is not in the
+// lists positions are counted in, which are the chat without system messages. It is not gone
+// either: what was summarised up to it still was, and taking the hiding for a rewind threw
+// the chapters away. Its place is where the next message that is not hidden stands. -1 when
+// the message is nowhere in the chat (deleted: a rewind).
+function hiddenPlace(list, anchor) {
+    let full = [];
+    try { full = ((getContext() || {}).chat) || []; } catch (e) { return -1; }
+    if (!Array.isArray(full) || full === list || !full.some(m => m && m.is_system)) return -1;
+    const near = match => {
+        let best = -1;
+        full.forEach((m, i) => { if (m && m.is_system && match(m) && (best < 0 || Math.abs(i - anchor.index) < Math.abs(best - anchor.index))) best = i; });
+        return best;
+    };
+    let at = near(m => fingerprint(m) === anchor.fp);
+    const [who, when] = anchor.fp.split("|");
+    if (at < 0 && when) at = near(m => fingerprint(m).startsWith(`${who}|${when}|`));
+    if (at < 0) return -1;
+    return Math.min(list.length, full.slice(0, at).filter(m => m && !m.is_system).length);
+}
+
+/** True when none of a chapter's messages is in `chat` any more because the reader hid them all: it starts and ends at the same place. */
+function chapterAllHidden(chat, c) {
+    const end = resolveAnchor(chat, c.end);
+    return !!(c.end && c.end.fp) && end >= 0 && end <= Math.max(0, resolveAnchor(chat, c.start));
 }
 
 /**
@@ -239,6 +266,11 @@ export async function vcrpMemoryIntercept(chat, type) {
             st.cut = anchorOf(chat, cutAt);
             refreshShownMemory(st, chat, cutAt);
             delete st.qaPrevCut;   // a real cut since "Cut now": there is nothing left to undo
+        } else if ((st.chapters || []).some(c => !c.folded && c.gist && chapterAllHidden(chat, c) && !String(st.shown || "").includes(c.gist))) {
+            // The reader has hidden a chapter's messages since the memory text was last written:
+            // they are out of the prompt, so its line goes into the text now. (Hiding them
+            // changed the prompt's start already; this costs the cache nothing more.)
+            refreshShownMemory(st, chat, cutAt);
         }
         st.lastPlan = { at: now, cold: plan.cold, cut: plan.cut, behind: plan.behind, limit: plan.limit, reason: plan.reason, promptTokens: plan.promptTokens };
     }
@@ -539,7 +571,9 @@ export const isStoryTurnSlot = m => typeof (m && m.content) === "string" && STOR
 // A chapter the cut has reached: any of its messages hidden. Cuts land on chapters' ends, so
 // that is a chapter wholly before the cut; one saved partway through (before cuts kept to
 // chapters) counts too, or the messages it hid would be in neither the prompt nor the memory.
-const chapterBefore = (chat, cutAt) => c => { const end = resolveAnchor(chat, c.end); return end >= 0 && Math.max(0, resolveAnchor(chat, c.start)) < cutAt; };
+// A chapter is out of the prompt when it starts before the cut, or when the reader has hidden
+// every one of its messages (then it stands at one place, wherever the cut is).
+const chapterBefore = (chat, cutAt) => c => { const end = resolveAnchor(chat, c.end); return end >= 0 && (Math.max(0, resolveAnchor(chat, c.start)) < cutAt || chapterAllHidden(chat, c)); };
 
 /** Where the saved chapters end, as positions in `chat`: the only places a cut may land. */
 export function chapterEnds(chat, st) {

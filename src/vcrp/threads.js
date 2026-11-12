@@ -22,6 +22,8 @@
 
 import { getContext, chat_metadata, saveMetadata } from "../st.js";
 import { localProfile } from "../core/state.js";
+import { isStoryReply } from "./storyReplies.js";
+import { vcrpWithoutSwipedReply } from "./generation.js";
 
 const META = "vcrp_threads";        // chat_metadata: { ignored: [key] }
 
@@ -110,6 +112,17 @@ export function alike(a, b) {
     return both / Math.min(A.size, B.size);
 }
 const sameSet = (A, B) => A.size === B.size && [...A].every(w => B.has(w));
+const sharedWords = (A, B) => { let n = 0; for (const w of A) if (B.has(w)) n++; return n; };
+
+// The same open end, by its words. A model seldom copies its list forward: it rewrites each
+// line as the scene moves, so the same thread comes back in other words. Two rules, the sure
+// one first (measured on real replies, where half of a list's lines fail the first and a good
+// part of those are plainly the line before, reworded):
+//   - SAME: at least 0.6 alike, and more than one word behind it unless the words are equal;
+//   - REWORDED: at least two words in common and 0.4 alike, for what the first rule left over.
+const SAME = 0.6;
+const REWORDED = 0.4;
+const REWORDED_WORDS = 2;
 
 // A timer's own count, at first sight: "… | 3 turns", "in 2 replies", "(1 turn left)".
 function turnsIn(text) {
@@ -133,8 +146,10 @@ export function readThreads(chat) {
     const items = [];
     const listed = { threads: 0, seeds: 0, timers: 0 };
     let n = 0;
+    // Replies the reader has hidden since are read too (storyReplies.js): they are the story's
+    // past, and a thread's age counts from where it really first appeared.
     for (const m of Array.isArray(chat) ? chat : []) {
-        if (!m || m.is_user || m.is_system || typeof m.mes !== "string") continue;
+        if (!isStoryReply(m)) continue;
         n++;
         if (!/<world_state/i.test(m.mes)) continue;
         const ws = worldThreads(worldStateBody(m.mes));
@@ -143,28 +158,47 @@ export function readThreads(chat) {
             listed[kind] = n;
             const open = items.filter(i => i.kind === kind && i.closed === null);
             const taken = new Set();
-            for (const text of ws[kind]) {
-                const words = lineWords(subject(kind, text));
-                if (!words.size) continue;
-                // The open line it is most alike, when alike enough to be the same open end.
+            // This reply's line is open item `item`, carried on: seen now, and moved when its words changed.
+            const carry = (item, text, words) => {
+                taken.add(item);
+                item.last = n;
+                const all = lineWords(text);
+                if (!sameSet(all, item.allWords)) { item.moved = n; item.text = text; item.allWords = all; item.words = words; }
+            };
+            const lines = ws[kind].map(text => ({ text, words: lineWords(subject(kind, text)) })).filter(l => l.words.size);
+            // First the sure ones, each line taking the open line it is most alike.
+            const rest = [];
+            for (const l of lines) {
                 let best = null, score = 0;
                 for (const i of open) {
                     if (taken.has(i)) continue;
-                    const s = alike(words, i.words);
+                    const s = alike(l.words, i.words);
                     if (s > score) { best = i; score = s; }
                 }
-                if (best && score >= 0.6 && (score === 1 || Math.min(words.size, best.words.size) >= 2)) {
-                    taken.add(best);
-                    best.last = n;
-                    const all = lineWords(text);
-                    if (!sameSet(all, best.allWords)) { best.moved = n; best.text = text; best.allWords = all; best.words = words; }
-                    continue;
-                }
+                if (best && score >= SAME && (score === 1 || Math.min(l.words.size, best.words.size) >= 2)) carry(best, l.text, l.words);
+                else rest.push(l);
+            }
+            // Then the reworded ones, among what is left on both sides: the likeliest pair first.
+            const pairs = [];
+            for (const l of rest) for (const i of open) {
+                if (taken.has(i)) continue;
+                const s = alike(l.words, i.words), both = sharedWords(l.words, i.words);
+                if (both >= REWORDED_WORDS && s >= REWORDED) pairs.push({ l, i, s, both });
+            }
+            pairs.sort((a, b) => b.s - a.s || b.both - a.both);
+            const placed = new Set();
+            for (const p of pairs) {
+                if (placed.has(p.l) || taken.has(p.i)) continue;
+                placed.add(p.l);
+                carry(p.i, p.l.text, p.l.words);
+            }
+            for (const l of rest) {
+                if (placed.has(l)) continue;
                 // One that left the list a moment ago and is back: the same open end, never closed.
-                const back = items.find(i => i.kind === kind && i.closed !== null && n - i.closed <= REOPEN_WITHIN && alike(words, i.words) >= 0.75);
+                const back = items.find(i => i.kind === kind && i.closed !== null && !taken.has(i) && n - i.closed <= REOPEN_WITHIN && alike(l.words, i.words) >= 0.75);
                 if (back) { back.closed = null; back.last = n; taken.add(back); continue; }
-                const turns = kind === "timers" ? turnsIn(text) : null;
-                const item = { key: `${kind}:${[...words].sort().join(" ")}`, kind, text, first: n, last: n, moved: n, closed: null, due: turns !== null ? n + turns : null, words, allWords: lineWords(text) };
+                const turns = kind === "timers" ? turnsIn(l.text) : null;
+                const item = { key: `${kind}:${[...l.words].sort().join(" ")}`, kind, text: l.text, first: n, last: n, moved: n, closed: null, due: turns !== null ? n + turns : null, words: l.words, allWords: lineWords(l.text) };
                 items.push(item);
                 taken.add(item);
             }
@@ -177,9 +211,12 @@ export function readThreads(chat) {
 
 // One reading of the chat serves the prompt and the tab; read again when the chat has changed.
 let cache = { chat: null, length: -1, last: "", value: null };
-function ledgerNow() {
-    let chat = [];
-    try { chat = ((getContext() || {}).chat) || []; } catch (e) { chat = []; }
+const chatNow = () => { try { return ((getContext() || {}).chat) || []; } catch (e) { return []; } };
+// `basis`: another list than the chat as it stands (the chat without a reply being swiped). Read
+// each time, and never kept in place of the chat's own reading.
+function ledgerNow(basis) {
+    if (Array.isArray(basis)) return readThreads(basis);
+    const chat = chatNow();
     const last = chat.length ? String((chat[chat.length - 1] || {}).mes || "") : "";
     if (cache.chat === chat && cache.length === chat.length && cache.last === last && cache.value) return cache.value;
     const value = readThreads(chat);
@@ -210,8 +247,8 @@ export async function setThreadIgnored(key, ignored) {
  * `overdue` (a timer past its count, by how many replies; a negative number is replies to go),
  * `stale` (it has waited long enough to be named) and `ignored`.
  */
-export function threadLedger() {
-    const { replies, listed, items } = ledgerNow();
+export function threadLedger(basis) {
+    const { replies, listed, items } = ledgerNow(basis);
     const ignored = new Set(ignoredKeys());
     const current = Object.fromEntries(KINDS.map(k => [k, listed[k] > 0 && replies - listed[k] <= LISTED_WITHIN]));
     const open = items.filter(i => i.closed === null).map(i => {
@@ -230,10 +267,11 @@ const waited = i => (i.kind === "threads" ? i.still - STALE_AFTER : i.kind === "
 /**
  * The open ends to name with the reply about to be written: the stale ones whose turn it is
  * (when they first go stale, then every NUDGE_EVERY replies), the longest waiting first, two
- * at most. Decided by the reply's number alone, so a swipe of the same reply names the same.
+ * at most. Decided by the reply's number alone, so a swipe of the same reply names the same
+ * (`basis`: the chat that reply follows, when it is not the chat as it stands).
  */
-export function threadsDue() {
-    const l = threadLedger();
+export function threadsDue(basis) {
+    const l = threadLedger(basis);
     return l.open.filter(i => i.stale && !i.ignored && waited(i) % NUDGE_EVERY === 0)
         .sort((a, b) => waited(b) - waited(a)).slice(0, MAX_NUDGED);
 }
@@ -255,7 +293,12 @@ export function dueLine(i) {
 export function threadsNudge(gen = "reply") {
     if (gen !== "reply" || !threadNudgesOn()) return "";
     let due = [];
-    try { due = threadsDue(); } catch (e) { console.warn("[VCRP] Threads: the ledger could not be read:", e); return ""; }
+    try {
+        // On a swipe SillyTavern leaves the reply being replaced in the chat: counted, it would be
+        // one reply too many, and the swipe would be reminded of something else than the reply was.
+        const chat = chatNow(), follows = vcrpWithoutSwipedReply(chat);
+        due = threadsDue(follows === chat ? undefined : follows);
+    } catch (e) { console.warn("[VCRP] Threads: the ledger could not be read:", e); return ""; }
     if (!due.length) return "";
     return `[OPEN ENDS]\nThe story has left ${due.length === 1 ? "this" : "these"} hanging for a long time. If this scene gives an opening, bring ${due.length === 1 ? "it" : "one of them"} forward in a way that follows from what has happened, or let it be settled for good; do not open something new in its place. If the scene gives no opening, leave it. Never mention this note.\n${due.map(dueLine).join("\n")}`;
 }

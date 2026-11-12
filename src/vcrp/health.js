@@ -218,8 +218,10 @@ export function vcrpHealthCheck() {
     const plot = peekFocusState() && peekFocusState().plot;
     if (plot && plot.active && !carries("[[plotfocus]]")) focusOff.push("the plot focus");
     // The Plot tab: the running arc rides where the plot focus does, the open ends' reminders in [[focus]].
-    if (arcs().current && !carries("[[plotfocus]]")) focusOff.push("the arc");
-    if (threadNudgesOn() && threadLedger().open.length && !carries("[[focus]]")) focusOff.push("the reminders of open ends");
+    let hasArc = false, openEnds = 0;
+    try { hasArc = !!arcs().current; openEnds = threadNudgesOn() ? threadLedger().open.length : 0; } catch (e) { console.warn("[VCRP] Setup Check: the Plot tab's state could not be read:", e); }
+    if (hasArc && !carries("[[plotfocus]]")) focusOff.push("the arc");
+    if (openEnds && !carries("[[focus]]")) focusOff.push("the reminders of open ends");
     // The Pura engines and Pura's trackers have tags of their own.
     if (isPuraEngine(activeEngine()) && !(carries("[[pura_late]]") && carries("[[pura_system]]"))) focusOff.push("the Pura engine's settings");
     if (meguminActiveBlocks().some(b => b && b.puraRules) && !carries("[[block_rules]]")) focusOff.push("Pura's tracker rules");
