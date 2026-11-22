@@ -35,6 +35,8 @@ import { oneShot } from "./oneShot.js";
 import { castLockOn } from "./castLock.js";
 import { localProfile } from "../core/state.js";
 import { usesCaretWords } from "../engine/caretWords.js";
+import { hardcodedLogic } from "../../data/database.js";
+import { WHATS_NEW_ID } from "./whatsNew.js";
 
 // A preset is VCRP's if it carries the tags only VCRP/Megumin presets use (the name can be anything).
 const VCRP_TAG_RE = /\[\[(?:blocks|THINK|prompt1)\]\]/;
@@ -155,30 +157,9 @@ export function vcrpHealthCheck() {
         add("info", "Gemini 4 with Chain of Thought on",
             "Gemini 4 reasons before it writes on its own, and Megumin Suite V11's Gemini Pro loadout keeps custom thinking off on it (on, for Gemini 3.1 Pro and 2.5 Pro). If replies come back as reasoning with no story, or the thinking doubles up, turn Chain of Thought off in Presets & CoT.");
     }
-    // The model's own reasoning on the latest reply: billed and not returned, or returned and
-    // not kept. Read from what that reply's answer really held, so it says which.
-    let fate = null;
-    try { fate = reasoningFate(((getContext() || {}).chat) || [], { showThoughts: cc.show_thoughts !== false }); } catch (e) { fate = null; }
-    if (fate) {
-        const n = k => Number(k).toLocaleString("en-US");
-        const effortSet = String(cc.reasoning_effort || "auto") !== "auto";
-        const cot = "To have a thinking block either way, turn on Chain of Thought (Presets & CoT): the model then writes its thinking out in the reply itself.";
-        if (fate.kind === "unkept") {
-            add("info", `The model's thinking arrived with your last reply (${n(fate.chars)} characters) and was not kept`,
-                "\"Request model reasoning\" is off in AI Response Configuration, so SillyTavern let it go by. Tick it, and the thinking shows above each reply.");
-        } else if (fate.kind === "unshown") {
-            add("info", `The model's thinking arrived with your last reply (${n(fate.chars)} characters), and SillyTavern showed none of it`,
-                `"Request model reasoning" is on, so it should have been kept. This SillyTavern version may not read reasoning the way ${vcrpRouteName() || "this connection"} sends it: update SillyTavern. ${cot}`);
-        } else if (source === "nanogpt") {
-            add("info", `The model reasoned on your last reply (${n(fate.tokens)} tokens), and none of its thinking came back`,
-                `SillyTavern passes "Request model reasoning" on to OpenRouter, but not to NanoGPT: there it sends only the Reasoning Effort, and on Auto it names none. ${effortSet
-                    ? "A Reasoning Effort is set and the thinking still does not come back, so NanoGPT is not returning this model's reasoning."
-                    : "Pick a Reasoning Effort in AI Response Configuration (Medium is a fair start; the reasoning is paid for either way) and send a message: this line goes when the thinking comes back."} ${cot}`);
-        } else {
-            add("info", `The model reasoned on your last reply (${n(fate.tokens)} tokens), and none of its thinking came back`,
-                `${cc.show_thoughts === false ? "\"Request model reasoning\" is off in AI Response Configuration: tick it to ask for the thinking." : "It was asked for, and the provider sent none: some models keep their reasoning to themselves (it is paid for all the same)."} ${cot}`);
-        }
-    }
+    // The model's own thinking on the latest reply, when no thinking block shows: said from
+    // what that reply's answer really held.
+    try { thinkingCheck(add, ctx, cc, source, model); } catch (e) { /* a chat of an unexpected shape */ }
     if (vcrpRouteHoistsSystem()) {
         const gemini = /gemini/.test(String(model || ""));
         const route = vcrpRouteName();
@@ -444,31 +425,177 @@ function reasoningParseCheck(add, ctx) {
 }
 
 // ── The thinking that did not show ───────────────────────────────────────────
-/**
- * What became of the model's own reasoning on the newest reply whose answer was read (pure).
- * null when there is nothing to say: the thinking is there (kept by SillyTavern, or written
- * in the reply by VCRP's own Chain of Thought), the model did not reason, or the answer did
- * not say. Otherwise:
- *   { kind: "unreturned", tokens }   reasoning was billed, and none of it arrived
- *   { kind: "unkept", chars }        it arrived, and SillyTavern was not asked to keep it
- *   { kind: "unshown", chars }       it arrived, was asked for, and still was not kept
- */
-export function reasoningFate(chat, { showThoughts = true } = {}) {
+// A reply has a thinking block when SillyTavern kept reasoning for it (the model's own, sent
+// beside the reply, or parsed out of the reply's text), or when the reply itself opens with
+// VCRP's Chain of Thought. With neither, nothing on screen or in SillyTavern's console says
+// why: the provider sent no thinking, sent it sealed, sent it where SillyTavern does not
+// read, or the model skipped the written round. Each reply's stamp (generationTrace.js)
+// holds what its answer carried, so this says which.
+
+const keptReasoning = m => String((m && m.extra && m.extra.reasoning) || "").trim();
+// Either tag: a prefilled reply continues from an opening tag it never wrote itself.
+const wroteThinking = m => /<\/?think(?:ing)?\b[^>]*>/i.test(String((m && m.mes) || ""));
+
+// The newest reply whose answer was read: { index, m, f }, or null.
+function lastReadReply(chat) {
     const list = Array.isArray(chat) ? chat : [];
     for (let i = list.length - 1; i > 0; i--) {
         const m = list[i];
         if (!m || m.is_user || m.is_system || typeof m.mes !== "string") continue;
         const f = m.extra && m.extra.vcrp_finish;
-        if (!f || !f.done) continue;
-        if (blankKindOf(m).kind) return null;   // a blank reply is said in its own lines
-        const kept = String((m.extra && m.extra.reasoning) || "").trim().length > 0;
-        const written = /<think(?:ing)?\b[^>]*>/i.test(m.mes);
-        if (kept || written) return null;
-        const chars = Number(f.think) || 0, tokens = Number(f.usage && f.usage.reasoning) || 0;
-        if (chars > 0) return { kind: showThoughts ? "unshown" : "unkept", chars };
-        return tokens > 0 ? { kind: "unreturned", tokens } : null;
+        if (f && f.done) return { index: i, m, f };
     }
     return null;
+}
+
+/**
+ * What became of the model's thinking on the newest reply whose answer was read (pure).
+ * null when there is nothing to say: a thinking block shows, the reply is blank (said in its
+ * own lines), or the answer's own count says the model did not reason. Otherwise:
+ *   { kind: "unkept", chars }           it arrived, and SillyTavern was not asked to keep it
+ *   { kind: "unshown", chars }          it arrived, was asked for, and still is not on the reply
+ *   { kind: "sealed", sealed, tokens }  it came back encrypted: only the provider can read it
+ *   { kind: "unreturned", tokens }      reasoning was billed, and none of it arrived
+ *   { kind: "none", usage }             nothing arrived, and nothing says the model reasoned
+ *                                       (usage: the answer carried token counts at all)
+ */
+export function reasoningFate(chat, { showThoughts = true } = {}) {
+    const last = lastReadReply(chat);
+    if (!last) return null;
+    const { m, f } = last;
+    if (blankKindOf(m).kind) return null;   // a blank reply is said in its own lines
+    if (keptReasoning(m) || wroteThinking(m)) return null;
+    const chars = (Number(f.think) || 0) || (Number(f.thinkElse) || 0), sealed = Number(f.sealed) || 0;
+    const counted = Boolean(f.usage) && typeof f.usage.reasoning === "number";
+    const tokens = counted ? f.usage.reasoning : 0;
+    if (chars > 0) return { kind: showThoughts ? "unshown" : "unkept", chars };
+    if (sealed > 0) return { kind: "sealed", sealed, tokens };
+    if (tokens > 0) return { kind: "unreturned", tokens };
+    if (counted) return null;   // by the answer's own count, the model did not reason
+    return { kind: "none", usage: Boolean(f.usage) };
+}
+
+const EFFORT_NAMES = { auto: "Auto", min: "Minimum", low: "Low", medium: "Medium", high: "High", max: "Maximum" };
+
+// True when the request asks the model to open its reply with a <think> block: Chain of
+// Thought on, and an engine that has thinking steps to send (engine/buildBaseDict.js).
+function cotAsksForBlock() {
+    if (!localProfile || localProfile.cotEnabled === false) return false;
+    try {
+        return isPuraEngine(activeEngine()) || hardcodedLogic.models.some(m => m && m.id === localProfile.model);
+    } catch (e) { return false; }
+}
+
+// Setup Check's line on the latest reply's thinking, when none shows.
+function thinkingCheck(add, ctx, cc, source, model) {
+    const asked = cc.show_thoughts !== false;
+    const fate = reasoningFate((ctx && ctx.chat) || [], { showThoughts: asked });
+    if (!fate) return;
+    const n = k => Number(k).toLocaleString("en-US");
+    const nano = source === "nanogpt";
+    const route = vcrpRouteName() || "the provider";
+    const effort = String(cc.reasoning_effort || "auto");
+    const effortSet = effort !== "auto";
+    const cotOn = cotAsksForBlock();
+    const gemini = /gemini/.test(String(model || ""));
+    const copy = "If every reply comes without one, copy the thinking details (the button on this card) and send them along when asking about it.";
+    const cot = cotOn
+        ? "Chain of Thought is on, and this reply has no thinking block of its own either: the model skipped the written round."
+        : `To have a thinking block all the same, turn on Chain of Thought (Presets & CoT): the model then writes its thinking in the reply itself.${/gemini-4/.test(String(model || "")) ? " On Gemini 4 that is a second round of thinking beside its own, and now and then a reply comes back all thinking, which is why the Gemini loadout keeps it off." : ""}`;
+    if (fate.kind === "unkept") {
+        add("info", `The model's thinking arrived with your last reply (${n(fate.chars)} characters) and was not kept`,
+            "\"Request model reasoning\" is off in AI Response Configuration, so SillyTavern let it go by. Tick it, and the thinking shows above each reply.");
+        return;
+    }
+    if (fate.kind === "unshown") {
+        add("info", `The model's thinking arrived with your last reply (${n(fate.chars)} characters), and SillyTavern showed none of it`,
+            `"Request model reasoning" is on, so it should have been kept. This SillyTavern version may not read reasoning the way ${route} sends it: update SillyTavern. ${cot}`);
+        return;
+    }
+    if (fate.kind === "sealed") {
+        const sent = `${route} sent the reasoning encrypted (${n(fate.sealed)} sealed ${fate.sealed === 1 ? "entry" : "entries"}${fate.tokens ? `, ${n(fate.tokens)} reasoning tokens billed` : ""}) and none of it as text: a signature only the provider can read.`;
+        const next = !asked
+            ? "\"Request model reasoning\" is off in AI Response Configuration: tick it to ask for the thinking as text."
+            : nano && !effortSet
+                ? `The model did reason. On Reasoning Effort Auto, SillyTavern names no effort to NanoGPT: pick one in AI Response Configuration and see whether the thinking then comes as text. ${cot}`
+                : `The model did reason; no setting in SillyTavern or VCRP opens what was sent. ${cot}`;
+        add("info", "The model's thinking came back sealed on your last reply", `${sent} ${next}`);
+        return;
+    }
+    if (fate.kind === "unreturned") {
+        add("info", `The model reasoned on your last reply (${n(fate.tokens)} tokens), and none of its thinking came back`,
+            nano
+                ? `SillyTavern passes "Request model reasoning" on to OpenRouter, but not to NanoGPT: there it sends only the Reasoning Effort, and on Auto it names none. ${effortSet
+                    ? "A Reasoning Effort is set and the thinking still does not come back, so NanoGPT is not returning this model's reasoning."
+                    : "Pick a Reasoning Effort in AI Response Configuration (Medium is a fair start; the reasoning is paid for either way) and send a message: this line goes when the thinking comes back."} ${cot}`
+                : `${asked ? "It was asked for, and the provider sent none: some models keep their reasoning to themselves (it is paid for all the same)." : "\"Request model reasoning\" is off in AI Response Configuration: tick it to ask for the thinking."} ${cot}`);
+        return;
+    }
+    // Nothing arrived, and nothing says the model reasoned. Worth a line only where a thinking
+    // block was to be expected: VCRP asked for a written one, or the reader asked to see the
+    // reasoning of a model that reasons.
+    let reasons = false;
+    try { reasons = vcrpModelReasonsHidden(); } catch (e) { reasons = false; }
+    if (cotOn) {
+        add("info", "Chain of Thought is on, and your last reply has no thinking block",
+            `VCRP asked the model to open the reply with a <think> block, and the reply has none${asked && reasons ? `; no reasoning of the model's own came with it from ${route} either` : ""}.${reasons ? " A model that reasons on its own can skip the written round, having done its planning out of sight." : ""} Swipe to see whether it was this reply alone. ${copy}`);
+        return;
+    }
+    if (!asked || !reasons) return;
+    const counts = fate.usage
+        ? "and token counts that name no reasoning"
+        : nano
+            ? "and no token counts (NanoGPT sends those with a streamed reply only when asked, and SillyTavern does not ask), so the answer does not say whether the model reasoned"
+            : "and no token counts, so the answer does not say whether the model reasoned";
+    const held = `the answer held none: no reasoning text, nothing sealed, ${counts}`;
+    let detail;
+    if (!nano) {
+        detail = `"Request model reasoning" is on, and ${held}. Some models keep their reasoning to themselves, and a model can answer an easy turn without any.`;
+    } else if (!effortSet) {
+        detail = `On Reasoning Effort Auto, SillyTavern names no effort to NanoGPT, and ${held}. Pick a Reasoning Effort in AI Response Configuration (Medium is a fair start) and send a message: this line changes with what comes back.`;
+    } else if (effort === "min") {
+        detail = `Reasoning Effort is Minimum, which SillyTavern (1.19) sends to NanoGPT as "none": no reasoning asked for. Pick Medium or higher in AI Response Configuration and send a message.`;
+    } else {
+        detail = `SillyTavern asked NanoGPT for the model's reasoning (Reasoning Effort: ${EFFORT_NAMES[effort] || effort}), and ${held}. SillyTavern's NanoGPT connection has nothing more to ask with: the Reasoning Effort is the one reasoning setting it sends there. Whether a model's thinking is sent back is then NanoGPT's doing, model by model${gemini ? " (Google gives Gemini's as a summary, and only to a request that asks for one: that request is NanoGPT's to make)" : ""}; its support can say whether this model's is.`;
+    }
+    add("info", "No thinking came back with your last reply", `${detail} ${cot} ${copy}`);
+}
+
+/**
+ * The latest reply's thinking as text to paste: the setup, then what its answer carried.
+ * Numbers and names only, nothing of the chat. "" when no reply's answer was read, or when
+ * the reply has a thinking block (nothing to ask about).
+ */
+export function vcrpThinkingReportText(ctx = null) {
+    let c = ctx;
+    try { c = c || getContext(); } catch (e) { c = {}; }
+    const last = lastReadReply((c && c.chat) || []);
+    if (!last) return "";
+    const { index, m, f } = last;
+    const kept = keptReasoning(m), written = wroteThinking(m);
+    if (kept || written) return "";
+    const cc = (c && c.chatCompletionSettings) || {};
+    const { source, model } = vcrpActiveModel();
+    const p = localProfile || {};
+    const n = v => (Number(v) || 0).toLocaleString("en-US");
+    const x = m.extra || {};
+    let prefill = "?";
+    try { prefill = vcrpShouldPrefill() ? "on" : "off"; } catch (e) { prefill = "?"; }
+    const sentTo = f.model && String(f.model).toLowerCase() !== model ? `; this reply went to ${f.source || "?"} ${f.model}` : "";
+    const usage = f.usage
+        ? `out ${f.usage.out ?? "?"} (${typeof f.usage.reasoning === "number" ? `reasoning ${f.usage.reasoning}` : "reasoning not named"}), in ${f.usage.input ?? "?"}${typeof f.usage.cached === "number" ? ` (cached ${f.usage.cached})` : ""}`
+        : "none sent";
+    return [
+        `VCRP thinking details (${WHATS_NEW_ID})`,
+        `connection: ${source} ${model}${sentTo}${f.provider ? `; served by ${f.provider}` : ""}`,
+        `preset: ${cc.preset_settings_openai || "?"}; engine: ${p.mode || "?"}; Chain of Thought: ${p.cotEnabled !== false ? "on" : "off"}; prefill: ${prefill}`,
+        `SillyTavern: Request model reasoning ${cc.show_thoughts === false ? "off" : "on"}; Reasoning Effort ${cc.reasoning_effort || "?"}; streaming ${cc.stream_openai !== false ? "on" : "off"}; Reasoning Auto-Parse ${autoParseOn(c) ? "on" : "off"}`,
+        `reply #${index}: ended ${f.ended || "?"}${f.reason ? `, stop reason ${f.reason}${f.native ? ` (${f.native})` : ""}` : ", no stop reason"}${typeof f.ms === "number" ? `, took ${spell(f.ms)}` : ""}${typeof f.firstMs === "number" ? `, first text or reasoning after ${spell(f.firstMs)}` : ""}`,
+        `arrived: ${n(f.text)} characters of reply; ${n(f.think)} of reasoning where SillyTavern reads it (reasoning, reasoning_content); ${n(f.thinkElse)} of reasoning in reasoning_details alone; sealed reasoning entries: ${n(f.sealed)}; fields VCRP does not know: ${Array.isArray(f.also) && f.also.length ? f.also.join(", ") : "none"}`,
+        `token counts: ${usage}`,
+        `the message: no <think> block in the reply, and no reasoning kept on it${x.vcrp_rescued ? "; put back from the Thinking box by VCRP" : ""}`,
+        f.at ? `@ ${new Date(f.at).toISOString()}` : "",
+    ].filter(Boolean).join("\n");
 }
 
 // ── The empty replies of a chat ──────────────────────────────────────────────
@@ -666,12 +793,16 @@ export function buildHealthCard(rerender) {
         </div>`;
     }).join("");
     const report = vcrpEmptyRepliesText();
+    // Offered when the latest reply shows no thinking block: what its answer carried.
+    let thinking = "";
+    try { thinking = vcrpThinkingReportText(); } catch (e) { thinking = ""; }
     const card = $(`
         <div class="mtab-panel" style="margin: 0; padding: 12px 16px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px; flex-wrap:wrap;">
                 <span style="font-weight:700; color:${statusColor};">${status}</span>
-                <span style="display:flex; gap:6px;">
+                <span style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
                     ${report ? `<button class="ps-modern-btn secondary vcrp-health-copy-empty" style="padding:4px 10px; font-size:0.72rem;" title="The empty replies of this chat and how each ended, as text to paste"><i class="fa-solid fa-copy"></i> Copy empty-reply details</button>` : ""}
+                    ${thinking ? `<button class="ps-modern-btn secondary vcrp-health-copy-thinking" style="padding:4px 10px; font-size:0.72rem;" title="What the latest reply's answer carried about the model's thinking, as text to paste: numbers and names, nothing of the chat"><i class="fa-solid fa-copy"></i> Copy thinking details</button>` : ""}
                     <button class="ps-modern-btn secondary vcrp-health-recheck" style="padding:4px 10px; font-size:0.72rem;"><i class="fa-solid fa-rotate"></i> Re-check</button>
                 </span>
             </div>
@@ -679,6 +810,7 @@ export function buildHealthCard(rerender) {
         </div>`);
     card.find(".vcrp-health-recheck").on("click", () => { vcrpRefreshHealthBadge(); rerender(); });
     card.find(".vcrp-health-copy-empty").on("click", () => copyText(vcrpEmptyRepliesText(), "The empty replies' details"));
+    card.find(".vcrp-health-copy-thinking").on("click", () => copyText(vcrpThinkingReportText(), "The latest reply's thinking details", "Copied. Paste it where you ask about the missing thinking block."));
     return card;
 }
 

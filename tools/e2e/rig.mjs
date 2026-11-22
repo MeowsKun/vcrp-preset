@@ -58,11 +58,14 @@ const chunkOf = (script, step) => ({
     id: script.id, provider: script.provider || "Google AI Studio", model: MODEL.id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000),
     choices: step.noChoice ? [] : [{
         index: 0,
-        delta: { role: "assistant", content: step.content ?? "", ...(step.reasoning !== undefined ? { reasoning: step.reasoning } : {}) },
+        // `details`: a reasoning_details list (thinking as text, a summary, or sealed), as
+        // OpenRouter and NanoGPT document it beside the plain reasoning field.
+        delta: { role: "assistant", content: step.content ?? "", ...(step.reasoning !== undefined ? { reasoning: step.reasoning } : {}), ...(step.details ? { reasoning_details: step.details } : {}) },
         finish_reason: step.finish ?? null, native_finish_reason: step.native ?? null, logprobs: null,
     }],
     ...(step.usage ? { usage: step.usage } : {}),
     ...(step.error ? { error: step.error } : {}),
+    ...(step.top || {}),   // fields of a provider's own beside the usual ones
 });
 
 async function play(script, res) {
@@ -89,10 +92,13 @@ async function play(script, res) {
 /** Text as a stream of content steps. */
 export const pieces = (text, size = 28) => { const out = []; for (let i = 0; i < text.length; i += size) out.push({ content: text.slice(i, i + size), wait: 4 }); return out; };
 export const thoughts = (text, size = 40) => { const out = []; for (let i = 0; i < text.length; i += size) out.push({ reasoning: text.slice(i, i + size), wait: 4 }); return out; };
-/** A whole scripted answer: optional native reasoning, the content, how it ended. */
+/**
+ * A whole scripted answer: optional native reasoning, the content, how it ended. `usage: false`
+ * sends no token counts at all (NanoGPT's streams, unless the request asks for them).
+ */
 export function script({ reasoning = "", content = "", finish = "stop", native = "STOP", usage = null, end = "done", extra = [], provider, pre = [] } = {}) {
     const out = Math.ceil(content.length / 4), think = Math.ceil(reasoning.length / 4);
-    const u = usage || { prompt_tokens: 30000, completion_tokens: out + think, total_tokens: 30000 + out + think, completion_tokens_details: { reasoning_tokens: think }, prompt_tokens_details: { cached_tokens: 0 } };
+    const u = usage === false ? false : (usage || { prompt_tokens: 30000, completion_tokens: out + think, total_tokens: 30000 + out + think, completion_tokens_details: { reasoning_tokens: think }, prompt_tokens_details: { cached_tokens: 0 } });
     const steps = [...pre, ...thoughts(reasoning), ...pieces(content), ...extra];
     if (finish !== null) steps.push({ content: "", finish, native });
     if (u !== false && finish !== null) steps.push({ content: "", usage: u });

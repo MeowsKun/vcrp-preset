@@ -647,6 +647,44 @@ for (let k = 0; k < memCount; k++) {
     clicks += 1;
     if (failures === before) console.log("  ✓ What's new: hidden on a fresh install, shown after an update, Got it dismisses it");
 }
+// Setup Check, when the latest reply shows no thinking block (10.0.0-vcrp.26): what its answer
+// carried is said, and can be copied; where the clipboard is out of reach (an http page on a
+// phone) it is shown to copy by hand. A reply with its thinking block is offered nothing.
+{
+    const check = (ok, what) => { if (!ok) { failures++; console.log(`  ✗ Thinking details: ${what}`); } };
+    const before = failures;
+    const gear = tabsUI.findIndex(t => t.title === "Global Settings");
+    const chatWas = chat.slice();
+    const cc = ctx.chatCompletionSettings;
+    const ccWas = { ...cc };
+    const cotWas = state.localProfile.cotEnabled;
+    state.localProfile.cotEnabled = false;
+    Object.assign(cc, { chat_completion_source: "nanogpt", nanogpt_model: "google/gemini-4-argon", show_thoughts: true, reasoning_effort: "high", prompts: [{ identifier: "main", content: "[[blocks]] [[THINK]]" }] });
+    chat.length = 0;
+    chat.push({ is_user: false, mes: "A greeting.", name: "Alice" }, { is_user: true, mes: "hello", name: "Bob" },
+        { is_user: false, mes: "Alice smiles.", name: "Alice", extra: { vcrp_finish: { done: true, reason: "stop", ended: "done", text: 13, think: 0, model: "google/gemini-4-argon", source: "nanogpt" } } });
+    switchTab(gear);
+    const btn = () => $(".vcrp-health-copy-thinking");
+    check(btn().length === 1, "no Copy thinking details button on a reply with no thinking block");
+    check(/No thinking came back with your last reply/.test($(".vcrp-health-recheck").closest(".mtab-panel").text()), "Setup Check does not say that no thinking came back");
+    btn().trigger("click");
+    await new Promise(r => setTimeout(r, 5));
+    const dlg = w.document.querySelector("dialog.vcrp-text-dialog");
+    const text = dlg ? dlg.querySelector("textarea").value : "";
+    check(/^VCRP thinking details \(10\.0\.0-vcrp\.\d+\)\nconnection: nanogpt google\/gemini-4-argon/.test(text) && /token counts: none sent/.test(text) && !text.includes("Alice smiles"), `the details are not shown to copy by hand, or carry the chat's text: ${text.slice(0, 80)}`);
+    if (dlg) dlg.querySelector(".vcrp-dlg-close").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    check(!w.document.querySelector("dialog.vcrp-text-dialog"), "the dialog stays after Close");
+    chat[2].mes = "<think>plan</think>Alice smiles.";
+    switchTab(gear);
+    check(btn().length === 0 && !/No thinking came back/.test($(".vcrp-health-recheck").closest(".mtab-panel").text()), "the button or the line is there for a reply that has its thinking block");
+    chat.length = 0;
+    chat.push(...chatWas);
+    for (const k of Object.keys(cc)) delete cc[k];
+    Object.assign(cc, ccWas);
+    state.localProfile.cotEnabled = cotWas;
+    clicks += 2;
+    if (failures === before) console.log("  ✓ Thinking details: said and offered on a reply with no thinking block, shown to copy by hand, neither on a reply that has it");
+}
 // Pura Director: the panel appears with a Pura engine (Original with Pura's own controls,
 // Adapted without them), settings save, randomisers stop at two (the Director's Cut alone);
 // the BLOCKS tab lists Pura's trackers apart, and a reply's Pura block is drawn with Pura's card.

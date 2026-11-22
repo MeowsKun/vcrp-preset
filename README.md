@@ -216,9 +216,28 @@ Gemini has no place for. Claude on NanoGPT is left as it was.
 **The model's own thinking on NanoGPT.** SillyTavern asks OpenRouter to send a model's reasoning
 back when *Request model reasoning* is ticked. To NanoGPT it sends only the *Reasoning Effort*,
 and on Auto it names none (checked on SillyTavern 1.19). If a model that reasons by itself shows
-no thinking block there, pick a Reasoning Effort in AI Response Configuration. Setup Check says
-which it is from your last reply's own answer: *the model reasoned (N tokens), and none of its
-thinking came back*, or *its thinking arrived and was not kept*.
+no thinking block there, pick a Reasoning Effort in AI Response Configuration first.
+
+**No thinking block, and why** (10.0.0-vcrp.26). With an effort named, whether the thinking comes
+back is the provider's doing, model by model, and nothing on screen says what happened: SillyTavern
+reads reasoning from two fields of the answer, and its console prints the request, never a streamed
+answer. VCRP reads the answer as it passes, so:
+
+- Thinking that came in `reasoning_details` alone (a third place, which OpenRouter and NanoGPT both
+  document) is put on the reply as its reasoning, in SillyTavern's own Thinking box. Not when
+  *Request model reasoning* is off, and never over reasoning SillyTavern kept itself.
+- When no block shows, Setup Check says what the reply's answer held: *no thinking came back*
+  (with what SillyTavern asked for, and that NanoGPT sends no token counts with a streamed reply,
+  so the answer does not say whether the model reasoned), *the thinking came back sealed*
+  (encrypted: only the provider can read it), *it arrived and was not kept*, or *Chain of Thought is
+  on and the reply has no thinking block* (the model skipped the written round).
+- **Copy thinking details** on the Setup Check card gives that as text to send along when asking
+  about it: the connection, the settings, and what arrived, in numbers and names. Nothing of the
+  chat is in it.
+
+The one way to a thinking block that no provider can withhold is Chain of Thought (Presets & CoT):
+the model writes its thinking in the reply itself. On Gemini 4 that is a second round of thinking
+beside its own, which is why the Gemini loadout keeps it off.
 
 On Claude it relies on prompt caching you set up once:
 

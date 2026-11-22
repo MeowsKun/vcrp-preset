@@ -283,10 +283,18 @@ Switch it off in Global Settings → Behaviour → *Lore for background calls*.
 - **No thinking block on NanoGPT?** With Chain of Thought off, the thinking you see is the model's
   own, and the provider has to send it back. SillyTavern asks OpenRouter for it when *Request
   model reasoning* is ticked; NanoGPT it tells only the *Reasoning Effort*, and on Auto nothing.
-  Pick an effort in AI Response Configuration (Medium is a fair start). Setup Check tells you
-  which case you are in after a reply: the model reasoned and nothing came back, or the thinking
-  arrived and was not kept. Gemini through NanoGPT now also gets the same request as through
-  OpenRouter, so VCRP's own thinking steps reach it when Chain of Thought is on.
+  Pick an effort in AI Response Configuration (Medium is a fair start). Gemini through NanoGPT
+  also gets the same request as through OpenRouter, so VCRP's own thinking steps reach it when
+  Chain of Thought is on.
+- **Still no thinking block?** With an effort named, whether a model's thinking is sent back is
+  the provider's doing. After a reply, open Setup Check: it says what that reply's answer held
+  (nothing came back, the thinking came back sealed, it arrived and was not kept, or Chain of
+  Thought is on and the model wrote no block). **Copy thinking details** on that card gives it as
+  text to send along when you ask about it: settings and numbers, nothing of your chat. If the
+  provider sends the thinking in a place SillyTavern does not read, VCRP now shows it in the
+  Thinking box itself. Turning on Chain of Thought gives a thinking block on any provider, since
+  the model then writes it in the reply; on Gemini 4 that is a second round of thinking beside
+  its own, so the Gemini loadout keeps it off.
 - **Gemini JB** (Global Toggles & Add-ons; from Megumin Suite V11's 04/11 update): on Gemini, turn
   it on when gritty or heavy NSFW scenes come back cut off or empty. It tells the model the request
   complies with the adult fiction policy and asks for a `^` before every word; VCRP removes them as

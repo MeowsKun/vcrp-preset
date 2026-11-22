@@ -25,6 +25,17 @@
 // A stream that goes quiet: SillyTavern's server does not notice a provider connection that
 // dropped mid-stream (it neither ends the answer nor reports an error), so the page would wait
 // forever. The silence is watched here and told to whoever asked (streamStall.js).
+//
+// The model's own thinking, and where it arrives (10.0.0-vcrp.26). SillyTavern reads an
+// OpenAI-shaped answer's reasoning from two fields, delta.reasoning and
+// delta.reasoning_content. OpenRouter and NanoGPT document a third, reasoning_details: a list
+// of entries holding the text ("reasoning.text", "reasoning.summary") or the thinking sealed
+// ("reasoning.encrypted": a signature only the provider can read). A provider that sends a
+// model's thinking there alone, or sealed, or not at all, gives the same thing on screen: no
+// thinking block, and nothing in SillyTavern's console to say which (it prints the request,
+// never a streamed answer). So all three are counted as they pass, with the names of any
+// field VCRP does not know, and thinking that came only in reasoning_details is shown as the
+// reply's reasoning, which is what it is.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getContext } from "../st.js";
@@ -36,6 +47,8 @@ const KEEP = 12;            // generations remembered
 const STAMP_WAIT_MS = 1500; // a reply's handlers wait this long, at most, for its answer to be read through
 const WHOLE_MAX = 4_000_000; // a whole (unstreamed) answer is kept up to this size to be read at its end
 const CONTENT_MAX = 600_000; // a reply's text is kept up to this size, until its message has been stamped
+const THOUGHT_MAX = 200_000; // thinking that came only in reasoning_details, kept until then too
+const ALSO_MAX = 10;         // names of unknown fields remembered for one answer
 
 const records = [];
 let installed = false;
@@ -127,8 +140,10 @@ function readObject(obj, out) {
             out.usage = out.usage || {};
             if (num(u.completion_tokens) !== null) out.usage.out = u.completion_tokens;
             if (num(u.output_tokens) !== null) out.usage.out = u.output_tokens;   // Anthropic (message_delta carries the final count)
+            // The reasoning's share: under completion_tokens_details, or (NanoGPT gives both) beside it.
             const det = u.completion_tokens_details;
             if (det && num(det.reasoning_tokens) !== null) out.usage.reasoning = det.reasoning_tokens;
+            else if (num(u.reasoning_tokens) !== null) out.usage.reasoning = u.reasoning_tokens;
             // The whole prompt as billed, with what of it was read from the cache and what was
             // written to it. OpenAI-shaped answers count the cached part inside prompt_tokens;
             // Anthropic's own count input_tokens beside it, so the three are added up here.
@@ -163,19 +178,56 @@ function readObject(obj, out) {
     }
 }
 
+// The fields of an OpenAI-shaped answer that VCRP knows: any other name is remembered (the
+// name alone), so a provider's own way of sending something can be seen for what it is.
+const KNOWN_TOP = new Set(["id", "object", "created", "model", "choices", "usage", "system_fingerprint", "provider", "service_tier", "citations", "error"]);
+const KNOWN_DELTA = new Set(["role", "content", "reasoning", "reasoning_content", "reasoning_details", "tool_calls", "function_call", "refusal", "annotations", "audio", "images", "name"]);
+const KNOWN_DETAIL = new Set(["reasoning.text", "reasoning.summary", "reasoning.encrypted"]);
+const fieldName = k => String(k).replace(/[^\w.$:-]/g, "?").slice(0, 40);
+
+/**
+ * What a reasoning_details list holds (pure): { text, sealed, kinds }. `text` is the thinking
+ * that can be read (the "text" of an entry, or its "summary"); `sealed` counts the entries
+ * that carry it encrypted and no text; `kinds` are entry types VCRP does not know.
+ */
+export function readReasoningDetails(list) {
+    let text = "", sealed = 0;
+    const kinds = [];
+    for (const e of Array.isArray(list) ? list : []) {
+        if (!e || typeof e !== "object") continue;
+        const t = (typeof e.text === "string" && e.text) || (typeof e.summary === "string" && e.summary) || "";
+        if (t) text += t;
+        else if (e.type === "reasoning.encrypted" || (!e.type && typeof e.data === "string" && e.data)) sealed++;
+        if (typeof e.type === "string" && e.type && !KNOWN_DETAIL.has(e.type)) kinds.push(e.type);
+    }
+    return { text, sealed, kinds };
+}
+
 // The reply text and the reasoning in one object, as they arrived: whatever SillyTavern then
-// made of them.
+// made of them. `think` is the reasoning in the two fields SillyTavern reads; `other` is
+// reasoning text that came in reasoning_details with nothing in those two (a provider that
+// sends both sends the same text twice); `sealed` counts encrypted reasoning entries; `also`
+// names the fields VCRP does not know.
 function replyParts(obj) {
-    let text = "", think = "";
-    if (!obj || typeof obj !== "object") return { text, think };
+    let text = "", think = "", other = "", sealed = 0;
+    const also = [];
+    if (!obj || typeof obj !== "object") return { text, think, other, sealed, also };
     const str = v => (typeof v === "string" ? v : "");
     const choice = Array.isArray(obj.choices) ? obj.choices[0] : null;
+    if (Array.isArray(obj.choices)) Object.keys(obj).forEach(k => { if (!KNOWN_TOP.has(k)) also.push(fieldName(k)); });
     if (choice && typeof choice === "object") {
         const d = choice.delta || choice.message || null;
         if (d && typeof d === "object") {
             if (Array.isArray(d.content)) d.content.forEach(p => { text += str(p && p.text); });
             else text += str(d.content);
-            think += str(d.reasoning) || str(d.reasoning_content);
+            const plain = str(d.reasoning) || str(d.reasoning_content);
+            think += plain;
+            const details = readReasoningDetails(d.reasoning_details);
+            if (!plain) other += details.text;
+            sealed += details.sealed;
+            details.kinds.forEach(k => also.push(fieldName(`reasoning_details:${k}`)));
+            const where = choice.delta ? "delta" : "message";
+            Object.keys(d).forEach(k => { if (!KNOWN_DELTA.has(k)) also.push(fieldName(`${where}.${k}`)); });
         }
         text += str(choice.text);
     }
@@ -186,30 +238,39 @@ function replyParts(obj) {
     const cand = Array.isArray(obj.candidates) ? obj.candidates[0] : null;
     const parts = cand && cand.content && Array.isArray(cand.content.parts) ? cand.content.parts : [];
     parts.forEach(p => { if (p && p.thought) think += str(p.text); else text += str(p && p.text); });
-    return { text, think };
+    return { text, think, other, sealed, also };
 }
 
 /**
  * Reads an answer as it arrives. push(text, now) takes the next piece (lines may be split
  * across pieces); result(how) gives what has been read: { reason, native, raw, usage, error,
- * provider, genId, text, think, firstMs, ended }. `how` is how the body ended: "end" (it
- * ended: "done" when a stop reason, the end marker or a whole answer was read, "closed" when
- * it ended with none), "abort" (cancelled on this side) or "error" (the connection broke).
- * `startedAt`: when the request was sent, for firstMs.
+ * provider, genId, text, think, firstMs, ended }, and, only when there is something to say,
+ * thinkElse (characters of reasoning that came in reasoning_details alone), sealed (encrypted
+ * reasoning entries) and also (names of fields VCRP does not know). `how` is how the body
+ * ended: "end" (it ended: "done" when a stop reason, the end marker or a whole answer was
+ * read, "closed" when it ended with none), "abort" (cancelled on this side) or "error" (the
+ * connection broke). `startedAt`: when the request was sent, for firstMs.
  */
 export function createAnswerReader(startedAt = 0) {
     const out = { reason: "", native: "", raw: "", usage: null, error: "", provider: "", genId: "", text: 0, think: 0, firstMs: null };
     let pending = "";      // a line not finished yet
     let whole = "";        // everything, until it is clear the answer is a stream
     let content = "";      // the reply text as it arrived (kept beside the record, never with the chat)
+    let thought = "";      // reasoning that came in reasoning_details alone (kept the same way)
+    let thinkElse = 0, sealed = 0;
+    const also = [];
     let stream = false, sawDone = false, parsedWhole = false;
     const take = (obj, now) => {
         readObject(obj, out);
         const part = replyParts(obj);
-        if ((part.text || part.think) && out.firstMs === null && now) out.firstMs = Math.max(0, now - startedAt);
+        if ((part.text || part.think || part.other) && out.firstMs === null && now) out.firstMs = Math.max(0, now - startedAt);
         out.text += part.text.length;
         out.think += part.think.length;
+        thinkElse += part.other.length;
+        sealed += part.sealed;
+        part.also.forEach(k => { if (also.length < ALSO_MAX && !also.includes(k)) also.push(k); });
         if (part.text && content.length < CONTENT_MAX) content += part.text;
+        if (part.other && thought.length < THOUGHT_MAX) thought += part.other;
     };
     const line = (raw, now) => {
         const l = raw.trim();
@@ -237,10 +298,18 @@ export function createAnswerReader(startedAt = 0) {
             }
             if (!out.reason && out.error) out.reason = "error";
             const ended = how !== "end" ? how : (out.reason || sawDone || parsedWhole ? "done" : "closed");
-            return { ...out, usage: out.usage ? { ...out.usage } : null, ended };
+            return {
+                ...out, usage: out.usage ? { ...out.usage } : null, ended,
+                ...(thinkElse ? { thinkElse } : {}), ...(sealed ? { sealed } : {}), ...(also.length ? { also: [...also] } : {}),
+            };
         },
         /** The reply text that arrived so far, as the model wrote it. */
         content: () => content,
+        /**
+         * The model's thinking that came in reasoning_details and nowhere SillyTavern reads:
+         * "" when the two fields it does read carried any (the provider sent it there too).
+         */
+        thought: () => (out.think ? "" : thought),
     };
 }
 
@@ -346,7 +415,8 @@ function watch(rec, res) {
     let clone;
     try { clone = res.clone(); } catch (e) { finish(rec, { error: "the answer could not be read alongside", ended: "error" }); return; }
     const reader = createAnswerReader(rec.at);
-    const end = how => { const read = reader.result(how, Date.now()); rec.content = reader.content(); return read; };
+    // (the thinking's text is kept for a story's reply alone: it is put on that reply, or let go)
+    const end = how => { const read = reader.result(how, Date.now()); rec.content = reader.content(); rec.thought = rec.story ? reader.thought() : undefined; return read; };
     // The reader's Stop cancels the request: not an error, and what was read until then stands.
     const broke = e => {
         const read = end(isAbort(e) ? "abort" : "error");
@@ -403,7 +473,7 @@ export function vcrpResetGenerationTrace() {
     vcrpSetStallTimes(0, 0);
 }
 
-const plain = r => ({ ...r, waiters: undefined, stallTimer: undefined, content: undefined });
+const plain = r => ({ ...r, waiters: undefined, stallTimer: undefined, content: undefined, thought: undefined });
 
 // The text of the reply stamped last, as the model sent it: for the handler that puts a reply
 // back when SillyTavern left its message empty (replyRescue.js). Kept until it is asked for.
@@ -444,7 +514,12 @@ const whenDone = (rec, ms) => new Promise(resolve => {
  *                           | "abort" (stopped on this side) | "error" (the connection broke)
  *   ms / firstMs / quietMs  the whole request; until the first reply text or reasoning; how long
  *                           nothing had arrived when it ended
- *   text / think            characters of reply text and of reasoning that arrived
+ *   text / think            characters of reply text, and of reasoning in the fields SillyTavern reads
+ * and, only when there is something to say:
+ *   source                  the connection it went out on ("openrouter", "nanogpt", ...)
+ *   thinkElse               characters of reasoning that came in reasoning_details alone
+ *   sealed                  encrypted reasoning entries (thinking only the provider can read)
+ *   also                    names of fields in the answer that VCRP does not know
  */
 export function finishStamp(rec) {
     return {
@@ -454,7 +529,25 @@ export function finishStamp(rec) {
         usage: rec.usage ? { ...rec.usage } : null,
         ended: rec.ended || "", ms: num(rec.ms), firstMs: num(rec.firstMs), quietMs: num(rec.quietMs),
         text: rec.text || 0, think: rec.think || 0,
+        ...(rec.source ? { source: rec.source } : {}),
+        ...(rec.thinkElse ? { thinkElse: rec.thinkElse } : {}),
+        ...(rec.sealed ? { sealed: rec.sealed } : {}),
+        ...(Array.isArray(rec.also) && rec.also.length ? { also: [...rec.also] } : {}),
     };
+}
+
+/**
+ * What to put on a reply as its reasoning (pure): the thinking that came in reasoning_details
+ * alone, or "" to leave the message as it is. Left alone when the reader did not ask to see
+ * the model's reasoning ("Request model reasoning" off), when the answer was not read to its
+ * end, and when the message has reasoning already (SillyTavern's own, or parsed from the reply).
+ */
+export function reasoningToShow(msg, thought, { showThoughts = true, done = true } = {}) {
+    const text = typeof thought === "string" ? thought.trim() : "";
+    if (!text || !done || !showThoughts) return "";
+    if (!msg || msg.is_user || msg.is_system) return "";
+    if (String((msg.extra && msg.extra.reasoning) || "").trim()) return "";
+    return text;
 }
 
 /**
@@ -464,7 +557,8 @@ export function finishStamp(rec) {
  */
 export async function vcrpFinishOnReply(messageId, type) {
     if (type === "first_message") return;
-    const chat = ((getContext() || {}).chat) || [];
+    const ctx = getContext() || {};
+    const chat = ctx.chat || [];
     const msg = chat[Number(messageId)];
     if (!msg || msg.is_user || msg.is_system) return;
     // SillyTavern starts a new swipe with a copy of the last one's extras: how THAT one ended
@@ -475,6 +569,7 @@ export async function vcrpFinishOnReply(messageId, type) {
         delete msg.extra.vcrp_cut;
         delete msg.extra.vcrp_rescued;
         delete msg.extra.vcrp_continuity;   // what the last swipe was found to contradict
+        delete msg.extra.vcrp_reasoning;    // whose thinking VCRP had put there
     }
     arrived = null;
     let rec = null;
@@ -493,6 +588,17 @@ export async function vcrpFinishOnReply(messageId, type) {
     // With the swipe too: SillyTavern puts a swipe's own extras back when it is shown again.
     const info = Array.isArray(msg.swipe_info) && typeof msg.swipe_id === "number" ? msg.swipe_info[msg.swipe_id] : null;
     if (info && typeof info === "object") { info.extra = info.extra || {}; info.extra.vcrp_finish = { ...stamp }; }
+    // The model's thinking, sent where SillyTavern does not look for it: the reply's reasoning
+    // all the same, in the Thinking box SillyTavern draws for any other.
+    const thought = rec.thought;
+    rec.thought = undefined;
+    const show = reasoningToShow(msg, thought, { showThoughts: (ctx.chatCompletionSettings || {}).show_thoughts !== false, done: rec.done });
+    if (!show) return;
+    const mark = { reasoning: show, reasoning_type: "model", vcrp_reasoning: "details" };   // "model": SillyTavern's word for reasoning the model sent
+    Object.assign(msg.extra, mark);
+    if (info && typeof info === "object") Object.assign(info.extra, mark);
+    try { if (typeof ctx.updateMessageBlock === "function") ctx.updateMessageBlock(Number(messageId), msg); } catch (e) { console.warn("[VCRP] The model's thinking was put on the reply, but the message could not be redrawn", e); }
+    console.info(`[VCRP] Reply #${Number(messageId)}: the model's thinking came in reasoning_details alone (${show.length} characters); shown as the reply's reasoning.`);
 }
 
 /** The output tokens a reply was billed for (its reasoning counted), when its answer said; else null. */
