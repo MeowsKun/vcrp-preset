@@ -280,6 +280,13 @@ Switch it off in Global Settings → Behaviour → *Lore for background calls*.
   Response Length is under 8,000 on such a model, and warns when CoT Prefill is forced on for a
   model that refuses one. On Gemini 4 it also notes that Megumin Suite's Gemini loadout keeps
   custom thinking (Chain of Thought) off, since the model reasons on its own.
+- **No thinking block on NanoGPT?** With Chain of Thought off, the thinking you see is the model's
+  own, and the provider has to send it back. SillyTavern asks OpenRouter for it when *Request
+  model reasoning* is ticked; NanoGPT it tells only the *Reasoning Effort*, and on Auto nothing.
+  Pick an effort in AI Response Configuration (Medium is a fair start). Setup Check tells you
+  which case you are in after a reply: the model reasoned and nothing came back, or the thinking
+  arrived and was not kept. Gemini through NanoGPT now also gets the same request as through
+  OpenRouter, so VCRP's own thinking steps reach it when Chain of Thought is on.
 - **Gemini JB** (Global Toggles & Add-ons; from Megumin Suite V11's 04/11 update): on Gemini, turn
   it on when gritty or heavy NSFW scenes come back cut off or empty. It tells the model the request
   complies with the adult fiction policy and asks for a `^` before every word; VCRP removes them as

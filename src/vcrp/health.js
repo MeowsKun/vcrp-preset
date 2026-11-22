@@ -9,7 +9,7 @@
 
 import { extension_settings, getContext, event_types } from "../st.js";
 import { extensionName } from "../core/constants.js";
-import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem, vcrpRouteMarksCache, vcrpModelReasonsHidden } from "./generation.js";
+import { vcrpDetectPrefill, vcrpActiveModel, vcrpShouldPrefill, vcrpPrefillMode, vcrpRouteHoistsSystem, vcrpRouteMarksCache, vcrpModelReasonsHidden, vcrpRouteName } from "./generation.js";
 import { vcrpGenerationRecords } from "./generationTrace.js";
 import { helperSettings, helperJobWanted, HELPER_JOBS, CURRENT_CONNECTION } from "./helper/settings.js";
 import { blankKindOf, spell, apiWords, QUIET_MS } from "./blankReply.js";
@@ -155,10 +155,37 @@ export function vcrpHealthCheck() {
         add("info", "Gemini 4 with Chain of Thought on",
             "Gemini 4 reasons before it writes on its own, and Megumin Suite V11's Gemini Pro loadout keeps custom thinking off on it (on, for Gemini 3.1 Pro and 2.5 Pro). If replies come back as reasoning with no story, or the thinking doubles up, turn Chain of Thought off in Presets & CoT.");
     }
+    // The model's own reasoning on the latest reply: billed and not returned, or returned and
+    // not kept. Read from what that reply's answer really held, so it says which.
+    let fate = null;
+    try { fate = reasoningFate(((getContext() || {}).chat) || [], { showThoughts: cc.show_thoughts !== false }); } catch (e) { fate = null; }
+    if (fate) {
+        const n = k => Number(k).toLocaleString("en-US");
+        const effortSet = String(cc.reasoning_effort || "auto") !== "auto";
+        const cot = "To have a thinking block either way, turn on Chain of Thought (Presets & CoT): the model then writes its thinking out in the reply itself.";
+        if (fate.kind === "unkept") {
+            add("info", `The model's thinking arrived with your last reply (${n(fate.chars)} characters) and was not kept`,
+                "\"Request model reasoning\" is off in AI Response Configuration, so SillyTavern let it go by. Tick it, and the thinking shows above each reply.");
+        } else if (fate.kind === "unshown") {
+            add("info", `The model's thinking arrived with your last reply (${n(fate.chars)} characters), and SillyTavern showed none of it`,
+                `"Request model reasoning" is on, so it should have been kept. This SillyTavern version may not read reasoning the way ${vcrpRouteName() || "this connection"} sends it: update SillyTavern. ${cot}`);
+        } else if (source === "nanogpt") {
+            add("info", `The model reasoned on your last reply (${n(fate.tokens)} tokens), and none of its thinking came back`,
+                `SillyTavern passes "Request model reasoning" on to OpenRouter, but not to NanoGPT: there it sends only the Reasoning Effort, and on Auto it names none. ${effortSet
+                    ? "A Reasoning Effort is set and the thinking still does not come back, so NanoGPT is not returning this model's reasoning."
+                    : "Pick a Reasoning Effort in AI Response Configuration (Medium is a fair start; the reasoning is paid for either way) and send a message: this line goes when the thinking comes back."} ${cot}`);
+        } else {
+            add("info", `The model reasoned on your last reply (${n(fate.tokens)} tokens), and none of its thinking came back`,
+                `${cc.show_thoughts === false ? "\"Request model reasoning\" is off in AI Response Configuration: tick it to ask for the thinking." : "It was asked for, and the provider sent none: some models keep their reasoning to themselves (it is paid for all the same)."} ${cot}`);
+        }
+    }
     if (vcrpRouteHoistsSystem()) {
         const gemini = /gemini/.test(String(model || ""));
-        add("info", `OpenRouter + ${gemini ? "Gemini" : "Claude"}: after-chat instructions go as user messages`,
-            `OpenRouter moves every system message to the front of the prompt${gemini ? " (Gemini has one system instruction, which its cache treats as fixed)" : ""}. VCRP sends Output Rules and the closing slots as user messages instead, so ${gemini ? "Gemini" : "Claude"} reads them after the chat and per-turn changes leave the cache intact.`);
+        const route = vcrpRouteName();
+        add("info", `${route} + ${gemini ? "Gemini" : "Claude"}: after-chat instructions go as user messages`,
+            source === "openrouter"
+                ? `OpenRouter moves every system message to the front of the prompt${gemini ? " (Gemini has one system instruction, which its cache treats as fixed)" : ""}. VCRP sends Output Rules and the closing slots as user messages instead, so ${gemini ? "Gemini" : "Claude"} reads them after the chat and per-turn changes leave the cache intact.`
+                : `Gemini has one system instruction and no system messages inside a chat, so a system message placed after the chat does not reach it there through ${route}. VCRP sends Output Rules and the closing slots as user messages instead, as it does on OpenRouter, so Gemini reads them after the chat (the thinking steps and the final check among them) and per-turn changes stay out of the system instruction.`);
     }
 
     // 5. Engine and preset from the same family. Told apart by the ban list: VCRP's
@@ -414,6 +441,34 @@ function reasoningParseCheck(add, ctx) {
     const show = s => JSON.stringify(String(s)).slice(1, -1);
     add("info", `SillyTavern's Reasoning Auto-Parse is on${back ? `: ${back} repl${back === 1 ? "y" : "ies"} it had left empty in this chat ${back === 1 ? "was" : "were"} put back` : ""}`,
         `With it on, a streamed reply that opens with "${show(rs.prefix)}" goes into the Thinking box until SillyTavern meets "${show(rs.suffix)}", to the letter (a line break in the template has to be there too). A reply that closes its thinking any other way ("...done.</think>" on one line, </thinking>), or never closes it, stayed there whole, story and all, and the message came back empty with nothing wrong on the provider's side. VCRP now puts such a reply back as it arrives. To keep it from happening at all, turn Auto-Parse off (Advanced Formatting → Reasoning): the preset's own regex draws the thinking box, and takes any of those closings.`);
+}
+
+// ── The thinking that did not show ───────────────────────────────────────────
+/**
+ * What became of the model's own reasoning on the newest reply whose answer was read (pure).
+ * null when there is nothing to say: the thinking is there (kept by SillyTavern, or written
+ * in the reply by VCRP's own Chain of Thought), the model did not reason, or the answer did
+ * not say. Otherwise:
+ *   { kind: "unreturned", tokens }   reasoning was billed, and none of it arrived
+ *   { kind: "unkept", chars }        it arrived, and SillyTavern was not asked to keep it
+ *   { kind: "unshown", chars }       it arrived, was asked for, and still was not kept
+ */
+export function reasoningFate(chat, { showThoughts = true } = {}) {
+    const list = Array.isArray(chat) ? chat : [];
+    for (let i = list.length - 1; i > 0; i--) {
+        const m = list[i];
+        if (!m || m.is_user || m.is_system || typeof m.mes !== "string") continue;
+        const f = m.extra && m.extra.vcrp_finish;
+        if (!f || !f.done) continue;
+        if (blankKindOf(m).kind) return null;   // a blank reply is said in its own lines
+        const kept = String((m.extra && m.extra.reasoning) || "").trim().length > 0;
+        const written = /<think(?:ing)?\b[^>]*>/i.test(m.mes);
+        if (kept || written) return null;
+        const chars = Number(f.think) || 0, tokens = Number(f.usage && f.usage.reasoning) || 0;
+        if (chars > 0) return { kind: showThoughts ? "unshown" : "unkept", chars };
+        return tokens > 0 ? { kind: "unreturned", tokens } : null;
+    }
+    return null;
 }
 
 // ── The empty replies of a chat ──────────────────────────────────────────────

@@ -7936,4 +7936,130 @@ console.log("80 ok the story's state by hand, and a tidier window (the blocks ed
 }
 console.log("81 ok the sweep before a first run (replies hidden since still count for a thread's age, a beat's wait, an arc's length and the cost report; a reworded thread is the same thread, two that share a name are not; a swipe is reminded of what its reply was; the continuity check keeps its finding when the reply's blocks are written meanwhile, and its corrected swipe carries the reply's own direction and leaves the box alone; waiting chapters their check passed are approved, a chapter keeping the date and bonds read when it was written; summarised messages hidden by the reader are not a rewind, and their chapters reach the memory text; the ceiling's note when nothing is left to cut; a swipe of the reply an audit ended on calls no audit; chat data of any shape never stops a prompt)");
 
+// 82. Gemini through NanoGPT (10.0.0-vcrp.25). Gemini has one system instruction and no system
+//     turns, and VCRP's answer to that (the after-chat rules sent as user text, the turns
+//     joined so they alternate) was switched on for OpenRouter alone. Through NanoGPT the rules
+//     went out as a system message after the chat, the thinking steps and the final check among
+//     them. The request is now the one OpenRouter gets, to the letter. Claude on NanoGPT, and a
+//     Gemini on any other source, are left as they were.
+{
+    const q = state.localProfile;
+    const gen = await imp("src/vcrp/generation.js");
+    const { vcrpHealthCheck } = await imp("src/vcrp/health.js");
+    const { meguminSyncLegacyBlockIds } = await imp("src/features/blocks/registry.js");
+    const keep = { mode: q.mode, model: q.model, cot: q.cotEnabled, order: JSON.stringify(q.blockStack.order), cc: { ...chatCompletionSettings }, api: ctx.mainApi };
+    const route = settings => { for (const k of Object.keys(chatCompletionSettings)) delete chatCompletionSettings[k]; Object.assign(chatCompletionSettings, settings); };
+    const OR = { chat_completion_source: "openrouter", openrouter_model: "google/gemini-4-argon" };
+    const NANO = { chat_completion_source: "nanogpt", nanogpt_model: "google/gemini-4-argon" };
+    q.blockStack.order = ["world", "bonds"]; meguminSyncLegacyBlockIds();
+    chat.length = 0;
+
+    // What the route is taken for.
+    route(NANO);
+    assert.deepEqual(gen.vcrpActiveModel(), { source: "nanogpt", model: "google/gemini-4-argon" }, "the model picked for NanoGPT is read");
+    assert(gen.vcrpRouteHoistsSystem() && gen.vcrpRouteNeedsAlternation() && !gen.vcrpRouteMarksCache() && gen.vcrpRouteName() === "NanoGPT", "Gemini on NanoGPT: the after-chat rules as user text, the turns alternating, no cache markers");
+    assert(gen.vcrpModelReasonsHidden() && !gen.vcrpDetectPrefill().prefill, "and as on any route: it reasons out of sight, and takes no prefill");
+    route({ chat_completion_source: "nanogpt", nanogpt_model: "gemini-3.1-pro" });
+    assert(gen.vcrpRouteHoistsSystem() && gen.vcrpRouteNeedsAlternation(), "whichever Gemini, however NanoGPT names it");
+    route({ chat_completion_source: "nanogpt", nanogpt_model: "anthropic/claude-opus-4.6" });
+    assert(!gen.vcrpRouteHoistsSystem() && !gen.vcrpRouteNeedsAlternation() && !gen.vcrpRouteMarksCache(), "Claude on NanoGPT is left as it was");
+    route({ chat_completion_source: "custom", custom_model: "google/gemini-4-argon" });
+    assert(!gen.vcrpRouteHoistsSystem() && !gen.vcrpRouteNeedsAlternation(), "a Gemini on a custom endpoint is left as it was");
+    route({ chat_completion_source: "openrouter", openrouter_model: "anthropic/claude-opus-4.6" });
+    assert(gen.vcrpRouteHoistsSystem() && !gen.vcrpRouteNeedsAlternation() && gen.vcrpRouteMarksCache() && gen.vcrpRouteName() === "OpenRouter", "OpenRouter as before");
+
+    // The request itself: on every shipped preset and engine, with VCRP's thinking on and off,
+    // NanoGPT's is OpenRouter's.
+    for (const [preset, mode, model] of [
+        ["VCRP V11 Megumin Original.json", "v11-voice-megumin", "cot-v11-voice-english"], ["VCRP V10 Universal.json", "v10-core", "cot-v10-ukiyo-english"],
+        ["VCRP V10 Universal.json", "pura-adapted", "cot-v10-ukiyo-english"], ["VCRP V10 Megumin Original.json", "v10-core", "cot-v10-ukiyo-english"],
+    ]) for (const cot of [true, false]) {
+        Object.assign(q, { mode, model, cotEnabled: cot });
+        route(OR);
+        const viaOpenRouter = await run(preset);
+        route(NANO);
+        const viaNano = await run(preset);
+        const what = `${preset.replace(".json", "")}, ${mode}, thinking ${cot ? "on" : "off"}`;
+        assert.deepEqual(viaNano, viaOpenRouter, `${what}: the request through NanoGPT is the one through OpenRouter`);
+        assert.deepEqual(leftovers(viaNano), [], `${what}: tags left over`);
+        const first = viaNano.findIndex(m => m.role !== "system");
+        assert(first > 0 && viaNano.slice(first).every(m => m.role !== "system"), `${what}: nothing after the chat is a system message`);
+        const roles = viaNano.slice(first).map(m => m.role);
+        assert(roles.every((r, i) => i === 0 || r !== roles[i - 1]) && viaNano.at(-1).role === "user", `${what}: user and model turns alternate, and the request ends on the reader's side (${roles.join(",")})`);
+        // VCRP's own thinking: asked for on the reader's side of the chat when on (after the newest
+        // message on a V11 preset, just before it on a V10 one), not at all when off, and never
+        // in the system instruction. (The harness's own replies carry <think> text: only the
+        // user turns are looked at.)
+        const userSide = viaNano.slice(first).filter(m => m.role === "user").map(m => String(m.content)).join("\n");
+        const system = viaNano.slice(0, first).map(m => String(m.content)).join("\n");
+        assert(userSide.includes("latest user msg") && /<think>/.test(userSide) === cot && !/<think>/.test(system), `${what}: the thinking steps ${cot ? "are with the chat's last turns" : "are not sent"}, and never in the system instruction`);
+    }
+
+    // Before, on a V10 preset (its Output Rules sit in the chat as a system message, the thinking
+    // steps in them): through NanoGPT that message went out as a system message. Claude there
+    // still gets it so.
+    Object.assign(q, { mode: "v10-core", model: "cot-v10-ukiyo-english", cotEnabled: true });
+    route({ chat_completion_source: "nanogpt", nanogpt_model: "anthropic/claude-opus-4.6" });
+    const claude = await run("VCRP V10 Universal.json");
+    const firstChat = claude.findIndex(m => m.role !== "system");
+    assert(claude.slice(firstChat).some(m => m.role === "system" && /<think>/.test(String(m.content))), "Claude on NanoGPT: the request as it was, the thinking steps in a system message inside the chat");
+
+    // Setup Check says what is done, by the route's own name.
+    ctx.mainApi = "openai";
+    const v11 = JSON.parse(readFileSync(join(REPO, "Presets", "VCRP V11 Megumin Original.json"), "utf8"));
+    route({ ...NANO, prompts: v11.prompts, prompt_order: v11.prompt_order });
+    let items = vcrpHealthCheck().items;
+    const line = items.find(i => i.title === "NanoGPT + Gemini: after-chat instructions go as user messages");
+    assert(line && /through NanoGPT/.test(line.detail) && /as it does on OpenRouter/.test(line.detail) && !items.some(i => /^OpenRouter \+/.test(i.title)), `Setup Check on NanoGPT: ${items.map(i => i.title).filter(t => /user messages/.test(t)).join(" / ")}`);
+    route({ ...OR, prompts: v11.prompts, prompt_order: v11.prompt_order });
+    items = vcrpHealthCheck().items;
+    assert(items.some(i => i.title === "OpenRouter + Gemini: after-chat instructions go as user messages" && /OpenRouter moves every system message to the front/.test(i.detail)), "Setup Check on OpenRouter: as before");
+
+    // ── The thinking that did not show: said from what the reply's answer really held ──
+    // Each reply's stamp says how many reasoning tokens were billed and how much reasoning text
+    // arrived, so Setup Check can tell "the model reasoned and none of it came back" (asked for
+    // or not, by the route) from "it came, and SillyTavern was not asked to keep it".
+    const H = await imp("src/vcrp/health.js");
+    const PROSE = "Seraphina kneels beside the bed of moss and presses a cool cloth to his brow.";
+    const stamped = (mes, f, extra = {}) => ({ is_user: false, name: "Alice", mes, extra: { ...extra, vcrp_finish: { done: true, reason: "stop", ...f } } });
+    const U = { is_user: true, name: "Bob", mes: "hi" }, G = { is_user: false, name: "Alice", mes: "A greeting." };
+    assert.equal(H.reasoningFate([G, U, stamped(PROSE, { think: 0, usage: { out: 900, reasoning: 0 } })]), null, "a model that did not reason: nothing to say");
+    assert.deepEqual(H.reasoningFate([G, U, stamped(PROSE, { think: 0, usage: { out: 4000, reasoning: 3200 } })]), { kind: "unreturned", tokens: 3200 }, "reasoning billed, none of it arrived");
+    assert.deepEqual(H.reasoningFate([G, U, stamped(PROSE, { think: 1800, usage: { out: 4000, reasoning: 3200 } })], { showThoughts: false }), { kind: "unkept", chars: 1800 }, "it arrived, and SillyTavern was not asked to keep it");
+    assert.deepEqual(H.reasoningFate([G, U, stamped(PROSE, { think: 1800, usage: { out: 4000, reasoning: 3200 } })]), { kind: "unshown", chars: 1800 }, "asked for, arrived, and still not kept");
+    assert.equal(H.reasoningFate([G, U, stamped(PROSE, { think: 1800, usage: { reasoning: 3200 } }, { reasoning: "The model's thoughts." })]), null, "kept by SillyTavern: nothing to say");
+    assert.equal(H.reasoningFate([G, U, stamped(`<think>\nplan\n</think>\n${PROSE}`, { think: 0, usage: { reasoning: 3200 } })]), null, "VCRP's own thinking written in the reply: nothing to say");
+    assert.equal(H.reasoningFate([G, U, stamped("", { think: 0, usage: { reasoning: 3200 } })]), null, "a blank reply is said in its own lines");
+    assert.equal(H.reasoningFate([G, U, { is_user: false, mes: PROSE }]), null, "a reply whose answer was not read says nothing");
+    // Setup Check, by the route.
+    const fateLine = () => vcrpHealthCheck().items.find(i => /thinking (came back|arrived)/.test(i.title)) || null;
+    chat.length = 0;
+    chat.push(G, U, stamped(PROSE, { think: 0, usage: { out: 4000, reasoning: 3200 } }));
+    route({ ...NANO, prompts: v11.prompts, prompt_order: v11.prompt_order, show_thoughts: true, reasoning_effort: "auto" });
+    let said = fateLine();
+    assert(said && /reasoned on your last reply \(3,200 tokens\), and none of its thinking came back/.test(said.title) && /but not to NanoGPT/.test(said.detail) && /Pick a Reasoning Effort/.test(said.detail) && /Chain of Thought/.test(said.detail),
+        `NanoGPT on Auto: said, with the one thing SillyTavern sends it about reasoning: ${said && said.title} / ${said && said.detail}`);
+    route({ ...NANO, prompts: v11.prompts, prompt_order: v11.prompt_order, show_thoughts: true, reasoning_effort: "medium" });
+    said = fateLine();
+    assert(said && /A Reasoning Effort is set and the thinking still does not come back/.test(said.detail) && !/Pick a Reasoning Effort/.test(said.detail), "NanoGPT with an effort set: said as NanoGPT's not returning it");
+    route({ ...OR, prompts: v11.prompts, prompt_order: v11.prompt_order, show_thoughts: false });
+    said = fateLine();
+    assert(said && /tick it to ask for the thinking/.test(said.detail) && !/NanoGPT/.test(said.detail), "another route with Request model reasoning off: tick it");
+    route({ ...OR, prompts: v11.prompts, prompt_order: v11.prompt_order, show_thoughts: true });
+    assert(/the provider sent none/.test(fateLine().detail), "asked for and not sent: the provider's doing");
+    chat[2] = stamped(PROSE, { think: 1800, usage: { out: 4000, reasoning: 3200 } });
+    route({ ...NANO, prompts: v11.prompts, prompt_order: v11.prompt_order, show_thoughts: false });
+    said = fateLine();
+    assert(said && /thinking arrived with your last reply \(1,800 characters\) and was not kept/.test(said.title) && /Request model reasoning/.test(said.detail), `it arrived and was let go by: ${said && said.title}`);
+    chat[2] = stamped(PROSE, { think: 1800, usage: { out: 4000, reasoning: 3200 } }, { reasoning: "The model's thoughts." });
+    assert.equal(fateLine(), null, "the thinking is there: no line");
+    chat.length = 0;
+
+    Object.assign(q, { mode: keep.mode, model: keep.model, cotEnabled: keep.cot });
+    q.blockStack.order = JSON.parse(keep.order); meguminSyncLegacyBlockIds();
+    route(keep.cc);
+    ctx.mainApi = keep.api;
+}
+console.log("82 ok Gemini through NanoGPT (the request is the one OpenRouter gets, on every preset and engine, thinking on or off: the after-chat rules as user text, the turns alternating, the thinking steps last; Claude on NanoGPT and a Gemini elsewhere as they were; Setup Check by the route's name)");
+
 console.log("\nALL FORK CHECKS PASSED");

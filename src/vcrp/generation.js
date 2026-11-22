@@ -118,25 +118,44 @@ export function vcrpDetectPrefill() {
     return { prefill: false, reason: "unknown model, instruction only" };
 }
 
+// The routes that hand a Gemini model an OpenAI-shaped request (SillyTavern's own Google
+// sources convert the prompt themselves). Gemini has one systemInstruction and no system turns,
+// so whoever translates the request must do something with a system message that sits after
+// the chat: move it into that one instruction (OpenRouter does), or turn it into another kind
+// of turn, or leave it out. None of them leaves it where VCRP put it, as the last thing read.
+const GEMINI_ROUTES = new Set(["openrouter", "nanogpt"]);
+const ROUTE_NAMES = { openrouter: "OpenRouter", nanogpt: "NanoGPT" };
+
+/** The route's name as the reader knows it ("OpenRouter", "NanoGPT"), for Setup Check. */
+export function vcrpRouteName() {
+    const { source } = vcrpActiveModel();
+    return ROUTE_NAMES[source] || source;
+}
+
 /**
  * True when the route hands the model one system prompt built from every system-role message,
  * wherever it sat. OpenRouter does this for Claude (SillyTavern issue #5227) and for Gemini,
  * whose single systemInstruction its cache treats as fixed: text placed after the chat is read
- * before it, and a per-turn change there invalidates the whole cache.
+ * before it, and a per-turn change there invalidates the whole cache. Gemini on NanoGPT is
+ * treated the same (NanoGPT does not document what its translation does with a system message
+ * after the chat; sent as user text, the after-chat rules are read where they were put on
+ * either reading of it).
  */
 export function vcrpRouteHoistsSystem() {
     const { source, model } = vcrpActiveModel();
-    return source === "openrouter" && /claude|anthropic|fable|gemini/.test(model);
+    if (source === "openrouter") return /claude|anthropic|fable|gemini/.test(model);
+    return GEMINI_ROUTES.has(source) && /gemini/.test(model);
 }
 
 /**
- * True when the route wants the turns to alternate (Gemini on OpenRouter). Sending what follows
- * the chat as user messages puts several in a row, and Gemini expects user and model turns to
- * alternate ("Please ensure that multiturn requests alternate between user and model": a 400).
+ * True when the route wants the turns to alternate (Gemini through OpenRouter or NanoGPT).
+ * Sending what follows the chat as user messages puts several in a row, and Gemini expects
+ * user and model turns to alternate ("Please ensure that multiturn requests alternate between
+ * user and model": a 400).
  */
 export function vcrpRouteNeedsAlternation() {
     const { source, model } = vcrpActiveModel();
-    return source === "openrouter" && /gemini/.test(model);
+    return GEMINI_ROUTES.has(source) && /gemini/.test(model);
 }
 
 /**

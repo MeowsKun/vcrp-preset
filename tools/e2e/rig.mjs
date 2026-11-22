@@ -116,7 +116,9 @@ export function startMock() {
                     try { b = JSON.parse(body); } catch (e) { b = {}; }
                     const text = JSON.stringify(b.messages || []);
                     const task = /___PS_[A-Z_]+___|\[VCRP MEMORY TASK/.test(text);
-                    const entry = { at: Date.now(), body: b, task, story: false, played: null };
+                    // Which provider SillyTavern meant it for, by the stand-in key it sent.
+                    const via = /e2e-not-a-key$/.test(String(req.headers.authorization || "")) && !/sk-or-/.test(String(req.headers.authorization || "")) ? "nanogpt" : "openrouter";
+                    const entry = { at: Date.now(), body: b, task, story: false, played: null, via };
                     state.log.push(entry);
                     if (b.stream && !task && state.queue.length) { entry.story = true; entry.played = state.queue.shift(); return await play(entry.played, res); }
                     if (b.stream) return await play(script({ content: "OK." }), res);
@@ -159,7 +161,11 @@ function prepareData({ autoParse = true, template = null, settingsPatch = null }
     if (s.extension_settings.VCRP && s.extension_settings.VCRP.globalSettings) Object.assign(s.extension_settings.VCRP.globalSettings, { whatsNewSeen: "e2e", promptPreview: false });
     if (typeof settingsPatch === "function") settingsPatch(s);
     fs.writeFileSync(path.join(user, "settings.json"), JSON.stringify(s, null, 1));
-    fs.writeFileSync(path.join(user, "secrets.json"), JSON.stringify({ api_key_openrouter: [{ id: "e2e", value: "sk-or-e2e-not-a-key", label: "e2e", active: true }] }, null, 1));
+    // Keys that are no keys: the mock answers for both providers.
+    fs.writeFileSync(path.join(user, "secrets.json"), JSON.stringify({
+        api_key_openrouter: [{ id: "e2e", value: "sk-or-e2e-not-a-key", label: "e2e", active: true }],
+        api_key_nanogpt: [{ id: "e2e-nano", value: "e2e-not-a-key", label: "e2e", active: true }],
+    }, null, 1));
     for (const f of fs.readdirSync(path.join(REPO, "Presets")).filter(x => x.endsWith(".json"))) fs.copyFileSync(path.join(REPO, "Presets", f), path.join(user, "OpenAI Settings", f));
     // The extension: the repo's working tree as it stands.
     const dest = path.join(user, "extensions", "vcrp-preset");

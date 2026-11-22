@@ -207,6 +207,19 @@ a reply after any pause stays within the target. In a simulated session about 90
 prompt is read from the cache. Pin OpenRouter's provider to Google AI Studio (the price you
 entered; other providers cost more and keep their own caches).
 
+**Gemini through NanoGPT** (10.0.0-vcrp.25) gets the same request as through OpenRouter, message
+for message: everything after the chat as user text, the turns joined so user and model
+alternate. Before, that was switched on for OpenRouter alone, and through NanoGPT a V10 preset's
+Output Rules (the thinking steps among them) went out as a system message inside the chat, which
+Gemini has no place for. Claude on NanoGPT is left as it was.
+
+**The model's own thinking on NanoGPT.** SillyTavern asks OpenRouter to send a model's reasoning
+back when *Request model reasoning* is ticked. To NanoGPT it sends only the *Reasoning Effort*,
+and on Auto it names none (checked on SillyTavern 1.19). If a model that reasons by itself shows
+no thinking block there, pick a Reasoning Effort in AI Response Configuration. Setup Check says
+which it is from your last reply's own answer: *the model reasoned (N tokens), and none of its
+thinking came back*, or *its thinking arrived and was not kept*.
+
 On Claude it relies on prompt caching you set up once:
 
 1. **Context Size** (AI Response Configuration): the model's maximum. Below what VCRP sends,
